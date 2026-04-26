@@ -1,0 +1,95 @@
+name: Daily Clinic Appointment Reminder
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send appointment reminder
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CLINIC_EMAIL: stomacare.mdh@gov.mt
+        run: |
+          TODAY=$(TZ="Europe/Malta" date +%Y-%m-%d)
+          echo "Date: $TODAY"
+          
+          RESPONSE=$(curl -s \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            "$SUPABASE_URL/rest/v1/appointments?appt_date=eq.$TODAY&status=neq.cancelled&select=appt_slot,patients(first_name,surname,id_card,phone_number),staff(full_name)&order=appt_slot")
+          
+          APPT_DATA="$RESPONSE" TODAY_DATE="$TODAY" RESEND_API_KEY="$RESEND_API_KEY" CLINIC_EMAIL="$CLINIC_EMAIL" python3 << 'PYEOF'
+import json, os, urllib.request
+
+data_str = os.environ.get('APPT_DATA', '[]')
+today = os.environ.get('TODAY_DATE', '')
+resend_key = os.environ.get('RESEND_API_KEY', '')
+clinic_email = os.environ.get('CLINIC_EMAIL', '')
+
+try:
+    appts = json.loads(data_str)
+except:
+    appts = []
+
+if not appts:
+    print("No appointments today — email not sent")
+    exit(0)
+
+print(f"Found {len(appts)} appointments — sending email")
+
+rows = ""
+for a in appts:
+    slot = (a.get('appt_slot') or '')[:5] or '—'
+    p = a.get('patients') or {}
+    name = f"{p.get('first_name','')} {p.get('surname','')}".strip() or '—'
+    idcard = p.get('id_card', '—')
+    phone = p.get('phone_number') or '—'
+    nurse = (a.get('staff') or {}).get('full_name', '—')
+    rows += f'<tr><td style="padding:10px 14px;border-bottom:1px solid #eee;font-weight:700;color:#0d7377;font-size:14px;">{slot}</td><td style="padding:10px 14px;border-bottom:1px solid #eee;font-weight:600;">{name}</td><td style="padding:10px 14px;border-bottom:1px solid #eee;font-family:monospace;font-size:12px;">{idcard}</td><td style="padding:10px 14px;border-bottom:1px solid #eee;">{phone}</td><td style="padding:10px 14px;border-bottom:1px solid #eee;color:#0d7377;">{nurse}</td></tr>'
+
+html = f"""<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f0f2f5;padding:20px;margin:0;">
+<div style="max-width:680px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.12);">
+  <div style="background:#1a2e4a;padding:24px;text-align:center;">
+    <div style="font-size:32px;margin-bottom:8px;">🏥</div>
+    <h1 style="color:white;margin:0;font-size:20px;font-weight:700;">MDH Stoma Care Clinic</h1>
+    <p style="color:#e6a817;margin:6px 0 0;font-size:14px;font-weight:600;">Daily Appointment Reminder — {today}</p>
+  </div>
+  <div style="padding:24px;">
+    <p style="color:#1a2e4a;font-size:16px;margin:0 0 20px;"><strong>{len(appts)} patient appointment{'s' if len(appts)!=1 else ''}</strong> scheduled for today.</p>
+    <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;border:1px solid #dde3ea;">
+      <thead><tr style="background:#1a2e4a;">
+        <th style="padding:10px 14px;text-align:left;color:rgba(255,255,255,.8);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Time</th>
+        <th style="padding:10px 14px;text-align:left;color:rgba(255,255,255,.8);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Patient</th>
+        <th style="padding:10px 14px;text-align:left;color:rgba(255,255,255,.8);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">ID Card</th>
+        <th style="padding:10px 14px;text-align:left;color:rgba(255,255,255,.8);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Phone</th>
+        <th style="padding:10px 14px;text-align:left;color:rgba(255,255,255,.8);font-size:11px;text-transform:uppercase;letter-spacing:.5px;">Nurse</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+    <p style="margin-top:20px;color:#7a8fa6;font-size:12px;border-top:1px solid #eee;padding-top:16px;">This reminder is sent automatically every day at 07:00 AM Malta time when appointments are booked.</p>
+  </div>
+</div>
+</body></html>"""
+
+payload = json.dumps({
+    "from": "Stoma Care Clinic <onboarding@resend.dev>",
+    "to": [clinic_email],
+    "subject": f"[HIGH IMPORTANCE] 🏥 {len(appts)} Clinic Appointment{'s' if len(appts)!=1 else ''} Today — {today}",
+    "html": html,
+    "headers": {"X-Priority": "1", "X-MSMail-Priority": "High", "Importance": "High"}
+}).encode()
+
+req = urllib.request.Request("https://api.resend.com/emails", data=payload,
+    headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"})
+try:
+    with urllib.request.urlopen(req) as resp:
+        print(f"Email sent! Response: {resp.read()}")
+except Exception as e:
+    print(f"Email error: {e}")
+PYEOF
