@@ -194,6 +194,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .empty{text-align:center;padding:28px;color:var(--muted);font-size:13px;}
 .mt16{margin-top:16px;}
 
+.td-selected{background:#e8f5f4!important;outline:2px solid var(--teal);outline-offset:-2px;}
+.th-selected{color:white!important;background:var(--teal)!important;}
+
 /* SHIFT PICKER — no H option */
 .shift-picker{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px;}
 .sp-btn{padding:12px 6px;border-radius:8px;border:2px solid transparent;cursor:pointer;font-size:11px;font-weight:700;text-align:center;transition:all .15s;}
@@ -287,12 +290,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <button class="btn-til-in" onclick="addTIL('in')">+ TIL In</button>
       </div>
       <div class="info-note">ℹ️ Any staff name can be entered — not limited to core staff</div>
-      <!-- MONTH NAV -->
+      <!-- MONTH NAV + DATE PICKER -->
       <div class="mnav">
         <button onclick="changeMonth(-1)">← Prev</button>
         <div class="mlbl" id="mlbl"></div>
         <button onclick="changeMonth(1)">Next →</button>
         <button onclick="goToday()" style="color:var(--teal);border-color:var(--teal);">Today</button>
+        <div style="display:flex;align-items:center;gap:6px;margin-left:16px;padding-left:16px;border-left:1px solid var(--border);">
+          <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;">Jump to date:</label>
+          <input type="date" id="jump-date" onchange="jumpToDate()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;"/>
+          <button onclick="clearJumpDate()" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:11px;font-family:'Inter',sans-serif;cursor:pointer;color:var(--muted);">✕ Clear</button>
+        </div>
       </div>
       <div class="roster-wrap"><table class="rt" id="rt"></table></div>
       <!-- OT LIST -->
@@ -611,7 +619,9 @@ async function renderRoster(){
       if(short.length>11)short=short.substring(0,11);
       holLine=`<div style="font-size:7px;color:var(--gold);font-weight:700;line-height:1.1;margin-bottom:1px;" title="${hol}">🇲🇹 ${short}</div>`;
     }
-    html+=`<th class="${cls}" title="${hol||''}">${holLine}${DN[dow]}<br/><strong>${d}</strong></th>`;
+    const isSelected = selectedDate && ds === selectedDate;
+    const finalCls = isSelected ? 'th-selected' : cls;
+    html+=`<th class="${finalCls}" title="${hol||''}">${holLine}${DN[dow]}<br/><strong>${d}</strong>${isSelected?'<br/><span style="font-size:8px;">▼</span>':''}</th>`;
   }
   html+='</tr></thead><tbody>';
   html+=`<tr class="sr"><td colspan="${days+2}">Core Staff</td></tr>`;
@@ -623,7 +633,8 @@ async function renderRoster(){
       const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0;
       const entry=rCache[`${st.id}_${ds}`];
       const code=entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D';
-      const tdCls=isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+      const isSelected2 = selectedDate && ds === selectedDate;
+      const tdCls = isSelected2 ? 'td-selected' : (isT?'td-today':hol?'td-hol':isSun?'td-sun':'');
       html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${hol?hol+' — ':''}${ds}">${code}</div></td>`;
     }
     html+='</tr>';
@@ -850,35 +861,46 @@ async function loadAppts(){
 
   const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)').eq('appt_date',date).order('appt_slot');
 
-  const booked=(appts||[]).length;
+  const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
   document.getElementById('appt-slot-summary').textContent=`${booked} / 11 slots booked`;
 
   const container=document.getElementById('slots-container');
   container.innerHTML='';
 
   SLOTS.forEach(slot=>{
-    const appt=(appts||[]).find(a=>a.appt_slot===slot);
+    // Match slot accounting for time format differences (08:30 vs 08:30:00)
+    const appt=(appts||[]).find(a=>{
+      const slotTime = a.appt_slot?.slice(0,5);
+      return slotTime === slot;
+    });
     const row=document.createElement('div');
     row.className='slot-row';
 
     if(appt){
       const sc={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'}[appt.status]||'ps-booked';
-      const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
+      const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
+      const isCancelled = appt.status === 'cancelled';
+      row.style.background = isCancelled ? '#fff5f5' : appt.status==='attended' ? '#f0fff4' : '#fff';
       row.innerHTML=`
-        <div class="slot-time">${slot}</div>
+        <div class="slot-time" style="color:${isCancelled?'var(--red)':appt.status==='attended'?'var(--green)':'var(--teal)'};">${slot}</div>
         <div class="slot-patient">
-          <div class="slot-name">${appt.patients?.first_name} ${appt.patients?.surname}</div>
-          <div class="slot-id">ID: ${appt.patients?.id_card}</div>
+          <div class="slot-name" style="${isCancelled?'text-decoration:line-through;color:var(--muted);':''}">${appt.patients?.first_name} ${appt.patients?.surname}</div>
+          <div class="slot-id">🪪 ${appt.patients?.id_card}</div>
           ${appt.patients?.phone_number?`<div class="slot-phone">📞 ${appt.patients.phone_number}</div>`:''}
-          ${appt.staff?`<div class="slot-nurse">Booked by: ${appt.staff.full_name}</div>`:''}
+          ${appt.staff?`<div class="slot-nurse">👩‍⚕️ Booked by: ${appt.staff.full_name}</div>`:''}
         </div>
-        <span class="p-status ${sc}" onclick="cycleStatus('${appt.id}','${appt.status}','${date}')">${sl}</span>
-        <button class="btn-del-slot" onclick="deleteAppt('${appt.id}')">🗑</button>`;
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span class="p-status ${sc}" style="cursor:default;">${sl}</span>
+          ${appt.status!=='attended'?`<button style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;" onclick="setApptStatus('${appt.id}','attended','${date}')">✓ Attended</button>`:''}
+          ${appt.status!=='did_not_attend'?`<button style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;" onclick="setApptStatus('${appt.id}','did_not_attend','${date}')">✗ DNTU</button>`:''}
+          ${appt.status!=='cancelled'?`<button style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;" onclick="setApptStatus('${appt.id}','cancelled','${date}')">Cancel</button>`:''}
+          <button style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;" onclick="deleteAppt('${appt.id}')">🗑</button>
+        </div>`;
     }else{
       row.innerHTML=`
         <div class="slot-time">${slot}</div>
-        <div class="slot-empty">Available</div>
-        <button class="btn-book-slot" onclick="openModal('appt','${slot}','${date}')">+ Book</button>`;
+        <div class="slot-empty">— Available —</div>
+        <button class="btn-book-slot" onclick="openModal('appt','${slot}','${date}')">+ Book Patient</button>`;
     }
     container.appendChild(row);
   });
@@ -888,6 +910,11 @@ async function cycleStatus(id,cur,date){
   const ord=['booked','attended','cancelled','did_not_attend'];
   await SB.from('appointments').update({status:ord[(ord.indexOf(cur)+1)%ord.length]}).eq('id',id);
   loadAppts();loadTodaySnapshot();
+}
+
+async function setApptStatus(id,status,date){
+  await SB.from('appointments').update({status}).eq('id',id);
+  loadAppts();loadTodaySnapshot();loadClinicAudit();
 }
 async function deleteAppt(id){
   if(!confirm('Delete this appointment?'))return;
@@ -1113,6 +1140,33 @@ async function saveLeave(){
   if(!sid||!start||!end){alert('Please fill in all required fields.');return;}
   await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,notes});
   closeModal();loadStaffAudit();
+}
+
+// JUMP TO DATE
+let selectedDate = null;
+
+function jumpToDate(){
+  const val = document.getElementById('jump-date').value;
+  if(!val) return;
+  selectedDate = val;
+  // Navigate to correct month
+  const d = new Date(val + 'T12:00:00');
+  curMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  // Sync patient snapshot
+  snapCurrentDate = val;
+  renderRoster();
+  loadTodaySnapshot();
+  // After render, scroll to highlighted column
+  setTimeout(()=>{
+    const highlighted = document.querySelector('.th-selected');
+    if(highlighted) highlighted.scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'});
+  }, 300);
+}
+
+function clearJumpDate(){
+  selectedDate = null;
+  document.getElementById('jump-date').value = '';
+  renderRoster();
 }
 
 function openMo(){document.getElementById('mo').classList.add('open');}
