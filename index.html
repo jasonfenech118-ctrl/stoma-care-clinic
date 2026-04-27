@@ -315,7 +315,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="til-list-wrap">
         <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
-          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
+          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th></tr></thead>
           <tbody id="til-tbody"><tr><td colspan="6" class="empty">No TIL records</td></tr></tbody>
         </table>
       </div>
@@ -345,10 +345,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <button onclick="apptChangeDay(1)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);">→</button>
         <span class="sbadge" id="sbadge"></span>
       </div>
-      <div style="background:white;border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.05);">
-        <div style="background:var(--navy);color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
-          <h3 style="font-size:15px;font-weight:700;">🏥 Daily Clinic — 11 Slots</h3>
-          <span id="appt-slot-summary" style="font-size:11px;opacity:.65;">Loading...</span>
+      <div style="background:white;border-radius:12px;border:1px solid #dde3ea;overflow:hidden;">
+        <div style="background:#1a2e4a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+          <strong style="font-size:15px;">Daily Clinic - 11 Slots</strong>
+          <span id="appt-slot-summary" style="font-size:11px;opacity:.65;"></span>
         </div>
         <div id="slots-container"></div>
       </div>
@@ -920,84 +920,53 @@ async function getNursesWithBookings(date, workingNurses){
 }
 
 async function loadAppts(){
-  const date=document.getElementById('appt-date').value;if(!date)return;
-  const hol=hols[date]||null;
-  document.getElementById('hban-appt').innerHTML=hol?`<div class="hban">🇲🇹 Malta Public Holiday: <strong>${hol}</strong></div>`:'';
-
-  // Count working nurses for badge only
-  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
-  const{data:otT}=await SB.from('bank_staff_assignments').select('id').eq('work_date',date);
-  const coreW=staffList.filter(s=>{const e=(rd||[]).find(r=>r.staff_id===s.id);if(e)return!['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'].includes(e.status);return defaultCode(s,date)==='working';}).length;
-  const wc=coreW+(otT?.length||0);
-  const badge=document.getElementById('sbadge');
-  badge.textContent=`${wc} nurse${wc!==1?'s':''} working`;
-  badge.className='sbadge '+(wc>=2?'sb-ok':wc===1?'sb-warn':'sb-none');
-
-  // Load all appointments
-  const{data:appts,error:apptErr}=await SB.from('appointments')
+  const date=document.getElementById('appt-date').value;
+  if(!date)return;
+  const{data:appts}=await SB.from('appointments')
     .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)')
     .eq('appt_date',date).order('appt_slot');
-  if(apptErr){console.error('Appts error:',apptErr);document.getElementById('appt-slot-summary').textContent='Error loading - check console';return;}
-
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
-  document.getElementById('appt-slot-summary').textContent=`${booked} / 11 slots booked`;
-
-  const container=document.getElementById('slots-container');
-  container.innerHTML='';
-
-  const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
-  SLOTS.forEach(slot=>{
-    const appt=(appts||[]).find(a=>a.appt_slot?.slice(0,5)===slot||a.appt_slot===slot+':00');
-    const row=document.createElement('div');
-    row.style.cssText='display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);';
-    if(appt){
-      const sc={booked:'sb-ok',attended:'sb-ok',cancelled:'sb-none',did_not_attend:'sb-warn'}[appt.status]||'sb-ok';
-      const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
-      const nurse=appt.staff?.full_name||'—';
-      const bg=appt.status==='attended'?'#f0fff4':appt.status==='cancelled'?'#fff5f5':'#f0faf9';
-      row.style.background=bg;
-      row.innerHTML=`
-        <div style="font-weight:700;color:var(--teal);font-size:13px;min-width:55px;">${slot}</div>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:13px;${appt.status==='cancelled'?'text-decoration:line-through;color:var(--muted);':''}">${appt.patients?.first_name} ${appt.patients?.surname}</div>
-          <div style="font-size:11px;color:var(--muted);">🪪 ${appt.patients?.id_card}${appt.patients?.phone_number?' &nbsp;📞 '+appt.patients.phone_number:''}</div>
-          <div style="font-size:11px;color:var(--teal);font-weight:600;">👩‍⚕️ ${nurse}</div>
-        </div>
-        <span class="sbadge ${sc}" style="cursor:default;">${sl}</span>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;">
-          ${appt.status!=='attended'?`<button onclick="setAStatus('${appt.id}','attended','${date}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✓ Attended</button>`:''}
-          ${appt.status!=='did_not_attend'?`<button onclick="setAStatus('${appt.id}','did_not_attend','${date}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">✗ DNTU</button>`:''}
-          ${appt.status!=='cancelled'?`<button onclick="setAStatus('${appt.id}','cancelled','${date}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>`:''}
-          <button onclick="delA('${appt.id}','${date}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
-        </div>`;
+  document.getElementById('appt-slot-summary').textContent=booked+' / 11 slots booked';
+  const con=document.getElementById('slots-container');
+  if(!con)return;
+  con.innerHTML='';
+  ['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'].forEach(slot=>{
+    const a=(appts||[]).find(x=>x.appt_slot&&(x.appt_slot.slice(0,5)===slot||x.appt_slot===slot+':00'));
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid #dde3ea;';
+    const t='<div style="font-weight:700;color:#0d7377;min-width:55px;font-size:14px;">'+slot+'</div>';
+    if(a){
+      const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[a.status]||'#f0faf9';
+      const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[a.status]||'';
+      div.style.background=bg;
+      div.innerHTML=t+'<div style="flex:1;"><div style="font-weight:600;font-size:13px;">'+( a.patients?.first_name||'')+' '+(a.patients?.surname||'')+'</div><div style="font-size:11px;color:#7a8fa6;">ID: '+(a.patients?.id_card||'')+'</div>'+(a.staff?.full_name?'<div style="font-size:11px;color:#0d7377;">'+ a.staff.full_name+'</div>':'')+'</div>'+'<span style="padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);">'+sl+'</span>'+'<button onclick="setAS(\''+ a.id+'\',\'attended\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">Attended</button>'+'<button onclick="setAS(\''+a.id+'\',\'did_not_attend\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;margin-left:4px;">DNTU</button>'+'<button onclick="setAS(\''+a.id+'\',\'cancelled\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;margin-left:4px;">Cancel</button>'+'<button onclick="delApp(\''+a.id+'\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;margin-left:4px;">Del</button>';
     }else{
-      row.innerHTML=`
-        <div style="font-weight:700;color:var(--teal);font-size:13px;min-width:55px;">${slot}</div>
-        <div style="flex:1;color:var(--muted);font-size:12px;font-style:italic;">— Available —</div>
-        <button onclick="openBookModal('${slot}','${date}')" style="padding:8px 20px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;">+ Book Patient</button>`;
+      div.innerHTML=t+'<div style="flex:1;color:#7a8fa6;font-style:italic;">Available</div>'+'<button onclick="bookSlot(\''+slot+'\',\''+date+'\')" style="padding:8px 20px;background:#0d7377;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">+ Book Patient</button>';
     }
-    container.appendChild(row);
+    con.appendChild(div);
   });
 }
-
-async function setAStatus(id,status,date){
-  await SB.from('appointments').update({status}).eq('id',id);
-  loadAppts();loadTodaySnapshot();
+async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();}
+async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();}
+async function bookSlot(slot,date){
+  const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
+  const opts='<option value="">No specific nurse</option>'+(sd||[]).map(s=>'<option value="'+s.id+'">'+s.full_name+'</option>').join('');
+  document.getElementById('mb').innerHTML='<h2>Book Patient</h2><div class="msub">'+date+' - '+slot+'</div><div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div><div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div><div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div><div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div><div class="fg"><label>Nurse</label><select id="p-nurse">'+opts+'</select></div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook(\''+slot+'\',\''+date+'\')">Book Patient</button></div>';
+  openMo();
 }
-async function delA(id,date){
-  if(!confirm('Delete this appointment?'))return;
-  await SB.from('appointments').delete().eq('id',id);
-  loadAppts();loadTodaySnapshot();
-}
-async function setApptStatus(id,status,date){
-  await SB.from('appointments').update({status}).eq('id',id);
-  loadAppts();loadTodaySnapshot();
-}
-
-async function deleteAppt(id,date){
-  if(!confirm('Delete this appointment?'))return;
-  await SB.from('appointments').delete().eq('id',id);
-  loadAppts();loadClinicAudit();loadTodaySnapshot();
+async function doBook(slot,date){
+  const fn=document.getElementById('p-fn').value.trim();
+  const sn=document.getElementById('p-sn').value.trim();
+  const id=document.getElementById('p-id').value.trim();
+  const ph=document.getElementById('p-ph').value.trim();
+  const nid=document.getElementById('p-nurse').value;
+  if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
+  let{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
+  if(!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
+  if(!pat?.id){alert('Error saving patient.');return;}
+  const{error}=await SB.from('appointments').insert({patient_id:pat.id,appt_date:date,appt_slot:slot,assigned_to:nid||null,status:'booked'});
+  if(error){alert('Booking error: '+error.message);return;}
+  closeModal();loadAppts();loadTodaySnapshot();
 }
 
 // COD
@@ -1118,7 +1087,7 @@ async function loadClinicAudit(){
     <td><strong>${a.patients?.first_name} ${a.patients?.surname}</strong></td>
     <td style="font-family:monospace;font-size:12px;">${a.patients?.id_card}</td>
     <td>${a.patients?.phone_number||'—'}</td>
-    <td>${a.staff?.full_name||a.bank_staff?.full_name||'—'}</td>
+    <td>${a.staff?.full_name||'—'}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
       <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
@@ -1133,61 +1102,6 @@ async function setOutcome(id,status){await SB.from('appointments').update({statu
 async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);loadClinicAudit();loadTodaySnapshot();}
 
 // MODALS
-async function openBookModal(slot,date){
-  const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
-  const{data:bs}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
-  let nurseOpts=`<option value="">— Unassigned (Common) —</option>`;
-  (sd||[]).forEach(s=>{nurseOpts+=`<option value="${s.id}" data-type="core">${s.full_name}</option>`;});
-  (bs||[]).forEach(b=>{if(b.bank_staff?.full_name)nurseOpts+=`<option value="${b.bank_staff.id}" data-type="ot">${b.bank_staff.full_name} (OT)</option>`;});
-  document.getElementById('mb').innerHTML=`
-    <h2>Book Patient</h2>
-    <div class="msub">${date} — ${slot}</div>
-    <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
-    <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
-    <div class="fg"><label>ID Card Number *</label><input type="text" id="p-id" placeholder="Malta ID card"/></div>
-    <div class="fg"><label>Phone Number</label><input type="tel" id="p-ph" placeholder="+356 9999 9999"/></div>
-    <div class="fg"><label>Assign to Nurse</label><select id="p-nurse">${nurseOpts}</select></div>
-    <div class="mact">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveBooking('${slot}','${date}')">Book Patient</button>
-    </div>`;
-  openMo();
-}
-
-async function saveBooking(slot,date){
-  const fn=document.getElementById('p-fn').value.trim();
-  const sn=document.getElementById('p-sn').value.trim();
-  const idno=document.getElementById('p-id').value.trim();
-  const ph=document.getElementById('p-ph')?.value.trim()||'';
-  const nurseEl=document.getElementById('p-nurse');
-  const nurseId=nurseEl.value;
-  const nurseType=nurseEl.selectedOptions[0]?.dataset?.type||'';
-  if(!fn||!sn||!idno){alert('Please fill in patient details.');return;}
-  
-  // Save or find patient
-  const{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:idno,phone_number:ph||null},{onConflict:'id_card'}).select().single();
-  let patId=pat?.id;
-  if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
-  if(!patId){alert('Error saving patient.');return;}
-
-  // Determine assigned_to vs bank_staff_id
-  const coreMatch=staffList.find(s=>s.id===nurseId);
-  const assignedTo=coreMatch?nurseId:null;
-  const bankId=(!coreMatch&&nurseId)?nurseId:null;
-
-  // Try with bank_staff_id first, fallback without it
-  let insertData={patient_id:patId,appt_date:date,appt_slot:slot,assigned_to:assignedTo,status:'booked'};
-  // Only add bank_staff_id if nurse is not core staff
-  if(bankId) insertData.bank_staff_id=bankId;
-  const{error}=await SB.from('appointments').insert(insertData);
-  if(error){
-    if(error.code==='23505'||error.message?.includes('unique')) alert('This slot is already booked.');
-    else alert('Booking error: '+error.message);
-    return;
-  }
-  closeModal();loadAppts();loadTodaySnapshot();
-}
-
 async function openModal(type,...args){
   let html='';
   if(type==='appt'){
@@ -1258,16 +1172,8 @@ async function saveLeave(){
   closeModal();loadStaffAudit();
 }
 
-async function deleteOT(id){
-  if(!confirm('Delete this overtime entry?'))return;
-  await SB.from('bank_staff_assignments').delete().eq('id',id);
-  renderRoster();
-}
-async function deleteTIL(id){
-  if(!confirm('Delete this TIL entry?'))return;
-  await SB.from('leave_records').delete().eq('id',id);
-  renderRoster();loadStaffAudit();
-}
+async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();}
+async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();}
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
 function moOut(e){if(e.target===document.getElementById('mo'))closeModal();}
