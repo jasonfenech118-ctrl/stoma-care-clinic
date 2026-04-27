@@ -1321,12 +1321,33 @@ async function saveAppt(slot,date,nurseId){
   if(!patId){alert('Error saving patient.');return;}
   // Common column = no nurse assigned (null)
   const assignedTo = (nurseId && nurseId!=='undefined' && nurseId!=='' && nurseId!=='common') ? nurseId : null;
+
+  // Check if this slot+nurse combo is already booked
+  let checkQ = SB.from('appointments').select('id').eq('appt_date',date).eq('appt_slot',slot).neq('status','cancelled');
+  if(assignedTo){
+    checkQ = checkQ.eq('assigned_to', assignedTo);
+  } else {
+    checkQ = checkQ.is('assigned_to', null);
+  }
+  const{data:existing} = await checkQ;
+  if(existing && existing.length > 0){
+    alert('This slot is already booked for this nurse. Please choose a different slot.');
+    return;
+  }
+
   const{error}=await SB.from('appointments').insert({
     patient_id:patId,appt_date:date,appt_slot:slot,
     assigned_to:assignedTo,
     status:'booked'
   });
-  if(error){alert('Booking error: '+error.message);return;}
+  if(error){
+    if(error.message?.includes('unique')){
+      alert('This slot is already booked. Please choose a different slot or nurse.');
+    } else {
+      alert('Booking error: '+error.message);
+    }
+    return;
+  }
   closeModal();loadAppts();loadTodaySnapshot();
 }
 
