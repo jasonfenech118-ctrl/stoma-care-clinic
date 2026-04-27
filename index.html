@@ -847,32 +847,81 @@ function apptChangeDay(dir){
 async function getWorkingNurses(date){
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
   const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').eq('work_date',date);
-  const{data:tilIn}=await SB.from('leave_records').select('*, staff(full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:tilIn}=await SB.from('leave_records').select('*, staff(full_name,id)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
   const{data:tilOff}=await SB.from('leave_records').select('id,staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
   const tilOffIds=new Set((tilOff||[]).map(t=>t.staff_id));
 
+  // OFF statuses — these nurses do NOT get a booking column
+  const OFF_STATUSES=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+
   const nurses=[];
-  // Core staff working
+
+  // Core staff — only add if actually working that day
   for(const st of staffList){
     const e=(rd||[]).find(r=>r.staff_id===st.id);
-    const isOff=e&&['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'].includes(e.status);
     const isTilOff=tilOffIds.has(st.id);
-    if(!isOff&&!isTilOff){
-      const defCode=defaultCode(st,date);
-      if(!e||e.status==='working'||(e&&!['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'].includes(e.status))){
-        nurses.push({id:st.id,name:st.full_name,type:'core'});
+    if(isTilOff) continue; // TIL Off = absent, no column
+
+    if(e){
+      // Has explicit roster entry — only working if status is 'working' or 'overtime'
+      if(!OFF_STATUSES.includes(e.status)){
+        nurses.push({id:st.id,name:st.full_name,type:'core',status:e.status});
+      }
+      // If sick/off/leave — NO column (but booked patients handled separately)
+    }else{
+      // No roster entry — use pattern default
+      const def=defaultCode(st,date);
+      if(def==='working'){
+        nurses.push({id:st.id,name:st.full_name,type:'core',status:'working'});
+      }
+      // If pattern says off — NO column
+    }
+  }
+
+  // TIL In staff — they ARE coming in, add column
+  for(const t of(tilIn||[])){
+    if(t.staff?.full_name){
+      // Avoid duplicating if already in core list
+      const alreadyAdded=nurses.find(n=>n.id===t.staff_id);
+      if(!alreadyAdded) nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til-in',status:'til-in'});
+    }
+  }
+
+  // OT nurses — always add their column
+  for(const b of(otToday||[])){
+    if(b.bank_staff?.full_name){
+      nurses.push({id:b.bank_staff_id,name:b.bank_staff.full_name,type:'ot',status:'ot'});
+    }
+  }
+
+  return nurses;
+}
+
+// Get ALL nurses who have bookings on a date — even if now absent (sick etc.)
+// Used to show existing bookings with warning when nurse is absent
+async function getNursesWithBookings(date, workingNurses){
+  const{data:appts}=await SB.from('appointments')
+    .select('assigned_to, staff(full_name)')
+    .eq('appt_date',date)
+    .neq('status','cancelled');
+
+  const workingIds=new Set(workingNurses.map(n=>n.id));
+  const extraNurses=[];
+  const seen=new Set();
+
+  for(const a of(appts||[])){
+    if(a.assigned_to && !workingIds.has(a.assigned_to) && !seen.has(a.assigned_to)){
+      seen.add(a.assigned_to);
+      // Find nurse details
+      const coreStaff=staffList.find(s=>s.id===a.assigned_to);
+      if(coreStaff){
+        extraNurses.push({id:coreStaff.id,name:coreStaff.full_name,type:'absent-with-bookings',status:'absent'});
+      }else if(a.staff?.full_name){
+        extraNurses.push({id:a.assigned_to,name:a.staff.full_name,type:'absent-with-bookings',status:'absent'});
       }
     }
   }
-  // TIL In staff
-  for(const t of(tilIn||[])){
-    if(t.staff?.full_name)nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til-in'});
-  }
-  // OT nurses
-  for(const b of(otToday||[])){
-    if(b.bank_staff?.full_name)nurses.push({id:b.bank_staff_id||b.id,name:b.bank_staff.full_name,type:'ot',bankAssignId:b.id});
-  }
-  return nurses;
+  return extraNurses;
 }
 
 async function loadAppts(){
@@ -880,10 +929,14 @@ async function loadAppts(){
   const hol=isHol(date);
   document.getElementById('hban-appt').innerHTML=hol?`<div class="hban">🇲🇹 Malta Public Holiday: <strong>${hol}</strong></div>`:'';
 
-  const nurses=await getWorkingNurses(date);
+  const workingNurses=await getWorkingNurses(date);
+  const absentWithBookings=await getNursesWithBookings(date, workingNurses);
+  // Combine: working nurses first, then absent nurses who have existing bookings
+  const nurses=[...workingNurses,...absentWithBookings];
+
   const badge=document.getElementById('sbadge');
-  badge.textContent=`${nurses.length} nurse${nurses.length!==1?'s':''} working`;
-  badge.className='sbadge '+(nurses.length>=2?'sb-ok':nurses.length===1?'sb-warn':'sb-none');
+  badge.textContent=`${workingNurses.length} nurse${workingNurses.length!==1?'s':''} working`;
+  badge.className='sbadge '+(workingNurses.length>=2?'sb-ok':workingNurses.length===1?'sb-warn':'sb-none');
 
   // Load all appointments for this date
   const{data:appts}=await SB.from('appointments')
@@ -891,8 +944,7 @@ async function loadAppts(){
     .eq('appt_date',date).order('appt_slot');
 
   const totalBooked=(appts||[]).filter(a=>a.status!=='cancelled').length;
-  const maxSlots=nurses.length*SLOTS.length;
-  document.getElementById('appt-summary').textContent=`${totalBooked} patients booked · ${nurses.length} nurse${nurses.length!==1?'s':''} working`;
+  document.getElementById('appt-summary').textContent=`${totalBooked} patients booked · ${workingNurses.length} nurse${workingNurses.length!==1?'s':''} working`;
 
   // Build table header
   const thead=document.getElementById('clinic-thead');
@@ -907,8 +959,12 @@ async function loadAppts(){
   // Header row with nurse names
   let hHtml='<tr><th class="th-time">Time</th>';
   nurses.forEach(n=>{
-    const badge=n.type==='ot'?'<span style="font-size:9px;background:var(--gold);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">OT</span>':n.type==='til-in'?'<span style="font-size:9px;background:var(--teal);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">TIL</span>':'';
-    hHtml+=`<th class="th-nurse">${n.name}${badge}</th>`;
+    let badge='';
+    if(n.type==='ot') badge='<span style="font-size:9px;background:var(--gold);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">OT</span>';
+    else if(n.type==='til-in') badge='<span style="font-size:9px;background:var(--teal);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">TIL In</span>';
+    else if(n.type==='absent-with-bookings') badge='<span style="font-size:9px;background:var(--red);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">⚠️ ABSENT</span>';
+    const headerBg=n.type==='absent-with-bookings'?'background:#fff5f5;color:var(--red);':'';
+    hHtml+=`<th class="th-nurse" style="${headerBg}">${n.name}${badge}${n.type==='absent-with-bookings'?'<div style="font-size:9px;color:var(--red);font-weight:400;margin-top:2px;">Existing bookings shown — reassign</div>':''}</th>`;
   });
   hHtml+='</tr>';
   thead.innerHTML=hHtml;
@@ -927,8 +983,10 @@ async function loadAppts(){
       if(appt){
         const sc={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'}[appt.status]||'sb-booked';
         const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
-        bHtml+=`<td>
-          <div class="nurse-cell-booked" style="${appt.status==='cancelled'?'opacity:.6;':''}${appt.status==='attended'?'background:#f0fff4;border-color:#c3e6cb;':''}">
+        const isAbsent=nurse.type==='absent-with-bookings';
+        bHtml+=`<td style="${isAbsent?'background:#fff5f5;':''}">
+          <div class="nurse-cell-booked" style="${isAbsent?'border-color:#f5c6cb;background:#fff5f5;':''}${appt.status==='cancelled'?'opacity:.6;':''}${appt.status==='attended'?'background:#f0fff4;border-color:#c3e6cb;':''}">
+          ${isAbsent?'<div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:4px;">⚠️ Nurse absent — please reassign</div>':''}
             <span class="status-badge ${sc}">${sl}</span>
             <div class="ncb-name" style="${appt.status==='cancelled'?'text-decoration:line-through;':''}">${appt.patients?.first_name} ${appt.patients?.surname}</div>
             <div class="ncb-id">🪪 ${appt.patients?.id_card}</div>
@@ -942,7 +1000,12 @@ async function loadAppts(){
           </div>
         </td>`;
       }else{
-        bHtml+=`<td><button class="btn-book-nurse" onclick="openModal('appt','${slot}','${date}','${nurse.id}','${nurse.name}')">+ Book</button></td>`;
+        // Only show + Book button if nurse is actually working (not absent)
+        if(nurse.type==='absent-with-bookings'){
+          bHtml+=`<td style="background:#fff5f5;"><div style="text-align:center;color:#ccc;font-size:11px;padding:8px 0;">—</div></td>`;
+        }else{
+          bHtml+=`<td><button class="btn-book-nurse" onclick="openModal('appt','${slot}','${date}','${nurse.id}','${nurse.name}')">+ Book</button></td>`;
+        }
       }
     });
     bHtml+='</tr>';
