@@ -754,7 +754,9 @@ async function loadAppts(){
   const badge=document.getElementById('sbadge');
   badge.textContent=`${wc} nurse${wc!==1?'s':''} working`;
   badge.className='sbadge '+(wc>=2?'sb-ok':wc===1?'sb-warn':'sb-none');
-  const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)').eq('appt_date',date).order('appt_slot');
+  const{data:appts,error:apptErr}=await SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)').eq('appt_date',date).order('appt_slot');
+  if(apptErr) console.error('Appt query error:',apptErr);
+  console.log('Appointments for',date,':',appts?.length,'records',appts);
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
   document.getElementById('appt-sum').textContent=`${booked} booked · ${wc} nurse${wc!==1?'s':''} working`;
   const tbl=document.getElementById('clinic-tbl');
@@ -773,11 +775,16 @@ async function loadAppts(){
   SLOTS.forEach(slot=>{
     h+=`<tr><td class="td-time">${slot}</td>`;
     nurses.forEach(n=>{
+      // Match appointment to nurse+slot
       const appt=(appts||[]).find(a=>{
-        const sm=a.appt_slot?.slice(0,5)===slot;
-        if(n.type==='common') return sm&&!a.assigned_to&&!a.bank_staff_id;
-        if(n.type==='ot'||n.type==='absent') return sm&&(a.bank_staff_id===n.id||a.assigned_to===n.id);
-        return sm&&a.assigned_to===n.id;
+        const slotStr=a.appt_slot?.slice(0,5);
+        const sm=slotStr===slot||a.appt_slot===slot||a.appt_slot===slot+':00';
+        if(!sm) return false;
+        if(n.type==='common') return !a.assigned_to&&!a.bank_staff_id;
+        if(n.type==='ot') return a.bank_staff_id===n.id||(a.assigned_to===n.id&&!a.bank_staff_id);
+        if(n.type==='absent') return a.bank_staff_id===n.id||a.assigned_to===n.id;
+        // Core staff and TIL
+        return a.assigned_to===n.id;
       });
       const bg=n.type==='absent'?'background:#fff5f5;':n.type==='common'?'background:#fafafa;':'';
       if(appt){
@@ -1017,12 +1024,15 @@ async function saveAppt(slot,date,nid,nname){
   const coreMatch=!isCommon&&staff.find(s=>s.id===nid);
   const assignedTo=coreMatch?nid:null;
   const bankId=(!isCommon&&!coreMatch)?nid:null;
-  const{error}=await SB.from('appointments').insert({patient_id:patId,appt_date:date,appt_slot:slot,assigned_to:assignedTo,bank_staff_id:bankId,status:'booked'});
+  console.log('Saving appt:',{patId,date,slot,assignedTo,bankId,nid,nname});
+  const{data:saved,error}=await SB.from('appointments').insert({patient_id:patId,appt_date:date,appt_slot:slot,assigned_to:assignedTo,bank_staff_id:bankId,status:'booked'}).select();
   if(error){
+    console.error('Save error:',error);
     if(error.code==='23505'||error.message?.includes('unique')) alert('This slot is already booked for this nurse.');
     else alert('Booking error: '+error.message);
     return;
   }
+  console.log('Saved successfully:',saved);
   closeMo();loadAppts();loadSnap();
 }
 
