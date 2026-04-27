@@ -1027,8 +1027,9 @@ async function loadAppts(){
 
   const workingNurses=await getWorkingNurses(date);
   const absentWithBookings=await getNursesWithBookings(date, workingNurses);
-  // Combine: working nurses first, then absent nurses who have existing bookings
-  const nurses=[...workingNurses,...absentWithBookings];
+  // Combine: working nurses first, then absent nurses who have existing bookings, then always add Common column
+  const commonCol={id:'common',name:'Common',type:'common',status:'common'};
+  const nurses=[...workingNurses,...absentWithBookings,commonCol];
 
   const badge=document.getElementById('sbadge');
   badge.textContent=`${workingNurses.length} nurse${workingNurses.length!==1?'s':''} working`;
@@ -1040,7 +1041,7 @@ async function loadAppts(){
     .eq('appt_date',date).order('appt_slot');
 
   const totalBooked=(appts||[]).filter(a=>a.status!=='cancelled').length;
-  document.getElementById('appt-summary').textContent=`${totalBooked} patients booked · ${workingNurses.length} nurse${workingNurses.length!==1?'s':''} working`;
+  document.getElementById('appt-summary').textContent=`${totalBooked} patients booked · ${workingNurses.length} nurse${workingNurses.length!==1?'s':''} working + Common column`;
 
   // Build table header
   const thead=document.getElementById('clinic-thead');
@@ -1059,8 +1060,9 @@ async function loadAppts(){
     if(n.type==='ot') badge='<span style="font-size:9px;background:var(--gold);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">OT</span>';
     else if(n.type==='til-in') badge='<span style="font-size:9px;background:var(--teal);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">TIL In</span>';
     else if(n.type==='absent-with-bookings') badge='<span style="font-size:9px;background:var(--red);color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">⚠️ ABSENT</span>';
-    const headerBg=n.type==='absent-with-bookings'?'background:#fff5f5;color:var(--red);':'';
-    hHtml+=`<th class="th-nurse" style="${headerBg}">${n.name}${badge}${n.type==='absent-with-bookings'?'<div style="font-size:9px;color:var(--red);font-weight:400;margin-top:2px;">Existing bookings shown — reassign</div>':''}</th>`;
+    else if(n.type==='common') badge='<span style="font-size:9px;background:#6c757d;color:white;padding:1px 5px;border-radius:4px;margin-left:4px;">General</span>';
+    const headerBg=n.type==='absent-with-bookings'?'background:#fff5f5;color:var(--red);':n.type==='common'?'background:#f8f9fa;color:var(--navy);':'';
+    hHtml+=`<th class="th-nurse" style="${headerBg}">${n.name}${badge}${n.type==='absent-with-bookings'?'<div style="font-size:9px;color:var(--red);font-weight:400;margin-top:2px;">Existing bookings shown — reassign</div>':n.type==='common'?'<div style="font-size:9px;color:var(--muted);font-weight:400;margin-top:2px;">Unallocated / general bookings</div>':''}</th>`;
   });
   hHtml+='</tr>';
   thead.innerHTML=hHtml;
@@ -1071,8 +1073,12 @@ async function loadAppts(){
     bHtml+=`<tr><td class="td-time">${slot}</td>`;
     nurses.forEach(nurse=>{
       // Find appointment for this slot + nurse
+      // Common column matches appointments with no assigned nurse (assigned_to is null)
       const appt=(appts||[]).find(a=>{
         const slotMatch=a.appt_slot?.slice(0,5)===slot;
+        if(nurse.type==='common'){
+          return slotMatch && !a.assigned_to;
+        }
         const nurseMatch=a.assigned_to===nurse.id;
         return slotMatch&&nurseMatch;
       });
@@ -1080,9 +1086,11 @@ async function loadAppts(){
         const sc={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'}[appt.status]||'sb-booked';
         const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
         const isAbsent=nurse.type==='absent-with-bookings';
-        bHtml+=`<td style="${isAbsent?'background:#fff5f5;':''}">
-          <div class="nurse-cell-booked" style="${isAbsent?'border-color:#f5c6cb;background:#fff5f5;':''}${appt.status==='cancelled'?'opacity:.6;':''}${appt.status==='attended'?'background:#f0fff4;border-color:#c3e6cb;':''}">
+        const isCommon=nurse.type==='common';
+        bHtml+=`<td style="${isAbsent?'background:#fff5f5;':isCommon?'background:#fafafa;':''}">
+          <div class="nurse-cell-booked" style="${isAbsent?'border-color:#f5c6cb;background:#fff5f5;':isCommon?'border-color:#ced4da;background:#f8f9fa;':''}${appt.status==='cancelled'?'opacity:.6;':''}${appt.status==='attended'?'background:#f0fff4;border-color:#c3e6cb;':''}">
           ${isAbsent?'<div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:4px;">⚠️ Nurse absent — please reassign</div>':''}
+          ${isCommon?'<div style="font-size:10px;color:#6c757d;font-weight:600;margin-bottom:4px;">📋 General booking</div>':''}
             <span class="status-badge ${sc}">${sl}</span>
             <div class="ncb-name" style="${appt.status==='cancelled'?'text-decoration:line-through;':''}">${appt.patients?.first_name} ${appt.patients?.surname}</div>
             <div class="ncb-id">🪪 ${appt.patients?.id_card}</div>
@@ -1099,6 +1107,8 @@ async function loadAppts(){
         // Only show + Book button if nurse is actually working (not absent)
         if(nurse.type==='absent-with-bookings'){
           bHtml+=`<td style="background:#fff5f5;"><div style="text-align:center;color:#ccc;font-size:11px;padding:8px 0;">—</div></td>`;
+        }else if(nurse.type==='common'){
+          bHtml+=`<td style="background:#fafafa;"><button class="btn-book-nurse" style="border-color:#adb5bd;color:#6c757d;" onclick="openModal('appt','${slot}','${date}','','Common')">+ Book</button></td>`;
         }else{
           bHtml+=`<td><button class="btn-book-nurse" onclick="openModal('appt','${slot}','${date}','${nurse.id}','${nurse.name}')">+ Book</button></td>`;
         }
@@ -1303,9 +1313,11 @@ async function saveAppt(slot,date,nurseId){
   let patId=pat?.id;
   if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
   if(!patId){alert('Error saving patient.');return;}
+  // Common column = no nurse assigned (null)
+  const assignedTo = (nurseId && nurseId!=='undefined' && nurseId!=='' && nurseId!=='common') ? nurseId : null;
   const{error}=await SB.from('appointments').insert({
     patient_id:patId,appt_date:date,appt_slot:slot,
-    assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
+    assigned_to:assignedTo,
     status:'booked'
   });
   if(error){alert('Booking error: '+error.message);return;}
