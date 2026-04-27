@@ -934,9 +934,10 @@ async function loadAppts(){
   badge.className='sbadge '+(wc>=2?'sb-ok':wc===1?'sb-warn':'sb-none');
 
   // Load all appointments
-  const{data:appts}=await SB.from('appointments')
-    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)')
+  const{data:appts,error:apptErr}=await SB.from('appointments')
+    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)')
     .eq('appt_date',date).order('appt_slot');
+  if(apptErr){console.error('Appts error:',apptErr);document.getElementById('appt-slot-summary').textContent='Error loading - check console';return;}
 
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
   document.getElementById('appt-slot-summary').textContent=`${booked} / 11 slots booked`;
@@ -952,7 +953,7 @@ async function loadAppts(){
     if(appt){
       const sc={booked:'sb-ok',attended:'sb-ok',cancelled:'sb-none',did_not_attend:'sb-warn'}[appt.status]||'sb-ok';
       const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
-      const nurse=appt.staff?.full_name||appt.bank_staff?.full_name||'—';
+      const nurse=appt.staff?.full_name||'—';
       const bg=appt.status==='attended'?'#f0fff4':appt.status==='cancelled'?'#fff5f5':'#f0faf9';
       row.style.background=bg;
       row.innerHTML=`
@@ -1174,10 +1175,11 @@ async function saveBooking(slot,date){
   const assignedTo=coreMatch?nurseId:null;
   const bankId=(!coreMatch&&nurseId)?nurseId:null;
 
-  const{error}=await SB.from('appointments').insert({
-    patient_id:patId,appt_date:date,appt_slot:slot,
-    assigned_to:assignedTo,bank_staff_id:bankId,status:'booked'
-  });
+  // Try with bank_staff_id first, fallback without it
+  let insertData={patient_id:patId,appt_date:date,appt_slot:slot,assigned_to:assignedTo,status:'booked'};
+  // Only add bank_staff_id if nurse is not core staff
+  if(bankId) insertData.bank_staff_id=bankId;
+  const{error}=await SB.from('appointments').insert(insertData);
   if(error){
     if(error.code==='23505'||error.message?.includes('unique')) alert('This slot is already booked.');
     else alert('Booking error: '+error.message);
