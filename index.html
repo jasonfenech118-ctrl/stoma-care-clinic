@@ -853,7 +853,7 @@ async function loadTodaySnapshot(){
   const d=new Date(snapCurrentDate+'T12:00:00');
   const isToday=snapCurrentDate===TODAY;
   document.getElementById('snap-date').textContent=d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+(isToday?' (Today)':'');
-  const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,phone_number), staff(full_name)').eq('appt_date',snapCurrentDate).order('appt_slot');
+  const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,phone_number), staff(full_name), bank_staff(full_name)').eq('appt_date',snapCurrentDate).order('appt_slot');
   const body=document.getElementById('snap-body');
   const countEl=document.getElementById('snap-count');
   const booked=(appts||[]).filter(a=>a.status!=='cancelled');
@@ -1043,7 +1043,7 @@ async function loadAppts(){
 
   // Load all appointments for this date
   const{data:appts}=await SB.from('appointments')
-    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)')
+    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)')
     .eq('appt_date',date).order('appt_slot');
 
   const totalBooked=(appts||[]).filter(a=>a.status!=='cancelled').length;
@@ -1079,14 +1079,17 @@ async function loadAppts(){
     bHtml+=`<tr><td class="td-time">${slot}</td>`;
     nurses.forEach(nurse=>{
       // Find appointment for this slot + nurse
-      // Common column matches appointments with no assigned nurse (assigned_to is null)
       const appt=(appts||[]).find(a=>{
         const slotMatch=a.appt_slot?.slice(0,5)===slot;
         if(nurse.type==='common'){
-          return slotMatch && !a.assigned_to;
+          return slotMatch && !a.assigned_to && !a.bank_staff_id;
         }
-        const nurseMatch=a.assigned_to===nurse.id;
-        return slotMatch&&nurseMatch;
+        if(nurse.type==='ot'){
+          // OT nurses stored in bank_staff_id
+          return slotMatch && a.bank_staff_id===nurse.id;
+        }
+        // Core staff and TIL-in matched by assigned_to
+        return slotMatch && a.assigned_to===nurse.id;
       });
       if(appt){
         const sc={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'}[appt.status]||'sb-booked';
@@ -1101,6 +1104,7 @@ async function loadAppts(){
             <div class="ncb-name" style="${appt.status==='cancelled'?'text-decoration:line-through;':''}">${appt.patients?.first_name} ${appt.patients?.surname}</div>
             <div class="ncb-id">🪪 ${appt.patients?.id_card}</div>
             ${appt.patients?.phone_number?`<div class="ncb-phone">📞 ${appt.patients.phone_number}</div>`:''}
+            ${(appt.staff?.full_name||appt.bank_staff?.full_name)?`<div style="font-size:11px;color:var(--teal);font-weight:600;">👩‍⚕️ ${appt.staff?.full_name||appt.bank_staff?.full_name}</div>`:''}
             <div class="ncb-actions">
               ${appt.status!=='attended'?`<button class="ncb-btn ncb-attended" onclick="setApptStatus('${appt.id}','attended','${date}')">✓ Attended</button>`:''}
               ${appt.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setApptStatus('${appt.id}','did_not_attend','${date}')">✗ DNTU</button>`:''}
@@ -1235,7 +1239,7 @@ async function loadClinicAudit(){
   const month=document.getElementById('ca-month')?.value;
   const year=document.getElementById('ca-year')?.value;
   const asc=caSort==='asc';
-  let query=SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
+  let query=SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
   if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',`${year}-${month}-31`);}
   else if(year){query=query.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
   const{data}=await query;
@@ -1254,7 +1258,7 @@ async function loadClinicAudit(){
     <td><strong>${a.patients?.first_name} ${a.patients?.surname}</strong></td>
     <td style="font-family:monospace;font-size:12px;">${a.patients?.id_card}</td>
     <td>${a.patients?.phone_number||'—'}</td>
-    <td>${a.staff?.full_name||'—'}</td>
+    <td>${a.staff?.full_name||a.bank_staff?.full_name||'—'}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
       <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
@@ -1319,15 +1323,29 @@ async function saveAppt(slot,date,nurseId){
   let patId=pat?.id;
   if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
   if(!patId){alert('Error saving patient.');return;}
-  // Common column = no nurse assigned (null)
-  const assignedTo = (nurseId && nurseId!=='undefined' && nurseId!=='' && nurseId!=='common') ? nurseId : null;
+  // Determine if nurse is core staff or bank/OT staff
+  const isCommon = !nurseId || nurseId==='' || nurseId==='undefined' || nurseId==='common';
+  let assignedTo = null;      // core staff id -> staff table
+  let bankStaffId = null;     // OT/bank staff id -> bank_staff table
+
+  if(!isCommon){
+    // Check if nurseId belongs to core staff or bank staff
+    const coreMatch = staffList.find(s=>s.id===nurseId);
+    if(coreMatch){
+      assignedTo = nurseId;   // core staff
+    } else {
+      bankStaffId = nurseId;  // OT/bank staff
+    }
+  }
 
   // Check if this slot+nurse combo is already booked
   let checkQ = SB.from('appointments').select('id').eq('appt_date',date).eq('appt_slot',slot).neq('status','cancelled');
   if(assignedTo){
     checkQ = checkQ.eq('assigned_to', assignedTo);
+  } else if(bankStaffId){
+    checkQ = checkQ.eq('bank_staff_id', bankStaffId);
   } else {
-    checkQ = checkQ.is('assigned_to', null);
+    checkQ = checkQ.is('assigned_to', null).is('bank_staff_id', null);
   }
   const{data:existing} = await checkQ;
   if(existing && existing.length > 0){
@@ -1335,11 +1353,16 @@ async function saveAppt(slot,date,nurseId){
     return;
   }
 
-  const{error}=await SB.from('appointments').insert({
-    patient_id:patId,appt_date:date,appt_slot:slot,
+  const insertData = {
+    patient_id:patId,
+    appt_date:date,
+    appt_slot:slot,
     assigned_to:assignedTo,
+    bank_staff_id:bankStaffId,
     status:'booked'
-  });
+  };
+
+  const{error}=await SB.from('appointments').insert(insertData);
   if(error){
     if(error.message?.includes('unique')){
       alert('This slot is already booked. Please choose a different slot or nurse.');
