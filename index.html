@@ -326,16 +326,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="ot-list-wrap">
         <div class="ot-list-hdr">⏰ Overtime Nurses — <span id="ot-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
-          <thead><tr><th>Nurse Name</th><th>Date</th><th>Start</th><th>Working Until</th><th>Hours</th></tr></thead>
-          <tbody id="ot-tbody"><tr><td colspan="5" class="empty">No overtime nurses</td></tr></tbody>
+          <thead><tr><th>Nurse Name</th><th>Date</th><th>Start</th><th>Working Until</th><th>Hours</th><th></th></tr></thead>
+          <tbody id="ot-tbody"><tr><td colspan="6" class="empty">No overtime nurses</td></tr></tbody>
         </table>
       </div>
       <!-- TIL LIST -->
       <div class="til-list-wrap">
         <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
-          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th></tr></thead>
-          <tbody id="til-tbody"><tr><td colspan="6" class="empty">No TIL records</td></tr></tbody>
+          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
+          <tbody id="til-tbody"><tr><td colspan="7" class="empty">No TIL records</td></tr></tbody>
         </table>
       </div>
       <!-- PATIENT SNAPSHOT -->
@@ -793,7 +793,7 @@ function renderOTList(bd,filterDate){
   const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
   document.getElementById('ot-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('ot-tbody');
-  if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="5" class="empty">No overtime nurses</td></tr>';return;}
+  if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No overtime nurses</td></tr>';return;}
   const sorted=[...bd].sort((a,b)=>a.work_date.localeCompare(b.work_date));
   tbody.innerHTML=sorted.map(b=>{
     const start=b.shift_start?.slice(0,5)||'07:00',end=b.shift_end?.slice(0,5)||'—';
@@ -802,7 +802,13 @@ function renderOTList(bd,filterDate){
     const dt=new Date(b.work_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const hol=isHol(b.work_date);
-    return`<tr><td><strong>${b.bank_staff.full_name}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td></tr>`;
+    return`<tr>
+      <td><strong>${b.bank_staff.full_name}</strong></td>
+      <td>${dayLabel}${hol?' 🇲🇹':''}</td>
+      <td>${start}</td><td>${end}</td>
+      <td><span class="ot-badge">${hrs}</span></td>
+      <td><button onclick="deleteOT('${b.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td>
+    </tr>`;
   }).join('');
 }
 
@@ -810,7 +816,7 @@ async function renderTILList(data,filterDate){
   const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
   document.getElementById('til-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('til-tbody');
-  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';return;}
+  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No TIL records</td></tr>';return;}
   tbody.innerHTML=data.map(r=>{
     const dt=new Date(r.start_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
@@ -820,7 +826,14 @@ async function renderTILList(data,filterDate){
     const hoursMatch=r.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
     const timeMatch=r.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
     const startT=timeMatch?timeMatch[1]:'07:00',untilT=timeMatch?timeMatch[2]:'—';
-    return`<tr><td><strong>${r.staff?.full_name}</strong></td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}h</span></td></tr>`;
+    return`<tr>
+      <td><strong>${r.staff?.full_name}</strong></td>
+      <td>${dayLabel}</td>
+      <td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td>
+      <td>${startT}</td><td>${untilT}</td>
+      <td><span class="til-badge">${hrs}h</span></td>
+      <td><button onclick="deleteTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td>
+    </tr>`;
   }).join('');
 }
 
@@ -1202,7 +1215,7 @@ async function loadStaffAudit(){
   else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';return`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days}</strong> days</td><td style="color:var(--muted)">${l.notes||'—'}</td></tr>`;}).join('');}
   renderSimple('sick-tbody',sick);renderSimple('study-tbody',study);renderSimple('overtime-tbody',ot);
   const tilTb=document.getElementById('til-audit-tbody');
-  if(!tilOnly.length){tilTb.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';}
+  if(!tilOnly.length){tilTb.innerHTML='<tr><td colspan="7" class="empty">No TIL records</td></tr>';}
   else{tilTb.innerHTML=tilOnly.map(l=>{
     const isOff=l.notes?.startsWith('TIL-Off');
     const typeLabel=isOff?'TIL Off':'TIL In';
@@ -1500,6 +1513,19 @@ async function loadReports(){
       {label:'TIL Hours',data:otStaff.map(n=>tilByStaff[n]||0),backgroundColor:PALETTE.teal,borderRadius:4,stack:'ot'},
     ]
   },{...baseOpts,scales:{x:{...baseOpts.scales.x,stacked:true},y:{...baseOpts.scales.y,stacked:true,title:{display:true,text:'Hours',font:FONT}}}});
+}
+
+async function deleteOT(id){
+  if(!confirm('Delete this overtime entry? This cannot be undone.'))return;
+  await SB.from('bank_staff_assignments').delete().eq('id',id);
+  renderRoster();
+}
+
+async function deleteTIL(id){
+  if(!confirm('Delete this TIL entry? This cannot be undone.'))return;
+  await SB.from('leave_records').delete().eq('id',id);
+  renderRoster();
+  loadStaffAudit();
 }
 
 function openMo(){document.getElementById('mo').classList.add('open');}
