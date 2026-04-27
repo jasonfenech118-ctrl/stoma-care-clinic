@@ -933,7 +933,16 @@ function pickCode(v,el){selCode=v;document.querySelectorAll('.sp-btn').forEach(b
 async function saveShift(staffId,date){
   const notes=document.getElementById('snotes').value;
   await SB.from('roster').upsert({staff_id:staffId,roster_date:date,status:selCode,notes},{onConflict:'staff_id,roster_date'});
-  closeModal();renderRoster();
+  // Auto-create leave record for sick/annual/maternity/study leave if not already recorded
+  const leaveMap={sick_leave:'sick_leave',annual_leave:'annual_leave',maternity_leave:'maternity_leave',study_leave:'study_leave'};
+  if(leaveMap[selCode]){
+    // Check if record already exists for this date
+    const{data:existing}=await SB.from('leave_records').select('id').eq('staff_id',staffId).eq('leave_type',leaveMap[selCode]).eq('start_date',date).eq('end_date',date);
+    if(!existing||!existing.length){
+      await SB.from('leave_records').insert({staff_id:staffId,leave_type:leaveMap[selCode],start_date:date,end_date:date,notes:notes||`Set via roster on ${date}`});
+    }
+  }
+  closeModal();renderRoster();loadStaffAudit();
 }
 
 // APPOINTMENTS — MULTI-COLUMN PER NURSE
@@ -962,21 +971,19 @@ async function getWorkingNurses(date){
   for(const st of staffList){
     const e=(rd||[]).find(r=>r.staff_id===st.id);
     const isTilOff=tilOffIds.has(st.id);
-    if(isTilOff) continue; // TIL Off = absent, no column
+    if(isTilOff) continue;
 
     if(e){
-      // Has explicit roster entry — only working if status is 'working' or 'overtime'
+      // Has explicit roster entry
       if(!OFF_STATUSES.includes(e.status)){
         nurses.push({id:st.id,name:st.full_name,type:'core',status:e.status});
       }
-      // If sick/off/leave — NO column (but booked patients handled separately)
     }else{
       // No roster entry — use pattern default
       const def=defaultCode(st,date);
       if(def==='working'){
         nurses.push({id:st.id,name:st.full_name,type:'core',status:'working'});
       }
-      // If pattern says off — NO column
     }
   }
 
@@ -985,14 +992,20 @@ async function getWorkingNurses(date){
     if(t.staff?.full_name){
       // Avoid duplicating if already in core list
       const alreadyAdded=nurses.find(n=>n.id===t.staff_id);
-      if(!alreadyAdded) nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til-in',status:'til-in'});
+      if(!alreadyAdded) nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til-in',status:'til-in',isBankStaff:false});
     }
   }
 
   // OT nurses — always add their column
   for(const b of(otToday||[])){
     if(b.bank_staff?.full_name){
-      nurses.push({id:b.bank_staff_id,name:b.bank_staff.full_name,type:'ot',status:'ot'});
+      nurses.push({
+        id:b.bank_staff_id,       // bank_staff table id
+        name:b.bank_staff.full_name,
+        type:'ot',
+        status:'ot',
+        isBankStaff:true           // flag to use bank_staff_id field
+      });
     }
   }
 
@@ -1078,18 +1091,18 @@ async function loadAppts(){
   SLOTS.forEach(slot=>{
     bHtml+=`<tr><td class="td-time">${slot}</td>`;
     nurses.forEach(nurse=>{
-      // Find appointment for this slot + nurse
+      // Find appointment for this slot + nurse using correct ID field
       const appt=(appts||[]).find(a=>{
         const slotMatch=a.appt_slot?.slice(0,5)===slot;
+        if(!slotMatch) return false;
         if(nurse.type==='common'){
-          return slotMatch && !a.assigned_to && !a.bank_staff_id;
+          return !a.assigned_to && !a.bank_staff_id;
         }
-        if(nurse.type==='ot'){
-          // OT nurses stored in bank_staff_id
-          return slotMatch && a.bank_staff_id===nurse.id;
+        if(nurse.isBankStaff||nurse.type==='ot'){
+          return a.bank_staff_id===nurse.id;
         }
-        // Core staff and TIL-in matched by assigned_to
-        return slotMatch && a.assigned_to===nurse.id;
+        // Core staff (Jason, Jacqueline, Lorraine, TIL-in core)
+        return a.assigned_to===nurse.id;
       });
       if(appt){
         const sc={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'}[appt.status]||'sb-booked';
@@ -1120,7 +1133,7 @@ async function loadAppts(){
         }else if(nurse.type==='common'){
           bHtml+=`<td style="background:#fafafa;"><button class="btn-book-nurse" style="border-color:#adb5bd;color:#6c757d;" onclick="openModal('appt','${slot}','${date}','','Common')">+ Book</button></td>`;
         }else{
-          bHtml+=`<td><button class="btn-book-nurse" onclick="openModal('appt','${slot}','${date}','${nurse.id}','${nurse.name}')">+ Book</button></td>`;
+          bHtml+=`<td><button class="btn-book-nurse" onclick="openModal('appt','${slot}','${date}','${nurse.id}','${nurse.name}','${nurse.isBankStaff?'ot':'core'}')">+ Book</button></td>`;
         }
       }
     });
@@ -1277,6 +1290,10 @@ async function openModal(type,...args){
   let html='';
   if(type==='appt'){
     const[slot,date,nurseId,nurseName]=args;
+    // Encode nurseType in the id string so saveAppt knows which field to use
+    const nurseKey = args[2]||'';
+    const nurseType = args[4]||'core'; // passed as 5th arg
+    const encodedKey = nurseKey ? `${nurseKey}|${nurseType}` : '';
     html=`<h2>Book Patient</h2>
       <div class="msub">${date} — ${slot}${nurseName?` · ${nurseName}`:''}</div>
       <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
@@ -1285,7 +1302,7 @@ async function openModal(type,...args){
       <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-        <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
+        <button class="btn-save" onclick="saveAppt('${slot}','${date}','${encodedKey}')">Book Patient</button>
       </div>`;
   }else if(type==='leave'){
     const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
@@ -1323,18 +1340,19 @@ async function saveAppt(slot,date,nurseId){
   let patId=pat?.id;
   if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
   if(!patId){alert('Error saving patient.');return;}
-  // Determine if nurse is core staff or bank/OT staff
+  // Decode nurseId — format is "uuid|type" where type is 'core' or 'ot'
   const isCommon = !nurseId || nurseId==='' || nurseId==='undefined' || nurseId==='common';
-  let assignedTo = null;      // core staff id -> staff table
-  let bankStaffId = null;     // OT/bank staff id -> bank_staff table
+  let assignedTo = null;
+  let bankStaffId = null;
 
   if(!isCommon){
-    // Check if nurseId belongs to core staff or bank staff
-    const coreMatch = staffList.find(s=>s.id===nurseId);
-    if(coreMatch){
-      assignedTo = nurseId;   // core staff
+    const parts = nurseId.split('|');
+    const nid = parts[0];
+    const ntype = parts[1]||'core';
+    if(ntype==='ot'){
+      bankStaffId = nid;   // OT/bank nurse
     } else {
-      bankStaffId = nurseId;  // OT/bank staff
+      assignedTo = nid;    // core staff
     }
   }
 
@@ -1345,11 +1363,12 @@ async function saveAppt(slot,date,nurseId){
   } else if(bankStaffId){
     checkQ = checkQ.eq('bank_staff_id', bankStaffId);
   } else {
+    // Common: check for null on both fields
     checkQ = checkQ.is('assigned_to', null).is('bank_staff_id', null);
   }
   const{data:existing} = await checkQ;
   if(existing && existing.length > 0){
-    alert('This slot is already booked for this nurse. Please choose a different slot.');
+    alert('This time slot is already booked for this nurse. Please choose a different slot.');
     return;
   }
 
@@ -1543,11 +1562,14 @@ async function loadReports(){
     const n=l.staff?.full_name||'Unknown';
     const hm=l.notes?.match(/([0-9.]+)h/);
     const h=hm?parseFloat(hm[1]):0;
-    tilByStaff[n]=(tilByStaff[n]||0)+h;
+    if(h>0) tilByStaff[n]=(tilByStaff[n]||0)+h;
   });
   otRecs.forEach(l=>{
     const n=l.staff?.full_name||'Unknown';
-    otByStaff[n]=(otByStaff[n]||0)+(l.total_days||0)*12;
+    // Try to get hours from notes if available, otherwise estimate from days
+    const hm=l.notes?.match(/([0-9.]+)h/);
+    const h=hm?parseFloat(hm[1]):(l.total_days||0)*12;
+    if(h>0) otByStaff[n]=(otByStaff[n]||0)+h;
   });
   const otStaff=[...new Set([...Object.keys(otByStaff),...Object.keys(tilByStaff)])];
   makeChart('chart-ot','bar',{
