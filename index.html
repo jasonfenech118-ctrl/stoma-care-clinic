@@ -308,7 +308,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <div class="ot-list-hdr">⏰ Overtime Nurses — <span id="ot-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
           <thead><tr><th>Nurse Name</th><th>Date</th><th>Start</th><th>Working Until</th><th>Hours</th><th></th></tr></thead>
-          <tbody id="ot-tbody"><tr><td colspan="5" class="empty">No overtime nurses</td></tr></tbody>
+          <tbody id="ot-tbody"><tr><td colspan="6" class="empty">No overtime nurses</td></tr></tbody>
         </table>
       </div>
       <!-- TIL LIST -->
@@ -316,7 +316,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
           <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
-          <tbody id="til-tbody"><tr><td colspan="6" class="empty">No TIL records</td></tr></tbody>
+          <tbody id="til-tbody"><tr><td colspan="7" class="empty">No TIL records</td></tr></tbody>
         </table>
       </div>
       <!-- PATIENT SNAPSHOT -->
@@ -496,6 +496,9 @@ const ANCHOR=new Date(2026,3,26);
 function fmt(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function dim(y,m){return new Date(y,m+1,0).getDate();}
 function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
+
+function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
+function monthEndDate(year,month){return `${year}-${month}-${String(new Date(Number(year),Number(month),0).getDate()).padStart(2,'0')}`;}
 
 function defaultCode(staff,dateStr){
   const[y,m,d]=dateStr.split('-').map(Number);
@@ -699,7 +702,7 @@ function renderOTList(bd,filterDate){
   const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
   document.getElementById('ot-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('ot-tbody');
-  if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="5" class="empty">No overtime nurses</td></tr>';return;}
+  if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No overtime nurses</td></tr>';return;}
   const sorted=[...bd].sort((a,b)=>a.work_date.localeCompare(b.work_date));
   tbody.innerHTML=sorted.map(b=>{
     const start=b.shift_start?.slice(0,5)||'07:00',end=b.shift_end?.slice(0,5)||'—';
@@ -708,7 +711,7 @@ function renderOTList(bd,filterDate){
     const dt=new Date(b.work_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const hol=isHol(b.work_date);
-    return`<tr><td><strong>${b.bank_staff.full_name}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button onclick="delTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
+    return`<tr><td><strong>${b.bank_staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button onclick="delOT('${b.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
   }).join('');
 }
 
@@ -716,7 +719,7 @@ async function renderTILList(data,filterDate){
   const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
   document.getElementById('til-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('til-tbody');
-  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';return;}
+  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No TIL records</td></tr>';return;}
   tbody.innerHTML=data.map(r=>{
     const dt=new Date(r.start_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
@@ -726,7 +729,7 @@ async function renderTILList(data,filterDate){
     const hoursMatch=r.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
     const timeMatch=r.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
     const startT=timeMatch?timeMatch[1]:'07:00',untilT=timeMatch?timeMatch[2]:'—';
-    return`<tr><td><strong>${r.staff?.full_name}</strong></td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}h</span></td></tr>`;
+    return`<tr><td><strong>${r.staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}h</span></td><td><button onclick="delTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
   }).join('');
 }
 
@@ -746,7 +749,7 @@ async function loadTodaySnapshot(){
   const d=new Date(snapCurrentDate+'T12:00:00');
   const isToday=snapCurrentDate===TODAY;
   document.getElementById('snap-date').textContent=d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+(isToday?' (Today)':'');
-  const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,phone_number), staff(full_name)').eq('appt_date',snapCurrentDate).order('appt_slot');
+  const{data:appts}=await SB.from('appointments').select('*, patients(first_name,surname,phone_number), staff(full_name), bank_staff(full_name)').eq('appt_date',snapCurrentDate).order('appt_slot');
   const body=document.getElementById('snap-body');
   const countEl=document.getElementById('snap-count');
   const booked=(appts||[]).filter(a=>a.status!=='cancelled');
@@ -757,7 +760,7 @@ async function loadTodaySnapshot(){
   body.innerHTML=appts.map(a=>`<div class="pt-row">
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
     <div style="flex:1;"><div style="font-weight:600;">${a.patients?.first_name} ${a.patients?.surname}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${a.patients.phone_number}</div>`:''}</div>
-    ${a.staff?`<div style="font-size:11px;color:var(--muted);">${a.staff.full_name}</div>`:''}
+    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);">${a.staff?.full_name||a.bank_staff?.full_name||'Common'}</div>`:''}
     <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
   </div>`).join('');
 }
@@ -795,7 +798,7 @@ async function addTIL(type){
   if(!staffId){alert('Error saving staff.');return;}
   const typeLabel=type==='off'?'TIL-Off':'TIL-In';
   const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
-  if(coreFound?.[0]?.id){await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,notes:tilNote});}
+  if(coreFound?.[0]?.id){await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});}
   else{await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});}
   document.getElementById('til-name').value='';document.getElementById('til-until').value='';
   renderRoster();loadStaffAudit();
@@ -824,9 +827,32 @@ function openShift(staffId,staffName,date){
 }
 function pickCode(v,el){selCode=v;document.querySelectorAll('.sp-btn').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');}
 async function saveShift(staffId,date){
-  const notes=document.getElementById('snotes').value;
+  const notes=document.getElementById('snotes').value.trim();
   await SB.from('roster').upsert({staff_id:staffId,roster_date:date,status:selCode,notes},{onConflict:'staff_id,roster_date'});
-  closeModal();renderRoster();
+
+  // Keep Staff Audit aligned with roster changes.
+  // Only delete records auto-created by the roster, never manually entered records.
+  await SB.from('leave_records')
+    .delete()
+    .eq('staff_id',staffId)
+    .eq('start_date',date)
+    .eq('end_date',date)
+    .like('notes','Auto roster:%');
+
+  const leaveTypes=['sick_leave','maternity_leave','study_leave','annual_leave'];
+  if(leaveTypes.includes(selCode)){
+    const label={sick_leave:'Sick Leave',maternity_leave:'Maternity Leave',study_leave:'Study Leave',annual_leave:'Annual Leave'}[selCode]||selCode;
+    await SB.from('leave_records').insert({
+      staff_id:staffId,
+      leave_type:selCode,
+      start_date:date,
+      end_date:date,
+      total_days:1,
+      notes:`Auto roster: ${label}${notes?' — '+notes:''}`
+    });
+  }
+
+  closeModal();renderRoster();loadStaffAudit();
 }
 
 // APPOINTMENTS — MULTI-COLUMN PER NURSE
@@ -1012,7 +1038,7 @@ async function loadAppts(){
           html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:#fff5f5;text-align:center;color:#ccc;font-size:11px;">—</td>`;
         }else{
           html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};">
-            <button onclick="bookSlot('${slot}','${date}','${n.id}','${n.name}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
+            <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
           </td>`;
         }
       }
@@ -1025,23 +1051,34 @@ async function loadAppts(){
 
 async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();}
 async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();}
-async function bookSlot(slot,date,nid,nname){
-  const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
-  const opts='<option value="">No specific nurse</option>'+(sd||[]).map(s=>'<option value="'+s.id+'">'+s.full_name+'</option>').join('');
-  document.getElementById('mb').innerHTML='<h2>Book Patient</h2><div class="msub">'+date+' - '+slot+'</div><div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div><div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div><div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div><div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div><div class="fg"><label>Nurse</label><select id="p-nurse">'+opts+'</select></div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook(\''+slot+'\',\''+date+'\',\''+nid+'\')">Book Patient</button></div>';
+async function bookSlot(slot,date,nid,nname,ntype){
+  const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
+  document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
+    <div class="msub">${date} - ${slot} · ${targetLabel}</div>
+    <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
+    <div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${slot}','${date}','${nid}','${ntype}')">Book Patient</button></div>`;
   openMo();
 }
-async function doBook(slot,date,nurseIdParam){
+async function doBook(slot,date,nurseIdParam,nurseType){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
   const id=document.getElementById('p-id').value.trim();
   const ph=document.getElementById('p-ph').value.trim();
-  const nid=nurseIdParam||document.getElementById('p-nurse')?.value||'';
   if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
-  let{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
-  if(!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
+
+  let{data:pat,error:patErr}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
+  if(patErr&&!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
   if(!pat?.id){alert('Error saving patient.');return;}
-  const{error}=await SB.from('appointments').insert({patient_id:pat.id,appt_date:date,appt_slot:slot,assigned_to:nid||null,status:'booked'});
+
+  const payload={patient_id:pat.id,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
+  if(nurseType==='ot') payload.bank_staff_id=nurseIdParam;
+  else if(nurseType==='common') { payload.assigned_to=null; payload.bank_staff_id=null; }
+  else if(nurseIdParam&&nurseIdParam!=='undefined') payload.assigned_to=nurseIdParam;
+
+  const{error}=await SB.from('appointments').insert(payload);
   if(error){alert('Booking error: '+error.message);return;}
   closeModal();loadAppts();loadTodaySnapshot();
 }
@@ -1097,7 +1134,7 @@ async function loadStaffAudit(){
   const month=document.getElementById('audit-month')?.value;
   const year=document.getElementById('audit-year')?.value;
   let query=SB.from('leave_records').select('*, staff(full_name,role)').order('start_date',{ascending:false});
-  if(year&&month){query=query.gte('start_date',`${year}-${month}-01`).lte('start_date',`${year}-${month}-31`);}
+  if(year&&month){query=query.gte('start_date',`${year}-${month}-01`).lte('start_date',monthEndDate(year,month));}
   else if(year){query=query.gte('start_date',`${year}-01-01`).lte('start_date',`${year}-12-31`);}
   const{data}=await query;
   const all=data||[];
@@ -1145,8 +1182,8 @@ async function loadClinicAudit(){
   const month=document.getElementById('ca-month')?.value;
   const year=document.getElementById('ca-year')?.value;
   const asc=caSort==='asc';
-  let query=SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
-  if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',`${year}-${month}-31`);}
+  let query=SB.from('appointments').select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
+  if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',monthEndDate(year,month));}
   else if(year){query=query.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
   const{data}=await query;
   const tot=data?.length||0,att=data?.filter(a=>a.status==='attended').length||0,can=data?.filter(a=>a.status==='cancelled').length||0,dna=data?.filter(a=>a.status==='did_not_attend').length||0;
@@ -1164,7 +1201,7 @@ async function loadClinicAudit(){
     <td><strong>${a.patients?.first_name} ${a.patients?.surname}</strong></td>
     <td style="font-family:monospace;font-size:12px;">${a.patients?.id_card}</td>
     <td>${a.patients?.phone_number||'—'}</td>
-    <td>${a.staff?.full_name||'—'}</td>
+    <td>${a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—')}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
       <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
@@ -1245,8 +1282,11 @@ async function saveLeave(){
   const end=document.getElementById('l-end').value;
   const notes=document.getElementById('l-notes').value;
   if(!sid||!start||!end){alert('Please fill in all required fields.');return;}
-  await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,notes});
-  closeModal();loadStaffAudit();
+  const sd=new Date(start+'T12:00:00'),ed=new Date(end+'T12:00:00');
+  if(ed<sd){alert('End date cannot be before start date.');return;}
+  const totalDays=Math.round((ed-sd)/86400000)+1;
+  await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
+  closeModal();loadStaffAudit();renderRoster();
 }
 
 async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();}
