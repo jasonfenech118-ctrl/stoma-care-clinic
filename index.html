@@ -315,7 +315,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="til-list-wrap">
         <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
-          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th></tr></thead>
+          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
           <tbody id="til-tbody"><tr><td colspan="6" class="empty">No TIL records</td></tr></tbody>
         </table>
       </div>
@@ -708,7 +708,7 @@ function renderOTList(bd,filterDate){
     const dt=new Date(b.work_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const hol=isHol(b.work_date);
-    return`<tr><td><strong>${b.bank_staff.full_name}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td></tr>`;
+    return`<tr><td><strong>${b.bank_staff.full_name}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button onclick="delTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
   }).join('');
 }
 
@@ -922,49 +922,121 @@ async function getNursesWithBookings(date, workingNurses){
 async function loadAppts(){
   const date=document.getElementById('appt-date').value;
   if(!date)return;
-  const{data:appts,error:qErr}=await SB.from('appointments')
-    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name)')
+
+  // Get working nurses for columns
+  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+  const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
+  const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
+  const offIds=new Set((tilOff||[]).map(t=>t.staff_id));
+  const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+
+  // Build nurse columns
+  const nurses=[];
+  for(const st of staffList){
+    if(offIds.has(st.id))continue;
+    const e=(rd||[]).find(r=>r.staff_id===st.id);
+    if(e){if(!OFF_ST.includes(e.status))nurses.push({id:st.id,name:st.full_name,type:'core'});}
+    else{if(defaultCode(st,date)==='working')nurses.push({id:st.id,name:st.full_name,type:'core'});}
+  }
+  for(const t of(tilIn||[])){
+    if(t.staff?.full_name&&!nurses.find(n=>n.id===t.staff_id))
+      nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til'});
+  }
+  for(const b of(otToday||[])){
+    if(b.bank_staff?.full_name)
+      nurses.push({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
+  }
+  nurses.push({id:'common',name:'Common',type:'common'});
+
+  const wc=nurses.filter(n=>n.type!=='common').length;
+  const badge=document.getElementById('sbadge');
+  badge.textContent=`${wc} nurse${wc!==1?'s':''} working`;
+  badge.className='sbadge '+(wc>=2?'sb-ok':wc===1?'sb-warn':'sb-none');
+
+  // Load appointments - appt_slot stored as HH:MM:00
+  const{data:appts}=await SB.from('appointments')
+    .select('*, patients(first_name,surname,id_card,phone_number), staff(full_name), bank_staff(full_name)')
     .eq('appt_date',date).order('appt_slot');
-  if(qErr){console.error('Query error:',qErr);alert('Error loading appointments: '+qErr.message);return;}
+
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
-  document.getElementById('appt-slot-summary').textContent=booked+' / 11 slots booked';
+  document.getElementById('appt-slot-summary').textContent=`${booked} patients booked`;
+
   const con=document.getElementById('slots-container');
   if(!con)return;
-  con.innerHTML='';
-  ['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'].forEach(slot=>{
-    const a=(appts||[]).find(x=>{
-      if(!x.appt_slot)return false;
-      const s=String(x.appt_slot);
-      return s===slot||s===slot+':00'||s.startsWith(slot);
-    });
-    const div=document.createElement('div');
-    div.style.cssText='display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid #dde3ea;';
-    const t='<div style="font-weight:700;color:#0d7377;min-width:55px;font-size:14px;">'+slot+'</div>';
-    if(a){
-      const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[a.status]||'#f0faf9';
-      const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[a.status]||'';
-      div.style.background=bg;
-      div.innerHTML=t+'<div style="flex:1;"><div style="font-weight:600;font-size:13px;">'+( a.patients?.first_name||'')+' '+(a.patients?.surname||'')+'</div><div style="font-size:11px;color:#7a8fa6;">ID: '+(a.patients?.id_card||'')+'</div>'+(a.staff?.full_name?'<div style="font-size:11px;color:#0d7377;">'+ a.staff.full_name+'</div>':'')+'</div>'+'<span style="padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);">'+sl+'</span>'+'<button onclick="setAS(\''+ a.id+'\',\'attended\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">Attended</button>'+'<button onclick="setAS(\''+a.id+'\',\'did_not_attend\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;margin-left:4px;">DNTU</button>'+'<button onclick="setAS(\''+a.id+'\',\'cancelled\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;margin-left:4px;">Cancel</button>'+'<button onclick="delApp(\''+a.id+'\')" style="padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;margin-left:4px;">Del</button>';
-    }else{
-      div.innerHTML=t+'<div style="flex:1;color:#7a8fa6;font-style:italic;">Available</div>'+'<button onclick="bookSlot(\''+slot+'\',\''+date+'\')" style="padding:8px 20px;background:#0d7377;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">+ Book Patient</button>';
-    }
-    con.appendChild(div);
+
+  // Build table
+  let html='<table style="width:100%;border-collapse:collapse;">';
+  // Header
+  html+='<thead><tr><th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#7a8fa6;border-bottom:2px solid #dde3ea;background:#fafafa;min-width:65px;">Time</th>';
+  nurses.forEach(n=>{
+    let badge='';
+    if(n.type==='ot') badge='<span style="font-size:9px;background:#e6a817;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">OT</span>';
+    else if(n.type==='til') badge='<span style="font-size:9px;background:#0d7377;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">TIL</span>';
+    else if(n.type==='common') badge='<span style="font-size:9px;background:#6c757d;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">General</span>';
+    html+=`<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#1a2e4a;border-bottom:2px solid #dde3ea;border-left:1px solid #dde3ea;background:#fafafa;">${n.name}${badge}</th>`;
   });
+  html+='</tr></thead><tbody>';
+
+  // Rows
+  ['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'].forEach(slot=>{
+    html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
+    nurses.forEach(n=>{
+      // Match appt - slot stored as HH:MM:00, compare first 5 chars
+      const appt=(appts||[]).find(a=>{
+        const s=String(a.appt_slot||'').slice(0,5);
+        if(s!==slot)return false;
+        if(n.type==='common') return !a.assigned_to&&!a.bank_staff_id;
+        if(n.type==='ot') return a.bank_staff_id===n.id||a.assigned_to===n.id;
+        return a.assigned_to===n.id;
+      });
+      const cellBg=n.type==='common'?'#fafafa':'#fff';
+      if(appt){
+        const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
+        const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
+        const nm=(appt.patients?.first_name||'')+' '+(appt.patients?.surname||'');
+        html+=`<td style="padding:8px 10px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${bg};vertical-align:top;">
+          <div style="font-weight:600;font-size:12px;">${nm}</div>
+          <div style="font-size:10px;color:#7a8fa6;">${appt.patients?.id_card||''}</div>
+          ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞${appt.patients.phone_number}</div>`:''}
+          <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
+            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
+            ${appt.status!=='attended'?`<button onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✓</button>`:''}
+            ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
+            ${appt.status!=='cancelled'?`<button onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>`:''}
+            <button onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
+          </div>
+        </td>`;
+      }else{
+        if(n.type==='absent'){
+          html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:#fff5f5;text-align:center;color:#ccc;font-size:11px;">—</td>`;
+        }else{
+          html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};">
+            <button onclick="bookSlot('${slot}','${date}','${n.id}','${n.name}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
+          </td>`;
+        }
+      }
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  con.innerHTML=html;
 }
+
 async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();}
 async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();}
-async function bookSlot(slot,date){
+async function bookSlot(slot,date,nid,nname){
   const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
   const opts='<option value="">No specific nurse</option>'+(sd||[]).map(s=>'<option value="'+s.id+'">'+s.full_name+'</option>').join('');
-  document.getElementById('mb').innerHTML='<h2>Book Patient</h2><div class="msub">'+date+' - '+slot+'</div><div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div><div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div><div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div><div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div><div class="fg"><label>Nurse</label><select id="p-nurse">'+opts+'</select></div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook(\''+slot+'\',\''+date+'\')">Book Patient</button></div>';
+  document.getElementById('mb').innerHTML='<h2>Book Patient</h2><div class="msub">'+date+' - '+slot+'</div><div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div><div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div><div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div><div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div><div class="fg"><label>Nurse</label><select id="p-nurse">'+opts+'</select></div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook(\''+slot+'\',\''+date+'\',\''+nid+'\')">Book Patient</button></div>';
   openMo();
 }
-async function doBook(slot,date){
+async function doBook(slot,date,nurseIdParam){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
   const id=document.getElementById('p-id').value.trim();
   const ph=document.getElementById('p-ph').value.trim();
-  const nid=document.getElementById('p-nurse').value;
+  const nid=nurseIdParam||document.getElementById('p-nurse')?.value||'';
   if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
   let{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
   if(!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
