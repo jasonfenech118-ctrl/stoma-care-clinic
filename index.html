@@ -1,516 +1,1581 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MDH Surgical Staffing</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    :root{
-      --primary:#4f8fcf;
-      --primary-dark:#2f6fae;
-      --primary-soft:#eef7ff;
-      --primary-border:#c9e2f7;
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MDH Stoma Care Clinic — Roster</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
+  --red:#c0392b;--green:#27ae60;--orange:#e67e22;--blue:#2980b9;
+  --bg:#f0f2f5;--white:#fff;--border:#dde3ea;--text:#1a2e2d;--muted:#7a8fa6;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;}
 
-      --green:#2f8f5b;
-      --green-soft:#eaf8f0;
-      --green-border:#ccebd9;
+#login-screen{min-height:100vh;background:linear-gradient(135deg,var(--navy),var(--teal));display:flex;align-items:center;justify-content:center;}
+.lc{background:white;border-radius:16px;padding:44px 40px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;}
+.lc .ico{font-size:40px;margin-bottom:14px;}
+.lc h1{font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;}
+.lc p{color:var(--muted);font-size:13px;margin-bottom:28px;}
+.lc input{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;margin-bottom:10px;outline:none;}
+.lc input:focus{border-color:var(--teal);}
+.lc .btn-li{width:100%;padding:12px;background:var(--navy);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
+.lc .btn-li:hover{background:var(--teal);}
+.lerr{color:var(--red);font-size:12px;margin-top:8px;}
 
-      --red:#b85c5c;
-      --red-soft:#fff0f0;
-      --red-border:#f2cdcd;
+#app{display:none;min-height:100vh;}
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--navy);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.2);}
+.tb-logo{font-size:15px;font-weight:700;color:white;}.tb-logo span{color:var(--gold);}
+.tb-date{font-size:12px;color:rgba(255,255,255,.55);margin-left:16px;}
+.btn-so{padding:6px 14px;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);background:none;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;}
+.btn-so:hover{background:rgba(255,255,255,.1);}
+.tabs{position:fixed;top:52px;left:0;right:0;background:white;border-bottom:2px solid var(--border);display:flex;padding:0 24px;z-index:200;height:44px;box-shadow:0 2px 4px rgba(0,0,0,.05);overflow-x:auto;}
+.tab{padding:0 16px;height:44px;display:flex;align-items:center;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;white-space:nowrap;}
+.tab:hover{color:var(--navy);}
+.tab.active{color:var(--navy);border-bottom-color:var(--teal);font-weight:600;}
+.main{padding:100px 24px 40px;}
+.page{display:none;animation:fi .2s ease;}
+.page.active{display:block;}
+@keyframes fi{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+.phdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.phdr h2{font-size:20px;font-weight:700;color:var(--navy);}
+.phdr p{font-size:12px;color:var(--muted);margin-top:3px;}
+.btn-add{padding:8px 18px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
+.btn-add:hover{opacity:.85;}
 
-      --amber:#b9852f;
-      --amber-soft:#fff8e8;
-      --amber-border:#f3dfad;
+/* LEGEND */
+.legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:white;border-radius:8px;border:1px solid var(--border);}
+.leg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+.ld{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+.dc-D{background:#1a2e4a;color:#fff;}.dc-R{background:#ecf0f1;color:#95a5a6;border:1px solid #d5d8dc;}
+.dc-S{background:#c0392b;color:#fff;}.dc-M{background:#e91e8c;color:#fff;}
+.dc-St{background:#2980b9;color:#fff;}.dc-OT{background:#e6a817;color:#fff;}
+.dc-L{background:#27ae60;color:#fff;}.dc-TO{background:#0d7377;color:#fff;}.dc-TI{background:#14a085;color:#fff;}
+.dc-O{background:transparent;color:#ddd;}
 
-      --purple:#7a69c7;
-      --purple-soft:#f3f0ff;
-      --purple-border:#ddd6ff;
+/* OT/TIL BARS */
+.ot-bar{background:white;border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
+.ot-field{display:flex;flex-direction:column;gap:4px;}
+.ot-field label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.ot-field input{padding:7px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.ot-field input:focus{border-color:var(--teal);}
+.btn-ot{padding:8px 18px;background:var(--gold);color:white;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;align-self:flex-end;}
+.btn-til-off{padding:8px 18px;background:var(--teal);color:white;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;align-self:flex-end;}
+.btn-til-in{padding:8px 18px;background:var(--navy);color:white;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;align-self:flex-end;margin-left:4px;}
+.info-note{font-size:11px;color:var(--muted);padding:2px 4px 8px;}
 
-      --grey:#6f7d8d;
-      --grey-soft:#f5f7fa;
-      --grey-border:#e5eaf0;
+/* MONTH NAV */
+.mnav{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.mnav button{padding:6px 14px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;color:var(--navy);font-weight:500;}
+.mnav button:hover{border-color:var(--teal);color:var(--teal);}
+.mlbl{font-size:17px;font-weight:700;color:var(--navy);min-width:160px;}
+.jump-section{display:flex;align-items:center;gap:6px;margin-left:16px;padding-left:16px;border-left:1px solid var(--border);}
+.jump-section label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
+.jump-section input[type=date]{padding:6px 10px;border:1.5px solid var(--teal);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.jump-arrow{padding:5px 11px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);}
+.jump-arrow:hover{border-color:var(--teal);color:var(--teal);}
+.jump-clear{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:11px;font-family:'Inter',sans-serif;cursor:pointer;color:var(--muted);}
 
-      --bg:#f7fafd;
-      --card:#ffffff;
-      --text:#243142;
-      --muted:#718096;
-      --border:#e1e8f0;
-      --header:#f4faff;
-      --shadow:0 10px 28px rgba(55,94,130,.08);
-      --shadow-soft:0 3px 12px rgba(55,94,130,.06);
-      --radius:16px;
-    }
+/* ROSTER TABLE */
+.roster-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border);background:white;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.rt{border-collapse:collapse;min-width:100%;}
+.rt thead tr th{padding:4px 3px;text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.85);background:var(--navy);border-right:1px solid rgba(255,255,255,.07);white-space:nowrap;position:sticky;top:0;z-index:10;line-height:1.3;}
+.rt thead tr th.th-name{text-align:left;padding-left:16px;min-width:150px;font-size:11px;}
+.rt thead tr th.th-role{text-align:left;padding-left:10px;min-width:120px;font-size:11px;}
+.rt thead tr th.th-today{color:var(--gold);background:#1f3555;}
+.rt thead tr th.th-hol{background:#1a3822;}
+.rt thead tr th.th-sun{background:#1e2e40;color:rgba(255,255,255,.5);}
+.rt thead tr th.th-sel{background:var(--teal);color:white;}
+.rt tbody td{padding:5px 3px;text-align:center;border-right:1px solid var(--border);border-bottom:1px solid var(--border);vertical-align:middle;}
+.rt tbody td.td-name{text-align:left;padding:9px 16px;font-weight:600;font-size:13px;border-right:1px solid var(--border);min-width:150px;white-space:nowrap;}
+.rt tbody td.td-role{text-align:left;padding:9px 10px;font-size:11px;color:var(--muted);border-right:2px solid var(--border);min-width:120px;}
+.rt tbody tr:hover td{background:#f8fafc;}
+.rt tbody tr.sr td{background:#eef2f7;font-weight:700;font-size:10px;color:var(--navy);padding:6px 16px;letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--border);}
+.rt tbody td.td-today{background:#fffce8!important;}
+.rt tbody td.td-hol{background:#fff9e6!important;}
+.rt tbody td.td-sun{background:#f7f9fb!important;}
+.rt tbody td.td-sel{background:#e8f5f4!important;outline:2px solid var(--teal);outline-offset:-2px;}
+.dchip{width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;transition:transform .12s;user-select:none;}
+.dchip:hover{transform:scale(1.18);box-shadow:0 3px 8px rgba(0,0,0,.18);}
 
-    *{box-sizing:border-box}
+/* OT/TIL LISTS */
+.ot-list-wrap{margin-top:16px;background:white;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden;}
+.ot-list-hdr{background:var(--gold);color:white;padding:10px 16px;font-size:13px;font-weight:700;}
+.til-list-wrap{margin-top:12px;background:white;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden;}
+.til-list-hdr{background:var(--teal);color:white;padding:10px 16px;font-size:13px;font-weight:700;}
+.ot-table{width:100%;border-collapse:collapse;}
+.ot-table th{text-align:left;padding:9px 14px;font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);background:#fafafa;}
+.ot-table td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border);}
+.ot-table tr:last-child td{border-bottom:none;}
+.ot-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#fff8e1;color:#856404;}
+.til-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#e8f5f4;color:var(--teal);}
 
-    body{
-      margin:0;
-      font-family:"Inter",Arial,Helvetica,sans-serif;
-      background:linear-gradient(180deg,#f3f9ff 0%,#f8fbfd 260px,#f7fafd 100%);
-      color:var(--text);
-      font-size:14px;
-      letter-spacing:-.01em;
-    }
+/* PATIENT SNAPSHOT */
+.pt-snap{margin-top:16px;background:white;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden;}
+.pt-snap-hdr{background:var(--teal);color:white;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.pt-snap-nav{display:flex;align-items:center;gap:8px;}
+.pt-snap-nav button{background:white;border:none;color:var(--teal);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px;font-weight:700;}
+.pt-snap-body{padding:14px 16px;}
+.pt-snap-empty{font-size:13px;color:var(--muted);font-style:italic;}
+.pt-count{background:white;color:var(--teal);border-radius:20px;padding:2px 12px;font-size:12px;font-weight:700;}
+.pt-row{display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;background:#fafafa;}
+.pt-row:last-child{margin-bottom:0;}
+.pt-slot{font-weight:700;color:var(--teal);font-size:13px;min-width:50px;}
 
-    header{
-      background:rgba(255,255,255,.86);
-      color:var(--text);
-      padding:16px 24px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:16px;
-      border-bottom:1px solid var(--border);
-      backdrop-filter:blur(12px);
-      position:sticky;
-      top:0;
-      z-index:10;
-    }
+/* APPOINTMENTS - MULTI-COLUMN */
+.appt-date-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+.appt-date-row label{font-size:13px;font-weight:600;color:var(--navy);}
+.appt-date-row input[type=date]{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.sbadge{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;}
+.sb-ok{background:#d4edda;color:#155724;}.sb-warn{background:#fff3cd;color:#856404;}.sb-none{background:#f8d7da;color:#721c24;}
 
-    .brand{display:flex;flex-direction:column;gap:3px}
-    .brand-title{font-weight:800;font-size:19px;color:#1f3f5f;letter-spacing:-.03em}
-    .brand-subtitle{font-size:12px;color:var(--muted);font-weight:500}
-    .top-user{text-align:right;font-size:12px;line-height:1.45;color:var(--muted)}
-    .top-user strong{color:var(--text);font-weight:700}
+/* CLINIC TABLE - multi nurse columns */
+.clinic-wrap{background:white;border-radius:12px;border:1px solid var(--border);overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.05);}
+.clinic-hdr{background:var(--navy);color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;}
+.clinic-hdr h3{font-size:16px;font-weight:700;}.clinic-hdr span{font-size:11px;opacity:.65;}
+.clinic-table{width:100%;border-collapse:collapse;}
+.clinic-table th{padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);border-right:1px solid var(--border);background:#fafafa;white-space:nowrap;}
+.clinic-table th.th-time{text-align:left;min-width:70px;color:var(--navy);}
+.clinic-table th.th-nurse{color:var(--navy);min-width:200px;}
+.clinic-table td{padding:8px 12px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:top;}
+.clinic-table td.td-time{font-weight:700;color:var(--teal);font-size:13px;white-space:nowrap;background:#fafafa;}
+.clinic-table tr:hover td{background:#f8fafc;}
+.clinic-table tr:hover td.td-time{background:#f0f4f8;}
 
-    .container{max-width:1200px;margin:24px auto;padding:0 18px}
+.nurse-cell-empty{color:var(--muted);font-size:12px;font-style:italic;text-align:center;padding:8px 0;}
+.nurse-cell-booked{border-radius:8px;padding:8px 10px;background:#f0faf9;border:1px solid #c8e6e4;}
+.ncb-name{font-weight:600;font-size:13px;color:var(--navy);}
+.ncb-id{font-size:11px;color:var(--muted);}
+.ncb-phone{font-size:11px;color:var(--muted);}
+.ncb-actions{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;}
+.ncb-btn{padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:none;font-family:'Inter',sans-serif;}
+.ncb-attended{background:#d4edda;color:#155724;}
+.ncb-dna{background:#fff3cd;color:#856404;}
+.ncb-cancel{background:#f8d7da;color:#721c24;}
+.ncb-del{background:#f8d7da;color:#721c24;}
+.btn-book-nurse{width:100%;padding:7px;border:2px dashed var(--border);border-radius:7px;background:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;}
+.btn-book-nurse:hover{border-color:var(--teal);color:var(--teal);}
+.status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;margin-bottom:4px;}
+.sb-booked{background:#e3f2fd;color:#0d47a1;}.sb-attended{background:#d4edda;color:#155724;}.sb-cancelled{background:#f8d7da;color:#721c24;}.sb-dna{background:#fff3cd;color:#856404;}
 
-    .card{
-      background:rgba(255,255,255,.94);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      box-shadow:var(--shadow-soft);
-      padding:18px;
-      margin-bottom:16px;
-    }
+/* STAFF AUDIT */
+.srow{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:18px;}
+.sbox{background:white;border-radius:10px;padding:16px;border:1px solid var(--border);box-shadow:0 2px 4px rgba(0,0,0,.04);}
+.sbox .sl{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;}
+.sbox .sv{font-size:32px;font-weight:700;color:var(--navy);margin:4px 0 2px;}
+.sbox .ss{font-size:11px;color:var(--muted);}
+.filter-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.filter-row label{font-size:12px;font-weight:600;color:var(--navy);}
+.filter-row select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.sort-btn{padding:7px 14px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;color:var(--navy);}
 
-    .login-wrap{max-width:440px;margin:78px auto}
+.card{background:white;border-radius:12px;border:1px solid var(--border);padding:20px;box-shadow:0 2px 6px rgba(0,0,0,.05);margin-bottom:16px;}
+.card-title{font-weight:700;color:var(--navy);font-size:14px;margin-bottom:14px;}
+.dt{width:100%;border-collapse:collapse;}
+.dt th{text-align:left;padding:10px 14px;font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid var(--border);background:#fafafa;}
+.dt td{padding:11px 14px;font-size:13px;border-bottom:1px solid var(--border);}
+.dt tr:last-child td{border-bottom:none;}
+.dt tr:hover td{background:#f8fafc;}
+.badge{padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;}
+.b-sick{background:#f8d7da;color:#721c24;}.b-mat{background:#fce4ec;color:#880e4f;}.b-study{background:#e3f2fd;color:#0d47a1;}.b-ot{background:#fff3cd;color:#856404;}.b-al{background:#d4edda;color:#155724;}
 
-    h1,h2,h3{margin:0 0 12px;color:#223449;letter-spacing:-.04em}
-    h1{font-size:25px;font-weight:800}
-    h2{font-size:20px;font-weight:800}
-    h3{font-size:16px;font-weight:800}
+/* COD */
+.cod-section{background:white;border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.05);}
+.cod-section-hdr{padding:12px 18px;font-size:13px;font-weight:700;color:white;}
+.cod-hdr-normal{background:var(--navy);}.cod-hdr-holiday{background:#c8840a;}.cod-hdr-sunday{background:#555e6e;}
+.cod-form{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:end;border-bottom:1px solid var(--border);}
+.cod-form label{display:block;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:5px;}
+.cod-form select,.cod-form input[type=text],.cod-form input[type=date]{width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.btn-record{padding:9px 20px;background:var(--teal);color:white;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+.cod-table{width:100%;border-collapse:collapse;}
+.cod-table th{text-align:left;padding:9px 14px;font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);background:#fafafa;}
+.cod-table td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border);}
+.cod-table tr:last-child td{border-bottom:none;}
 
-    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:700}
+.hban{background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:9px 14px;font-size:12px;color:#856404;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.empty{text-align:center;padding:28px;color:var(--muted);font-size:13px;}
+.mt16{margin-top:16px;}
 
-    input,select,textarea{
-      width:100%;
-      padding:11px 12px;
-      border:1px solid var(--border);
-      border-radius:12px;
-      background:#fff;
-      font-size:14px;
-      outline:none;
-      color:var(--text);
-      font-family:inherit;
-      transition:border-color .15s ease,box-shadow .15s ease,background .15s ease;
-    }
+.shift-picker{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px;}
+.sp-btn{padding:12px 6px;border-radius:8px;border:2px solid transparent;cursor:pointer;font-size:11px;font-weight:700;text-align:center;transition:all .15s;}
+.sp-btn:hover{transform:scale(1.05);}
+.sp-btn.selected{border-color:white;box-shadow:0 0 0 3px var(--teal);}
 
-    input:focus,select:focus,textarea:focus{
-      border-color:var(--primary);
-      box-shadow:0 0 0 4px rgba(79,143,207,.14);
-      background:#fff;
-    }
+.mo{position:fixed;inset:0;background:rgba(10,20,40,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s;}
+.mo.open{opacity:1;pointer-events:all;}
+.mb{background:white;border-radius:16px;padding:28px;width:420px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,.25);transform:translateY(12px);transition:transform .2s;}
+.mo.open .mb{transform:translateY(0);}
+.mb h2{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:4px;}
+.msub{font-size:12px;color:var(--muted);margin-bottom:18px;}
+.fg{margin-bottom:12px;}
+.fg label{display:block;font-size:12px;font-weight:600;color:var(--navy);margin-bottom:5px;}
+.fg input,.fg select{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.fg input:focus,.fg select:focus{border-color:var(--teal);}
+.mact{display:flex;gap:8px;margin-top:20px;}
+.btn-cancel{flex:1;padding:10px;background:#f0f2f5;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
+.btn-save{flex:1;padding:10px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
 
-    button{
-      border:0;
-      border-radius:12px;
-      padding:10px 15px;
-      font-weight:800;
-      cursor:pointer;
-      background:var(--primary);
-      color:#fff;
-      font-family:inherit;
-      box-shadow:0 4px 12px rgba(79,143,207,.20);
-      transition:transform .12s ease,box-shadow .12s ease,background .12s ease;
-    }
 
-    button:hover{background:var(--primary-dark);box-shadow:0 6px 16px rgba(79,143,207,.26)}
-    button:active{transform:translateY(1px)}
-    button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);box-shadow:none}
-    button.secondary:hover{background:var(--grey-soft)}
-    button.danger{background:var(--red);box-shadow:0 4px 12px rgba(184,92,92,.20)}
-    button.success{background:var(--green);box-shadow:0 4px 12px rgba(47,143,91,.20)}
+/* REPORTS & CHARTS */
+.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px;}
+.report-card{background:white;border-radius:12px;border:1px solid var(--border);padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05);min-height:260px;}
+.report-card.wide{grid-column:span 2;}
+.report-card h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.report-card canvas{width:100%!important;max-height:260px!important;}
+.report-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.4;}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
+.kpi{background:white;border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05);}
+.kpi .k-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
+.kpi .k-value{font-size:28px;font-weight:800;color:var(--navy);margin-top:6px;}
+.kpi .k-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.report-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.report-filters label{font-size:12px;font-weight:700;color:var(--navy);}
+.report-filters select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.report-filters button{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+@media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
-    .grid{display:grid;gap:14px}
-    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
-    .grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
-
-    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-
-    .tabs{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-bottom:16px;
-      background:rgba(255,255,255,.72);
-      border:1px solid var(--border);
-      border-radius:18px;
-      padding:8px;
-      box-shadow:var(--shadow-soft);
-    }
-
-    .tab{
-      background:transparent;
-      color:var(--muted);
-      border:1px solid transparent;
-      padding:10px 12px;
-      box-shadow:none;
-    }
-
-    .tab:hover{background:var(--primary-soft);color:var(--primary-dark);box-shadow:none}
-    .tab.active{background:#fff;color:var(--primary-dark);border-color:var(--primary-border);box-shadow:0 4px 12px rgba(79,143,207,.10)}
-
-    .stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-
-    .stat{
-      background:#fff;
-      border:1px solid var(--border);
-      border-radius:16px;
-      padding:16px;
-      box-shadow:var(--shadow-soft);
-    }
-
-    .stat-value{font-size:30px;font-weight:800;margin-bottom:5px;color:#1f3f5f;letter-spacing:-.05em}
-    .stat-label{color:var(--muted);font-size:12px;font-weight:600}
-
-    .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;white-space:nowrap;border:1px solid transparent}
-    .badge.green{background:var(--green-soft);color:var(--green);border-color:var(--green-border)}
-    .badge.red{background:var(--red-soft);color:var(--red);border-color:var(--red-border)}
-    .badge.amber{background:var(--amber-soft);color:var(--amber);border-color:var(--amber-border)}
-    .badge.blue{background:var(--primary-soft);color:var(--primary-dark);border-color:var(--primary-border)}
-    .badge.purple{background:var(--purple-soft);color:var(--purple);border-color:var(--purple-border)}
-    .badge.grey{background:var(--grey-soft);color:var(--grey);border-color:var(--grey-border)}
-
-    .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:var(--shadow-soft)}
-    table{width:100%;border-collapse:collapse;min-width:760px}
-    th,td{padding:11px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;font-size:13px}
-    th{background:#f9fbfd;color:#536273;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
-    tr:last-child td{border-bottom:0}
-    tbody tr:hover{background:#fbfdff}
-
-    .muted{color:var(--muted)}
-    .hidden{display:none!important}
-
-    .error{background:var(--red-soft);color:var(--red);border:1px solid var(--red-border);padding:11px 13px;border-radius:12px;margin:10px 0;white-space:pre-wrap;font-weight:600}
-    .success-msg{background:var(--green-soft);color:var(--green);border:1px solid var(--green-border);padding:11px 13px;border-radius:12px;margin:10px 0;font-weight:600}
-    .info{background:var(--primary-soft);color:var(--primary-dark);border:1px solid var(--primary-border);padding:11px 13px;border-radius:12px;margin:10px 0;font-weight:600}
-
-    .roster-table{min-width:1100px}
-    .shift-cell{display:inline-flex;justify-content:center;align-items:center;min-width:32px;height:27px;border-radius:9px;font-weight:900;font-size:12px;border:1px solid transparent}
-    .shift-D,.shift-M,.shift-E{background:var(--primary-soft);color:var(--primary-dark);border-color:var(--primary-border)}
-    .shift-N{background:#e7edff;color:#3857a6;border-color:#cfd9fb}
-    .shift-O,.shift-R{background:var(--grey-soft);color:var(--grey);border-color:var(--grey-border)}
-    .shift-AL{background:var(--amber-soft);color:var(--amber);border-color:var(--amber-border)}
-    .shift-SL{background:var(--red-soft);color:var(--red);border-color:var(--red-border)}
-    .shift-ML,.shift-ST{background:var(--purple-soft);color:var(--purple);border-color:var(--purple-border)}
-    .shift-TI,.shift-TO,.shift-OT{background:var(--green-soft);color:var(--green);border-color:var(--green-border)}
-    .override-dot{display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--red);margin-left:5px;vertical-align:middle}
-
-    @media(max-width:850px){
-      .grid-2,.grid-3,.grid-4,.stat-grid{grid-template-columns:1fr}
-      header{align-items:flex-start;flex-direction:column}
-      .top-user{text-align:left}
-      .container{margin:16px auto;padding:0 12px}
-    }
-  </style>
+</style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <div class="brand-title">MDH Surgical Staffing</div>
-      <div class="brand-subtitle">Surgical wards staffing report system</div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="lc">
+    <div class="ico">🏥</div>
+    <h1>MDH Stoma Care Clinic</h1>
+    <p>Roster &amp; Appointments System</p>
+    <input type="email" id="li-email" placeholder="Clinic email" autocomplete="email"/>
+    <input type="password" id="li-pass" placeholder="Password" autocomplete="current-password"/>
+    <button class="btn-li" onclick="doLogin()">Sign In</button>
+    <div class="lerr" id="lerr"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;">
+      <div class="tb-logo">MDH <span>Stoma Care</span> Clinic</div>
+      <div class="tb-date" id="tb-date"></div>
     </div>
-    <div class="top-user" id="topUser">Not signed in</div>
-  </header>
+    <button class="btn-so" onclick="doLogout()">Sign Out</button>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('roster',this)">Monthly Roster</div>
+    <div class="tab" onclick="switchTab('appointments',this)">Patient Appointments</div>
+    <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
+    <div class="tab" onclick="switchTab('staff-audit',this)">Staff Audit</div>
+    <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
+    <div class="tab" onclick="switchTab('reports',this)">Reports &amp; Charts</div>
+  </div>
 
-  <main class="container">
-    <section id="loginScreen" class="login-wrap">
-      <div class="card">
-        <h1>Sign in</h1>
-        <p class="muted">Use the Supabase test accounts created for this project.</p>
-        <div id="loginMessage"></div>
-        <div class="grid">
-          <div><label>Email</label><input id="loginEmail" type="email" autocomplete="username" placeholder="name@example.com" /></div>
-          <div><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" /></div>
-          <button type="button" onclick="signIn()">Sign in</button>
+  <div class="main">
+
+    <!-- ROSTER -->
+    <div class="page active" id="page-roster">
+      <div class="phdr"><div><h2>Monthly Roster</h2><p>Click any day cell to update</p></div></div>
+      <div class="legend">
+        <strong style="font-size:11px;color:var(--navy);margin-right:4px;">Legend:</strong>
+        <div class="leg"><div class="ld dc-D">D</div>Day</div>
+        <div class="leg"><div class="ld dc-R">R</div>Rest/Off</div>
+        <div class="leg"><div class="ld dc-S">S</div>Sick</div>
+        <div class="leg"><div class="ld dc-M">M</div>Maternity</div>
+        <div class="leg"><div class="ld dc-St">St</div>Study</div>
+        <div class="leg"><div class="ld dc-OT">OT</div>Overtime</div>
+        <div class="leg"><div class="ld dc-L">L</div>Annual Leave</div>
+        <div class="leg"><div class="ld dc-TO">TO</div>TIL Off</div>
+        <div class="leg"><div class="ld dc-TI">TI</div>TIL In</div>
+      </div>
+      <div id="hban-roster"></div>
+      <!-- OT BAR -->
+      <div class="ot-bar">
+        <div class="ot-field"><label>Nurse Name</label><input type="text" id="ot-name" placeholder="Full name" style="width:180px;"/></div>
+        <div class="ot-field"><label>Date</label><input type="date" id="ot-date" style="width:150px;"/></div>
+        <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="ot-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
+        <div class="ot-field"><label>Working Until</label><input type="time" id="ot-end" style="width:110px;"/></div>
+        <button class="btn-ot" onclick="addOT()">+ Add OT Nurse</button>
+      </div>
+      <div class="info-note">ℹ️ Enter any nurse name — new names added automatically</div>
+      <!-- TIL BAR -->
+      <div class="ot-bar" style="border-color:var(--teal);">
+        <div class="ot-field"><label>Staff Name</label><input type="text" id="til-name" placeholder="Full name" style="width:180px;"/></div>
+        <div class="ot-field"><label>Date</label><input type="date" id="til-date" style="width:150px;"/></div>
+        <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="til-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
+        <div class="ot-field"><label>Until</label><input type="time" id="til-until" style="width:110px;"/></div>
+        <button class="btn-til-off" onclick="addTIL('off')">+ TIL Off</button>
+        <button class="btn-til-in" onclick="addTIL('in')">+ TIL In</button>
+      </div>
+      <div class="info-note">ℹ️ Any staff name — not limited to core staff</div>
+      <!-- MONTH NAV + JUMP TO DATE -->
+      <div class="mnav">
+        <button onclick="changeMonth(-1)">← Prev</button>
+        <div class="mlbl" id="mlbl"></div>
+        <button onclick="changeMonth(1)">Next →</button>
+        <button onclick="goToday()" style="color:var(--teal);border-color:var(--teal);">Today</button>
+        <div class="jump-section">
+          <label>Jump to:</label>
+          <button class="jump-arrow" onclick="jumpChangeDay(-1)">←</button>
+          <input type="date" id="jump-date" onchange="jumpToDate()"/>
+          <button class="jump-arrow" onclick="jumpChangeDay(1)">→</button>
+          <button class="jump-clear" onclick="clearJumpDate()">✕ Clear</button>
         </div>
       </div>
-    </section>
+      <div class="roster-wrap"><table class="rt" id="rt"></table></div>
+      <!-- OT LIST -->
+      <div class="ot-list-wrap">
+        <div class="ot-list-hdr">⏰ Overtime Nurses — <span id="ot-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
+        <table class="ot-table">
+          <thead><tr><th>Nurse Name</th><th>Date</th><th>Start</th><th>Working Until</th><th>Hours</th><th></th></tr></thead>
+          <tbody id="ot-tbody"><tr><td colspan="6" class="empty">No overtime nurses</td></tr></tbody>
+        </table>
+      </div>
+      <!-- TIL LIST -->
+      <div class="til-list-wrap">
+        <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
+        <table class="ot-table">
+          <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
+          <tbody id="til-tbody"><tr><td colspan="7" class="empty">No TIL records</td></tr></tbody>
+        </table>
+      </div>
+      <!-- PATIENT SNAPSHOT -->
+      <div class="pt-snap">
+        <div class="pt-snap-hdr">
+          <div class="pt-snap-nav">
+            <button onclick="snapChangeDay(-1)">‹ Prev</button>
+            <span>🏥 Patients — <strong><span id="snap-date"></span></strong></span>
+            <button onclick="snapChangeDay(1)">Next ›</button>
+            <button onclick="snapGoToday()" style="background:var(--gold);color:white;">Today</button>
+          </div>
+          <span id="snap-count" class="pt-count">0 patients</span>
+        </div>
+        <div class="pt-snap-body" id="snap-body"><div class="pt-snap-empty">No patients booked</div></div>
+      </div>
+    </div>
 
-    <section id="appScreen" class="hidden">
+    <!-- APPOINTMENTS — MULTI-COLUMN -->
+    <div class="page" id="page-appointments">
+      <div class="phdr"><div><h2>Patient Appointments</h2><p>08:30 – 13:30 · 30 min slots · One column per nurse working</p></div></div>
+      <div id="hban-appt"></div>
+      <div class="appt-date-row">
+        <label>Date:</label>
+        <button onclick="apptChangeDay(-1)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);">←</button>
+        <input type="date" id="appt-date" onchange="loadAppts()"/>
+        <button onclick="apptChangeDay(1)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);">→</button>
+        <span class="sbadge" id="sbadge"></span>
+      </div>
+      <div style="background:white;border-radius:12px;border:1px solid #dde3ea;overflow:hidden;">
+        <div style="background:#1a2e4a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+          <strong style="font-size:15px;">Daily Clinic - 11 Slots</strong>
+          <span id="appt-slot-summary" style="font-size:11px;opacity:.65;"></span>
+        </div>
+        <div id="slots-container"></div>
+      </div>
+    </div>
+
+    <!-- CHANGE OF DUTY -->
+    <div class="page" id="page-cod">
+      <div class="phdr"><div><h2>Change of Duty</h2><p>Record duty swaps — roster updates automatically</p></div></div>
+      <div class="cod-section">
+        <div class="cod-section-hdr cod-hdr-normal">📅 Normal Day Swap</div>
+        <div class="cod-form">
+          <div><label>Staff Member</label><select id="cod-n-staff"><option value="">— Select —</option></select></div>
+          <div><label>Day Off</label><input type="date" id="cod-n-off"/></div>
+          <div><label>Day Worked Instead</label><input type="date" id="cod-n-work"/></div>
+          <div><label>Notes</label><input type="text" id="cod-n-notes" placeholder="Optional..."/></div>
+          <button class="btn-record" onclick="saveCOD('normal')">Record</button>
+        </div>
+        <table class="cod-table"><thead><tr><th>Staff</th><th>Day Off</th><th>Day Worked</th><th>Notes</th><th>Recorded</th></tr></thead>
+        <tbody id="cod-tbody-normal"><tr><td colspan="5" class="empty">No normal day swaps</td></tr></tbody></table>
+      </div>
+      <div class="cod-section">
+        <div class="cod-section-hdr cod-hdr-holiday">🇲🇹 Public Holiday Swap</div>
+        <div class="cod-form">
+          <div><label>Staff Member</label><select id="cod-h-staff"><option value="">— Select —</option></select></div>
+          <div><label>Holiday Taken Off</label><select id="cod-h-off"><option value="">— Select —</option></select></div>
+          <div><label>Holiday Worked Instead</label><select id="cod-h-work"><option value="">— Select —</option></select></div>
+          <div><label>Notes</label><input type="text" id="cod-h-notes" placeholder="Optional..."/></div>
+          <button class="btn-record" onclick="saveCOD('holiday')">Record</button>
+        </div>
+        <table class="cod-table"><thead><tr><th>Staff</th><th>Holiday Off</th><th>Holiday Worked</th><th>Notes</th><th>Recorded</th></tr></thead>
+        <tbody id="cod-tbody-holiday"><tr><td colspan="5" class="empty">No holiday swaps</td></tr></tbody></table>
+      </div>
+      <div class="cod-section">
+        <div class="cod-section-hdr cod-hdr-sunday">☀️ Sunday Swap</div>
+        <div class="cod-form">
+          <div><label>Staff Member</label><select id="cod-s-staff"><option value="">— Select —</option></select></div>
+          <div><label>Sunday Off</label><select id="cod-s-off"><option value="">— Select —</option></select></div>
+          <div><label>Sunday Worked</label><select id="cod-s-work"><option value="">— Select —</option></select></div>
+          <div><label>Notes</label><input type="text" id="cod-s-notes" placeholder="Optional..."/></div>
+          <button class="btn-record" onclick="saveCOD('sunday')">Record</button>
+        </div>
+        <table class="cod-table"><thead><tr><th>Staff</th><th>Sunday Off</th><th>Sunday Worked</th><th>Notes</th><th>Recorded</th></tr></thead>
+        <tbody id="cod-tbody-sunday"><tr><td colspan="5" class="empty">No Sunday swaps</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- STAFF AUDIT -->
+    <div class="page" id="page-staff-audit">
+      <div class="phdr">
+        <div><h2>Staff Audit</h2><p>All leave, overtime &amp; TIL records</p></div>
+        <button class="btn-add" onclick="openModal('leave')">+ Add Record</button>
+      </div>
+      <div class="srow" id="audit-stats"></div>
+      <div class="filter-row">
+        <label>Filter:</label>
+        <select id="audit-month" onchange="loadStaffAudit()">
+          <option value="">All Months</option>
+          <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+          <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+          <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+          <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+        </select>
+        <select id="audit-year" onchange="loadStaffAudit()">
+          <option value="">All Years</option>
+          <option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
+        </select>
+      </div>
+      <div class="card"><div class="card-title">🌴 Annual &amp; Maternity Leave</div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="leave-tbody"></tbody></table></div></div>
+      <div class="card"><div class="card-title">🤒 Sick Leave</div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="sick-tbody"></tbody></table></div></div>
+      <div class="card"><div class="card-title">📚 Study Leave</div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="study-tbody"></tbody></table></div></div>
+      <div class="card"><div class="card-title">⏰ Overtime Records</div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="overtime-tbody"></tbody></table></div></div>
+      <div class="card"><div class="card-title">🔄 Time in Lieu (TIL)</div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th></tr></thead><tbody id="til-audit-tbody"></tbody></table></div></div>
+    </div>
+
+    <!-- CLINIC AUDIT -->
+    <div class="page" id="page-clinic-audit">
+      <div class="phdr"><div><h2>Clinic Audit</h2><p>Outpatient appointment history &amp; statistics</p></div></div>
+      <div class="srow" id="clinic-stats"></div>
+      <div class="filter-row">
+        <label>Filter:</label>
+        <select id="ca-month" onchange="loadClinicAudit()">
+          <option value="">All Months</option>
+          <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+          <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+          <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+          <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+        </select>
+        <select id="ca-year" onchange="loadClinicAudit()">
+          <option value="">All Years</option>
+          <option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option>
+        </select>
+        <button class="sort-btn" id="sort-btn" onclick="toggleSort()">↓ Newest First</button>
+        <button onclick="clearCAFilter()" style="padding:7px 14px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">Show All</button>
+      </div>
       <div class="card">
-        <div class="actions" style="justify-content:space-between">
-          <div><h1 id="mainTitle">Dashboard</h1><div class="muted" id="mainSubtitle"></div></div>
-          <div class="actions"><button class="secondary" type="button" onclick="reloadCurrentTab()">Refresh</button><button class="danger" type="button" onclick="signOut()">Sign out</button></div>
+        <div class="card-title">Patient Appointments</div>
+        <div style="overflow-x:auto;"><table class="dt">
+          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Nurse</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="clinic-tbody"></tbody>
+        </table></div>
+      </div>
+
+    <!-- REPORTS & CHARTS -->
+    <div class="page" id="page-reports">
+      <div class="phdr">
+        <div>
+          <h2>Reports &amp; Charts</h2>
+          <p>Clinic activity dashboard — excludes staff leave and per-nurse booking metrics</p>
+        </div>
+        <button class="btn-add" onclick="loadReports()">Refresh</button>
+      </div>
+
+      <div class="report-filters">
+        <label>Year:</label>
+        <select id="rep-year" onchange="loadReports()">
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+        </select>
+        <label>Month:</label>
+        <select id="rep-month" onchange="loadReports()">
+          <option value="">Full Year</option>
+          <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+          <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+          <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+          <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+        </select>
+        <button onclick="loadReports()">Update Dashboard</button>
+      </div>
+
+      <div class="kpi-row" id="report-kpis"></div>
+
+      <div class="report-grid">
+        <div class="report-card wide">
+          <h3>📈 Monthly Appointment Trend</h3>
+          <canvas id="chart-monthly-trend"></canvas>
+        </div>
+        <div class="report-card">
+          <h3>✅ Outcome Distribution</h3>
+          <canvas id="chart-status-distribution"></canvas>
+        </div>
+        <div class="report-card">
+          <h3>🗓️ Day-of-Week Demand</h3>
+          <canvas id="chart-day-demand"></canvas>
+        </div>
+        <div class="report-card">
+          <h3>⏰ Busiest Appointment Slots</h3>
+          <canvas id="chart-slot-demand"></canvas>
+        </div>
+        <div class="report-card wide">
+          <h3>📅 Upcoming 14-Day Clinic Load</h3>
+          <canvas id="chart-upcoming-load"></canvas>
         </div>
       </div>
-      <div class="tabs" id="tabs"></div>
-      <div id="message"></div>
-      <div id="content"></div>
-    </section>
-  </main>
 
-  <script>
-    const SUPABASE_URL_RAW = "https://dedcykelhdqwktkmkeiv.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_mdp0ij0wBpGmqwWnDtNKHA_TF1zNzvw";
+      <div class="report-grid">
+        <div class="report-card wide">
+          <h3>📋 Upcoming Appointments</h3>
+          <div class="report-note">Next 14 days. This is a workload view, not a staff leave or per-nurse booking metric.</div>
+          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Status</th></tr></thead><tbody id="rep-upcoming-tbody"></tbody></table></div>
+        </div>
+        <div class="report-card wide">
+          <h3>⚠️ Recent DNTU / Cancelled</h3>
+          <div class="report-note">Recent non-attendance and cancelled appointments for follow-up review.</div>
+          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Outcome</th></tr></thead><tbody id="rep-exceptions-tbody"></tbody></table></div>
+        </div>
+        <div class="report-card wide">
+          <h3>⏱️ Slot Utilisation Table</h3>
+          <div class="report-note">Counts by appointment time only. No staff/per-nurse breakdown included.</div>
+          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Slot</th><th>Total Bookings</th><th>Attended</th><th>DNTU</th><th>Cancelled</th></tr></thead><tbody id="rep-slots-tbody"></tbody></table></div>
+        </div>
+      </div>
+    </div>
 
-    const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, "").replace(/\/$/i, "");
-    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    </div>
 
-    let appState = {
-      session:null, ref:null, profile:null, wards:[], activeTab:null,
-      selectedWardId:null, selectedDate:todayISO(), selectedMonth:monthISO(new Date())
-    };
+  </div>
+</div>
 
-    document.addEventListener("DOMContentLoaded", async () => {
-      const { data } = await sb.auth.getSession();
-      appState.session = data.session;
-      sb.auth.onAuthStateChange((_event, session) => { appState.session = session; boot(); });
-      await boot();
+<!-- MODAL -->
+<div class="mo" id="mo" onclick="moOut(event)"><div class="mb" id="mb"></div></div>
+
+<script>
+const SB=supabase.createClient(
+  'https://ydswlygxghzdgzxvynsa.supabase.co',
+  'sb_publishable_8R_L4VcNY_lE5oxF1lz9-g_syFlnGfC'
+);
+
+let holidays={},staffList=[],rCache={};
+let curMonth=new Date();curMonth.setDate(1);
+const TODAY=(()=>{const d=new Date();return fmt(d);})();
+let selCode='working';
+let snapCurrentDate=TODAY;
+let selectedJumpDate=null;
+let caSort='desc';
+let reportCharts={};
+
+const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
+
+const CODES=[
+  {v:'working',l:'D',s:'Day',cls:'dc-D'},
+  {v:'off',l:'R',s:'Rest/Off',cls:'dc-R'},
+  {v:'sick_leave',l:'S',s:'Sick Leave',cls:'dc-S'},
+  {v:'maternity_leave',l:'M',s:'Maternity',cls:'dc-M'},
+  {v:'study_leave',l:'St',s:'Study Leave',cls:'dc-St'},
+  {v:'overtime',l:'OT',s:'Overtime',cls:'dc-OT'},
+  {v:'annual_leave',l:'L',s:'Annual Leave',cls:'dc-L'},
+];
+const CODE_MAP={working:'D',off:'R',sick_leave:'S',maternity_leave:'M',study_leave:'St',overtime:'OT',annual_leave:'L'};
+const PATTERN_DDR=['working','working','off'];
+const PATTERN_DDDOO=['working','working','working','off','off'];
+const ANCHOR=new Date(2026,3,26);
+
+function fmt(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function dim(y,m){return new Date(y,m+1,0).getDate();}
+function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
+
+function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
+function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function monthEndDate(year,month){return `${year}-${month}-${String(new Date(Number(year),Number(month),0).getDate()).padStart(2,'0')}`;}
+
+
+// APPOINTMENT READ HELPERS
+// Reads appointments first, then separately loads patient/staff names.
+// This avoids Supabase embedded relationship read failures that can make saved bookings display as 0.
+function mapById(rows){
+  const out={};
+  (rows||[]).forEach(r=>{ if(r?.id!==undefined && r?.id!==null) out[String(r.id)] = r; });
+  return out;
+}
+function uniqueIds(rows,key){
+  return [...new Set((rows||[]).map(r=>r?.[key]).filter(v=>v!==null && v!==undefined && String(v)!=='' ).map(v=>String(v)))];
+}
+async function enrichAppointments(rows){
+  const appts=rows||[];
+  if(!appts.length)return [];
+
+  const patientIds=uniqueIds(appts,'patient_id');
+  const staffIds=uniqueIds(appts,'assigned_to');
+  const bankIds=uniqueIds(appts,'bank_staff_id');
+
+  let patientsMap={}, staffMap={}, bankMap={};
+
+  if(patientIds.length){
+    const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number').in('id',patientIds);
+    if(error){console.error('patients read error',error);alert('Patient read error: '+error.message);}
+    patientsMap=mapById(data||[]);
+  }
+  if(staffIds.length){
+    const{data,error}=await SB.from('staff').select('id,full_name,role').in('id',staffIds);
+    if(error){console.error('staff read error',error);alert('Staff read error: '+error.message);}
+    staffMap=mapById(data||[]);
+  }
+  if(bankIds.length){
+    const{data,error}=await SB.from('bank_staff').select('id,full_name,role').in('id',bankIds);
+    if(error){console.error('bank staff read error',error);alert('Bank staff read error: '+error.message);}
+    bankMap=mapById(data||[]);
+  }
+
+  return appts.map(a=>({
+    ...a,
+    patients: patientsMap[String(a.patient_id)] || null,
+    staff: staffMap[String(a.assigned_to)] || null,
+    bank_staff: bankMap[String(a.bank_staff_id)] || null
+  }));
+}
+async function fetchAppointmentsForDate(date){
+  const{data,error}=await SB.from('appointments').select('*').eq('appt_date',date).order('appt_slot',{ascending:true});
+  if(error){
+    console.error('appointments read error',error);
+    alert('Appointment read error: '+error.message);
+    return [];
+  }
+  return enrichAppointments(data||[]);
+}
+async function fetchAppointmentsRange(start,end,ascending=true){
+  let query=SB.from('appointments').select('*').order('appt_date',{ascending}).order('appt_slot',{ascending});
+  if(start)query=query.gte('appt_date',start);
+  if(end)query=query.lte('appt_date',end);
+  const{data,error}=await query;
+  if(error){
+    console.error('appointments range read error',error);
+    alert('Appointment read error: '+error.message);
+    return [];
+  }
+  return enrichAppointments(data||[]);
+}
+
+
+function defaultCode(staff,dateStr){
+  const[y,m,d]=dateStr.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  const diff=Math.round((dt-ANCHOR)/86400000);
+  const name=staff.full_name;
+  if(name==='Jason') return PATTERN_DDR[((diff+2)%3+3)%3];
+  if(name==='Jacqueline') return PATTERN_DDR[((diff+1)%3+3)%3];
+  if(name==='Lorraine') return PATTERN_DDDOO[((diff+3)%5+5)%5];
+  return 'working';
+}
+
+function getSundays(count=60){
+  const suns=[];const dt=new Date();
+  dt.setDate(dt.getDate()+(dt.getDay()===0?7:7-dt.getDay()));
+  for(let i=0;i<count;i++){suns.push(fmt(dt));dt.setDate(dt.getDate()+7);}
+  return suns;
+}
+
+document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+// AUTH
+async function doLogin(){
+  const email=document.getElementById('li-email').value.trim();
+  const pass=document.getElementById('li-pass').value;
+  document.getElementById('lerr').textContent='';
+  const{error}=await SB.auth.signInWithPassword({email,password:pass});
+  if(error)document.getElementById('lerr').textContent='Invalid email or password.';
+  else startApp();
+}
+document.getElementById('li-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogout(){await SB.auth.signOut();document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
+async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
+
+async function startApp(){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('ot-date').value=TODAY;
+  document.getElementById('til-date').value=TODAY;
+  document.getElementById('jump-date').value=TODAY;
+  selectedJumpDate=TODAY;
+  await loadHolidays();
+  await loadStaff();
+  renderRoster();
+  loadTodaySnapshot();
+  initAppts();
+  populateCODDropdowns();
+  loadCOD();
+  const ry=document.getElementById('rep-year'); if(ry) ry.value=String(new Date().getFullYear());
+}
+
+function switchTab(name,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  el.classList.add('active');
+  if(name==='staff-audit')loadStaffAudit();
+  if(name==='clinic-audit')loadClinicAudit();
+  if(name==='reports')loadReports();
+  if(name==='cod'){populateCODDropdowns();loadCOD();}
+}
+
+async function loadHolidays(){
+  const{data}=await SB.from('public_holidays').select('*');
+  if(data)data.forEach(h=>{holidays[h.holiday_date]=h.name;});
+}
+const isHol=d=>holidays[d]||null;
+
+async function loadStaff(){
+  const{data}=await SB.from('staff').select('*').eq('is_active',true);
+  staffList=data||[];
+}
+
+// JUMP TO DATE
+function jumpToDate(){
+  const val=document.getElementById('jump-date').value;
+  if(!val)return;
+  selectedJumpDate=val;
+  const d=new Date(val+'T12:00:00');
+  curMonth=new Date(d.getFullYear(),d.getMonth(),1);
+  snapCurrentDate=val;
+  renderRoster();
+  loadTodaySnapshot();
+  setTimeout(()=>{
+    const el=document.querySelector('.th-sel');
+    if(el)el.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  },300);
+}
+
+function jumpChangeDay(dir){
+  const base=selectedJumpDate||TODAY;
+  const d=new Date(base+'T12:00:00');
+  d.setDate(d.getDate()+dir);
+  selectedJumpDate=fmt(d);
+  document.getElementById('jump-date').value=selectedJumpDate;
+  jumpToDate();
+}
+
+function clearJumpDate(){
+  selectedJumpDate=null;
+  document.getElementById('jump-date').value='';
+  renderRoster();
+  renderOTList(null);
+  renderTILList(null);
+}
+
+// ROSTER
+function changeMonth(dir){curMonth=new Date(curMonth);curMonth.setMonth(curMonth.getMonth()+dir);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
+function goToday(){curMonth=new Date();curMonth.setDate(1);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
+
+async function renderRoster(){
+  const y=curMonth.getFullYear(),m=curMonth.getMonth(),days=dim(y,m);
+  document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
+
+  const s1=`${y}-${String(m+1).padStart(2,'0')}-01`;
+  const s2=`${y}-${String(m+1).padStart(2,'0')}-${String(days).padStart(2,'0')}`;
+
+  const{data:rd}=await SB.from('roster').select('*').gte('roster_date',s1).lte('roster_date',s2);
+  rCache={};(rd||[]).forEach(r=>{rCache[`${r.staff_id}_${r.roster_date}`]=r;});
+
+  const{data:bd}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').gte('work_date',s1).lte('work_date',s2);
+  const{data:tilData}=await SB.from('leave_records').select('*, staff(full_name)').eq('leave_type','overtime').or('notes.like.TIL-Off:%,notes.like.TIL-In:%').gte('start_date',s1).lte('start_date',s2);
+
+  const th=isHol(TODAY);
+  document.getElementById('hban-roster').innerHTML=th?`<div class="hban">🇲🇹 Today is a Malta Public Holiday: <strong>${th}</strong></div>`:'';
+
+  const DN=['Su','Mo','Tu','We','Th','Fr','Sa'];
+  let html='<thead><tr><th class="th-name">Staff Member</th><th class="th-role">Role</th>';
+
+  for(let d=1;d<=days;d++){
+    const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+    const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+    const cls=isSel?'th-sel':isT?'th-today':hol?'th-hol':isSun?'th-sun':'';
+    let holLine='';
+    if(hol){let short=hol.replace('Feast of St. ','St.').replace('Feast of Our Lady of ','OL ').replace('Feast of the ','').replace('Feast of ','').replace("Workers' Day",'Workers').replace("New Year's Day",'New Year').replace('Independence Day','Independ.').replace('Republic Day','Republic').replace('Freedom Day','Freedom').replace('Good Friday','Gd Friday').replace('Christmas Day','Christmas');if(short.length>11)short=short.substring(0,11);holLine=`<div style="font-size:7px;color:var(--gold);font-weight:700;line-height:1.1;margin-bottom:1px;" title="${hol}">🇲🇹 ${short}</div>`;}
+    html+=`<th class="${cls}" title="${hol||''}">${holLine}${DN[dow]}<br/><strong>${d}</strong>${isSel?'<br/><span style="font-size:8px;">▼</span>':''}</th>`;
+  }
+  html+='</tr></thead><tbody>';
+  html+=`<tr class="sr"><td colspan="${days+2}">Core Staff</td></tr>`;
+
+  for(const st of staffList){
+    html+=`<tr><td class="td-name">${st.full_name}</td><td class="td-role">${st.role}</td>`;
+    for(let d=1;d<=days;d++){
+      const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+      const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+      const entry=rCache[`${st.id}_${ds}`];
+      const code=entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D';
+      const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+      html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${hol?hol+' — ':''}${ds}">${code}</div></td>`;
+    }
+    html+='</tr>';
+  }
+
+  // OT rows
+  if(bd&&bd.length>0){
+    html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
+    const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
+    for(const[name,dates] of Object.entries(byS)){
+      html+=`<tr><td class="td-name">${name}</td><td class="td-role">OT Nurse</td>`;
+      for(let d=1;d<=days;d++){
+        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+        const e=dates[ds];
+        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+        html+=`<td class="${tdCls}">${e?`<div class="dchip dc-OT" title="07:00–${e.shift_end?.slice(0,5)}">OT</div>`:`<div class="dchip dc-O" style="cursor:default;">·</div>`}</td>`;
+      }
+      html+='</tr>';
+    }
+  }
+
+  // TIL rows
+  if(tilData&&tilData.length>0){
+    html+=`<tr class="sr"><td colspan="${days+2}">TIL Staff</td></tr>`;
+    const byTIL={};tilData.forEach(t=>{const n=t.staff?.full_name||'Unknown';if(!byTIL[n])byTIL[n]={};byTIL[n][t.start_date]=t;});
+    for(const[name,dates] of Object.entries(byTIL)){
+      html+=`<tr><td class="td-name">${name}</td><td class="td-role">TIL</td>`;
+      for(let d=1;d<=days;d++){
+        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+        const e=dates[ds];
+        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+        if(e){const isOff=e.notes?.startsWith('TIL-Off');const code=isOff?'TO':'TI';html+=`<td class="${tdCls}"><div class="dchip dc-${code}" title="${isOff?'TIL Off':'TIL In'}">${code}</div></td>`;}
+        else html+=`<td class="${tdCls}"><div class="dchip dc-O" style="cursor:default;">·</div></td>`;
+      }
+      html+='</tr>';
+    }
+  }
+
+  html+='</tbody>';
+  document.getElementById('rt').innerHTML=html;
+
+  // If jump date selected, filter OT/TIL lists to that date; otherwise show full month
+  if(selectedJumpDate){
+    renderOTList(bd?bd.filter(b=>b.work_date===selectedJumpDate):null,selectedJumpDate);
+    renderTILList(tilData?tilData.filter(t=>t.start_date===selectedJumpDate):null,selectedJumpDate);
+  }else{
+    renderOTList(bd,null);
+    renderTILList(tilData,null);
+  }
+}
+
+function renderOTList(bd,filterDate){
+  const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
+  document.getElementById('ot-list-label').textContent=filterDate?`— ${label}`:label;
+  const tbody=document.getElementById('ot-tbody');
+  if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No overtime nurses</td></tr>';return;}
+  const sorted=[...bd].sort((a,b)=>a.work_date.localeCompare(b.work_date));
+  tbody.innerHTML=sorted.map(b=>{
+    const start=b.shift_start?.slice(0,5)||'07:00',end=b.shift_end?.slice(0,5)||'—';
+    let hrs='—';
+    if(b.shift_start&&b.shift_end){const[sh,sm]=b.shift_start.split(':').map(Number);const[eh,em]=b.shift_end.split(':').map(Number);const t=(eh*60+em)-(sh*60+sm);if(t>0)hrs=`${Math.floor(t/60)}h${t%60>0?' '+t%60+'m':''}`;}
+    const dt=new Date(b.work_date+'T12:00:00');
+    const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    const hol=isHol(b.work_date);
+    return`<tr><td><strong>${b.bank_staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button onclick="delOT('${b.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
+  }).join('');
+}
+
+async function renderTILList(data,filterDate){
+  const label=filterDate?fmtLabel(filterDate):curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
+  document.getElementById('til-list-label').textContent=filterDate?`— ${label}`:label;
+  const tbody=document.getElementById('til-tbody');
+  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No TIL records</td></tr>';return;}
+  tbody.innerHTML=data.map(r=>{
+    const dt=new Date(r.start_date+'T12:00:00');
+    const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    const isOff=r.notes?.startsWith('TIL-Off');
+    const typeLabel=isOff?'TIL Off':'TIL In';
+    const typeCls=isOff?'background:#e8f5f4;color:var(--teal);':'background:#e8eaf6;color:#3949ab;';
+    const hoursMatch=r.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
+    const timeMatch=r.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
+    const startT=timeMatch?timeMatch[1]:'07:00',untilT=timeMatch?timeMatch[2]:'—';
+    return`<tr><td><strong>${r.staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}h</span></td><td><button onclick="delTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑 Delete</button></td></tr>`;
+  }).join('');
+}
+
+async function loadTILForMonth(){
+  const y=curMonth.getFullYear(),m=curMonth.getMonth();
+  const s1=`${y}-${String(m+1).padStart(2,'0')}-01`;
+  const s2=`${y}-${String(m+1).padStart(2,'0')}-${String(new Date(y,m+1,0).getDate()).padStart(2,'0')}`;
+  const{data}=await SB.from('leave_records').select('*, staff(full_name,role)').eq('leave_type','overtime').or('notes.like.TIL-Off:%,notes.like.TIL-In:%').gte('start_date',s1).lte('start_date',s2).order('start_date',{ascending:false});
+  return data||[];
+}
+
+// PATIENT SNAPSHOT
+function snapChangeDay(dir){const d=new Date(snapCurrentDate+'T12:00:00');d.setDate(d.getDate()+dir);snapCurrentDate=fmt(d);loadTodaySnapshot();}
+function snapGoToday(){snapCurrentDate=TODAY;loadTodaySnapshot();}
+
+async function loadTodaySnapshot(){
+  const d=new Date(snapCurrentDate+'T12:00:00');
+  const isToday=snapCurrentDate===TODAY;
+  document.getElementById('snap-date').textContent=d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+(isToday?' (Today)':'');
+
+  const appts=await fetchAppointmentsForDate(snapCurrentDate);
+  const body=document.getElementById('snap-body');
+  const countEl=document.getElementById('snap-count');
+  const booked=(appts||[]).filter(a=>a.status!=='cancelled');
+
+  if(countEl)countEl.textContent=`${booked.length} patient${booked.length!==1?'s':''}`;
+  if(!appts||!appts.length){body.innerHTML='<div class="pt-snap-empty">No patients booked</div>';return;}
+
+  const sc={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'};
+  const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
+  body.innerHTML=appts.map(a=>`<div class="pt-row">
+    <div class="pt-slot">${String(a.appt_slot||'').slice(0,5)}</div>
+    <div style="flex:1;"><div style="font-weight:600;">${htmlSafe(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Unknown patient')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}</div>
+    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
+    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
+  </div>`).join('');
+}
+
+// ADD OT
+async function addOT(){
+  const name=document.getElementById('ot-name').value.trim();
+  const date=document.getElementById('ot-date').value;
+  const start=document.getElementById('ot-start').value||'07:00';
+  const end=document.getElementById('ot-end').value;
+  if(!name||!date||!end){alert('Please fill in nurse name, date and working until time.');return;}
+  let{data:existing}=await SB.from('bank_staff').select('id').eq('full_name',name).maybeSingle();
+  let bankId=existing?.id;
+  if(!bankId){const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();bankId=ns?.id;}
+  if(!bankId){alert('Error adding nurse.');return;}
+  await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:end});
+  document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
+  renderRoster();
+}
+
+// ADD TIL
+async function addTIL(type){
+  const name=document.getElementById('til-name').value.trim();
+  const date=document.getElementById('til-date').value;
+  const start=document.getElementById('til-start').value||'07:00';
+  const until=document.getElementById('til-until').value;
+  if(!name||!date||!until){alert('Please fill in staff name, date and until time.');return;}
+  const[sh,sm]=start.split(':').map(Number);const[eh,em]=until.split(':').map(Number);
+  const totalMins=(eh*60+em)-(sh*60+sm);
+  const hrs=totalMins>0?(totalMins/60).toFixed(1).replace('.0',''):'0';
+  let staffId=null;
+  const{data:coreFound}=await SB.from('staff').select('id').ilike('full_name',name);
+  if(coreFound?.[0]?.id){staffId=coreFound[0].id;}
+  else{let{data:bankFound}=await SB.from('bank_staff').select('id').ilike('full_name',name);if(bankFound?.[0]?.id){staffId=bankFound[0].id;}else{const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();staffId=ns?.id;}}
+  if(!staffId){alert('Error saving staff.');return;}
+  const typeLabel=type==='off'?'TIL-Off':'TIL-In';
+  const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
+  if(coreFound?.[0]?.id){await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});}
+  else{await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});}
+  document.getElementById('til-name').value='';document.getElementById('til-until').value='';
+  renderRoster();loadStaffAudit();
+}
+
+// SHIFT MODAL
+function openShift(staffId,staffName,date){
+  const hol=isHol(date),entry=rCache[`${staffId}_${date}`];
+  selCode=entry?entry.status:defaultCode(staffList.find(s=>s.id===staffId),date);
+  document.getElementById('mb').innerHTML=`
+    <h2>Update Shift</h2>
+    <div class="msub">${staffName} &mdash; ${date}${hol?` &nbsp;🇲🇹 ${hol}`:''}</div>
+    <div class="shift-picker">
+      ${CODES.map(c=>`<div class="sp-btn ${c.cls}${selCode===c.v?' selected':''}" onclick="pickCode('${c.v}',this)">
+        <div style="font-size:15px;">${c.l}</div><div style="font-size:9px;opacity:.85;margin-top:3px;">${c.s}</div>
+      </div>`).join('')}
+    </div>
+    <div class="fg" style="margin-top:14px;"><label>Notes (optional)</label>
+      <input type="text" id="snotes" value="${entry?.notes||''}" placeholder="Any notes..."/>
+    </div>
+    <div class="mact">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveShift('${staffId}','${date}')">Save</button>
+    </div>`;
+  openMo();
+}
+function pickCode(v,el){selCode=v;document.querySelectorAll('.sp-btn').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');}
+async function saveShift(staffId,date){
+  const notes=document.getElementById('snotes').value.trim();
+  await SB.from('roster').upsert({staff_id:staffId,roster_date:date,status:selCode,notes},{onConflict:'staff_id,roster_date'});
+
+  // Keep Staff Audit aligned with roster changes.
+  // Only delete records auto-created by the roster, never manually entered records.
+  await SB.from('leave_records')
+    .delete()
+    .eq('staff_id',staffId)
+    .eq('start_date',date)
+    .eq('end_date',date)
+    .like('notes','Auto roster:%');
+
+  const leaveTypes=['sick_leave','maternity_leave','study_leave','annual_leave'];
+  if(leaveTypes.includes(selCode)){
+    const label={sick_leave:'Sick Leave',maternity_leave:'Maternity Leave',study_leave:'Study Leave',annual_leave:'Annual Leave'}[selCode]||selCode;
+    await SB.from('leave_records').insert({
+      staff_id:staffId,
+      leave_type:selCode,
+      start_date:date,
+      end_date:date,
+      total_days:1,
+      notes:`Auto roster: ${label}${notes?' — '+notes:''}`
     });
+  }
 
-    async function boot(){
-      clearMessage();
-      if(!appState.session){ showLogin(); return; }
-      await loadReferenceData();
-      showApp();
-    }
+  closeModal();renderRoster();loadStaffAudit();
+}
 
-    function showLogin(){
-      document.getElementById("loginScreen").classList.remove("hidden");
-      document.getElementById("appScreen").classList.add("hidden");
-      document.getElementById("topUser").textContent = "Not signed in";
-    }
+// APPOINTMENTS — MULTI-COLUMN PER NURSE
+function initAppts(){document.getElementById('appt-date').value=TODAY;loadAppts();}
 
-    function showApp(){
-      document.getElementById("loginScreen").classList.add("hidden");
-      document.getElementById("appScreen").classList.remove("hidden");
-      const p = appState.profile;
-      document.getElementById("topUser").innerHTML = `<strong>${escapeHtml(p.full_name)}</strong><br>${labelRole(p.role)}`;
-      document.getElementById("mainTitle").textContent = p.is_sno ? "Senior Nursing Officer Dashboard" : "Ward Dashboard";
-      document.getElementById("mainSubtitle").textContent = p.is_sno ? "All surgical wards overview" : `Access: ${appState.wards.map(w=>w.ward_code).join(", ")}`;
-      buildTabs();
-      if(!appState.activeTab) appState.activeTab = p.is_sno ? "snoOverview" : "wardDaily";
-      renderTab(appState.activeTab);
-    }
+function apptChangeDay(dir){
+  const d=new Date(document.getElementById('appt-date').value+'T12:00:00');
+  d.setDate(d.getDate()+dir);
+  document.getElementById('appt-date').value=fmt(d);
+  loadAppts();
+}
 
-    async function loadReferenceData(){
-      const { data, error } = await sb.rpc("get_app_reference_data");
-      if(error){ showError(error.message); throw error; }
-      appState.ref = data;
-      appState.profile = data.profile;
-      appState.wards = data.accessible_wards || [];
-      if(!appState.selectedWardId && appState.wards.length > 0) appState.selectedWardId = appState.wards[0].ward_id;
-    }
+async function getWorkingNurses(date){
+  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+  const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').eq('work_date',date);
+  const{data:tilIn}=await SB.from('leave_records').select('*, staff(full_name,id)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:tilOff}=await SB.from('leave_records').select('id,staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
+  const tilOffIds=new Set((tilOff||[]).map(t=>t.staff_id));
 
-    function buildTabs(){
-      const tabs = [];
-      if(appState.profile.is_sno){
-        tabs.push(["snoOverview","Today’s Overview"],["monthlyRoster","Monthly Roster"],["staffManagement","Staff Management"],["relievingPool","Relieving Pool"],["auditHistory","Audit History"],["myAccount","My Account"]);
-      }else{
-        tabs.push(["wardDaily","Daily Staffing"],["monthlyRoster","Monthly Roster"],["staffManagement","My Ward Staff"],["relievingPool","Relieving Pool"],["myAccount","My Account"]);
+  // OFF statuses — these nurses do NOT get a booking column
+  const OFF_STATUSES=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+
+  const nurses=[];
+
+  // Core staff — only add if actually working that day
+  for(const st of staffList){
+    const e=(rd||[]).find(r=>r.staff_id===st.id);
+    const isTilOff=tilOffIds.has(st.id);
+    if(isTilOff) continue; // TIL Off = absent, no column
+
+    if(e){
+      // Has explicit roster entry — only working if status is 'working' or 'overtime'
+      if(!OFF_STATUSES.includes(e.status)){
+        nurses.push({id:st.id,name:st.full_name,type:'core',status:e.status});
       }
-      document.getElementById("tabs").innerHTML = tabs.map(([key,label]) => `<button type="button" class="tab ${appState.activeTab===key?"active":""}" onclick="renderTab('${key}')">${label}</button>`).join("");
+      // If sick/off/leave — NO column (but booked patients handled separately)
+    }else{
+      // No roster entry — use pattern default
+      const def=defaultCode(st,date);
+      if(def==='working'){
+        nurses.push({id:st.id,name:st.full_name,type:'core',status:'working'});
+      }
+      // If pattern says off — NO column
     }
+  }
 
-    async function renderTab(tabKey){
-      appState.activeTab = tabKey;
-      buildTabs();
-      clearMessage();
-      document.getElementById("content").innerHTML = `<div class="card"><p class="muted">Loading...</p></div>`;
-      try{
-        if(tabKey==="snoOverview") await renderSnoOverview();
-        if(tabKey==="wardDaily") await renderWardDaily();
-        if(tabKey==="monthlyRoster") await renderMonthlyRoster();
-        if(tabKey==="staffManagement") await renderStaffManagement();
-        if(tabKey==="relievingPool") await renderRelievingPool();
-        if(tabKey==="auditHistory") await renderAuditHistory();
-        if(tabKey==="myAccount") await renderMyAccount();
-      }catch(err){ showError(err.message || String(err)); }
+  // TIL In staff — they ARE coming in, add column
+  for(const t of(tilIn||[])){
+    if(t.staff?.full_name){
+      // Avoid duplicating if already in core list
+      const alreadyAdded=nurses.find(n=>n.id===t.staff_id);
+      if(!alreadyAdded) nurses.push({id:t.staff_id,name:t.staff.full_name,type:'til-in',status:'til-in'});
     }
+  }
 
-    function reloadCurrentTab(){ renderTab(appState.activeTab); }
-
-    async function signIn(){
-      const email = document.getElementById("loginEmail").value.trim();
-      const password = document.getElementById("loginPassword").value;
-      setLoginMessage("");
-      if(!email || !password){ setLoginMessage(`<div class="error">Enter email and password.</div>`); return; }
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if(error){ setLoginMessage(`<div class="error">${escapeHtml(error.message)}</div>`); return; }
+  // OT nurses — always add their column
+  for(const b of(otToday||[])){
+    if(b.bank_staff?.full_name){
+      nurses.push({id:b.bank_staff_id,name:b.bank_staff.full_name,type:'ot',status:'ot'});
     }
+  }
 
-    async function signOut(){
-      await sb.auth.signOut();
-      appState = {session:null,ref:null,profile:null,wards:[],activeTab:null,selectedWardId:null,selectedDate:todayISO(),selectedMonth:monthISO(new Date())};
-      showLogin();
+  return nurses;
+}
+
+// Get ALL nurses who have bookings on a date — even if now absent (sick etc.)
+// Used to show existing bookings with warning when nurse is absent
+async function getNursesWithBookings(date, workingNurses){
+  const appts=await fetchAppointmentsForDate(date);
+  const workingIds=new Set((workingNurses||[]).map(n=>String(n.id)));
+  const extraNurses=[];
+  const seen=new Set();
+
+  for(const a of(appts||[]).filter(x=>x.status!=='cancelled')){
+    if(a.assigned_to && !workingIds.has(String(a.assigned_to)) && !seen.has(String(a.assigned_to))){
+      seen.add(String(a.assigned_to));
+      const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
+      extraNurses.push({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent-with-bookings',status:'absent'});
     }
+  }
+  return extraNurses;
+}
 
-    async function renderSnoOverview(){
-      const date = appState.selectedDate;
-      const { data, error } = await sb.rpc("get_sno_daily_overview", { p_staffing_date: date });
-      if(error) throw error;
-      const total = data.length, full = data.filter(r=>r.ward_status==="fully_staffed").length, short = data.filter(r=>r.ward_status==="short_staffed").length, not = data.filter(r=>r.ward_status==="not_submitted").length;
-      document.getElementById("content").innerHTML = `
-        <div class="card"><div class="actions" style="justify-content:space-between"><div><h2>Today’s Overview</h2><p class="muted">All wards must submit daily staffing by 07:00.</p></div><div><label>Date</label><input type="date" value="${date}" onchange="setSelectedDate(this.value)"></div></div></div>
-        <div class="stat-grid">${statCard(total,"Total wards")}${statCard(full,"Fully staffed")}${statCard(short,"Short staffed")}${statCard(not,"Not submitted")}</div>
-        <div class="grid grid-3" style="margin-top:16px">${data.map(r=>`
-          <div class="card"><div class="actions" style="justify-content:space-between"><h3>${escapeHtml(r.ward_code)}</h3>${wardStatusBadge(r.ward_status)}</div><p class="muted">${escapeHtml(r.ward_name)}</p>
-          <table style="min-width:0"><tr><td>Required nurses</td><td><strong>${r.required_nurses}</strong></td></tr><tr><td>Required carers/HCAs</td><td><strong>${r.required_carers}</strong></td></tr><tr><td>Present nurses</td><td><strong>${r.present_nurses}</strong></td></tr><tr><td>Present carers/HCAs</td><td><strong>${r.present_carers + r.present_healthcare_assistants}</strong></td></tr><tr><td>Sick</td><td><strong>${r.sick_total}</strong></td></tr><tr><td>Leave</td><td><strong>${r.leave_total}</strong></td></tr><tr><td>Shortage</td><td><strong>${r.total_shortage}</strong></td></tr></table></div>`).join("")}</div>`;
+async function loadAppts(){
+  const date=document.getElementById('appt-date').value;
+  if(!date)return;
+
+  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+  const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
+  const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
+  const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
+  const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+
+  const appts=await fetchAppointmentsForDate(date);
+
+  const nurses=[];
+  const addNurse=(n)=>{
+    if(n.type==='common') { nurses.push(n); return; }
+    const sameId=nurses.some(x=>String(x.id)===String(n.id) && x.type!=='common');
+    if(!sameId)nurses.push(n);
+  };
+
+  for(const st of staffList){
+    if(offIds.has(String(st.id)))continue;
+    const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
+    if(e){
+      if(!OFF_ST.includes(e.status))addNurse({id:st.id,name:st.full_name,type:'core'});
+    }else if(defaultCode(st,date)==='working'){
+      addNurse({id:st.id,name:st.full_name,type:'core'});
     }
+  }
 
-    async function renderWardDaily(){
-      const wardId = appState.selectedWardId, date = appState.selectedDate;
-      const [summaryResult, rosterResult] = await Promise.all([
-        sb.rpc("get_ward_daily_dashboard", { p_ward_id: wardId, p_staffing_date: date }),
-        sb.rpc("get_my_ward_roster_between", { p_ward_id: wardId, p_start_date: date, p_end_date: date })
-      ]);
-      if(summaryResult.error) throw summaryResult.error;
-      if(rosterResult.error) throw rosterResult.error;
-      const s = summaryResult.data[0];
-      const roster = rosterResult.data || [];
-      document.getElementById("content").innerHTML = `
-        <div class="card"><div class="actions" style="justify-content:space-between"><div><h2>Daily Staffing</h2><p class="muted">${escapeHtml(s.ward_code)} — ${escapeHtml(formatDate(date))}</p></div><div class="actions">${wardSelectorHtml()}<div><label>Date</label><input type="date" value="${date}" onchange="setSelectedDate(this.value)"></div></div></div></div>
-        <div class="stat-grid">${statCard(s.present_nurses+s.present_carers+s.present_healthcare_assistants,"Present")}${statCard(s.absent_total,"Absent / Off / Leave")}${statCard(s.sick_total,"Sick")}${statCard(s.til_out_total,"TIL out")}</div>
-        <div class="card"><div class="actions" style="justify-content:space-between"><div><h3>Establishment</h3><p class="muted">Required: ${s.required_nurses} nurses + ${s.required_carers} carers/HCAs. Nurse shortage: ${s.nurse_shortage}. Carer/HCA shortage: ${s.carer_hca_shortage}.</p></div><button class="success" type="button" onclick="submitDailyStaffing()">Submit daily staffing</button></div></div>
-        <div class="card"><h3>Staff rows</h3><div class="table-wrap"><table><thead><tr><th>Staff</th><th>Role</th><th>Baseline</th><th>Live</th><th>Source</th><th>Reason</th></tr></thead><tbody>${roster.map(r=>`<tr><td>${escapeHtml(r.full_name)}</td><td>${escapeHtml(labelRole(r.role))}</td><td>${shiftBadge(r.baseline_shift_code)}</td><td>${shiftBadge(r.live_shift_code)}</td><td>${escapeHtml(r.source_type||"")}</td><td>${escapeHtml(r.override_reason||"")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  for(const t of(tilIn||[])){
+    if(t.staff?.full_name)addNurse({id:t.staff_id,name:t.staff.full_name,type:'til'});
+  }
+
+  for(const b of(otToday||[])){
+    if(b.bank_staff?.full_name)addNurse({id:b.bank_staff.id||b.bank_staff_id,name:b.bank_staff.full_name,type:'ot'});
+  }
+
+  for(const a of(appts||[]).filter(x=>x.status!=='cancelled')){
+    if(a.assigned_to && !nurses.some(n=>String(n.id)===String(a.assigned_to))){
+      const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
+      addNurse({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent'});
     }
-
-    async function submitDailyStaffing(){
-      clearMessage();
-      const { error } = await sb.rpc("create_daily_staffing_submission", { p_ward_id: appState.selectedWardId, p_staffing_date: appState.selectedDate, p_submitted_by_staff_id: null, p_notes: "Submitted from frontend" });
-      if(error){ showError(error.message); return; }
-      showSuccess("Daily staffing submitted successfully.");
-      await renderWardDaily();
+    if(a.bank_staff_id && !nurses.some(n=>String(n.id)===String(a.bank_staff_id))){
+      addNurse({id:a.bank_staff_id,name:a.bank_staff?.full_name||'Booked OT/Bank Staff',type:'ot-booked'});
     }
+  }
 
-    async function renderMonthlyRoster(){
-      const wardId = appState.selectedWardId, monthValue = appState.selectedMonth;
-      const { start, end, days } = monthRange(monthValue);
-      const { data, error } = await sb.rpc("get_my_ward_roster_between", { p_ward_id: wardId, p_start_date: start, p_end_date: end });
-      if(error) throw error;
-      const grouped = groupRosterByStaff(data || []);
-      document.getElementById("content").innerHTML = `
-        <div class="card"><div class="actions" style="justify-content:space-between"><div><h2>Monthly Roster</h2><p class="muted">Baseline roster versus live roster. Red dot means override/change.</p></div><div class="actions">${wardSelectorHtml()}<div><label>Month</label><input type="month" value="${monthValue}" onchange="setSelectedMonth(this.value)"></div></div></div></div>
-        <div class="card"><div class="actions">${legend("D","Day")}${legend("N","Night")}${legend("M","Morning")}${legend("E","Evening")}${legend("O","Off")}${legend("R","Rest")}${legend("AL","Annual leave")}${legend("SL","Sick")}${legend("ML","Maternity")}${legend("ST","Study")}${legend("TI","TIL in")}${legend("TO","TIL out")}${legend("OT","Overtime")}</div></div>
-        <div class="card"><div class="table-wrap"><table class="roster-table"><thead><tr><th>Staff</th><th>Role</th><th>Group</th>${days.map(d=>`<th>${weekdayShort(d)}<br>${d.getDate()}</th>`).join("")}</tr></thead><tbody>${grouped.map(staff=>`<tr><td><strong>${escapeHtml(staff.full_name)}</strong></td><td>${escapeHtml(labelRole(staff.role))}</td><td>${escapeHtml(staff.roster_group||"")}</td>${days.map(day=>{const key=isoFromDate(day);const r=staff.days[key];const code=r?.live_shift_code||"";const isOverride=r?.source_type==="override";return `<td>${shiftBadge(code)}${isOverride?`<span class="override-dot" title="Changed from baseline"></span>`:""}</td>`}).join("")}</tr>`).join("")}</tbody></table></div></div>`;
-    }
+  addNurse({id:'common',name:'Common',type:'common'});
 
-    async function renderStaffManagement(){
-      const wardId = appState.selectedWardId;
-      const { data, error } = await sb.rpc("get_ward_staff_members", { p_ward_id: wardId });
-      if(error) throw error;
-      document.getElementById("content").innerHTML = `
-        <div class="card"><div class="actions" style="justify-content:space-between"><div><h2>${appState.profile.is_sno?"Staff Management":"My Ward Staff"}</h2><p class="muted">Add and view ward complement staff.</p></div><div>${wardSelectorHtml()}</div></div></div>
-        <div class="card"><h3>Add staff member</h3><div class="grid grid-3">
-          <div><label>Full name</label><input id="newStaffName" placeholder="Surname Name"></div><div><label>Corp user ID</label><input id="newStaffCorp" placeholder="e.g. BorgA123"></div><div><label>Email</label><input id="newStaffEmail" type="email" placeholder="name@gov.mt"></div>
-          <div><label>Role</label><select id="newStaffRole"><option value="nurse">Staff Nurse</option><option value="carer">Carer</option><option value="healthcare_assistant">Healthcare Assistant</option>${appState.profile.is_sno?`<option value="charge_nurse">Charge Nurse</option>`:""}<option value="other">Other</option></select></div>
-          <div><label>Employment type</label><select id="newStaffEmployment"><option value="core">Core</option><option value="external_overtime">External overtime</option><option value="agency">Agency</option><option value="relieving_pool">Relieving pool</option><option value="other">Other</option></select></div>
-          <div><label>Roster pattern</label><select id="newStaffPattern"><option value="">None</option>${appState.ref.roster_patterns.map(p=>`<option value="${escapeHtml(p.pattern_code)}">${escapeHtml(p.pattern_code)} — ${escapeHtml(p.pattern_name)}</option>`).join("")}</select></div>
-          <div><label>Roster group</label><input id="newStaffGroup" placeholder="Roster 1 / A / B"></div><div><label>Roster start date</label><input id="newStaffStartDate" type="date"></div><div><label>Start position</label><input id="newStaffStartPosition" type="number" min="1" value="1"></div>
-        </div><div style="margin-top:14px"><button type="button" onclick="addStaffMember()">Add staff member</button></div></div>
-        <div class="card"><h3>Current staff</h3><div class="table-wrap"><table><thead><tr><th>Name</th><th>Corp ID</th><th>Role</th><th>Ward</th><th>Pattern</th><th>Employment</th><th>Status</th></tr></thead><tbody>${data.map(s=>`<tr><td>${escapeHtml(s.full_name)}</td><td>${escapeHtml(s.corp_user_id||"—")}</td><td>${escapeHtml(labelRole(s.role))}</td><td>${escapeHtml(s.ward_code)}</td><td>${escapeHtml(s.roster_pattern_code||"—")}</td><td>${escapeHtml(labelEmployment(s.employment_type))}</td><td>${s.is_active?badge("Active","green"):badge("Inactive","grey")}</td></tr>`).join("")}</tbody></table></div></div>`;
-    }
+  const workingCount=nurses.filter(n=>!['common','absent','ot-booked'].includes(n.type)).length;
+  const extraCount=nurses.filter(n=>['absent','ot-booked'].includes(n.type)).length;
+  const badge=document.getElementById('sbadge');
+  badge.textContent=`${workingCount} nurse${workingCount!==1?'s':''} working${extraCount?` · ${extraCount} booked column${extraCount!==1?'s':''} shown`:''}`;
+  badge.className='sbadge '+(workingCount>=2?'sb-ok':workingCount===1?'sb-warn':'sb-none');
 
-    async function addStaffMember(){
-      clearMessage();
-      const { error } = await sb.rpc("create_ward_staff_member", {
-        p_full_name:document.getElementById("newStaffName").value.trim(),
-        p_corp_user_id:document.getElementById("newStaffCorp").value.trim(),
-        p_email:document.getElementById("newStaffEmail").value.trim() || null,
-        p_role:document.getElementById("newStaffRole").value,
-        p_employment_type:document.getElementById("newStaffEmployment").value,
-        p_home_ward_id:appState.selectedWardId,
-        p_roster_pattern_code:document.getElementById("newStaffPattern").value || null,
-        p_roster_group:document.getElementById("newStaffGroup").value.trim() || null,
-        p_roster_start_date:document.getElementById("newStaffStartDate").value || null,
-        p_roster_start_position:Number(document.getElementById("newStaffStartPosition").value || 1)
+  const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
+  document.getElementById('appt-slot-summary').textContent=`${booked} patients booked`;
+
+  const con=document.getElementById('slots-container');
+  if(!con)return;
+
+  let html='<table style="width:100%;border-collapse:collapse;">';
+  html+='<thead><tr><th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#7a8fa6;border-bottom:2px solid #dde3ea;background:#fafafa;min-width:65px;">Time</th>';
+  nurses.forEach(n=>{
+    let nbadge='';
+    if(n.type==='ot') nbadge='<span style="font-size:9px;background:#e6a817;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">OT</span>';
+    else if(n.type==='til') nbadge='<span style="font-size:9px;background:#0d7377;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">TIL</span>';
+    else if(n.type==='common') nbadge='<span style="font-size:9px;background:#6c757d;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">General</span>';
+    else if(n.type==='absent'||n.type==='ot-booked') nbadge='<span style="font-size:9px;background:#c0392b;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">Booked / Not Working</span>';
+    html+=`<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#1a2e4a;border-bottom:2px solid #dde3ea;border-left:1px solid #dde3ea;background:#fafafa;">${htmlSafe(n.name)}${nbadge}</th>`;
+  });
+  html+='</tr></thead><tbody>';
+
+  SLOTS.forEach(slot=>{
+    html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
+    nurses.forEach(n=>{
+      const appt=(appts||[]).find(a=>{
+        const s=String(a.appt_slot||'').slice(0,5);
+        if(s!==slot)return false;
+        if(n.type==='common') return !a.assigned_to && !a.bank_staff_id;
+        if(n.type==='ot'||n.type==='ot-booked') return String(a.bank_staff_id||'')===String(n.id||'') || String(a.assigned_to||'')===String(n.id||'');
+        return String(a.assigned_to||'')===String(n.id||'');
       });
-      if(error){ showError(error.message); return; }
-      showSuccess("Staff member added successfully.");
-      await renderStaffManagement();
-    }
-
-    async function renderRelievingPool(){
-      const monthValue = appState.selectedMonth;
-      const { start, end } = monthRange(monthValue);
-      const wardId = appState.profile.is_sno ? null : appState.selectedWardId;
-      const { data, error } = await sb.rpc("get_relieving_pool_requests_safe", { p_start_date:start, p_end_date:end, p_ward_id:wardId });
-      if(error) throw error;
-      document.getElementById("content").innerHTML = `<div class="card"><div class="actions" style="justify-content:space-between"><div><h2>Relieving Pool Requests</h2><p class="muted">Shortage requests generated from daily staffing submissions.</p></div><div><label>Month</label><input type="month" value="${monthValue}" onchange="setSelectedMonth(this.value)"></div></div></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Ward</th><th>Shift</th><th>Nurses</th><th>Carers/HCAs</th><th>Status</th><th>Requested by</th><th>Reason</th></tr></thead><tbody>${(data||[]).map(r=>`<tr><td>${escapeHtml(formatDate(r.request_date))}</td><td>${escapeHtml(r.ward_code)}</td><td>${escapeHtml(r.shift_code||"—")}</td><td>${r.nurses_needed}</td><td>${r.carers_needed+r.healthcare_assistants_needed}</td><td>${statusBadge(r.request_status)}</td><td>${escapeHtml(r.requested_by_name||"—")}</td><td>${escapeHtml(r.reason||"")}</td></tr>`).join("") || `<tr><td colspan="8" class="muted">No requests found.</td></tr>`}</tbody></table></div></div>`;
-    }
-
-    async function renderAuditHistory(){
-      const monthValue = appState.selectedMonth;
-      const { start, end } = monthRange(monthValue);
-      const { data, error } = await sb.rpc("get_sno_audit_history", { p_start_date:start, p_end_date:end, p_ward_id:null, p_action_type:null, p_table_name:null });
-      if(error) throw error;
-      document.getElementById("content").innerHTML = `<div class="card"><div class="actions" style="justify-content:space-between"><div><h2>Audit History</h2><p class="muted">SNO-only audit trail.</p></div><div><label>Month</label><input type="month" value="${monthValue}" onchange="setSelectedMonth(this.value)"></div></div></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Date & Time</th><th>Ward</th><th>Action</th><th>Table</th><th>Changed by</th><th>Summary</th></tr></thead><tbody>${(data||[]).map(a=>`<tr><td>${escapeHtml(formatDateTime(a.created_at))}</td><td>${escapeHtml(a.ward_code||"—")}</td><td>${escapeHtml(a.action_type)}</td><td>${escapeHtml(a.table_name)}</td><td>${escapeHtml(a.changed_by_name||"—")}</td><td>${escapeHtml(a.summary||"")}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">No audit records found.</td></tr>`}</tbody></table></div></div>`;
-    }
-
-    async function renderMyAccount(){
-      document.getElementById("content").innerHTML = `<div class="card"><h2>My Account</h2><p class="muted">${escapeHtml(appState.profile.full_name)} — ${escapeHtml(appState.profile.email||"")}</p></div><div class="card"><h3>Change password</h3><div class="grid grid-2"><div><label>New password</label><input id="newPassword" type="password"></div><div><label>Confirm new password</label><input id="confirmPassword" type="password"></div></div><div style="margin-top:14px"><button type="button" onclick="updatePassword()">Update password</button></div></div>`;
-    }
-
-    async function updatePassword(){
-      clearMessage();
-      const p1=document.getElementById("newPassword").value, p2=document.getElementById("confirmPassword").value;
-      if(!p1 || p1.length<6){ showError("Password must be at least 6 characters."); return; }
-      if(p1!==p2){ showError("Passwords do not match."); return; }
-      const { error } = await sb.auth.updateUser({ password:p1 });
-      if(error){ showError(error.message); return; }
-      showSuccess("Password updated successfully.");
-      document.getElementById("newPassword").value="";document.getElementById("confirmPassword").value="";
-    }
-
-    function setSelectedDate(value){ appState.selectedDate=value; renderTab(appState.activeTab); }
-    function setSelectedMonth(value){ appState.selectedMonth=value; renderTab(appState.activeTab); }
-    function setSelectedWard(value){ appState.selectedWardId=value; renderTab(appState.activeTab); }
-
-    function wardSelectorHtml(){
-      if(!appState.profile.is_sno && appState.wards.length<=1) return "";
-      return `<div><label>Ward</label><select onchange="setSelectedWard(this.value)">${appState.wards.map(w=>`<option value="${w.ward_id}" ${w.ward_id===appState.selectedWardId?"selected":""}>${escapeHtml(w.ward_code)}</option>`).join("")}</select></div>`;
-    }
-    function statCard(value,label){ return `<div class="stat"><div class="stat-value">${value}</div><div class="stat-label">${escapeHtml(label)}</div></div>`; }
-    function badge(text,colour){ return `<span class="badge ${colour}">${escapeHtml(text)}</span>`; }
-    function wardStatusBadge(status){ if(status==="fully_staffed")return badge("Fully staffed","green"); if(status==="short_staffed")return badge("Short staffed","red"); if(status==="not_submitted")return badge("Not submitted","amber"); return badge(status||"Unknown","grey"); }
-    function statusBadge(status){ if(status==="open")return badge("Open","amber"); if(status==="reviewed")return badge("Reviewed","blue"); if(status==="partially_filled")return badge("Partially filled","purple"); if(status==="filled")return badge("Filled","green"); if(status==="cancelled")return badge("Cancelled","grey"); return badge(status||"Unknown","grey"); }
-    function shiftBadge(code){ if(!code) return `<span class="shift-cell shift-O">—</span>`; return `<span class="shift-cell shift-${escapeHtml(code)}">${escapeHtml(code)}</span>`; }
-    function legend(code,label){ return `<span>${shiftBadge(code)} <span class="muted">${escapeHtml(label)}</span></span>`; }
-    function showError(message){ document.getElementById("message").innerHTML=`<div class="error">${escapeHtml(message)}</div>`; }
-    function showSuccess(message){ document.getElementById("message").innerHTML=`<div class="success-msg">${escapeHtml(message)}</div>`; }
-    function clearMessage(){ document.getElementById("message").innerHTML=""; }
-    function setLoginMessage(html){ document.getElementById("loginMessage").innerHTML=html; }
-
-    function groupRosterByStaff(rows){
-      const map=new Map();
-      for(const row of rows){
-        if(!map.has(row.staff_id)) map.set(row.staff_id,{staff_id:row.staff_id,full_name:row.full_name,role:row.role,roster_group:row.roster_group,days:{}});
-        map.get(row.staff_id).days[row.shift_date]=row;
+      const cellBg=n.type==='common'?'#fafafa':(n.type==='absent'||n.type==='ot-booked')?'#fff5f5':'#fff';
+      if(appt){
+        const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
+        const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
+        const nm=`${appt.patients?.first_name||''} ${appt.patients?.surname||''}`.trim()||'Unknown patient';
+        html+=`<td style="padding:8px 10px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${bg};vertical-align:top;">
+          <div style="font-weight:600;font-size:12px;">${htmlSafe(nm)}</div>
+          <div style="font-size:10px;color:#7a8fa6;">${htmlSafe(appt.patients?.id_card||'')}</div>
+          ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞 ${htmlSafe(appt.patients.phone_number)}</div>`:''}
+          ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
+          <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
+            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
+            ${appt.status!=='attended'?`<button onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✓</button>`:''}
+            ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
+            ${appt.status!=='cancelled'?`<button onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>`:''}
+            <button onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
+          </div>
+        </td>`;
+      }else if(n.type==='absent'||n.type==='ot-booked'){
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;">Not rostered</td>`;
+      }else{
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};">
+          <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
+        </td>`;
       }
-      return Array.from(map.values()).sort((a,b)=>{const ga=a.roster_group||"", gb=b.roster_group||""; if(ga!==gb)return ga.localeCompare(gb); return a.full_name.localeCompare(b.full_name);});
-    }
-    function monthRange(monthValue){
-      const [year,month]=monthValue.split("-").map(Number);const startDate=new Date(year,month-1,1);const endDate=new Date(year,month,0);const days=[];const cursor=new Date(startDate);
-      while(cursor<=endDate){days.push(new Date(cursor));cursor.setDate(cursor.getDate()+1);}
-      return {start:isoFromDate(startDate),end:isoFromDate(endDate),days};
-    }
-    function todayISO(){ return isoFromDate(new Date()); }
-    function monthISO(date){ const y=date.getFullYear(); const m=String(date.getMonth()+1).padStart(2,"0"); return `${y}-${m}`; }
-    function isoFromDate(date){ const y=date.getFullYear(); const m=String(date.getMonth()+1).padStart(2,"0"); const d=String(date.getDate()).padStart(2,"0"); return `${y}-${m}-${d}`; }
-    function formatDate(value){ if(!value)return""; const [y,m,d]=String(value).split("-"); return `${d}/${m}/${y}`; }
-    function formatDateTime(value){ if(!value)return""; const dt=new Date(value); return dt.toLocaleString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
-    function weekdayShort(date){ return date.toLocaleDateString("en-GB",{weekday:"short"}); }
-    function labelRole(role){ const labels={sno:"Senior Nursing Officer",charge_nurse:"Charge Nurse",nurse:"Staff Nurse",carer:"Carer",healthcare_assistant:"Healthcare Assistant",other:"Other"}; return labels[role]||role||""; }
-    function labelEmployment(value){ const labels={core:"Core",relieving_pool:"Relieving Pool",external_overtime:"External Overtime",agency:"Agency",other:"Other"}; return labels[value]||value||""; }
-    function escapeHtml(value){ return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
-  </script>
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  con.innerHTML=html;
+}
+
+async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+async function bookSlot(slot,date,nid,nname,ntype){
+  const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
+  document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
+    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · ${htmlSafe(targetLabel)}</div>
+    <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
+    <div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}','${jsSafe(nid)}','${jsSafe(ntype)}')">Book Patient</button></div>`;
+  openMo();
+}
+async function doBook(slot,date,nurseIdParam,nurseType){
+  const fn=document.getElementById('p-fn').value.trim();
+  const sn=document.getElementById('p-sn').value.trim();
+  const id=document.getElementById('p-id').value.trim();
+  const ph=document.getElementById('p-ph').value.trim();
+  if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
+
+  let{data:pat,error:patErr}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
+  if(patErr&&!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
+  if(!pat?.id){alert('Error saving patient.');return;}
+
+  const payload={patient_id:pat.id,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
+  if(nurseType==='ot') payload.bank_staff_id=nurseIdParam;
+  else if(nurseType==='common') { payload.assigned_to=null; payload.bank_staff_id=null; }
+  else if(nurseIdParam&&nurseIdParam!=='undefined') payload.assigned_to=nurseIdParam;
+
+  const{error}=await SB.from('appointments').insert(payload);
+  if(error){alert('Booking error: '+error.message);return;}
+  closeModal();loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
+}
+
+// COD
+async function populateCODDropdowns(){
+  const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
+  const opts=(sd||[]).map(s=>`<option value="${s.id}">${s.full_name}</option>`).join('');
+  ['cod-n-staff','cod-h-staff','cod-s-staff'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=`<option value="">— Select —</option>${opts}`;});
+  const{data:hd}=await SB.from('public_holidays').select('*').order('holiday_date');
+  const holOpts=(hd||[]).map(h=>`<option value="${h.holiday_date}">${h.name} (${h.holiday_date})</option>`).join('');
+  ['cod-h-off','cod-h-work'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=`<option value="">— Select —</option>${holOpts}`;});
+  const sundays=getSundays(60);
+  const sunOpts=sundays.map(ds=>{const dt=new Date(ds+'T12:00:00');return`<option value="${ds}">${dt.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</option>`;}).join('');
+  ['cod-s-off','cod-s-work'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=`<option value="">— Select —</option>${sunOpts}`;});
+}
+
+async function saveCOD(type){
+  let staffId,dayOff,dayWork,notes;
+  if(type==='normal'){staffId=document.getElementById('cod-n-staff').value;dayOff=document.getElementById('cod-n-off').value;dayWork=document.getElementById('cod-n-work').value;notes=document.getElementById('cod-n-notes').value;}
+  else if(type==='holiday'){staffId=document.getElementById('cod-h-staff').value;dayOff=document.getElementById('cod-h-off').value;dayWork=document.getElementById('cod-h-work').value;notes=document.getElementById('cod-h-notes').value;}
+  else{staffId=document.getElementById('cod-s-staff').value;dayOff=document.getElementById('cod-s-off').value;dayWork=document.getElementById('cod-s-work').value;notes=document.getElementById('cod-s-notes').value;}
+  if(!staffId||!dayOff||!dayWork){alert('Please fill in all required fields.');return;}
+  if(dayOff===dayWork){alert('The two dates must be different.');return;}
+  const typeLabel=type==='holiday'?'Holiday Swap':type==='sunday'?'Sunday Swap':'Normal Swap';
+  const noteTag=`COD-${type}: ${notes||typeLabel} [${dayOff}↔${dayWork}]`;
+  await SB.from('roster').upsert({staff_id:staffId,roster_date:dayOff,status:'off',notes:noteTag+' [Day Off]'},{onConflict:'staff_id,roster_date'});
+  await SB.from('roster').upsert({staff_id:staffId,roster_date:dayWork,status:'working',notes:noteTag+' [Work Day]'},{onConflict:'staff_id,roster_date'});
+  if(type==='normal'){document.getElementById('cod-n-off').value='';document.getElementById('cod-n-work').value='';document.getElementById('cod-n-notes').value='';}
+  else if(type==='holiday'){document.getElementById('cod-h-off').value='';document.getElementById('cod-h-work').value='';document.getElementById('cod-h-notes').value='';}
+  else{document.getElementById('cod-s-off').value='';document.getElementById('cod-s-work').value='';document.getElementById('cod-s-notes').value='';}
+  alert('✅ Change of duty recorded!');
+  loadCOD();renderRoster();
+}
+
+async function loadCOD(){
+  const{data}=await SB.from('roster').select('*, staff(full_name,role)').like('notes','COD-%').order('created_at',{ascending:false});
+  renderCODTable('cod-tbody-normal',(data||[]).filter(r=>r.notes?.startsWith('COD-normal')),'No normal day swaps');
+  renderCODTable('cod-tbody-holiday',(data||[]).filter(r=>r.notes?.startsWith('COD-holiday')),'No holiday swaps');
+  renderCODTable('cod-tbody-sunday',(data||[]).filter(r=>r.notes?.startsWith('COD-sunday')),'No Sunday swaps');
+}
+
+function renderCODTable(tbodyId,records,emptyMsg){
+  const tbody=document.getElementById(tbodyId);
+  if(!records||!records.length){tbody.innerHTML=`<tr><td colspan="5" class="empty">${emptyMsg}</td></tr>`;return;}
+  const pairs={};
+  records.forEach(r=>{const key=r.notes?.replace(' [Day Off]','').replace(' [Work Day]','');if(!pairs[key])pairs[key]={staff:r.staff,dayOff:null,dayWork:null,notes:r.notes,created:r.created_at};if(r.status==='off')pairs[key].dayOff=r.roster_date;if(r.status==='working')pairs[key].dayWork=r.roster_date;});
+  tbody.innerHTML=Object.values(pairs).map(p=>`<tr><td><strong>${p.staff?.full_name}</strong></td><td>${p.dayOff||'—'}</td><td>${p.dayWork||'—'}</td><td style="color:var(--muted);font-size:12px;">${p.notes?.split(':')[1]?.split('[')[0]?.trim()||'—'}</td><td style="color:var(--muted);font-size:11px;">${p.created?.split('T')[0]||'—'}</td></tr>`).join('');
+}
+
+// STAFF AUDIT
+async function loadStaffAudit(){
+  const month=document.getElementById('audit-month')?.value;
+  const year=document.getElementById('audit-year')?.value;
+  let query=SB.from('leave_records').select('*, staff(full_name,role)').order('start_date',{ascending:false});
+  if(year&&month){query=query.gte('start_date',`${year}-${month}-01`).lte('start_date',monthEndDate(year,month));}
+  else if(year){query=query.gte('start_date',`${year}-01-01`).lte('start_date',`${year}-12-31`);}
+  const{data}=await query;
+  const all=data||[];
+  const sick=all.filter(l=>l.leave_type==='sick_leave');
+  const annual=all.filter(l=>l.leave_type==='annual_leave');
+  const mat=all.filter(l=>l.leave_type==='maternity_leave');
+  const study=all.filter(l=>l.leave_type==='study_leave');
+  const ot=all.filter(l=>l.leave_type==='overtime'&&!l.notes?.startsWith('TIL-Off')&&!l.notes?.startsWith('TIL-In'));
+  const tilOnly=all.filter(l=>l.leave_type==='overtime'&&(l.notes?.startsWith('TIL-Off')||l.notes?.startsWith('TIL-In')));
+  document.getElementById('audit-stats').innerHTML=`
+    <div class="sbox"><div class="sl">Sick Leave</div><div class="sv">${sick.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">Annual Leave</div><div class="sv">${annual.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">Maternity</div><div class="sv">${mat.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">Study Leave</div><div class="sv">${study.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">Overtime</div><div class="sv">${ot.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">TIL</div><div class="sv">${tilOnly.length}</div><div class="ss">records</div></div>`;
+  const renderSimple=(tbodyId,records)=>{
+    const tb=document.getElementById(tbodyId);
+    if(!records.length){tb.innerHTML='<tr><td colspan="5" class="empty">No records</td></tr>';return;}
+    tb.innerHTML=records.map(l=>`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days}</strong> days</td><td style="color:var(--muted)">${l.notes||'—'}</td></tr>`).join('');
+  };
+  const leaveAll=[...annual,...mat];
+  const leaveTb=document.getElementById('leave-tbody');
+  if(!leaveAll.length){leaveTb.innerHTML='<tr><td colspan="6" class="empty">No records</td></tr>';}
+  else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';return`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days}</strong> days</td><td style="color:var(--muted)">${l.notes||'—'}</td></tr>`;}).join('');}
+  renderSimple('sick-tbody',sick);renderSimple('study-tbody',study);renderSimple('overtime-tbody',ot);
+  const tilTb=document.getElementById('til-audit-tbody');
+  if(!tilOnly.length){tilTb.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';}
+  else{tilTb.innerHTML=tilOnly.map(l=>{
+    const isOff=l.notes?.startsWith('TIL-Off');
+    const typeLabel=isOff?'TIL Off':'TIL In';
+    const typeCls=isOff?'background:#e8f5f4;color:var(--teal);':'background:#e8eaf6;color:#3949ab;';
+    const hoursMatch=l.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
+    const timeMatch=l.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
+    const startT2=timeMatch?timeMatch[1]:'07:00',untilT2=timeMatch?timeMatch[2]:'—';
+    return`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td>${l.start_date}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT2}</td><td>${untilT2}</td><td><span class="til-badge">${hrs}h</span></td></tr>`;
+  }).join('');}
+}
+
+// CLINIC AUDIT
+function toggleSort(){caSort=caSort==='desc'?'asc':'desc';document.getElementById('sort-btn').textContent=caSort==='desc'?'↓ Newest First':'↑ Oldest First';loadClinicAudit();}
+function clearCAFilter(){document.getElementById('ca-month').value='';document.getElementById('ca-year').value='';loadClinicAudit();}
+
+async function loadClinicAudit(){
+  const month=document.getElementById('ca-month')?.value;
+  const year=document.getElementById('ca-year')?.value;
+  const asc=caSort==='asc';
+  let start=null,end=null;
+  if(year&&month){start=`${year}-${month}-01`;end=monthEndDate(year,month);}
+  else if(year){start=`${year}-01-01`;end=`${year}-12-31`;}
+
+  const data=await fetchAppointmentsRange(start,end,asc);
+  const tot=data?.length||0,att=data?.filter(a=>a.status==='attended').length||0,can=data?.filter(a=>a.status==='cancelled').length||0,dna=data?.filter(a=>a.status==='did_not_attend').length||0;
+  document.getElementById('clinic-stats').innerHTML=`
+    <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${tot}</div><div class="ss">filtered</div></div>
+    <div class="sbox"><div class="sl">Attended</div><div class="sv">${att}</div><div class="ss" style="color:var(--green)">✓ seen</div></div>
+    <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${can}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
+    <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dna}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>`;
+  const tbody=document.getElementById('clinic-tbody');
+  if(!data||!data.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No appointments found</td></tr>';return;}
+  const sm={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'};
+  const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
+  tbody.innerHTML=data.map(a=>`<tr>
+    <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
+    <td><strong>${htmlSafe(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Unknown patient')}</strong></td>
+    <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
+    <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+    <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
+    <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
+    <td style="white-space:nowrap;">
+      <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
+      <button class="ncb-btn ncb-dna" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">✗ DNTU</button>
+      <button class="ncb-btn ncb-cancel" onclick="setOutcome('${a.id}','cancelled')" style="margin-left:3px;">Cancel</button>
+      <button class="ncb-btn ncb-del" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">🗑</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+
+
+// REPORTS & CHARTS - no staff leave metrics and no per-nurse booking metrics
+function pct(num,den){return den?Math.round((num/den)*100):0;}
+function chartDataCount(items,keyFn,labels){
+  const counts={};labels.forEach(l=>counts[l]=0);
+  items.forEach(item=>{const k=keyFn(item);if(counts[k]!==undefined)counts[k]++;});
+  return labels.map(l=>counts[l]||0);
+}
+function destroyChart(id){if(reportCharts[id]){reportCharts[id].destroy();delete reportCharts[id];}}
+function makeChart(id,type,labels,data,label,extra={}){
+  const ctx=document.getElementById(id);
+  if(!ctx||typeof Chart==='undefined')return;
+  destroyChart(id);
+  reportCharts[id]=new Chart(ctx,{type, data:{labels,datasets:[{label,data,borderWidth:2,tension:.35,fill:false}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='doughnut'||type==='pie'}},scales:type==='doughnut'||type==='pie'?{}:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}});
+}
+function statusLabel(status){return {booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
+function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
+function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
+
+async function loadReports(){
+  const year=document.getElementById('rep-year')?.value||String(new Date().getFullYear());
+  const month=document.getElementById('rep-month')?.value||'';
+  const start=month?`${year}-${month}-01`:`${year}-01-01`;
+  const end=month?monthEndDate(year,month):`${year}-12-31`;
+
+  const appts=await fetchAppointmentsRange(start,end,true);
+  const total=appts.length;
+  const attended=appts.filter(a=>a.status==='attended').length;
+  const cancelled=appts.filter(a=>a.status==='cancelled').length;
+  const dna=appts.filter(a=>a.status==='did_not_attend').length;
+  const booked=appts.filter(a=>a.status==='booked').length;
+  const activeTotal=appts.filter(a=>a.status!=='cancelled').length;
+
+  const slotCounts={};SLOTS.forEach(s=>slotCounts[s]=0);appts.forEach(a=>{const s=String(a.appt_slot||'').slice(0,5);if(slotCounts[s]!==undefined)slotCounts[s]++;});
+  const busiestSlot=Object.entries(slotCounts).sort((a,b)=>b[1]-a[1])[0]||['—',0];
+
+  const kpis=document.getElementById('report-kpis');
+  if(kpis){
+    kpis.innerHTML=`
+      <div class="kpi"><div class="k-label">Total Appointments</div><div class="k-value">${total}</div><div class="k-sub">selected period</div></div>
+      <div class="kpi"><div class="k-label">Attended Rate</div><div class="k-value">${pct(attended,total)}%</div><div class="k-sub">${attended} attended</div></div>
+      <div class="kpi"><div class="k-label">DNTU Rate</div><div class="k-value">${pct(dna,total)}%</div><div class="k-sub">${dna} did not turn up</div></div>
+      <div class="kpi"><div class="k-label">Cancellation Rate</div><div class="k-value">${pct(cancelled,total)}%</div><div class="k-sub">${cancelled} cancelled</div></div>
+      <div class="kpi"><div class="k-label">Active Bookings</div><div class="k-value">${activeTotal}</div><div class="k-sub">excluding cancelled</div></div>
+      <div class="kpi"><div class="k-label">Busiest Slot</div><div class="k-value" style="font-size:24px;">${busiestSlot[0]}</div><div class="k-sub">${busiestSlot[1]} booking${busiestSlot[1]!==1?'s':''}</div></div>`;
+  }
+
+  const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthNums=['01','02','03','04','05','06','07','08','09','10','11','12'];
+  const monthTotals=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m).length);
+  makeChart('chart-monthly-trend','line',monthLabels,monthTotals,'Appointments');
+
+  makeChart('chart-status-distribution','doughnut',['Booked','Attended','Cancelled','DNTU'],[booked,attended,cancelled,dna],'Outcomes',{cutout:'55%'});
+
+  const dayLabels=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const dayData=chartDataCount(appts,a=>{
+    const d=new Date(a.appt_date+'T12:00:00');
+    const idx=d.getDay();
+    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][idx];
+  },dayLabels);
+  makeChart('chart-day-demand','bar',dayLabels,dayData,'Appointments');
+  makeChart('chart-slot-demand','bar',SLOTS,SLOTS.map(s=>slotCounts[s]||0),'Bookings');
+
+  const today=TODAY;
+  const upLabels=[];const upData=[];
+  for(let i=0;i<14;i++){
+    const ds=dateAddStr(today,i);
+    const d=new Date(ds+'T12:00:00');
+    upLabels.push(d.toLocaleDateString('en-MT',{day:'numeric',month:'short'}));
+    upData.push(0);
+  }
+
+  const upStart=today,upEnd=dateAddStr(today,13);
+  const upcoming=(await fetchAppointmentsRange(upStart,upEnd,true)).filter(a=>a.status!=='cancelled');
+
+  upcoming.forEach(a=>{
+    const diff=Math.round((new Date(a.appt_date+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);
+    if(diff>=0&&diff<14)upData[diff]++;
+  });
+  makeChart('chart-upcoming-load','bar',upLabels,upData,'Booked Appointments');
+
+  const upTb=document.getElementById('rep-upcoming-tbody');
+  if(upTb){
+    const upRows=upcoming.slice(0,25);
+    upTb.innerHTML=upRows.length?upRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='did_not_attend'?'sb-dna':a.status==='cancelled'?'sb-cancelled':'sb-booked'}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No upcoming appointments in the next 14 days</td></tr>';
+  }
+
+  const exTb=document.getElementById('rep-exceptions-tbody');
+  if(exTb){
+    const exceptionRows=appts.filter(a=>a.status==='did_not_attend'||a.status==='cancelled').slice(-25).reverse();
+    exTb.innerHTML=exceptionRows.length?exceptionRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${a.status==='did_not_attend'?'sb-dna':'sb-cancelled'}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No DNTU or cancelled appointments in this period</td></tr>';
+  }
+
+  const slotsTb=document.getElementById('rep-slots-tbody');
+  if(slotsTb){
+    const slotRows=SLOTS.map(s=>{
+      const rows=appts.filter(a=>String(a.appt_slot||'').slice(0,5)===s);
+      return {slot:s,total:rows.length,attended:rows.filter(a=>a.status==='attended').length,dna:rows.filter(a=>a.status==='did_not_attend').length,cancelled:rows.filter(a=>a.status==='cancelled').length};
+    }).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
+    slotsTb.innerHTML=slotRows.length?slotRows.map(r=>`<tr><td><strong>${r.slot}</strong></td><td>${r.total}</td><td>${r.attended}</td><td>${r.dna}</td><td>${r.cancelled}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No slot data for this period</td></tr>';
+  }
+}
+
+
+
+// MODALS
+async function openModal(type,...args){
+  let html='';
+  if(type==='appt'){
+    const[slot,date,nurseId,nurseName]=args;
+    html=`<h2>Book Patient</h2>
+      <div class="msub">${date} — ${slot}${nurseName?` · ${nurseName}`:''}</div>
+      <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
+      <div class="fg"><label>ID Card Number *</label><input type="text" id="p-id" placeholder="Malta ID card"/></div>
+      <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
+      <div class="mact">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
+      </div>`;
+  }else if(type==='leave'){
+    const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
+    const opts=(sd||[]).map(s=>`<option value="${s.id}">${s.full_name}</option>`).join('');
+    html=`<h2>Add Leave Record</h2>
+      <div class="fg"><label>Staff Member *</label><select id="l-staff"><option value="">— Select —</option>${opts}</select></div>
+      <div class="fg"><label>Leave Type *</label>
+        <select id="l-type">
+          <option value="sick_leave">🤒 Sick Leave</option>
+          <option value="annual_leave">🌴 Annual Leave</option>
+          <option value="maternity_leave">🤱 Maternity Leave</option>
+          <option value="study_leave">📚 Study Leave</option>
+          <option value="overtime">⏰ Overtime</option>
+        </select>
+      </div>
+      <div class="fg"><label>From Date *</label><input type="date" id="l-start"/></div>
+      <div class="fg"><label>To Date *</label><input type="date" id="l-end"/></div>
+      <div class="fg"><label>Notes</label><input type="text" id="l-notes" placeholder="Optional..."/></div>
+      <div class="mact">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" onclick="saveLeave()">Save Record</button>
+      </div>`;
+  }
+  document.getElementById('mb').innerHTML=html;
+  openMo();
+}
+
+async function saveAppt(slot,date,nurseId){
+  const fn=document.getElementById('p-fn').value.trim();
+  const sn=document.getElementById('p-sn').value.trim();
+  const idno=document.getElementById('p-id').value.trim();
+  const phone=document.getElementById('p-phone')?.value.trim()||'';
+  if(!fn||!sn||!idno){alert('Please fill in all patient details.');return;}
+  const{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:idno,phone_number:phone||null},{onConflict:'id_card'}).select().single();
+  let patId=pat?.id;
+  if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
+  if(!patId){alert('Error saving patient.');return;}
+  const{error}=await SB.from('appointments').insert({
+    patient_id:patId,appt_date:date,appt_slot:slot,
+    assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
+    status:'booked'
+  });
+  if(error){alert('Booking error: '+error.message);return;}
+  closeModal();loadAppts();loadTodaySnapshot();
+}
+
+async function saveLeave(){
+  const sid=document.getElementById('l-staff').value;
+  const type=document.getElementById('l-type').value;
+  const start=document.getElementById('l-start').value;
+  const end=document.getElementById('l-end').value;
+  const notes=document.getElementById('l-notes').value;
+  if(!sid||!start||!end){alert('Please fill in all required fields.');return;}
+  const sd=new Date(start+'T12:00:00'),ed=new Date(end+'T12:00:00');
+  if(ed<sd){alert('End date cannot be before start date.');return;}
+  const totalDays=Math.round((ed-sd)/86400000)+1;
+  await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
+  closeModal();loadStaffAudit();renderRoster();
+}
+
+async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();}
+async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();}
+function openMo(){document.getElementById('mo').classList.add('open');}
+function closeMo(){document.getElementById('mo').classList.remove('open');}
+function closeModal(){document.getElementById('mo').classList.remove('open');}
+function moOut(e){if(e.target===document.getElementById('mo'))closeModal();}
+
+checkSession();
+</script>
 </body>
 </html>
