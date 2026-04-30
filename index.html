@@ -171,6 +171,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .filter-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
 .filter-row label{font-size:12px;font-weight:600;color:var(--navy);}
 .filter-row select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.filter-row input{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;min-width:260px;}
+.filter-row input:focus{border-color:var(--teal);}
 .sort-btn{padding:7px 14px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;color:var(--navy);}
 
 .card{background:white;border-radius:12px;border:1px solid var(--border);padding:20px;box-shadow:0 2px 6px rgba(0,0,0,.05);margin-bottom:16px;}
@@ -455,6 +457,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="phdr"><div><h2>Clinic Audit</h2><p>Outpatient appointment history &amp; statistics</p></div></div>
       <div class="srow" id="clinic-stats"></div>
       <div class="filter-row">
+        <label>Search:</label>
+        <input type="text" id="ca-search" placeholder="Search patient, ID card, phone, date, slot, status..." oninput="loadClinicAudit()"/>
         <label>Filter:</label>
         <select id="ca-month" onchange="loadClinicAudit()">
           <option value="">All Months</option>
@@ -477,6 +481,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <tbody id="clinic-tbody"></tbody>
         </table></div>
       </div>
+    </div>
 
     <!-- REPORTS & CHARTS -->
     <div class="page" id="page-reports">
@@ -529,6 +534,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <h3>📅 Upcoming 14-Day Clinic Load</h3>
           <canvas id="chart-upcoming-load"></canvas>
         </div>
+        <div class="report-card wide">
+          <h3>⚠️ DNTU &amp; Cancelled Trend</h3>
+          <canvas id="chart-exception-trend"></canvas>
+        </div>
+        <div class="report-card wide">
+          <h3>📊 Monthly Status Breakdown</h3>
+          <canvas id="chart-monthly-status"></canvas>
+        </div>
+        <div class="report-card">
+          <h3>📦 Week-of-Month Workload</h3>
+          <canvas id="chart-week-load"></canvas>
+        </div>
+        <div class="report-card">
+          <h3>🚫 DNTU by Appointment Slot</h3>
+          <canvas id="chart-dntu-slot"></canvas>
+        </div>
       </div>
 
       <div class="report-grid">
@@ -547,9 +568,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <div class="report-note">Counts by appointment time only. No staff/per-nurse breakdown included.</div>
           <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Slot</th><th>Total Bookings</th><th>Attended</th><th>DNTU</th><th>Cancelled</th></tr></thead><tbody id="rep-slots-tbody"></tbody></table></div>
         </div>
+        <div class="report-card wide">
+          <h3>🔥 Busiest Clinic Days</h3>
+          <div class="report-note">Highest-load clinic dates in the selected period. No nurse breakdown included.</div>
+          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Total Bookings</th><th>Attended</th><th>DNTU</th><th>Cancelled</th></tr></thead><tbody id="rep-busy-days-tbody"></tbody></table></div>
+        </div>
       </div>
-    </div>
-
     </div>
 
   </div>
@@ -595,75 +619,48 @@ function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLoca
 
 function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
 function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function monthEndDate(year,month){return `${year}-${month}-${String(new Date(Number(year),Number(month),0).getDate()).padStart(2,'0')}`;}
 
 
-// APPOINTMENT READ HELPERS
-// Reads appointments first, then separately loads patient/staff names.
-// This avoids Supabase embedded relationship read failures that can make saved bookings display as 0.
-function mapById(rows){
-  const out={};
-  (rows||[]).forEach(r=>{ if(r?.id!==undefined && r?.id!==null) out[String(r.id)] = r; });
-  return out;
+/* SAFE APPOINTMENT LOADER
+   Do not use embedded Supabase relationship reads for appointments.
+   Read appointment rows first, then join patients/staff/bank_staff in JavaScript. */
+function uniqueNonEmpty(values){
+  return [...new Set((values||[]).filter(v=>v!==null&&v!==undefined&&String(v).trim()!=='').map(v=>String(v)))];
 }
-function uniqueIds(rows,key){
-  return [...new Set((rows||[]).map(r=>r?.[key]).filter(v=>v!==null && v!==undefined && String(v)!=='' ).map(v=>String(v)))];
+function mapById(rows){
+  const m={};
+  (rows||[]).forEach(r=>{m[String(r.id)]=r;});
+  return m;
 }
 async function enrichAppointments(rows){
-  const appts=rows||[];
-  if(!appts.length)return [];
-
-  const patientIds=uniqueIds(appts,'patient_id');
-  const staffIds=uniqueIds(appts,'assigned_to');
-  const bankIds=uniqueIds(appts,'bank_staff_id');
+  const base=rows||[];
+  const patientIds=uniqueNonEmpty(base.map(a=>a.patient_id));
+  const staffIds=uniqueNonEmpty(base.map(a=>a.assigned_to));
+  const bankIds=uniqueNonEmpty(base.map(a=>a.bank_staff_id));
 
   let patientsMap={}, staffMap={}, bankMap={};
 
   if(patientIds.length){
-    const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number').in('id',patientIds);
-    if(error){console.error('patients read error',error);alert('Patient read error: '+error.message);}
+    const{data}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number').in('id',patientIds);
     patientsMap=mapById(data||[]);
   }
   if(staffIds.length){
-    const{data,error}=await SB.from('staff').select('id,full_name,role').in('id',staffIds);
-    if(error){console.error('staff read error',error);alert('Staff read error: '+error.message);}
+    const{data}=await SB.from('staff').select('id,full_name,role').in('id',staffIds);
     staffMap=mapById(data||[]);
   }
   if(bankIds.length){
-    const{data,error}=await SB.from('bank_staff').select('id,full_name,role').in('id',bankIds);
-    if(error){console.error('bank staff read error',error);alert('Bank staff read error: '+error.message);}
+    const{data}=await SB.from('bank_staff').select('id,full_name,role').in('id',bankIds);
     bankMap=mapById(data||[]);
   }
 
-  return appts.map(a=>({
+  return base.map(a=>({
     ...a,
-    patients: patientsMap[String(a.patient_id)] || null,
-    staff: staffMap[String(a.assigned_to)] || null,
-    bank_staff: bankMap[String(a.bank_staff_id)] || null
+    patients:a.patient_id?patientsMap[String(a.patient_id)]||null:null,
+    staff:a.assigned_to?staffMap[String(a.assigned_to)]||null:null,
+    bank_staff:a.bank_staff_id?bankMap[String(a.bank_staff_id)]||null:null
   }));
 }
-async function fetchAppointmentsForDate(date){
-  const{data,error}=await SB.from('appointments').select('*').eq('appt_date',date).order('appt_slot',{ascending:true});
-  if(error){
-    console.error('appointments read error',error);
-    alert('Appointment read error: '+error.message);
-    return [];
-  }
-  return enrichAppointments(data||[]);
-}
-async function fetchAppointmentsRange(start,end,ascending=true){
-  let query=SB.from('appointments').select('*').order('appt_date',{ascending}).order('appt_slot',{ascending});
-  if(start)query=query.gte('appt_date',start);
-  if(end)query=query.lte('appt_date',end);
-  const{data,error}=await query;
-  if(error){
-    console.error('appointments range read error',error);
-    alert('Appointment read error: '+error.message);
-    return [];
-  }
-  return enrichAppointments(data||[]);
-}
-
+function monthEndDate(year,month){return `${year}-${month}-${String(new Date(Number(year),Number(month),0).getDate()).padStart(2,'0')}`;}
 
 function defaultCode(staff,dateStr){
   const[y,m,d]=dateStr.split('-').map(Number);
@@ -916,21 +913,19 @@ async function loadTodaySnapshot(){
   const d=new Date(snapCurrentDate+'T12:00:00');
   const isToday=snapCurrentDate===TODAY;
   document.getElementById('snap-date').textContent=d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+(isToday?' (Today)':'');
-
-  const appts=await fetchAppointmentsForDate(snapCurrentDate);
+  const{data:rawAppts}=await SB.from('appointments').select('*').eq('appt_date',snapCurrentDate).order('appt_slot');
+  const appts=await enrichAppointments(rawAppts||[]);
   const body=document.getElementById('snap-body');
   const countEl=document.getElementById('snap-count');
   const booked=(appts||[]).filter(a=>a.status!=='cancelled');
-
   if(countEl)countEl.textContent=`${booked.length} patient${booked.length!==1?'s':''}`;
   if(!appts||!appts.length){body.innerHTML='<div class="pt-snap-empty">No patients booked</div>';return;}
-
   const sc={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'};
   const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
   body.innerHTML=appts.map(a=>`<div class="pt-row">
-    <div class="pt-slot">${String(a.appt_slot||'').slice(0,5)}</div>
-    <div style="flex:1;"><div style="font-weight:600;">${htmlSafe(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Unknown patient')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}</div>
-    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
+    <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
+    <div style="flex:1;"><div style="font-weight:600;">${a.patients?.first_name} ${a.patients?.surname}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${a.patients.phone_number}</div>`:''}</div>
+    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);">${a.staff?.full_name||a.bank_staff?.full_name||'Common'}</div>`:''}
     <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
   </div>`).join('');
 }
@@ -949,6 +944,7 @@ async function addOT(){
   await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:end});
   document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
   renderRoster();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
 
 // ADD TIL
@@ -1091,16 +1087,25 @@ async function getWorkingNurses(date){
 // Get ALL nurses who have bookings on a date — even if now absent (sick etc.)
 // Used to show existing bookings with warning when nurse is absent
 async function getNursesWithBookings(date, workingNurses){
-  const appts=await fetchAppointmentsForDate(date);
-  const workingIds=new Set((workingNurses||[]).map(n=>String(n.id)));
+  const{data:appts}=await SB.from('appointments')
+    .select('assigned_to, staff(full_name)')
+    .eq('appt_date',date)
+    .neq('status','cancelled');
+
+  const workingIds=new Set(workingNurses.map(n=>n.id));
   const extraNurses=[];
   const seen=new Set();
 
-  for(const a of(appts||[]).filter(x=>x.status!=='cancelled')){
-    if(a.assigned_to && !workingIds.has(String(a.assigned_to)) && !seen.has(String(a.assigned_to))){
-      seen.add(String(a.assigned_to));
-      const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
-      extraNurses.push({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent-with-bookings',status:'absent'});
+  for(const a of(appts||[])){
+    if(a.assigned_to && !workingIds.has(a.assigned_to) && !seen.has(a.assigned_to)){
+      seen.add(a.assigned_to);
+      // Find nurse details
+      const coreStaff=staffList.find(s=>s.id===a.assigned_to);
+      if(coreStaff){
+        extraNurses.push({id:coreStaff.id,name:coreStaff.full_name,type:'absent-with-bookings',status:'absent'});
+      }else if(a.staff?.full_name){
+        extraNurses.push({id:a.assigned_to,name:a.staff.full_name,type:'absent-with-bookings',status:'absent'});
+      }
     }
   }
   return extraNurses;
@@ -1117,12 +1122,15 @@ async function loadAppts(){
   const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
   const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
 
-  const appts=await fetchAppointmentsForDate(date);
+  const{data:rawAppts}=await SB.from('appointments')
+    .select('*')
+    .eq('appt_date',date)
+    .order('appt_slot');
+  const appts=await enrichAppointments(rawAppts||[]);
 
   const nurses=[];
   const addNurse=(n)=>{
-    if(n.type==='common') { nurses.push(n); return; }
-    const sameId=nurses.some(x=>String(x.id)===String(n.id) && x.type!=='common');
+    const sameId=nurses.some(x=>String(x.id)===String(n.id) && x.type!=='common' && n.type!=='common');
     if(!sameId)nurses.push(n);
   };
 
@@ -1141,9 +1149,11 @@ async function loadAppts(){
   }
 
   for(const b of(otToday||[])){
-    if(b.bank_staff?.full_name)addNurse({id:b.bank_staff.id||b.bank_staff_id,name:b.bank_staff.full_name,type:'ot'});
+    if(b.bank_staff?.full_name)addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
   }
 
+  // Important fix: show existing bookings even when that nurse is now off/sick/leave or not rostered.
+  // Without this, the appointment exists in Supabase but has no visible column, so it looks as if it disappeared.
   for(const a of(appts||[]).filter(x=>x.status!=='cancelled')){
     if(a.assigned_to && !nurses.some(n=>String(n.id)===String(a.assigned_to))){
       const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
@@ -1154,7 +1164,7 @@ async function loadAppts(){
     }
   }
 
-  addNurse({id:'common',name:'Common',type:'common'});
+  nurses.push({id:'common',name:'Common',type:'common'});
 
   const workingCount=nurses.filter(n=>!['common','absent','ot-booked'].includes(n.type)).length;
   const extraCount=nurses.filter(n=>['absent','ot-booked'].includes(n.type)).length;
@@ -1194,7 +1204,7 @@ async function loadAppts(){
       if(appt){
         const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
         const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
-        const nm=`${appt.patients?.first_name||''} ${appt.patients?.surname||''}`.trim()||'Unknown patient';
+        const nm=`${appt.patients?.first_name||''} ${appt.patients?.surname||''}`.trim();
         html+=`<td style="padding:8px 10px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${bg};vertical-align:top;">
           <div style="font-weight:600;font-size:12px;">${htmlSafe(nm)}</div>
           <div style="font-size:10px;color:#7a8fa6;">${htmlSafe(appt.patients?.id_card||'')}</div>
@@ -1306,60 +1316,173 @@ function renderCODTable(tbodyId,records,emptyMsg){
 async function loadStaffAudit(){
   const month=document.getElementById('audit-month')?.value;
   const year=document.getElementById('audit-year')?.value;
-  let query=SB.from('leave_records').select('*, staff(full_name,role)').order('start_date',{ascending:false});
-  if(year&&month){query=query.gte('start_date',`${year}-${month}-01`).lte('start_date',monthEndDate(year,month));}
-  else if(year){query=query.gte('start_date',`${year}-01-01`).lte('start_date',`${year}-12-31`);}
-  const{data}=await query;
-  const all=data||[];
+
+  let startFilter=null,endFilter=null;
+  if(year&&month){startFilter=`${year}-${month}-01`;endFilter=monthEndDate(year,month);}
+  else if(year){startFilter=`${year}-01-01`;endFilter=`${year}-12-31`;}
+
+  // Read leave_records raw first, then enrich staff separately.
+  // This avoids embedded relationship reads hiding records.
+  let leaveQuery=SB.from('leave_records').select('*').order('start_date',{ascending:false});
+  if(startFilter&&endFilter){leaveQuery=leaveQuery.gte('start_date',startFilter).lte('start_date',endFilter);}
+  const{data:leaveRaw,error:leaveError}=await leaveQuery;
+
+  // OT nurses added from the roster bar are stored in bank_staff_assignments, not leave_records.
+  let bankQuery=SB.from('bank_staff_assignments').select('*').order('work_date',{ascending:false});
+  if(startFilter&&endFilter){bankQuery=bankQuery.gte('work_date',startFilter).lte('work_date',endFilter);}
+  const{data:bankRaw,error:bankError}=await bankQuery;
+
+  if(leaveError){console.error('Staff audit leave_records error:',leaveError);}
+  if(bankError){console.error('Staff audit bank_staff_assignments error:',bankError);}
+
+  const leaveRows=leaveRaw||[];
+  const bankRows=bankRaw||[];
+
+  const staffIds=[...new Set(leaveRows.map(r=>r.staff_id).filter(Boolean))];
+  const bankIds=[...new Set(bankRows.map(r=>r.bank_staff_id).filter(Boolean))];
+
+  const staffMap={};
+  staffList.forEach(s=>{staffMap[String(s.id)]=s;});
+  if(staffIds.length){
+    const{data:staffData}=await SB.from('staff').select('id,full_name,role').in('id',staffIds);
+    (staffData||[]).forEach(s=>{staffMap[String(s.id)]=s;});
+  }
+
+  const bankMap={};
+  if(bankIds.length){
+    const{data:bankData}=await SB.from('bank_staff').select('id,full_name,role').in('id',bankIds);
+    (bankData||[]).forEach(b=>{bankMap[String(b.id)]=b;});
+  }
+
+  const all=leaveRows.map(l=>({...l,staff:staffMap[String(l.staff_id)]||null}));
+  const bankAll=bankRows.map(b=>({...b,bank_staff:bankMap[String(b.bank_staff_id)]||null}));
+
+  const isTilNote=notes=>String(notes||'').startsWith('TIL-Off')||String(notes||'').startsWith('TIL-In');
+  const time5=v=>v?String(v).slice(0,5):'';
+  const calcHours=(start,end)=>{
+    if(!start||!end)return '—';
+    const[sh,sm]=String(start).split(':').map(Number);
+    const[eh,em]=String(end).split(':').map(Number);
+    if(Number.isNaN(sh)||Number.isNaN(eh))return '—';
+    const mins=(eh*60+(sm||0))-(sh*60+(sm||0));
+    const fixedMins=(eh*60+(em||0))-(sh*60+(sm||0));
+    if(fixedMins<=0)return '—';
+    return `${Math.floor(fixedMins/60)}h${fixedMins%60?` ${fixedMins%60}m`:''}`;
+  };
+  const daysBetween=(s,e)=>{
+    if(!s||!e)return 1;
+    const sd=new Date(s+'T12:00:00'),ed=new Date(e+'T12:00:00');
+    if(Number.isNaN(sd.getTime())||Number.isNaN(ed.getTime()))return 1;
+    return Math.max(1,Math.round((ed-sd)/86400000)+1);
+  };
+
   const sick=all.filter(l=>l.leave_type==='sick_leave');
   const annual=all.filter(l=>l.leave_type==='annual_leave');
   const mat=all.filter(l=>l.leave_type==='maternity_leave');
   const study=all.filter(l=>l.leave_type==='study_leave');
-  const ot=all.filter(l=>l.leave_type==='overtime'&&!l.notes?.startsWith('TIL-Off')&&!l.notes?.startsWith('TIL-In'));
-  const tilOnly=all.filter(l=>l.leave_type==='overtime'&&(l.notes?.startsWith('TIL-Off')||l.notes?.startsWith('TIL-In')));
+
+  const coreOT=all.filter(l=>l.leave_type==='overtime'&&!isTilNote(l.notes));
+  const bankOT=bankAll.filter(b=>!isTilNote(b.notes));
+  const coreTIL=all.filter(l=>l.leave_type==='overtime'&&isTilNote(l.notes));
+  const bankTIL=bankAll.filter(b=>isTilNote(b.notes));
+
+  const otRows=[
+    ...coreOT.map(l=>({
+      name:l.staff?.full_name||'Unknown',
+      role:l.staff?.role||'Staff',
+      from:l.start_date,
+      to:l.end_date,
+      days:l.total_days||daysBetween(l.start_date,l.end_date),
+      notes:l.notes||'—',
+      sortDate:l.start_date
+    })),
+    ...bankOT.map(b=>({
+      name:b.bank_staff?.full_name||'Unknown',
+      role:b.bank_staff?.role||'OT Nurse',
+      from:b.work_date,
+      to:b.work_date,
+      days:1,
+      notes:`${time5(b.shift_start)||'07:00'}–${time5(b.shift_end)||'—'} (${calcHours(b.shift_start,b.shift_end)})${b.notes?` — ${b.notes}`:''}`,
+      sortDate:b.work_date
+    }))
+  ].sort((a,b)=>String(b.sortDate||'').localeCompare(String(a.sortDate||'')));
+
+  const tilRows=[
+    ...coreTIL.map(l=>({
+      name:l.staff?.full_name||'Unknown',
+      role:l.staff?.role||'Staff',
+      date:l.start_date,
+      notes:l.notes||'',
+      sortDate:l.start_date
+    })),
+    ...bankTIL.map(b=>({
+      name:b.bank_staff?.full_name||'Unknown',
+      role:b.bank_staff?.role||'OT/TIL Staff',
+      date:b.work_date,
+      notes:b.notes||'',
+      sortDate:b.work_date
+    }))
+  ].sort((a,b)=>String(b.sortDate||'').localeCompare(String(a.sortDate||'')));
+
   document.getElementById('audit-stats').innerHTML=`
     <div class="sbox"><div class="sl">Sick Leave</div><div class="sv">${sick.length}</div><div class="ss">records</div></div>
     <div class="sbox"><div class="sl">Annual Leave</div><div class="sv">${annual.length}</div><div class="ss">records</div></div>
     <div class="sbox"><div class="sl">Maternity</div><div class="sv">${mat.length}</div><div class="ss">records</div></div>
     <div class="sbox"><div class="sl">Study Leave</div><div class="sv">${study.length}</div><div class="ss">records</div></div>
-    <div class="sbox"><div class="sl">Overtime</div><div class="sv">${ot.length}</div><div class="ss">records</div></div>
-    <div class="sbox"><div class="sl">TIL</div><div class="sv">${tilOnly.length}</div><div class="ss">records</div></div>`;
-  const renderSimple=(tbodyId,records)=>{
+    <div class="sbox"><div class="sl">Overtime</div><div class="sv">${otRows.length}</div><div class="ss">records</div></div>
+    <div class="sbox"><div class="sl">TIL</div><div class="sv">${tilRows.length}</div><div class="ss">records</div></div>`;
+
+  const renderLeaveSimple=(tbodyId,records)=>{
     const tb=document.getElementById(tbodyId);
     if(!records.length){tb.innerHTML='<tr><td colspan="5" class="empty">No records</td></tr>';return;}
-    tb.innerHTML=records.map(l=>`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days}</strong> days</td><td style="color:var(--muted)">${l.notes||'—'}</td></tr>`).join('');
+    tb.innerHTML=records.map(l=>`<tr><td><strong>${htmlSafe(l.staff?.full_name||'Unknown')}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(l.staff?.role||'Staff')}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days||daysBetween(l.start_date,l.end_date)}</strong> days</td><td style="color:var(--muted)">${htmlSafe(l.notes||'—')}</td></tr>`).join('');
   };
-  const leaveAll=[...annual,...mat];
+
+  const leaveAll=[...annual,...mat].sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||'')));
   const leaveTb=document.getElementById('leave-tbody');
   if(!leaveAll.length){leaveTb.innerHTML='<tr><td colspan="6" class="empty">No records</td></tr>';}
-  else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';return`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days}</strong> days</td><td style="color:var(--muted)">${l.notes||'—'}</td></tr>`;}).join('');}
-  renderSimple('sick-tbody',sick);renderSimple('study-tbody',study);renderSimple('overtime-tbody',ot);
+  else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';return`<tr><td><strong>${htmlSafe(l.staff?.full_name||'Unknown')}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(l.staff?.role||'Staff')}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days||daysBetween(l.start_date,l.end_date)}</strong> days</td><td style="color:var(--muted)">${htmlSafe(l.notes||'—')}</td></tr>`;}).join('');}
+
+  renderLeaveSimple('sick-tbody',sick.sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||''))));
+  renderLeaveSimple('study-tbody',study.sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||''))));
+
+  const otTb=document.getElementById('overtime-tbody');
+  if(!otRows.length){otTb.innerHTML='<tr><td colspan="5" class="empty">No overtime records</td></tr>';}
+  else{otTb.innerHTML=otRows.map(r=>`<tr><td><strong>${htmlSafe(r.name)}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(r.role)}</span></td><td>${r.from}</td><td>${r.to}</td><td><strong>${r.days}</strong> day${Number(r.days)!==1?'s':''}</td><td style="color:var(--muted)">${htmlSafe(r.notes)}</td></tr>`).join('');}
+
   const tilTb=document.getElementById('til-audit-tbody');
-  if(!tilOnly.length){tilTb.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';}
-  else{tilTb.innerHTML=tilOnly.map(l=>{
-    const isOff=l.notes?.startsWith('TIL-Off');
+  if(!tilRows.length){tilTb.innerHTML='<tr><td colspan="6" class="empty">No TIL records</td></tr>';}
+  else{tilTb.innerHTML=tilRows.map(r=>{
+    const isOff=String(r.notes||'').startsWith('TIL-Off');
     const typeLabel=isOff?'TIL Off':'TIL In';
     const typeCls=isOff?'background:#e8f5f4;color:var(--teal);':'background:#e8eaf6;color:#3949ab;';
-    const hoursMatch=l.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
-    const timeMatch=l.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
+    const hoursMatch=String(r.notes||'').match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
+    const timeMatch=String(r.notes||'').match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
     const startT2=timeMatch?timeMatch[1]:'07:00',untilT2=timeMatch?timeMatch[2]:'—';
-    return`<tr><td><strong>${l.staff?.full_name}</strong><br/><span style="font-size:11px;color:var(--muted)">${l.staff?.role}</span></td><td>${l.start_date}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT2}</td><td>${untilT2}</td><td><span class="til-badge">${hrs}h</span></td></tr>`;
+    return`<tr><td><strong>${htmlSafe(r.name)}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(r.role)}</span></td><td>${r.date}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT2}</td><td>${untilT2}</td><td><span class="til-badge">${hrs}h</span></td></tr>`;
   }).join('');}
 }
 
 // CLINIC AUDIT
 function toggleSort(){caSort=caSort==='desc'?'asc':'desc';document.getElementById('sort-btn').textContent=caSort==='desc'?'↓ Newest First':'↑ Oldest First';loadClinicAudit();}
-function clearCAFilter(){document.getElementById('ca-month').value='';document.getElementById('ca-year').value='';loadClinicAudit();}
+function clearCAFilter(){const s=document.getElementById('ca-search');if(s)s.value='';document.getElementById('ca-month').value='';document.getElementById('ca-year').value='';loadClinicAudit();}
 
 async function loadClinicAudit(){
   const month=document.getElementById('ca-month')?.value;
   const year=document.getElementById('ca-year')?.value;
   const asc=caSort==='asc';
-  let start=null,end=null;
-  if(year&&month){start=`${year}-${month}-01`;end=monthEndDate(year,month);}
-  else if(year){start=`${year}-01-01`;end=`${year}-12-31`;}
-
-  const data=await fetchAppointmentsRange(start,end,asc);
+  let query=SB.from('appointments').select('*').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
+  if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',monthEndDate(year,month));}
+  else if(year){query=query.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
+  const{data:rawData}=await query;
+  let data=await enrichAppointments(rawData||[]);
+  const search=(document.getElementById('ca-search')?.value||'').trim().toLowerCase();
+  if(search){
+    data=data.filter(a=>{
+      const hay=[a.patients?.first_name,a.patients?.surname,a.patients?.id_card,a.patients?.phone_number,a.appt_date,String(a.appt_slot||'').slice(0,5),statusLabel(a.status)].join(' ').toLowerCase();
+      return hay.includes(search);
+    });
+  }
   const tot=data?.length||0,att=data?.filter(a=>a.status==='attended').length||0,can=data?.filter(a=>a.status==='cancelled').length||0,dna=data?.filter(a=>a.status==='did_not_attend').length||0;
   document.getElementById('clinic-stats').innerHTML=`
     <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${tot}</div><div class="ss">filtered</div></div>
@@ -1371,11 +1494,11 @@ async function loadClinicAudit(){
   const sm={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'};
   const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
   tbody.innerHTML=data.map(a=>`<tr>
-    <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
-    <td><strong>${htmlSafe(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Unknown patient')}</strong></td>
-    <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
-    <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
-    <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
+    <td>${a.appt_date}</td><td><strong>${a.appt_slot?.slice(0,5)}</strong></td>
+    <td><strong>${a.patients?.first_name} ${a.patients?.surname}</strong></td>
+    <td style="font-family:monospace;font-size:12px;">${a.patients?.id_card}</td>
+    <td>${a.patients?.phone_number||'—'}</td>
+    <td>${a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—')}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
       <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
@@ -1404,6 +1527,16 @@ function makeChart(id,type,labels,data,label,extra={}){
   destroyChart(id);
   reportCharts[id]=new Chart(ctx,{type, data:{labels,datasets:[{label,data,borderWidth:2,tension:.35,fill:false}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='doughnut'||type==='pie'}},scales:type==='doughnut'||type==='pie'?{}:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}});
 }
+function makeMultiChart(id,type,labels,datasets,extra={}){
+  const ctx=document.getElementById(id);
+  if(!ctx||typeof Chart==='undefined')return;
+  destroyChart(id);
+  reportCharts[id]=new Chart(ctx,{
+    type,
+    data:{labels,datasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}
+  });
+}
 function statusLabel(status){return {booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
 function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
@@ -1414,7 +1547,14 @@ async function loadReports(){
   const start=month?`${year}-${month}-01`:`${year}-01-01`;
   const end=month?monthEndDate(year,month):`${year}-12-31`;
 
-  const appts=await fetchAppointmentsRange(start,end,true);
+  const{data:rawReportAppts}=await SB.from('appointments')
+    .select('*')
+    .gte('appt_date',start)
+    .lte('appt_date',end)
+    .order('appt_date',{ascending:true})
+    .order('appt_slot',{ascending:true});
+
+  const appts=await enrichAppointments(rawReportAppts||[]);
   const total=appts.length;
   const attended=appts.filter(a=>a.status==='attended').length;
   const cancelled=appts.filter(a=>a.status==='cancelled').length;
@@ -1425,9 +1565,9 @@ async function loadReports(){
   const slotCounts={};SLOTS.forEach(s=>slotCounts[s]=0);appts.forEach(a=>{const s=String(a.appt_slot||'').slice(0,5);if(slotCounts[s]!==undefined)slotCounts[s]++;});
   const busiestSlot=Object.entries(slotCounts).sort((a,b)=>b[1]-a[1])[0]||['—',0];
 
-  const kpis=document.getElementById('report-kpis');
-  if(kpis){
-    kpis.innerHTML=`
+  const kpiEl=document.getElementById('report-kpis');
+  if(kpiEl){
+    kpiEl.innerHTML=`
       <div class="kpi"><div class="k-label">Total Appointments</div><div class="k-value">${total}</div><div class="k-sub">selected period</div></div>
       <div class="kpi"><div class="k-label">Attended Rate</div><div class="k-value">${pct(attended,total)}%</div><div class="k-sub">${attended} attended</div></div>
       <div class="kpi"><div class="k-label">DNTU Rate</div><div class="k-value">${pct(dna,total)}%</div><div class="k-sub">${dna} did not turn up</div></div>
@@ -1439,18 +1579,48 @@ async function loadReports(){
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthNums=['01','02','03','04','05','06','07','08','09','10','11','12'];
   const monthTotals=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m).length);
+  const monthBooked=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='booked').length);
+  const monthAttended=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='attended').length);
+  const monthDntu=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='did_not_attend').length);
+  const monthCancelled=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='cancelled').length);
   makeChart('chart-monthly-trend','line',monthLabels,monthTotals,'Appointments');
+  makeMultiChart('chart-exception-trend','bar',monthLabels,[
+    {label:'DNTU',data:monthDntu,borderWidth:2},
+    {label:'Cancelled',data:monthCancelled,borderWidth:2}
+  ]);
+  makeMultiChart('chart-monthly-status','bar',monthLabels,[
+    {label:'Booked',data:monthBooked,borderWidth:2},
+    {label:'Attended',data:monthAttended,borderWidth:2},
+    {label:'DNTU',data:monthDntu,borderWidth:2},
+    {label:'Cancelled',data:monthCancelled,borderWidth:2}
+  ],{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
 
   makeChart('chart-status-distribution','doughnut',['Booked','Attended','Cancelled','DNTU'],[booked,attended,cancelled,dna],'Outcomes',{cutout:'55%'});
 
   const dayLabels=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const dayData=chartDataCount(appts,a=>{
     const d=new Date(a.appt_date+'T12:00:00');
-    const idx=d.getDay();
-    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][idx];
+    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
   },dayLabels);
   makeChart('chart-day-demand','bar',dayLabels,dayData,'Appointments');
+
   makeChart('chart-slot-demand','bar',SLOTS,SLOTS.map(s=>slotCounts[s]||0),'Bookings');
+
+  const weekLabels=['Week 1','Week 2','Week 3','Week 4','Week 5'];
+  const weekCounts={};weekLabels.forEach(w=>weekCounts[w]=0);
+  appts.forEach(a=>{
+    const day=Number(String(a.appt_date||'').slice(8,10));
+    const wk='Week '+Math.min(5,Math.max(1,Math.ceil(day/7)));
+    if(weekCounts[wk]!==undefined)weekCounts[wk]++;
+  });
+  makeChart('chart-week-load','bar',weekLabels,weekLabels.map(w=>weekCounts[w]||0),'Appointments');
+
+  const dntuSlotCounts={};SLOTS.forEach(s=>dntuSlotCounts[s]=0);
+  appts.filter(a=>a.status==='did_not_attend').forEach(a=>{
+    const s=String(a.appt_slot||'').slice(0,5);
+    if(dntuSlotCounts[s]!==undefined)dntuSlotCounts[s]++;
+  });
+  makeChart('chart-dntu-slot','bar',SLOTS,SLOTS.map(s=>dntuSlotCounts[s]||0),'DNTU');
 
   const today=TODAY;
   const upLabels=[];const upData=[];
@@ -1460,20 +1630,27 @@ async function loadReports(){
     upLabels.push(d.toLocaleDateString('en-MT',{day:'numeric',month:'short'}));
     upData.push(0);
   }
-
   const upStart=today,upEnd=dateAddStr(today,13);
-  const upcoming=(await fetchAppointmentsRange(upStart,upEnd,true)).filter(a=>a.status!=='cancelled');
+  const{data:rawUpcoming}=await SB.from('appointments')
+    .select('*')
+    .gte('appt_date',upStart)
+    .lte('appt_date',upEnd)
+    .neq('status','cancelled')
+    .order('appt_date',{ascending:true})
+    .order('appt_slot',{ascending:true});
+  const upcoming=await enrichAppointments(rawUpcoming||[]);
 
-  upcoming.forEach(a=>{
+  (upcoming||[]).forEach(a=>{
     const diff=Math.round((new Date(a.appt_date+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);
     if(diff>=0&&diff<14)upData[diff]++;
   });
   makeChart('chart-upcoming-load','bar',upLabels,upData,'Booked Appointments');
 
+  const statusClass=a=>a.status==='attended'?'sb-attended':a.status==='did_not_attend'?'sb-dna':a.status==='cancelled'?'sb-cancelled':'sb-booked';
   const upTb=document.getElementById('rep-upcoming-tbody');
   if(upTb){
-    const upRows=upcoming.slice(0,25);
-    upTb.innerHTML=upRows.length?upRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='did_not_attend'?'sb-dna':a.status==='cancelled'?'sb-cancelled':'sb-booked'}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No upcoming appointments in the next 14 days</td></tr>';
+    const upRows=(upcoming||[]).slice(0,25);
+    upTb.innerHTML=upRows.length?upRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${statusClass(a)}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No upcoming appointments in the next 14 days</td></tr>';
   }
 
   const exTb=document.getElementById('rep-exceptions-tbody');
@@ -1490,8 +1667,21 @@ async function loadReports(){
     }).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
     slotsTb.innerHTML=slotRows.length?slotRows.map(r=>`<tr><td><strong>${r.slot}</strong></td><td>${r.total}</td><td>${r.attended}</td><td>${r.dna}</td><td>${r.cancelled}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No slot data for this period</td></tr>';
   }
-}
 
+  const busyTb=document.getElementById('rep-busy-days-tbody');
+  if(busyTb){
+    const byDate={};
+    appts.forEach(a=>{
+      if(!byDate[a.appt_date])byDate[a.appt_date]={date:a.appt_date,total:0,attended:0,dna:0,cancelled:0};
+      byDate[a.appt_date].total++;
+      if(a.status==='attended')byDate[a.appt_date].attended++;
+      if(a.status==='did_not_attend')byDate[a.appt_date].dna++;
+      if(a.status==='cancelled')byDate[a.appt_date].cancelled++;
+    });
+    const busyRows=Object.values(byDate).sort((a,b)=>b.total-a.total||a.date.localeCompare(b.date)).slice(0,15);
+    busyTb.innerHTML=busyRows.length?busyRows.map(r=>`<tr><td><strong>${r.date}</strong></td><td>${r.total}</td><td>${r.attended}</td><td>${r.dna}</td><td>${r.cancelled}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No clinic day data for this period</td></tr>';
+  }
+}
 
 
 // MODALS
@@ -1568,8 +1758,8 @@ async function saveLeave(){
   closeModal();loadStaffAudit();renderRoster();
 }
 
-async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();}
-async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();}
+async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
+async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeMo(){document.getElementById('mo').classList.remove('open');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
