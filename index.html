@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
-<!-- Build v9: appointment snapshot row action buttons added -->
+<!-- Build v16: Daily Attendance cleaned wording and removed bottom signature footer -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -303,6 +303,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-filters button{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
+.daily-recipient-note{align-self:end;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#f8fafc;color:var(--muted);font-size:11px;line-height:1.35;max-width:360px;}
 </style>
 </head>
 <body>
@@ -505,12 +506,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <label>Submitted By</label>
           <input type="text" id="daily-submitter" placeholder="Name / email" onchange="loadDailyAttendance()"/>
         </div>
+        <div class="daily-recipient-note">
+          Send button uses Nurse HR and the saved general clinic email. If the general email is not saved yet, the app will ask for it once.
+        </div>
         <button class="daily-btn secondary" onclick="dailyChangeDay(-1)">← Previous Day</button>
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
         <button class="daily-btn secondary" onclick="dailyChangeDay(1)">Next Day →</button>
         <button class="daily-btn" onclick="loadDailyAttendance()">Refresh</button>
-        <button class="daily-btn secondary" onclick="copyDailyAttendanceText()">Copy Email Text</button>
-        <button class="daily-btn" onclick="emailDailyAttendanceReport()">Open Email</button>
+        <button class="daily-btn" onclick="emailDailyAttendanceReport()">Send Daily Attendance</button>
         <button class="daily-btn red" onclick="window.print()">Print</button>
       </div>
       <div class="daily-shell">
@@ -700,6 +703,9 @@ let reportCharts={};
 let otLogGroups={};
 let tilLogGroups={};
 let dailyAttendanceCache=null;
+const DAILY_NURSE_HR_DEFAULT='nursehr.mdh@gov.mt';
+const DAILY_NURSE_HR_KEY='mdh_stoma_daily_nurse_hr_email';
+const DAILY_GENERAL_EMAIL_KEY='mdh_stoma_daily_general_email';
 
 const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
 
@@ -869,6 +875,50 @@ function getSundays(count=60){
 
 document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
+function splitEmails(value){
+  return String(value||'')
+    .split(/[;,]+/)
+    .map(v=>v.trim())
+    .filter(Boolean);
+}
+function uniqueEmails(values){
+  const seen=new Set();
+  const out=[];
+  (values||[]).forEach(v=>{
+    const email=String(v||'').trim();
+    const key=email.toLowerCase();
+    if(email&&!seen.has(key)){seen.add(key);out.push(email);}
+  });
+  return out;
+}
+function loadDailyRecipientSettings(){
+  if(!localStorage.getItem(DAILY_NURSE_HR_KEY)){
+    localStorage.setItem(DAILY_NURSE_HR_KEY,DAILY_NURSE_HR_DEFAULT);
+  }
+}
+function saveDailyRecipientSettings(){
+  if(!localStorage.getItem(DAILY_NURSE_HR_KEY)){
+    localStorage.setItem(DAILY_NURSE_HR_KEY,DAILY_NURSE_HR_DEFAULT);
+  }
+}
+function getDailyAttendanceRecipients(){
+  const nurseVal=(localStorage.getItem(DAILY_NURSE_HR_KEY)||DAILY_NURSE_HR_DEFAULT).trim()||DAILY_NURSE_HR_DEFAULT;
+  const genVal=(localStorage.getItem(DAILY_GENERAL_EMAIL_KEY)||'').trim();
+  return uniqueEmails([...splitEmails(nurseVal),...splitEmails(genVal)]);
+}
+function ensureGeneralClinicEmail(){
+  let genVal=(localStorage.getItem(DAILY_GENERAL_EMAIL_KEY)||'').trim();
+  if(genVal)return genVal;
+  genVal=prompt('Enter the general clinic email address to receive Daily Attendance as well:','')||'';
+  genVal=genVal.trim();
+  if(!genVal){
+    alert('General clinic email was not saved. Daily Attendance email was not opened.');
+    return '';
+  }
+  localStorage.setItem(DAILY_GENERAL_EMAIL_KEY,genVal);
+  return genVal;
+}
+
 // AUTH
 async function doLogin(){
   const email=document.getElementById('li-email').value.trim();
@@ -889,6 +939,7 @@ async function startApp(){
   document.getElementById('til-date').value=TODAY;
   document.getElementById('jump-date').value=TODAY;
   const dailyDate=document.getElementById('daily-date'); if(dailyDate)dailyDate.value=TODAY;
+  loadDailyRecipientSettings();
   selectedJumpDate=TODAY;
   await loadHolidays();
   await loadStaff();
@@ -2728,7 +2779,7 @@ async function loadDailyAttendance(){
     <div class="att-top">
       <div>
         <div class="att-title">Ward Name: ${htmlSafe(ward)}: ${dateStr.split('-').reverse().join('/')}</div>
-        <div class="att-sub">Structured email-style daily attendance generated from roster, leave, overtime, TIL, and COD records${hol?`<br/><strong>Malta Public Holiday:</strong> ${htmlSafe(hol)}`:''}</div>
+        ${hol?`<div class="att-sub"><strong>Malta Public Holiday:</strong> ${htmlSafe(hol)}</div>`:''}
       </div>
       <div class="att-meta">
         Generated: ${new Date().toLocaleString('en-MT')}<br/>
@@ -2750,10 +2801,7 @@ async function loadDailyAttendance(){
     ${attendanceSection('Night Duty','night',data.night)}
     ${attendanceSection('Constant Watch (if any)','watch',data.watch)}
     <div class="att-notes"><div class="att-note-title">System notes / audit trail</div>${data.notes.length?data.notes.map(n=>`<div>• ${htmlSafe(n)}</div>`).join(''):'No COD, OT, TIL, or leave notes for this date.'}</div>
-    <div class="att-footer">
-      <div class="att-sign"><strong>Name &amp; Surname:</strong><br/>${htmlSafe(submitter||'—')}</div>
-      <div class="att-sign"><strong>Grade:</strong><br/>PN</div>
-    </div>`;
+    `;
 }
 function dailyChangeDay(dir){
   const el=document.getElementById('daily-date'); if(!el)return;
@@ -2822,12 +2870,16 @@ async function copyDailyAttendanceText(){
 }
 async function emailDailyAttendanceReport(){
   if(!dailyAttendanceCache)await loadDailyAttendance();
+  saveDailyRecipientSettings();
+  const generalEmail=ensureGeneralClinicEmail();
+  if(!generalEmail)return;
   const d=dailyAttendanceCache;
   const body=buildDailyAttendanceEmailText();
   const subject=`Stoma Care Daily Attendance — ${d.date}`;
-  const to='nursehr.mdh@gov.mt';
+  const recipients=getDailyAttendanceRecipients();
+  if(!recipients.length){alert('No recipient email address is available.');return;}
   try{await navigator.clipboard.writeText(body);}catch(e){}
-  window.location.href=`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href=`mailto:${recipients.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 // MODALS
