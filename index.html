@@ -489,7 +489,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="phdr">
         <div>
           <h2>Daily Attendance</h2>
-          <p>Auto-generated from the roster, leave, overtime, TIL, and change-of-duty records using the official daily attendance layout</p>
+          <p>Auto-generated email-style daily attendance report from roster, leave, overtime, TIL, and change-of-duty records</p>
         </div>
       </div>
       <div class="daily-toolbar">
@@ -509,9 +509,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
         <button class="daily-btn secondary" onclick="dailyChangeDay(1)">Next Day →</button>
         <button class="daily-btn" onclick="loadDailyAttendance()">Refresh</button>
-        <button class="daily-btn gold" onclick="exportDailyAttendanceCSV()">Export Excel CSV</button>
         <button class="daily-btn secondary" onclick="copyDailyAttendanceText()">Copy Email Text</button>
-        <button class="daily-btn" onclick="emailDailyAttendanceReport()">Email Nurse HR</button>
+        <button class="daily-btn" onclick="emailDailyAttendanceReport()">Open Email</button>
         <button class="daily-btn red" onclick="window.print()">Print</button>
       </div>
       <div class="daily-shell">
@@ -2469,6 +2468,11 @@ function gradeFromRole(role){
   if(r.includes('nurse'))return 'N';
   return String(role||'').trim()||'—';
 }
+function inferSubmitterGrade(name){
+  const key=normalizeNameKey(fullDisplayName(name||''));
+  const st=(staffList||[]).find(s=>normalizeNameKey(fullDisplayName(s.full_name))===key || normalizeNameKey(s.full_name)===key);
+  return st?gradeFromRole(st.role):'PN';
+}
 function dutyFromStatus(status){
   if(status==='working'||status==='overtime')return 'B';
   return 'O';
@@ -2724,7 +2728,7 @@ async function loadDailyAttendance(){
     <div class="att-top">
       <div>
         <div class="att-title">Ward Name: ${htmlSafe(ward)}: ${dateStr.split('-').reverse().join('/')}</div>
-        <div class="att-sub">Daily attendance generated from roster, leave, overtime, TIL, and COD records${hol?`<br/><strong>Malta Public Holiday:</strong> ${htmlSafe(hol)}`:''}</div>
+        <div class="att-sub">Structured email-style daily attendance generated from roster, leave, overtime, TIL, and COD records${hol?`<br/><strong>Malta Public Holiday:</strong> ${htmlSafe(hol)}`:''}</div>
       </div>
       <div class="att-meta">
         Generated: ${new Date().toLocaleString('en-MT')}<br/>
@@ -2774,28 +2778,47 @@ function exportDailyAttendanceCSV(){
   const a=document.createElement('a');
   a.href=url; a.download=`Stoma_Care_Daily_Attendance_${dailyAttendanceCache.date}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
+function emailCell(value){return String(value||'').replace(/\n/g,' / ').trim();}
+function appendDailyAttendanceEmailSection(lines,title,rows){
+  lines.push(title.toUpperCase());
+  lines.push('Name & Surname | Grade | Duty | P | SL | VL | ABS | COD | O.T | TOIL');
+  if(!rows||!rows.length){
+    lines.push('—');
+    lines.push('');
+    return;
+  }
+  rows.forEach(r=>{
+    lines.push(`${r.name} | ${r.grade} | ${r.duty} | ${r.p?'✓':''} | ${r.sl?'✓':''} | ${r.vl?'✓':''} | ${r.abs?'✓':''} | ${r.cod?'✓':''} | ${emailCell(r.otText||(r.ot?'✓':''))} | ${emailCell(r.toilText||(r.toil?'✓':''))}`);
+  });
+  lines.push('');
+}
 function buildDailyAttendanceEmailText(){
   const d=dailyAttendanceCache; if(!d)return '';
   const lines=[];
-  lines.push(`Ward Name: ${d.ward}: ${d.date.split('-').reverse().join('/')}`);
-  lines.push(`Report date: ${dateLabelLong(d.date)}`);
-  lines.push(`Submitted by: ${d.submitter||'—'}`);
+  lines.push(`Ward Name: ${d.ward}`);
+  lines.push(`Date: ${d.date.split('-').reverse().join('/')}`);
   lines.push('');
-  lines.push(`Present: ${d.counts.p} | SL: ${d.counts.sl} | VL: ${d.counts.vl} | ABS: ${d.counts.abs} | COD: ${d.counts.cod} | O.T: ${d.counts.ot} | TOIL: ${d.counts.toil}`);
+  appendDailyAttendanceEmailSection(lines,'Day Duty',d.day);
+  appendDailyAttendanceEmailSection(lines,'Night Duty',d.night);
+  appendDailyAttendanceEmailSection(lines,'Constant Watch',d.watch);
+  lines.push('Summary');
+  lines.push(`P: ${d.counts.p} | SL: ${d.counts.sl} | VL: ${d.counts.vl} | ABS: ${d.counts.abs} | COD: ${d.counts.cod} | O.T: ${d.counts.ot} | TOIL: ${d.counts.toil}`);
+  if(d.notes?.length){
+    lines.push('');
+    lines.push('System notes / audit trail');
+    d.notes.forEach(n=>lines.push('- '+n));
+  }
   lines.push('');
-  lines.push('Day Duty');
-  lines.push('Name | Grade | Duty | P | SL | VL | ABS | COD | O.T | TOIL');
-  d.day.forEach(r=>lines.push(`${r.name} | ${r.grade} | ${r.duty} | ${r.p?'X':''} | ${r.sl?'X':''} | ${r.vl?'X':''} | ${r.abs?'X':''} | ${r.cod?'X':''} | ${(r.otText||(r.ot?'X':'')).replace(/\n/g,' / ')} | ${(r.toilText||(r.toil?'X':'')).replace(/\n/g,' / ')}`));
-  lines.push('');
-  lines.push('Night Duty: No records');
-  lines.push('Constant Watch: No records');
-  if(d.notes?.length){lines.push('');lines.push('System notes / audit trail');d.notes.forEach(n=>lines.push('- '+n));}
+  lines.push('Submitted by:');
+  lines.push(d.submitter||'—');
+  lines.push('Grade:');
+  lines.push(inferSubmitterGrade(d.submitter));
   return lines.join('\n');
 }
 async function copyDailyAttendanceText(){
   if(!dailyAttendanceCache)await loadDailyAttendance();
   const body=buildDailyAttendanceEmailText();
-  try{await navigator.clipboard.writeText(body);alert('Daily attendance text copied.');}catch(e){alert(body);}
+  try{await navigator.clipboard.writeText(body);alert('Daily attendance email text copied.');}catch(e){alert(body);}
 }
 async function emailDailyAttendanceReport(){
   if(!dailyAttendanceCache)await loadDailyAttendance();
