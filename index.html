@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
-<!-- Build v16: Daily Attendance cleaned wording and removed bottom signature footer -->
+<!-- Build v17: Nurse HR email hard-coded for Daily Attendance send button -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -507,7 +507,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <input type="text" id="daily-submitter" placeholder="Name / email" onchange="loadDailyAttendance()"/>
         </div>
         <div class="daily-recipient-note">
-          Send button uses Nurse HR and the saved general clinic email. If the general email is not saved yet, the app will ask for it once.
+          Send button sends to Nurse HR automatically and also to the saved general clinic email when available.
         </div>
         <button class="daily-btn secondary" onclick="dailyChangeDay(-1)">← Previous Day</button>
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
@@ -892,30 +892,22 @@ function uniqueEmails(values){
   return out;
 }
 function loadDailyRecipientSettings(){
-  if(!localStorage.getItem(DAILY_NURSE_HR_KEY)){
-    localStorage.setItem(DAILY_NURSE_HR_KEY,DAILY_NURSE_HR_DEFAULT);
-  }
+  // Nurse HR is fixed so the Send Daily Attendance button always has at least one recipient.
+  // General clinic email remains saved locally after it is entered once.
 }
 function saveDailyRecipientSettings(){
-  if(!localStorage.getItem(DAILY_NURSE_HR_KEY)){
-    localStorage.setItem(DAILY_NURSE_HR_KEY,DAILY_NURSE_HR_DEFAULT);
-  }
+  // Kept for compatibility with earlier builds. Nurse HR is now hard-coded below.
 }
 function getDailyAttendanceRecipients(){
-  const nurseVal=(localStorage.getItem(DAILY_NURSE_HR_KEY)||DAILY_NURSE_HR_DEFAULT).trim()||DAILY_NURSE_HR_DEFAULT;
   const genVal=(localStorage.getItem(DAILY_GENERAL_EMAIL_KEY)||'').trim();
-  return uniqueEmails([...splitEmails(nurseVal),...splitEmails(genVal)]);
+  return uniqueEmails([DAILY_NURSE_HR_DEFAULT,...splitEmails(genVal)]);
 }
 function ensureGeneralClinicEmail(){
   let genVal=(localStorage.getItem(DAILY_GENERAL_EMAIL_KEY)||'').trim();
   if(genVal)return genVal;
-  genVal=prompt('Enter the general clinic email address to receive Daily Attendance as well:','')||'';
+  genVal=prompt('Optional: enter the general clinic email address to receive Daily Attendance as well. Leave blank to send to Nurse HR only:','')||'';
   genVal=genVal.trim();
-  if(!genVal){
-    alert('General clinic email was not saved. Daily Attendance email was not opened.');
-    return '';
-  }
-  localStorage.setItem(DAILY_GENERAL_EMAIL_KEY,genVal);
+  if(genVal)localStorage.setItem(DAILY_GENERAL_EMAIL_KEY,genVal);
   return genVal;
 }
 
@@ -2871,8 +2863,7 @@ async function copyDailyAttendanceText(){
 async function emailDailyAttendanceReport(){
   if(!dailyAttendanceCache)await loadDailyAttendance();
   saveDailyRecipientSettings();
-  const generalEmail=ensureGeneralClinicEmail();
-  if(!generalEmail)return;
+  ensureGeneralClinicEmail();
   const d=dailyAttendanceCache;
   const body=buildDailyAttendanceEmailText();
   const subject=`Stoma Care Daily Attendance — ${d.date}`;
