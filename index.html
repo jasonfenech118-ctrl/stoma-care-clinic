@@ -3134,19 +3134,58 @@ async function copyDailyAttendanceText(){
   const body=buildDailyAttendanceEmailText();
   try{await navigator.clipboard.writeText(body);alert('Daily attendance email text copied.');}catch(e){alert(body);}
 }
+function buildDailyAttendanceEmailHtml(){
+  const d=dailyAttendanceCache; if(!d)return '';
+  const tick=v=>v?'✓':'';
+  const cell=v=>htmlSafe(String(v||'')).replace(/\n/g,'<br/>');
+  const section=(title,rows)=>{
+    let html=`<h3 style="margin:18px 0 8px;color:#1a2e4a;font-family:Arial,sans-serif;">${htmlSafe(title)}</h3>`;
+    html+=`<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;"><thead><tr style="background:#1a2e4a;color:#fff;"><th style="border:1px solid #ccc;padding:6px;text-align:left;">Name &amp; Surname</th><th style="border:1px solid #ccc;padding:6px;text-align:left;">Grade</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">Duty</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">P</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">SL</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">VL</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">ABS</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">COD</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">O.T</th><th style="border:1px solid #ccc;padding:6px;text-align:center;">TOIL</th></tr></thead><tbody>`;
+    if(!rows||!rows.length){html+=`<tr><td colspan="10" style="border:1px solid #ccc;padding:8px;color:#777;">—</td></tr>`;}
+    else rows.forEach(r=>{
+      html+=`<tr><td style="border:1px solid #ccc;padding:6px;">${cell(r.name)}</td><td style="border:1px solid #ccc;padding:6px;">${cell(r.grade)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${cell(r.duty)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${tick(r.p)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${tick(r.sl)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${tick(r.vl)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${tick(r.abs)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;">${tick(r.cod)}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;white-space:nowrap;">${cell(r.otText||(r.ot?'✓':''))}</td><td style="border:1px solid #ccc;padding:6px;text-align:center;white-space:nowrap;">${cell(r.toilText||(r.toil?'✓':''))}</td></tr>`;
+    });
+    return html+'</tbody></table>';
+  };
+  return `<div style="font-family:Arial,sans-serif;color:#1a2e2d;"><h2 style="margin:0 0 8px;color:#1a2e4a;">MDH Stoma Care Daily Attendance</h2><p><strong>Ward Name:</strong> ${cell(d.ward)}<br/><strong>Date:</strong> ${cell(d.date.split('-').reverse().join('/'))}</p>${section('Day Duty',d.day)}${section('Night Duty',d.night)}${section('Constant Watch',d.watch)}<h3 style="margin:18px 0 8px;color:#1a2e4a;">Summary</h3><p>P: ${d.counts.p} | SL: ${d.counts.sl} | VL: ${d.counts.vl} | ABS: ${d.counts.abs} | COD: ${d.counts.cod} | O.T: ${d.counts.ot} | TOIL: ${d.counts.toil}</p><p><strong>Submitted by:</strong><br/>${cell(d.submitter||'—')}<br/><strong>Grade:</strong><br/>${cell(inferSubmitterGrade(d.submitter))}</p></div>`;
+}
 async function emailDailyAttendanceReport(){
   updateSignedInUI();
   await loadDailyAttendance();
-  saveDailyRecipientSettings();
-  ensureGeneralClinicEmail();
   const d=dailyAttendanceCache;
   const body=buildDailyAttendanceEmailText();
+  const html=buildDailyAttendanceEmailHtml();
   const subject=`Stoma Care Daily Attendance — ${d.date}`;
-  const recipients=getDailyAttendanceRecipients();
-  if(!recipients.length){alert('No recipient email address is available.');return;}
-  await logAuditTrailAction('daily_attendance_send','daily_attendance',d.date,{report_date:d.date,ward:d.ward,subject,recipients});
-  try{await navigator.clipboard.writeText(body);}catch(e){}
-  window.location.href=`mailto:${recipients.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const btn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Send Daily Attendance');
+  const oldText=btn?btn.textContent:'Send Daily Attendance';
+  if(btn){btn.disabled=true;btn.textContent='Sending...';}
+  try{
+    const {data,error}=await SB.functions.invoke('send-daily-attendance',{
+      body:{
+        report_date:d.date,
+        ward:d.ward,
+        submitter:d.submitter||'',
+        submitter_grade:inferSubmitterGrade(d.submitter),
+        subject,
+        text:body,
+        html,
+        counts:d.counts,
+        day:d.day,
+        night:d.night,
+        watch:d.watch,
+        notes:d.notes||[]
+      }
+    });
+    if(error)throw error;
+    await logAuditTrailAction('daily_attendance_send','daily_attendance_submissions',data?.submission_id||d.date,{report_date:d.date,ward:d.ward,subject,provider_message_id:data?.provider_message_id||null,submission_id:data?.submission_id||null,recipients:data?.recipients||[]});
+    alert(`Daily Attendance sent successfully.${data?.submission_id?'\nReference: '+data.submission_id:''}`);
+  }catch(e){
+    console.error('Daily Attendance send failed:',e);
+    try{await navigator.clipboard.writeText(body);}catch(copyError){}
+    alert('Daily Attendance was not sent. The report text was copied so you can paste it manually if needed. Error: '+(e?.message||String(e)));
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=oldText;}
+  }
 }
 
 // MODALS
