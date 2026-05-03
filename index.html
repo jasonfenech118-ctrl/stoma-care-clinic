@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
-<!-- Build v17: Nurse HR email hard-coded for Daily Attendance send button -->
+<!-- Build v19: Latest GitHub file + login identity + password change + database audit trail -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -304,6 +304,37 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
 .daily-recipient-note{align-self:end;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#f8fafc;color:var(--muted);font-size:11px;line-height:1.35;max-width:360px;}
+
+/* ACCOUNT / PASSWORD */
+.account-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px;}
+.account-card{background:white;border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.account-card h3{font-size:15px;font-weight:800;color:var(--navy);margin-bottom:10px;}
+.account-row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding:9px 0;font-size:13px;}
+.account-row:last-child{border-bottom:none;}
+.account-label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.account-value{font-weight:700;color:var(--navy);text-align:right;}
+.account-form{display:grid;gap:10px;}
+.account-form label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.account-form input{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.account-form input:focus{border-color:var(--teal);}
+.account-msg{font-size:12px;margin-top:10px;min-height:18px;}
+.account-msg.ok{color:var(--green);font-weight:700;}
+.account-msg.err{color:var(--red);font-weight:700;}
+
+/* AUDIT TRAIL */
+.audit-toolbar{display:flex;align-items:end;gap:10px;flex-wrap:wrap;background:white;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+.audit-field{display:flex;flex-direction:column;gap:4px;}
+.audit-field label{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.audit-field input,.audit-field select{padding:8px 11px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;min-width:150px;}
+.audit-field input:focus,.audit-field select:focus{border-color:var(--teal);}
+.audit-action{font-weight:800;color:var(--navy);}
+.audit-meta{font-size:11px;color:var(--muted);line-height:1.4;}
+.audit-pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#eef2f7;color:var(--navy);font-size:10px;font-weight:800;text-transform:uppercase;}
+.audit-details{font-size:11px;color:var(--muted);max-width:420px;white-space:normal;line-height:1.35;}
+.tb-user{font-size:12px;color:rgba(255,255,255,.82);margin-right:12px;text-align:right;line-height:1.25;}
+.tb-actions{display:flex;align-items:center;gap:8px;}
+#daily-submitter[readonly]{background:#f8fafc;color:var(--navy);font-weight:700;}
+
 </style>
 </head>
 <body>
@@ -328,13 +359,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="tb-logo">MDH <span>Stoma Care</span> Clinic</div>
       <div class="tb-date" id="tb-date"></div>
     </div>
-    <button class="btn-so" onclick="doLogout()">Sign Out</button>
+    <div class="tb-actions">
+      <div class="tb-user" id="tb-user">Signed in</div>
+      <button class="btn-so" onclick="doLogout()">Sign Out</button>
+    </div>
   </div>
   <div class="tabs">
     <div class="tab active" onclick="switchTab('roster',this)">Monthly Roster</div>
     <div class="tab" onclick="switchTab('appointments',this)">Patient Appointments</div>
     <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
     <div class="tab" onclick="switchTab('daily-attendance',this)">Daily Attendance</div>
+    <div class="tab" onclick="switchTab('account',this)">Account</div>
+    <div class="tab" onclick="switchTab('audit-trail',this)">Audit Trail</div>
     <div class="tab" onclick="switchTab('staff-audit',this)">Staff Audit</div>
     <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
     <div class="tab" onclick="switchTab('reports',this)">Reports &amp; Charts</div>
@@ -504,10 +540,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         </div>
         <div class="daily-field">
           <label>Submitted By</label>
-          <input type="text" id="daily-submitter" placeholder="Name / email" onchange="loadDailyAttendance()"/>
+          <input type="text" id="daily-submitter" placeholder="Logged-in user" readonly/>
         </div>
         <div class="daily-recipient-note">
-          Send button sends to Nurse HR automatically and also to the saved general clinic email when available.
+          Send button sends to Nurse HR automatically. The report is stamped with the logged-in user name.
         </div>
         <button class="daily-btn secondary" onclick="dailyChangeDay(-1)">← Previous Day</button>
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
@@ -520,6 +556,88 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <div class="attendance-sheet" id="daily-attendance-sheet">
           <div class="empty">Select a date to generate the daily attendance sheet.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ACCOUNT -->
+    <div class="page" id="page-account">
+      <div class="phdr">
+        <div>
+          <h2>Account</h2>
+          <p>Logged-in user details and password change</p>
+        </div>
+      </div>
+      <div class="account-grid">
+        <div class="account-card">
+          <h3>Signed-in User</h3>
+          <div class="account-row"><div class="account-label">Name</div><div class="account-value" id="acct-name">—</div></div>
+          <div class="account-row"><div class="account-label">Email</div><div class="account-value" id="acct-email">—</div></div>
+          <div class="account-row"><div class="account-label">Grade</div><div class="account-value" id="acct-grade">—</div></div>
+          <div class="account-row"><div class="account-label">Daily Attendance Submitter</div><div class="account-value" id="acct-submit-name">—</div></div>
+        </div>
+        <div class="account-card">
+          <h3>Change Password</h3>
+          <div class="account-form">
+            <div>
+              <label>New Password</label>
+              <input type="password" id="acct-pass1" autocomplete="new-password" placeholder="Enter new password"/>
+            </div>
+            <div>
+              <label>Confirm New Password</label>
+              <input type="password" id="acct-pass2" autocomplete="new-password" placeholder="Confirm new password" onkeydown="if(event.key==='Enter')changeMyPassword()"/>
+            </div>
+            <button class="daily-btn" onclick="changeMyPassword()">Change Password</button>
+            <div class="account-msg" id="acct-msg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUDIT TRAIL -->
+    <div class="page" id="page-audit-trail">
+      <div class="phdr">
+        <div>
+          <h2>Audit Trail</h2>
+          <p>System activity recorded against the signed-in user</p>
+        </div>
+        <button class="btn-add" onclick="loadAuditTrail()">Refresh</button>
+      </div>
+      <div class="audit-toolbar">
+        <div class="audit-field">
+          <label>Search</label>
+          <input type="text" id="audit-search" placeholder="Name, email, table, action..." oninput="loadAuditTrail()"/>
+        </div>
+        <div class="audit-field">
+          <label>Table</label>
+          <select id="audit-table-filter" onchange="loadAuditTrail()">
+            <option value="">All Tables</option>
+            <option value="roster">Roster</option>
+            <option value="appointments">Appointments</option>
+            <option value="patients">Patients</option>
+            <option value="leave_records">Leave / TIL / OT</option>
+            <option value="bank_staff_assignments">OT / TIL Assignments</option>
+            <option value="bank_staff">Bank / OT Staff</option>
+            <option value="staff">Staff</option>
+            <option value="auth.users">Login / Password</option>
+            <option value="daily_attendance">Daily Attendance</option>
+          </select>
+        </div>
+        <div class="audit-field">
+          <label>Date From</label>
+          <input type="date" id="audit-from" onchange="loadAuditTrail()"/>
+        </div>
+        <div class="audit-field">
+          <label>Date To</label>
+          <input type="date" id="audit-to" onchange="loadAuditTrail()"/>
+        </div>
+        <button class="daily-btn secondary" onclick="clearAuditTrailFilters()">Clear</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Latest Activity</div>
+        <div style="overflow-x:auto;"><table class="dt">
+          <thead><tr><th>Date / Time</th><th>User</th><th>Action</th><th>Table</th><th>Record</th><th>Details</th></tr></thead>
+          <tbody id="audit-trail-tbody"><tr><td colspan="6" class="empty">No audit entries loaded</td></tr></tbody>
+        </table></div>
       </div>
     </div>
 
@@ -706,6 +824,14 @@ let dailyAttendanceCache=null;
 const DAILY_NURSE_HR_DEFAULT='nursehr.mdh@gov.mt';
 const DAILY_NURSE_HR_KEY='mdh_stoma_daily_nurse_hr_email';
 const DAILY_GENERAL_EMAIL_KEY='mdh_stoma_daily_general_email';
+const LOGIN_PROFILES={
+  'jason.fenech@gov.mt':{full_name:'Jason Fenech',grade:'Practice Nurse',short_grade:'PN'},
+  'jacklyn.sammut@gov.mt':{full_name:'Jacqueline Sammut',grade:'Practice Nurse',short_grade:'PN'},
+  'lorraine-marie.micallef@gov.mt':{full_name:'Lorraine-Marie Micallef',grade:'Practice Nurse',short_grade:'PN'}
+};
+const ALLOWED_LOGIN_EMAILS=Object.keys(LOGIN_PROFILES);
+let currentAuthUser=null;
+let currentLoginProfile=null;
 
 const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
 
@@ -733,7 +859,7 @@ function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&l
 const FULL_NAME_OVERRIDES={
   'jason':'Jason Fenech',
   'jacqueline':'Jacqueline Sammut',
-  'lorraine':'Lorraine Stivala'
+  'lorraine':'Lorraine-Marie Micallef'
 };
 function fullDisplayName(name){
   const raw=String(name||'').trim();
@@ -743,7 +869,7 @@ function fullDisplayName(name){
 const STAFF_ORDER={
   'jacqueline':1,'jacqueline sammut':1,
   'jason':2,'jason fenech':2,
-  'lorraine':3,'lorraine stivala':3
+  'lorraine':3,'lorraine stivala':3,'lorraine-marie micallef':3,'lorraine marie micallef':3
 };
 function staffOrderValue(name){
   const key=String(name||'').trim().toLowerCase();
@@ -862,7 +988,7 @@ function defaultCode(staff,dateStr){
   const name=String(staff?.full_name||'').trim().toLowerCase();
   if(name==='jason'||name==='jason fenech') return PATTERN_DDR[((diff+2)%3+3)%3];
   if(name==='jacqueline'||name==='jacqueline sammut') return PATTERN_DDR[((diff+1)%3+3)%3];
-  if(name==='lorraine'||name==='lorraine stivala') return PATTERN_DDDOO[((diff+3)%5+5)%5];
+  if(name==='lorraine'||name==='lorraine stivala'||name==='lorraine-marie micallef'||name==='lorraine marie micallef') return PATTERN_DDDOO[((diff+3)%5+5)%5];
   return 'working';
 }
 
@@ -911,20 +1037,162 @@ function ensureGeneralClinicEmail(){
   return genVal;
 }
 
+function normalizeEmail(email){return String(email||'').trim().toLowerCase();}
+function hardcodedProfileForEmail(email){
+  const key=normalizeEmail(email);
+  return LOGIN_PROFILES[key]?{email:key,...LOGIN_PROFILES[key],is_active:true}:null;
+}
+async function loadCurrentLoginProfile(){
+  const {data:userData}=await SB.auth.getUser();
+  currentAuthUser=userData?.user||null;
+  const email=normalizeEmail(currentAuthUser?.email||'');
+  let profile=hardcodedProfileForEmail(email);
+  if(email){
+    try{
+      const {data,error}=await SB.from('app_login_profiles')
+        .select('email,full_name,grade,short_grade,is_active')
+        .ilike('email',email)
+        .maybeSingle();
+      if(!error&&data&&data.is_active!==false){
+        profile={
+          email:normalizeEmail(data.email||email),
+          full_name:data.full_name||profile?.full_name||email,
+          grade:data.grade||profile?.grade||'Staff',
+          short_grade:data.short_grade||profile?.short_grade||gradeFromRole(data.grade||'Staff'),
+          is_active:true
+        };
+      }
+    }catch(e){
+      // Profile table is optional. The hard-coded approved login list still works.
+    }
+  }
+  currentLoginProfile=profile||{email,full_name:email||'Signed-in user',grade:'Staff',short_grade:'Staff',is_active:true};
+  return currentLoginProfile;
+}
+function isAllowedLoginEmail(email){return ALLOWED_LOGIN_EMAILS.includes(normalizeEmail(email));}
+function getLoggedInSubmitterName(){return currentLoginProfile?.full_name||currentAuthUser?.email||'';}
+function getLoggedInSubmitterGrade(){return currentLoginProfile?.short_grade||gradeFromRole(currentLoginProfile?.grade||'Staff');}
+function updateSignedInUI(){
+  const name=getLoggedInSubmitterName()||'—';
+  const email=currentLoginProfile?.email||currentAuthUser?.email||'—';
+  const grade=currentLoginProfile?.grade||'—';
+  const shortGrade=getLoggedInSubmitterGrade()||'—';
+  const tb=document.getElementById('tb-user');
+  if(tb)tb.innerHTML=`${htmlSafe(name)}<br/><span style="opacity:.75;">${htmlSafe(email)}</span>`;
+  const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val||'—';};
+  set('acct-name',name);set('acct-email',email);set('acct-grade',`${grade}${shortGrade&&shortGrade!==grade?' ('+shortGrade+')':''}`);set('acct-submit-name',name);
+  const sub=document.getElementById('daily-submitter');
+  if(sub)sub.value=name;
+}
+async function logAuditTrailAction(actionType,tableName,recordId,details){
+  try{
+    await SB.rpc('log_app_audit_action',{
+      p_action_type:actionType,
+      p_table_name:tableName||null,
+      p_record_id:recordId?String(recordId):null,
+      p_details:details||{}
+    });
+  }catch(e){
+    console.warn('Audit log action skipped:',e?.message||e);
+  }
+}
+function auditActionLabel(action){
+  const a=String(action||'').toLowerCase();
+  const map={insert:'Created',update:'Updated',delete:'Deleted',login:'Login',logout:'Logout',password_change:'Password changed',daily_attendance_send:'Daily Attendance sent'};
+  return map[a]||String(action||'—');
+}
+function auditDetailsText(row){
+  const d=row.details||{};
+  if(row.summary)return row.summary;
+  if(d.description)return d.description;
+  if(d.subject)return d.subject;
+  if(d.report_date)return `Daily Attendance ${d.report_date}`;
+  const keys=Object.keys(d||{}).filter(k=>!['old_data','new_data'].includes(k));
+  if(keys.length)return keys.slice(0,4).map(k=>`${k}: ${typeof d[k]==='object'?JSON.stringify(d[k]):d[k]}`).join(' · ');
+  return '—';
+}
+async function loadAuditTrail(){
+  const tbody=document.getElementById('audit-trail-tbody');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="6" class="empty">Loading audit trail...</td></tr>';
+  let query=SB.from('app_audit_log').select('*').order('event_at',{ascending:false}).limit(150);
+  const table=document.getElementById('audit-table-filter')?.value||'';
+  const from=document.getElementById('audit-from')?.value||'';
+  const to=document.getElementById('audit-to')?.value||'';
+  if(table)query=query.eq('table_name',table);
+  if(from)query=query.gte('event_at',from+'T00:00:00');
+  if(to)query=query.lte('event_at',to+'T23:59:59');
+  const {data,error}=await query;
+  if(error){tbody.innerHTML=`<tr><td colspan="6" class="empty">Audit Trail table is not ready yet. Run the SQL setup first.<br/>${htmlSafe(error.message)}</td></tr>`;return;}
+  let rows=data||[];
+  const search=(document.getElementById('audit-search')?.value||'').trim().toLowerCase();
+  if(search){
+    rows=rows.filter(r=>[r.actor_name,r.actor_email,r.action_type,r.table_name,r.record_id,auditDetailsText(r)].some(v=>String(v||'').toLowerCase().includes(search)));
+  }
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No audit entries found</td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>{
+    const dt=r.event_at?new Date(r.event_at).toLocaleString('en-MT'):'—';
+    const user=r.actor_name||r.actor_email||'System';
+    const email=r.actor_email&&r.actor_email!==user?`<div class="audit-meta">${htmlSafe(r.actor_email)}</div>`:'';
+    return `<tr>
+      <td>${htmlSafe(dt)}</td>
+      <td><strong>${htmlSafe(user)}</strong>${email}</td>
+      <td><span class="audit-action">${htmlSafe(auditActionLabel(r.action_type))}</span></td>
+      <td><span class="audit-pill">${htmlSafe(r.table_name||'app')}</span></td>
+      <td><span class="audit-meta">${htmlSafe(r.record_id||'—')}</span></td>
+      <td><div class="audit-details">${htmlSafe(auditDetailsText(r))}</div></td>
+    </tr>`;
+  }).join('');
+}
+function clearAuditTrailFilters(){
+  ['audit-search','audit-table-filter','audit-from','audit-to'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  loadAuditTrail();
+}
+async function changeMyPassword(){
+  const msg=document.getElementById('acct-msg');
+  const p1=(document.getElementById('acct-pass1')?.value||'').trim();
+  const p2=(document.getElementById('acct-pass2')?.value||'').trim();
+  if(msg){msg.className='account-msg';msg.textContent='';}
+  if(!p1||!p2){if(msg){msg.className='account-msg err';msg.textContent='Please enter and confirm the new password.';}return;}
+  if(p1.length<8){if(msg){msg.className='account-msg err';msg.textContent='Password must be at least 8 characters.';}return;}
+  if(p1!==p2){if(msg){msg.className='account-msg err';msg.textContent='The two passwords do not match.';}return;}
+  try{
+    const {error}=await SB.auth.updateUser({password:p1});
+    if(error)throw error;
+    document.getElementById('acct-pass1').value='';
+    document.getElementById('acct-pass2').value='';
+    await logAuditTrailAction('password_change','auth.users',currentAuthUser?.id,{email:currentLoginProfile?.email||currentAuthUser?.email||'',description:'User changed own password'});
+    if(msg){msg.className='account-msg ok';msg.textContent='Password changed successfully.';}
+  }catch(e){
+    if(msg){msg.className='account-msg err';msg.textContent='Could not change password: '+(e?.message||String(e));}
+  }
+}
+
 // AUTH
 async function doLogin(){
-  const email=document.getElementById('li-email').value.trim();
+  const email=normalizeEmail(document.getElementById('li-email').value);
   const pass=document.getElementById('li-pass').value;
-  document.getElementById('lerr').textContent='';
+  const errEl=document.getElementById('lerr');
+  errEl.textContent='';
+  if(!isAllowedLoginEmail(email)){
+    errEl.textContent='This email is not authorised for this app.';
+    return;
+  }
   const{error}=await SB.auth.signInWithPassword({email,password:pass});
-  if(error)document.getElementById('lerr').textContent='Invalid email or password.';
-  else startApp();
+  if(error)errEl.textContent='Invalid email or password.';
+  else{await startApp();await logAuditTrailAction('login','auth.users',currentAuthUser?.id,{email});}
 }
 document.getElementById('li-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-async function doLogout(){await SB.auth.signOut();document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
-async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
+async function doLogout(){await logAuditTrailAction('logout','auth.users',currentAuthUser?.id,{email:currentLoginProfile?.email||currentAuthUser?.email||''});await SB.auth.signOut();currentAuthUser=null;currentLoginProfile=null;document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
+async function checkSession(){const{data}=await SB.auth.getSession();if(data.session){const email=normalizeEmail(data.session.user?.email||'');if(!isAllowedLoginEmail(email)){await SB.auth.signOut();return;}startApp();}}
 
 async function startApp(){
+  await loadCurrentLoginProfile();
+  if(currentLoginProfile?.email&&!isAllowedLoginEmail(currentLoginProfile.email)){
+    await SB.auth.signOut();
+    document.getElementById('lerr').textContent='This email is not authorised for this app.';
+    return;
+  }
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('ot-date').value=TODAY;
@@ -935,14 +1203,13 @@ async function startApp(){
   selectedJumpDate=TODAY;
   await loadHolidays();
   await loadStaff();
+  updateSignedInUI();
   renderRoster();
   loadTodaySnapshot();
   initAppts();
   populateCODDropdowns();
   loadCOD();
   const ry=document.getElementById('rep-year'); if(ry) ry.value=String(new Date().getFullYear());
-  const sub=document.getElementById('daily-submitter');
-  if(sub){const{data:sess}=await SB.auth.getSession(); sub.value=sess?.session?.user?.email||'';}
 }
 
 function switchTab(name,el){
@@ -953,7 +1220,9 @@ function switchTab(name,el){
   if(name==='staff-audit')loadStaffAudit();
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='reports')loadReports();
-  if(name==='daily-attendance')loadDailyAttendance();
+  if(name==='daily-attendance'){updateSignedInUI();loadDailyAttendance();}
+  if(name==='account')updateSignedInUI();
+  if(name==='audit-trail')loadAuditTrail();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
 }
 
@@ -2512,9 +2781,13 @@ function gradeFromRole(role){
   return String(role||'').trim()||'—';
 }
 function inferSubmitterGrade(name){
-  const key=normalizeNameKey(fullDisplayName(name||''));
+  const raw=String(name||'').trim();
+  const emailKey=normalizeEmail(raw);
+  if(emailKey&&LOGIN_PROFILES[emailKey])return LOGIN_PROFILES[emailKey].short_grade;
+  if(currentLoginProfile&&(normalizeNameKey(currentLoginProfile.full_name)===normalizeNameKey(raw)||emailKey===normalizeEmail(currentLoginProfile.email)))return getLoggedInSubmitterGrade();
+  const key=normalizeNameKey(fullDisplayName(raw));
   const st=(staffList||[]).find(s=>normalizeNameKey(fullDisplayName(s.full_name))===key || normalizeNameKey(s.full_name)===key);
-  return st?gradeFromRole(st.role):'PN';
+  return st?gradeFromRole(st.role):(currentLoginProfile?.short_grade||'PN');
 }
 function dutyFromStatus(status){
   if(status==='working'||status==='overtime')return 'B';
@@ -2759,7 +3032,8 @@ async function loadDailyAttendance(){
   const dateStr=dateEl.value||TODAY;
   dateEl.value=dateStr;
   const ward=(document.getElementById('daily-ward')?.value||'Stoma Care Unit').trim()||'Stoma Care Unit';
-  const submitter=(document.getElementById('daily-submitter')?.value||'').trim();
+  updateSignedInUI();
+  const submitter=getLoggedInSubmitterName()||(document.getElementById('daily-submitter')?.value||'').trim();
   const sheet=document.getElementById('daily-attendance-sheet');
   if(!sheet)return;
   sheet.innerHTML='<div class="empty">Loading daily attendance...</div>';
@@ -2861,7 +3135,8 @@ async function copyDailyAttendanceText(){
   try{await navigator.clipboard.writeText(body);alert('Daily attendance email text copied.');}catch(e){alert(body);}
 }
 async function emailDailyAttendanceReport(){
-  if(!dailyAttendanceCache)await loadDailyAttendance();
+  updateSignedInUI();
+  await loadDailyAttendance();
   saveDailyRecipientSettings();
   ensureGeneralClinicEmail();
   const d=dailyAttendanceCache;
@@ -2869,6 +3144,7 @@ async function emailDailyAttendanceReport(){
   const subject=`Stoma Care Daily Attendance — ${d.date}`;
   const recipients=getDailyAttendanceRecipients();
   if(!recipients.length){alert('No recipient email address is available.');return;}
+  await logAuditTrailAction('daily_attendance_send','daily_attendance',d.date,{report_date:d.date,ward:d.ward,subject,recipients});
   try{await navigator.clipboard.writeText(body);}catch(e){}
   window.location.href=`mailto:${recipients.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
