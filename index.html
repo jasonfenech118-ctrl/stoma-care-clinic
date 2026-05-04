@@ -1835,9 +1835,9 @@ async function addTIL(type){
     let {data:coreFound,error:coreErr}=await SB.from('staff').select('id,full_name,role').ilike('full_name',name).limit(1);
     if(coreErr)throw new Error('Could not search core staff: '+coreErr.message);
     if(coreFound&&coreFound[0]?.id){
-      const {error}=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,start_time:start,end_time:until,total_hours:totalMins/60,total_days:1,notes:tilNote});
+      const {error}=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,start_time:start,end_time:until,total_hours:totalMins/60,notes:tilNote});
       if(error){
-        const fallback=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});
+        const fallback=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,notes:tilNote});
         if(fallback.error)throw new Error(fallback.error.message);
       }
     }else{
@@ -1905,7 +1905,7 @@ async function saveTILEdit(recordId,staffId){
   const{error}=await SB.from('leave_records').update({
     start_date:date,
     end_date:date,
-    total_days:1,
+    
     leave_type:'overtime',
     notes:tilNote
   }).eq('id',recordId);
@@ -2049,7 +2049,7 @@ async function saveTILLogGroup(groupKey){
     if(bankStaffError){alert('Could not update TIL staff name/role: '+bankStaffError.message);return;}
   }
   if(g.coreIds.length){
-    const{error:coreError}=await SB.from('leave_records').update({start_date:date,end_date:date,total_days:1,leave_type:'overtime',notes:tilNote}).in('id',g.coreIds);
+    const{error:coreError}=await SB.from('leave_records').update({start_date:date,end_date:date,leave_type:'overtime',notes:tilNote}).in('id',g.coreIds);
     if(coreError){alert('Could not update TIL leave row: '+coreError.message);return;}
   }
   if(g.bankIds.length){
@@ -2152,7 +2152,7 @@ async function saveShift(staffId,date){
       leave_type:selCode,
       start_date:date,
       end_date:date,
-      total_days:1,
+      
       notes:`Auto roster: ${label}${notes?' — '+notes:''}`
     });
   }
@@ -2178,13 +2178,12 @@ async function saveHourlyLeave(staffId,date){
     start_time:start,
     end_time:end,
     total_hours:hours,
-    total_days:hours/8,
     notes
   };
   try{
     const {error}=await SB.from('leave_records').insert(payload);
     if(error){
-      const fallback=await SB.from('leave_records').insert({staff_id:staffId,leave_type:type,start_date:date,end_date:date,total_days:hours/8,notes});
+      const fallback=await SB.from('leave_records').insert({staff_id:staffId,leave_type:type,start_date:date,end_date:date,notes});
       if(fallback.error)throw new Error(fallback.error.message);
     }
     alert(`${hours} ${hourWord} ${label.toLowerCase()} saved on the calendar.`);
@@ -2193,7 +2192,7 @@ async function saveHourlyLeave(staffId,date){
     loadStaffAudit();
     if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
   }catch(e){
-    alert('Could not save hourly leave: '+(e?.message||String(e))+'. Run the v23 SQL if you have not done so.');
+    alert('Could not save hourly leave: '+(e?.message||String(e))+'. Run the v24 SQL if you have not done so.');
   }
 }
 
@@ -3468,11 +3467,11 @@ async function saveLeave(){
   const totalHours=(dailyMins/60)*totalDays;
   const hoursNote=`Hours: ${totalHours.toFixed(1).replace('.0','')}h total (${startTime}–${endTime}${totalDays>1?` daily · ${totalDays} days`:''})`;
   const notes=rawNotes?`${hoursNote} — ${rawNotes}`:hoursNote;
-  const payload={staff_id:sid,leave_type:type,start_date:start,end_date:end,start_time:startTime,end_time:endTime,total_hours:totalHours,total_days:totalDays,notes};
+  const payload={staff_id:sid,leave_type:type,start_date:start,end_date:end,start_time:startTime,end_time:endTime,total_hours:totalHours,notes};
   try{
     const {error}=await SB.from('leave_records').insert(payload);
     if(error){
-      const fallback=await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
+      const fallback=await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,notes});
       if(fallback.error)throw new Error(fallback.error.message);
     }
     closeModal();
