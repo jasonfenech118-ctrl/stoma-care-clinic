@@ -474,7 +474,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 
 
-/* v32 — All Months Clinic Book and clean print workflow */
+/* v33 — Selected-period Clinic Book print and smaller print status labels */
 .clinic-all-months-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
 .clinic-all-month-card{background:white;border:1px solid var(--border);border-radius:9px;overflow:hidden;min-height:110px;}
 .clinic-all-month-title{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2f7;border-bottom:1px solid var(--border);padding:7px 9px;color:var(--navy);}
@@ -3148,6 +3148,36 @@ async function loadStaffAudit(){
 function toggleSort(){caSort=caSort==='desc'?'asc':'desc';document.getElementById('sort-btn').textContent=caSort==='desc'?'↓ Newest First':'↑ Oldest First';loadClinicAudit();}
 function clearCAFilter(){const s=document.getElementById('ca-search');if(s)s.value='';document.getElementById('ca-month').value='';document.getElementById('ca-year').value='';loadClinicAudit();}
 
+function getClinicAuditFilters(){
+  const month=document.getElementById('ca-month')?.value || '';
+  let year=document.getElementById('ca-year')?.value || '';
+  // If a month is selected but year is blank, use the current year so the month filter still works.
+  if(month && !year) year=String(new Date().getFullYear());
+  const search=(document.getElementById('ca-search')?.value||'').trim();
+  return {month,year,search};
+}
+
+async function getClinicAuditRowsForCurrentFilter(){
+  const {month,year,search}=getClinicAuditFilters();
+  const asc=caSort==='asc';
+  let query=SB.from('appointments').select('*').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
+  if(year&&month){
+    query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',monthEndDate(year,month));
+  }else if(year){
+    query=query.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);
+  }
+  const {data:rawData}=await query;
+  let data=await enrichAppointments(rawData||[]);
+  const s=String(search||'').toLowerCase();
+  if(s){
+    data=data.filter(a=>{
+      const hay=[a.patients?.first_name,a.patients?.surname,a.patients?.id_card,a.patients?.phone_number,a.appt_date,String(a.appt_slot||'').slice(0,5),statusLabel(a.status)].join(' ').toLowerCase();
+      return hay.includes(s);
+    });
+  }
+  return {data:data||[], month, year, search};
+}
+
 function compactPatientName(a){
   // v30: show the full patient name and surname in the monthly clinic book.
   // No initials / abbreviations, because this view is used by staff for a clear bird's-eye clinic view.
@@ -3276,22 +3306,12 @@ function renderClinicMonthBook(data,month,year){
 }
 
 async function loadClinicAudit(){
-  const month=document.getElementById('ca-month')?.value || '';
-  const year=document.getElementById('ca-year')?.value || '';
-  const asc=caSort==='asc';
-  let query=SB.from('appointments').select('*').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
-  if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',monthEndDate(year,month));}
-  else if(year){query=query.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
-  const{data:rawData}=await query;
-  let data=await enrichAppointments(rawData||[]);
-  const search=(document.getElementById('ca-search')?.value||'').trim().toLowerCase();
-  if(search){
-    data=data.filter(a=>{
-      const hay=[a.patients?.first_name,a.patients?.surname,a.patients?.id_card,a.patients?.phone_number,a.appt_date,String(a.appt_slot||'').slice(0,5),statusLabel(a.status)].join(' ').toLowerCase();
-      return hay.includes(search);
-    });
-  }
-  clinicAuditCache=data||[];
+  const current=await getClinicAuditRowsForCurrentFilter();
+  const data=current.data||[];
+  const month=current.month||'';
+  const year=current.year||'';
+  const search=current.search||'';
+  clinicAuditCache=data;
   clinicAuditPrintContext={month,year,search};
   const tot=data?.length||0,att=data?.filter(a=>a.status==='attended').length||0,can=data?.filter(a=>a.status==='cancelled').length||0,dna=data?.filter(a=>a.status==='did_not_attend').length||0;
   document.getElementById('clinic-stats').innerHTML=`
@@ -4155,7 +4175,7 @@ function buildClinicPrintHtml(rows){
       body+=`<section class="day-section">
         <div class="day-title"><span>${htmlSafe(dayLabel)}</span><strong>${dayRows.length} appointment${dayRows.length!==1?'s':''}</strong></div>
         <table>
-          <thead><tr><th style="width:58px;">Time</th><th>Patient name</th><th style="width:92px;">ID Card</th><th style="width:88px;">Phone</th><th style="width:105px;">Nurse / Column</th><th style="width:86px;">Status</th></tr></thead>
+          <thead><tr><th style="width:58px;">Time</th><th>Patient name</th><th style="width:92px;">ID Card</th><th style="width:88px;">Phone</th><th style="width:105px;">Nurse / Column</th><th style="width:74px;">Status</th></tr></thead>
           <tbody>`;
       dayRows.forEach(a=>{
         const nurse=a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');
@@ -4166,7 +4186,7 @@ function buildClinicPrintHtml(rows){
           <td>${htmlSafe(a.patients?.id_card||'—')}</td>
           <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
           <td>${htmlSafe(nurse)}</td>
-          <td><span class="status ${clinicStatusPrintClass(a.status)}">${htmlSafe(status)}</span></td>
+          <td class="status-cell"><span class="status ${clinicStatusPrintClass(a.status)}">${htmlSafe(status)}</span></td>
         </tr>`;
       });
       body+='</tbody></table></section>';
@@ -4185,16 +4205,18 @@ function buildClinicPrintHtml(rows){
     .sum{border:1px solid #cbd5e1;border-radius:5px;padding:5px 6px;background:#f8fafc;}
     .sum .n{font-size:15px;font-weight:800;color:#1a2e4a;line-height:1;}
     .sum .l{font-size:8px;text-transform:uppercase;color:#475569;font-weight:700;margin-top:2px;}
-    .day-section{break-inside:avoid;page-break-inside:avoid;margin-bottom:6px;}
+    .day-section{break-inside:auto;page-break-inside:auto;margin-bottom:5px;}
     .day-title{display:flex;justify-content:space-between;align-items:center;background:#1a2e4a;color:white;border-radius:4px 4px 0 0;padding:4px 7px;font-size:10px;font-weight:800;}
     .day-title strong{font-size:9px;font-weight:700;}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111;}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111;page-break-inside:auto;}
+    tr{page-break-inside:avoid;break-inside:avoid;}
     th,td{border:1px solid #222;padding:3px 5px;vertical-align:top;line-height:1.2;word-wrap:break-word;}
     th{background:#e9eef5;font-size:8.5px;text-transform:uppercase;letter-spacing:.2px;color:#111;}
     td{font-size:10px;}
     td.time{font-weight:800;color:#0d7377;white-space:nowrap;}
     td.patient{font-weight:800;font-size:10.5px;color:#111;}
-    .status{display:inline-block;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:800;text-transform:uppercase;white-space:nowrap;border:1px solid #cbd5e1;background:#eef2f7;color:#111;}
+    td.status-cell{text-align:center;vertical-align:middle;padding:2px 2px;}
+    .status{display:inline-block;border-radius:999px;padding:1px 3px;font-size:6.1px;line-height:1.05;font-weight:900;text-transform:uppercase;white-space:nowrap;border:1px solid #cbd5e1;background:#eef2f7;color:#111;max-width:100%;box-sizing:border-box;}
     .p-attended{background:#d4edda;border-color:#8fc99e;color:#155724;}
     .p-cancelled{background:#f8d7da;border-color:#e5a1a7;color:#721c24;}
     .p-dntu{background:#fff3cd;border-color:#e7c766;color:#856404;}
@@ -4214,15 +4236,26 @@ function buildClinicPrintHtml(rows){
   </body></html>`;
 }
 
-function printClinicAuditBook(){
-  const rows=clinicAuditCache||[];
-  const html=buildClinicPrintHtml(rows);
-  const win=window.open('','_blank','width=1200,height=850');
-  if(!win){alert('Please allow pop-ups for this site so the clean print view can open.');return;}
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  setTimeout(()=>{win.focus();win.print();},450);
+async function printClinicAuditBook(){
+  const btn=document.querySelector('button[onclick="printClinicAuditBook()"]');
+  const oldText=btn?btn.textContent:'';
+  if(btn){btn.textContent='Preparing print...';btn.disabled=true;}
+  try{
+    const current=await getClinicAuditRowsForCurrentFilter();
+    clinicAuditCache=current.data||[];
+    clinicAuditPrintContext={month:current.month||'',year:current.year||'',search:current.search||''};
+    const html=buildClinicPrintHtml(clinicAuditCache);
+    const win=window.open('','_blank','width=1200,height=850');
+    if(!win){alert('Please allow pop-ups for this site so the clean print view can open.');return;}
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>{win.focus();win.print();},450);
+  }catch(e){
+    alert('Could not prepare the Clinic Book print: '+(e?.message||String(e)));
+  }finally{
+    if(btn){btn.textContent=oldText||'🖨 Print Clinic Book';btn.disabled=false;}
+  }
 }
 
 
