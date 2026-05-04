@@ -397,6 +397,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <!-- OT BAR -->
       <div class="ot-bar">
         <div class="ot-field"><label>Nurse Name</label><input type="text" id="ot-name" placeholder="Full name" style="width:180px;"/></div>
+        <div class="ot-field"><label>Role / Grade</label><select id="ot-role" style="width:160px;"><option>Senior Staff Nurse</option><option>Staff Nurse</option><option>Practice Nurse</option><option>Nursing Aide</option><option>Carer</option><option selected>Nurse</option></select></div>
         <div class="ot-field"><label>Date</label><input type="date" id="ot-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="ot-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
         <div class="ot-field"><label>Working Until</label><input type="time" id="ot-end" style="width:110px;"/></div>
@@ -406,6 +407,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <!-- TIL BAR -->
       <div class="ot-bar" style="border-color:var(--teal);">
         <div class="ot-field"><label>Staff Name</label><input type="text" id="til-name" placeholder="Full name" style="width:180px;"/></div>
+        <div class="ot-field"><label>Role / Grade</label><select id="til-role" style="width:160px;"><option>Senior Staff Nurse</option><option>Staff Nurse</option><option>Practice Nurse</option><option>Nursing Aide</option><option>Carer</option><option selected>Nurse</option></select></div>
         <div class="ot-field"><label>Date</label><input type="date" id="til-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="til-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
         <div class="ot-field"><label>Until</label><input type="time" id="til-until" style="width:110px;"/></div>
@@ -805,10 +807,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <div class="mo" id="mo" onclick="moOut(event)"><div class="mb" id="mb"></div></div>
 
 <script>
-const SB=supabase.createClient(
-  'https://ydswlygxghzdgzxvynsa.supabase.co',
-  'sb_publishable_8R_L4VcNY_lE5oxF1lz9-g_syFlnGfC'
-);
+const SUPABASE_URL='https://ydswlygxghzdgzxvynsa.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_8R_L4VcNY_lE5oxF1lz9-g_syFlnGfC';
+const SB=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
 let holidays={},staffList=[],rCache={};
 let curMonth=new Date();curMonth.setDate(1);
@@ -827,7 +828,7 @@ const DAILY_GENERAL_EMAIL_KEY='mdh_stoma_daily_general_email';
 const LOGIN_PROFILES={
   'jason.fenech@gov.mt':{full_name:'Jason Fenech',grade:'Practice Nurse',short_grade:'PN'},
   'jacklyn.sammut@gov.mt':{full_name:'Jacqueline Sammut',grade:'Practice Nurse',short_grade:'PN'},
-  'lorraine-marie.micallef@gov.mt':{full_name:'Lorraine-Marie Micallef',grade:'Practice Nurse',short_grade:'PN'}
+  'lorraine-marie.micallef@gov.mt':{full_name:'Lorraine-Marie Micallef',grade:'Staff Nurse',short_grade:'SN'}
 };
 const ALLOWED_LOGIN_EMAILS=Object.keys(LOGIN_PROFILES);
 let currentAuthUser=null;
@@ -1573,22 +1574,52 @@ async function loadTodaySnapshot(){
   }).join('');
 }
 
+async function findOrCreateBankStaff(fullName,role){
+  const name=String(fullName||'').trim();
+  const grade=String(role||'Nurse').trim()||'Nurse';
+  if(!name)return null;
+  let {data:existing,error:findError}=await SB.from('bank_staff').select('id,full_name,role').ilike('full_name',name).limit(1);
+  if(findError){throw new Error('Could not search OT/TIL staff: '+findError.message);}
+  if(existing&&existing[0]?.id){
+    if(grade&&existing[0].role!==grade){await SB.from('bank_staff').update({role:grade}).eq('id',existing[0].id);}
+    return existing[0].id;
+  }
+  const {data:created,error:createError}=await SB.from('bank_staff').insert({full_name:name,role:grade}).select('id').single();
+  if(createError)throw new Error('Could not create OT/TIL staff: '+createError.message);
+  return created?.id||null;
+}
+function minutesBetweenTimes(start,end){
+  const sm=timeToMinutes(start),em=timeToMinutes(end);
+  if(sm===null||em===null||em<=sm)return 0;
+  return em-sm;
+}
+function hoursLabelFromMinutes(mins){
+  if(!mins||mins<=0)return '0h';
+  return `${Math.floor(mins/60)}h${mins%60?` ${mins%60}m`:''}`;
+}
+
 // ADD OT
 async function addOT(){
   const name=document.getElementById('ot-name').value.trim();
+  const role=document.getElementById('ot-role')?.value||'Nurse';
   const date=document.getElementById('ot-date').value;
   const start=document.getElementById('ot-start').value||'07:00';
   const end=document.getElementById('ot-end').value;
   if(!name||!date||!end){alert('Please fill in nurse name, date and working until time.');return;}
-  let{data:existing}=await SB.from('bank_staff').select('id').eq('full_name',name).maybeSingle();
-  let bankId=existing?.id;
-  if(!bankId){const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();bankId=ns?.id;}
-  if(!bankId){alert('Error adding nurse.');return;}
-  await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:end});
-  document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
-  renderRoster();
-  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
-  if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+  if(minutesBetweenTimes(start,end)<=0){alert('Working until time must be after start time.');return;}
+  try{
+    const bankId=await findOrCreateBankStaff(name,role);
+    if(!bankId){alert('Error adding OT nurse.');return;}
+    const {error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:end,notes:null});
+    if(error)throw new Error(error.message);
+    document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
+    await renderRoster();
+    if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+    if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+    alert('OT nurse added.');
+  }catch(e){
+    alert('Could not add OT nurse: '+(e?.message||String(e)));
+  }
 }
 
 
@@ -1727,24 +1758,38 @@ async function deleteOTLogGroup(groupKey){
 // ADD TIL
 async function addTIL(type){
   const name=document.getElementById('til-name').value.trim();
+  const role=document.getElementById('til-role')?.value||'Nurse';
   const date=document.getElementById('til-date').value;
   const start=document.getElementById('til-start').value||'07:00';
   const until=document.getElementById('til-until').value;
   if(!name||!date||!until){alert('Please fill in staff name, date and until time.');return;}
-  const[sh,sm]=start.split(':').map(Number);const[eh,em]=until.split(':').map(Number);
-  const totalMins=(eh*60+em)-(sh*60+sm);
-  const hrs=totalMins>0?(totalMins/60).toFixed(1).replace('.0',''):'0';
-  let staffId=null;
-  const{data:coreFound}=await SB.from('staff').select('id').ilike('full_name',name);
-  if(coreFound?.[0]?.id){staffId=coreFound[0].id;}
-  else{let{data:bankFound}=await SB.from('bank_staff').select('id').ilike('full_name',name);if(bankFound?.[0]?.id){staffId=bankFound[0].id;}else{const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();staffId=ns?.id;}}
-  if(!staffId){alert('Error saving staff.');return;}
+  const totalMins=minutesBetweenTimes(start,until);
+  if(totalMins<=0){alert('Until time must be after start time.');return;}
+  const hrs=(totalMins/60).toFixed(1).replace('.0','');
   const typeLabel=type==='off'?'TIL-Off':'TIL-In';
   const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
-  if(coreFound?.[0]?.id){await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});}
-  else{await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});}
-  document.getElementById('til-name').value='';document.getElementById('til-until').value='';
-  renderRoster();loadStaffAudit();if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+  try{
+    let {data:coreFound,error:coreErr}=await SB.from('staff').select('id,full_name,role').ilike('full_name',name).limit(1);
+    if(coreErr)throw new Error('Could not search core staff: '+coreErr.message);
+    if(coreFound&&coreFound[0]?.id){
+      const {error}=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,start_time:start,end_time:until,total_hours:totalMins/60,total_days:1,notes:tilNote});
+      if(error){
+        const fallback=await SB.from('leave_records').insert({staff_id:coreFound[0].id,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});
+        if(fallback.error)throw new Error(fallback.error.message);
+      }
+    }else{
+      const bankId=await findOrCreateBankStaff(name,role);
+      const {error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});
+      if(error)throw new Error(error.message);
+    }
+    document.getElementById('til-name').value='';document.getElementById('til-until').value='';
+    await renderRoster();
+    if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+    if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+    alert(type==='off'?'TIL Off added.':'TIL In added.');
+  }catch(e){
+    alert('Could not add TIL: '+(e?.message||String(e)));
+  }
 }
 
 async function openTILEdit(recordId){
@@ -2210,6 +2255,7 @@ async function loadAppts(){
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
             <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
+            <button onclick="openSnapshotAppointmentEdit('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#e3f2fd;color:#0d47a1;">Edit</button>
             ${appt.status!=='attended'?`<button onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✓</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
             ${appt.status!=='cancelled'?`<button onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>`:''}
@@ -2230,22 +2276,31 @@ async function loadAppts(){
   con.innerHTML=html;
 }
 
-async function setAS(id,status){
-  await SB.from('appointments').update({status}).eq('id',id);
-  loadAppts();
-  loadTodaySnapshot();
+async function refreshAppointmentViews(){
+  await loadAppts();
+  await loadTodaySnapshot();
   if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
   if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
 }
+async function setAS(id,status){
+  try{
+    const {error}=await SB.from('appointments').update({status}).eq('id',id);
+    if(error)throw new Error(error.message);
+    await refreshAppointmentViews();
+  }catch(e){
+    alert('Appointment status did not update: '+(e?.message||String(e))+'. Run the v21 SQL fix if you have not done so.');
+  }
+}
 async function delApp(id){
   if(!confirm('Delete this appointment?'))return;
-  await SB.from('appointments').delete().eq('id',id);
-  loadAppts();
-  loadTodaySnapshot();
-  if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
-  if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
-  if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+  try{
+    const {error}=await SB.from('appointments').delete().eq('id',id);
+    if(error)throw new Error(error.message);
+    await refreshAppointmentViews();
+  }catch(e){
+    alert('Appointment was not deleted: '+(e?.message||String(e))+'. Run the v21 SQL fix if you have not done so.');
+  }
 }
 
 async function openSnapshotAppointmentEdit(apptId){
@@ -3160,8 +3215,16 @@ async function emailDailyAttendanceReport(){
   const oldText=btn?btn.textContent:'Send Daily Attendance';
   if(btn){btn.disabled=true;btn.textContent='Sending...';}
   try{
-    const {data,error}=await SB.functions.invoke('send-daily-attendance',{
-      body:{
+    const {data:sessionData}=await SB.auth.getSession();
+    const token=sessionData?.session?.access_token||'';
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/send-daily-attendance`,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey':SUPABASE_PUBLISHABLE_KEY,
+        ...(token?{'Authorization':`Bearer ${token}`}:{})
+      },
+      body:JSON.stringify({
         report_date:d.date,
         ward:d.ward,
         submitter:d.submitter||'',
@@ -3174,15 +3237,18 @@ async function emailDailyAttendanceReport(){
         night:d.night,
         watch:d.watch,
         notes:d.notes||[]
-      }
+      })
     });
-    if(error)throw error;
+    const text=await res.text();
+    let data={};
+    try{data=text?JSON.parse(text):{};}catch(parseError){data={raw:text};}
+    if(!res.ok){throw new Error(data?.error||data?.message||data?.raw||`Edge Function returned HTTP ${res.status}`);}
     await logAuditTrailAction('daily_attendance_send','daily_attendance_submissions',data?.submission_id||d.date,{report_date:d.date,ward:d.ward,subject,provider_message_id:data?.provider_message_id||null,submission_id:data?.submission_id||null,recipients:data?.recipients||[]});
     alert(`Daily Attendance sent successfully.${data?.submission_id?'\nReference: '+data.submission_id:''}`);
   }catch(e){
     console.error('Daily Attendance send failed:',e);
     try{await navigator.clipboard.writeText(body);}catch(copyError){}
-    alert('Daily Attendance was not sent. The report text was copied so you can paste it manually if needed. Error: '+(e?.message||String(e)));
+    alert('Daily Attendance was not sent. Exact error: '+(e?.message||String(e)));
   }finally{
     if(btn){btn.disabled=false;btn.textContent=oldText;}
   }
@@ -3205,20 +3271,23 @@ async function openModal(type,...args){
       </div>`;
   }else if(type==='leave'){
     const{data:sd}=await SB.from('staff').select('*').eq('is_active',true);
-    const opts=(sd||[]).map(s=>`<option value="${s.id}">${s.full_name}</option>`).join('');
-    html=`<h2>Add Leave Record</h2>
+    const opts=(sd||[]).map(s=>`<option value="${s.id}">${htmlSafe(fullDisplayName(s.full_name))} — ${htmlSafe(s.role||'Staff')}</option>`).join('');
+    html=`<h2>Add Leave / Hours Record</h2>
+      <div class="msub">Use the time fields for full day, half day, short leave, OT, or TIL-style hours.</div>
       <div class="fg"><label>Staff Member *</label><select id="l-staff"><option value="">— Select —</option>${opts}</select></div>
       <div class="fg"><label>Leave Type *</label>
         <select id="l-type">
           <option value="sick_leave">🤒 Sick Leave</option>
-          <option value="annual_leave">🌴 Annual Leave</option>
+          <option value="annual_leave">🌴 Vacation / Annual Leave</option>
           <option value="maternity_leave">🤱 Maternity Leave</option>
           <option value="study_leave">📚 Study Leave</option>
-          <option value="overtime">⏰ Overtime</option>
+          <option value="overtime">⏰ Overtime / TIL record</option>
         </select>
       </div>
-      <div class="fg"><label>From Date *</label><input type="date" id="l-start"/></div>
-      <div class="fg"><label>To Date *</label><input type="date" id="l-end"/></div>
+      <div class="fg"><label>From Date *</label><input type="date" id="l-start" value="${TODAY}"/></div>
+      <div class="fg"><label>To Date *</label><input type="date" id="l-end" value="${TODAY}"/></div>
+      <div class="fg"><label>Start Time *</label><input type="time" id="l-start-time" value="07:00"/></div>
+      <div class="fg"><label>Until Time *</label><input type="time" id="l-end-time" value="15:00"/></div>
       <div class="fg"><label>Notes</label><input type="text" id="l-notes" placeholder="Optional..."/></div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -3253,13 +3322,33 @@ async function saveLeave(){
   const type=document.getElementById('l-type').value;
   const start=document.getElementById('l-start').value;
   const end=document.getElementById('l-end').value;
-  const notes=document.getElementById('l-notes').value;
-  if(!sid||!start||!end){alert('Please fill in all required fields.');return;}
+  const startTime=document.getElementById('l-start-time')?.value||'07:00';
+  const endTime=document.getElementById('l-end-time')?.value||'15:00';
+  const rawNotes=document.getElementById('l-notes').value.trim();
+  if(!sid||!start||!end||!startTime||!endTime){alert('Please fill in staff, dates and hours.');return;}
   const sd=new Date(start+'T12:00:00'),ed=new Date(end+'T12:00:00');
   if(ed<sd){alert('End date cannot be before start date.');return;}
+  const dailyMins=minutesBetweenTimes(startTime,endTime);
+  if(dailyMins<=0){alert('Until time must be after start time.');return;}
   const totalDays=Math.round((ed-sd)/86400000)+1;
-  await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
-  closeModal();loadStaffAudit();renderRoster();if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+  const totalHours=(dailyMins/60)*totalDays;
+  const hoursNote=`Hours: ${totalHours.toFixed(1).replace('.0','')}h total (${startTime}–${endTime}${totalDays>1?` daily · ${totalDays} days`:''})`;
+  const notes=rawNotes?`${hoursNote} — ${rawNotes}`:hoursNote;
+  const payload={staff_id:sid,leave_type:type,start_date:start,end_date:end,start_time:startTime,end_time:endTime,total_hours:totalHours,total_days:totalDays,notes};
+  try{
+    const {error}=await SB.from('leave_records').insert(payload);
+    if(error){
+      const fallback=await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
+      if(fallback.error)throw new Error(fallback.error.message);
+    }
+    closeModal();
+    loadStaffAudit();
+    renderRoster();
+    if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+    alert('Leave / hours record saved.');
+  }catch(e){
+    alert('Could not save leave record: '+(e?.message||String(e))+'. Run the v21 SQL fix if you have not done so.');
+  }
 }
 
 async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();}
