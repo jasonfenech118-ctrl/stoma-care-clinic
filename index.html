@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
-<!-- Build v19: Latest GitHub file + login identity + password change + database audit trail -->
+<!-- Build v25: Daily Attendance download workflow; send/print removed -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -540,7 +540,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="phdr">
         <div>
           <h2>Daily Attendance</h2>
-          <p>Auto-generated email-style daily attendance report from roster, leave, overtime, TIL, and change-of-duty records</p>
+          <p>Auto-generated Daily Attendance report from roster, leave, overtime, TIL, and change-of-duty records. Download and send manually via Outlook.</p>
         </div>
       </div>
       <div class="daily-toolbar">
@@ -557,14 +557,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <input type="text" id="daily-submitter" placeholder="Logged-in user" readonly/>
         </div>
         <div class="daily-recipient-note">
-          Send button sends to Nurse HR automatically. The report is stamped with the logged-in user name.
+          Download the report and attach/send it manually using Outlook. The report is stamped with the logged-in user name.
         </div>
         <button class="daily-btn secondary" onclick="dailyChangeDay(-1)">← Previous Day</button>
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
         <button class="daily-btn secondary" onclick="dailyChangeDay(1)">Next Day →</button>
         <button class="daily-btn" onclick="loadDailyAttendance()">Refresh</button>
-        <button class="daily-btn" onclick="emailDailyAttendanceReport()">Send Daily Attendance</button>
-        <button class="daily-btn red" onclick="window.print()">Print</button>
+        <button class="daily-btn gold" onclick="downloadDailyAttendanceReport()">Download Daily Attendance</button>
       </div>
       <div class="daily-shell">
         <div class="attendance-sheet" id="daily-attendance-sheet">
@@ -1117,7 +1116,7 @@ async function logAuditTrailAction(actionType,tableName,recordId,details){
 }
 function auditActionLabel(action){
   const a=String(action||'').toLowerCase();
-  const map={insert:'Created',update:'Updated',delete:'Deleted',login:'Login',logout:'Logout',password_change:'Password changed',daily_attendance_send:'Daily Attendance sent'};
+  const map={insert:'Created',update:'Updated',delete:'Deleted',login:'Login',logout:'Logout',password_change:'Password changed',daily_attendance_send:'Daily Attendance sent',daily_attendance_download:'Daily Attendance downloaded'};
   return map[a]||String(action||'—');
 }
 function auditDetailsText(row){
@@ -3279,6 +3278,25 @@ function exportDailyAttendanceCSV(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=`Stoma_Care_Daily_Attendance_${dailyAttendanceCache.date}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+async function downloadDailyAttendanceReport(){
+  updateSignedInUI();
+  if(!dailyAttendanceCache)await loadDailyAttendance();
+  const d=dailyAttendanceCache;
+  if(!d){alert('Daily Attendance is not ready yet. Please refresh and try again.');return;}
+  const htmlReport=buildDailyAttendanceEmailHtml();
+  const fileHtml=`<!doctype html><html><head><meta charset="utf-8"><title>Stoma Care Daily Attendance ${htmlSafe(d.date)}</title></head><body>${htmlReport}</body></html>`;
+  const blob=new Blob(['\ufeff'+fileHtml],{type:'application/vnd.ms-excel;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const safeDate=String(d.date||TODAY).replace(/[^0-9-]/g,'');
+  a.href=url;
+  a.download=`Stoma_Care_Daily_Attendance_${safeDate}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  await logAuditTrailAction('daily_attendance_download','daily_attendance',safeDate,{description:'Daily Attendance report downloaded for manual sending',report_date:safeDate,ward:d.ward,submitter:d.submitter||''});
 }
 function emailCell(value){return String(value||'').replace(/\n/g,' / ').trim();}
 function appendDailyAttendanceEmailSection(lines,title,rows){
