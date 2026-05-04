@@ -397,7 +397,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <!-- OT BAR -->
       <div class="ot-bar">
         <div class="ot-field"><label>Nurse Name</label><input type="text" id="ot-name" placeholder="Full name" style="width:180px;"/></div>
-        <div class="ot-field"><label>Role / Grade</label><select id="ot-role" style="width:160px;"><option>Senior Staff Nurse</option><option>Staff Nurse</option><option>Practice Nurse</option><option>Nursing Aide</option><option>Carer</option><option selected>Nurse</option></select></div>
+        <div class="ot-field"><label>Role / Grade</label><select id="ot-role" style="width:180px;"><option selected>Senior Staff Nurse</option><option>Practice Nurse</option><option>Staff Nurse</option></select></div>
         <div class="ot-field"><label>Date</label><input type="date" id="ot-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="ot-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
         <div class="ot-field"><label>Working Until</label><input type="time" id="ot-end" style="width:110px;"/></div>
@@ -407,7 +407,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <!-- TIL BAR -->
       <div class="ot-bar" style="border-color:var(--teal);">
         <div class="ot-field"><label>Staff Name</label><input type="text" id="til-name" placeholder="Full name" style="width:180px;"/></div>
-        <div class="ot-field"><label>Role / Grade</label><select id="til-role" style="width:160px;"><option>Senior Staff Nurse</option><option>Staff Nurse</option><option>Practice Nurse</option><option>Nursing Aide</option><option>Carer</option><option selected>Nurse</option></select></div>
+        <div class="ot-field"><label>Role / Grade</label><select id="til-role" style="width:180px;"><option selected>Senior Staff Nurse</option><option>Practice Nurse</option><option>Staff Nurse</option></select></div>
         <div class="ot-field"><label>Date</label><input type="date" id="til-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="til-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
         <div class="ot-field"><label>Until</label><input type="time" id="til-until" style="width:110px;"/></div>
@@ -884,14 +884,16 @@ function sortStaffRows(rows){
   });
 }
 
-const ROLE_OPTIONS=['Charge Nurse','Senior Staff Nurse','Practice Nurse','Staff Nurse','Nursing Aide','Carer','Nurse'];
+const ROLE_OPTIONS=['Senior Staff Nurse','Practice Nurse','Staff Nurse'];
+function cleanRoleValue(value){
+  const v=String(value||'').trim();
+  return ROLE_OPTIONS.includes(v)?v:'Staff Nurse';
+}
 function roleInputHtml(id,value){
-  const v=String(value||'').trim()||'Nurse';
-  return `<input list="role-options" type="text" id="${id}" value="${htmlSafe(v)}" placeholder="e.g. Senior Staff Nurse"/>`;
+  const v=cleanRoleValue(value);
+  return `<select id="${id}">${ROLE_OPTIONS.map(r=>`<option value="${htmlSafe(r)}" ${r===v?'selected':''}>${htmlSafe(r)}</option>`).join('')}</select>`;
 }
-function roleOptionsDatalist(){
-  return `<datalist id="role-options">${ROLE_OPTIONS.map(r=>`<option value="${htmlSafe(r)}"></option>`).join('')}</datalist>`;
-}
+function roleOptionsDatalist(){return '';}
 function roleRank(role){
   const r=String(role||'').toLowerCase();
   if(r.includes('charge'))return 1;
@@ -1325,7 +1327,7 @@ async function renderRoster(){
     const byS={};
     bdOT.forEach(b=>{
       const key=String(b.bank_staff_id||b.bank_staff?.id||b.bank_staff?.full_name||'Unknown');
-      if(!byS[key])byS[key]={name:fullDisplayName(b.bank_staff?.full_name||'Unknown'),role:b.bank_staff?.role||'Nurse',dates:{}};
+      if(!byS[key])byS[key]={name:fullDisplayName(b.bank_staff?.full_name||'Unknown'),role:cleanRoleValue(b.bank_staff?.role),dates:{}};
       byS[key].dates[b.work_date]=b;
       if(b.bank_staff?.role)byS[key].role=b.bank_staff.role;
     });
@@ -1354,7 +1356,7 @@ async function renderRoster(){
       const isBank=t._source==='bank'||!!t.bank_staff_id;
       const key=String(isBank?(t.bank_staff_id||t.bank_staff?.id||t.bank_staff?.full_name):(t.staff_id||t.staff?.id||t.staff?.full_name)||'Unknown');
       const name=fullDisplayName(isBank?(t.bank_staff?.full_name||'Unknown'):(t.staff?.full_name||'Unknown'));
-      const role=isBank?(t.bank_staff?.role||'Nurse'):(t.staff?.role||'Staff');
+      const role=cleanRoleValue(isBank?t.bank_staff?.role:t.staff?.role);
       const date=isBank?t.work_date:t.start_date;
       if(!byTIL[key])byTIL[key]={name,role,dates:{},isBank};
       byTIL[key].dates[date]=t;
@@ -1399,7 +1401,7 @@ function buildGroupedOTLogRows(rows){
   const groups={};
   (rows||[]).filter(b=>!isTilNote(b.notes)).forEach(b=>{
     const name=fullDisplayName(b.bank_staff?.full_name||'Unknown');
-    const role=b.bank_staff?.role||'Nurse';
+    const role=cleanRoleValue(b.bank_staff?.role);
     const date=b.work_date;
     const key=makeAssignmentGroupKey('ot',date,name,'ot');
     if(!groups[key]){
@@ -1464,7 +1466,7 @@ function buildGroupedTILLogRows(rows){
     const type=isOff?'off':'in';
     const date=isBank?r.work_date:r.start_date;
     const name=fullDisplayName(isBank?(r.bank_staff?.full_name||'Unknown'):(r.staff?.full_name||'Unknown'));
-    const role=isBank?(r.bank_staff?.role||'Nurse'):(r.staff?.role||'Staff');
+    const role=cleanRoleValue(isBank?r.bank_staff?.role:r.staff?.role);
     const key=makeAssignmentGroupKey('til',date,name,type);
     const timeMatch=notes.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
     const start=isBank?String(r.shift_start||timeMatch?.[1]||'07:00').slice(0,5):(timeMatch?timeMatch[1]:'07:00');
@@ -1576,7 +1578,7 @@ async function loadTodaySnapshot(){
 
 async function findOrCreateBankStaff(fullName,role){
   const name=String(fullName||'').trim();
-  const grade=String(role||'Nurse').trim()||'Nurse';
+  const grade=cleanRoleValue(role);
   if(!name)return null;
   let {data:existing,error:findError}=await SB.from('bank_staff').select('id,full_name,role').ilike('full_name',name).limit(1);
   if(findError){throw new Error('Could not search OT/TIL staff: '+findError.message);}
@@ -1601,7 +1603,7 @@ function hoursLabelFromMinutes(mins){
 // ADD OT
 async function addOT(){
   const name=document.getElementById('ot-name').value.trim();
-  const role=document.getElementById('ot-role')?.value||'Nurse';
+  const role=document.getElementById('ot-role')?.value||'Staff Nurse';
   const date=document.getElementById('ot-date').value;
   const start=document.getElementById('ot-start').value||'07:00';
   const end=document.getElementById('ot-end').value;
@@ -1630,7 +1632,7 @@ async function openOTEdit(assignmentId){
     .single();
   if(error||!b){alert('Could not load OT record.');return;}
   const name=b.bank_staff?.full_name||'';
-  const role=b.bank_staff?.role||'Nurse';
+  const role=cleanRoleValue(b.bank_staff?.role);
   const start=String(b.shift_start||'07:00').slice(0,5);
   const end=String(b.shift_end||'').slice(0,5);
   const notes=b.notes||'';
@@ -1653,7 +1655,7 @@ async function openOTEdit(assignmentId){
 
 async function saveOTEdit(assignmentId){
   const name=document.getElementById('ot-edit-name').value.trim();
-  const role=document.getElementById('ot-edit-role').value.trim()||'Nurse';
+  const role=document.getElementById('ot-edit-role').value.trim()||'Staff Nurse';
   const date=document.getElementById('ot-edit-date').value;
   const start=document.getElementById('ot-edit-start').value||'07:00';
   const end=document.getElementById('ot-edit-end').value;
@@ -1722,7 +1724,7 @@ async function saveOTLogGroup(groupKey){
   const g=otLogGroups[groupKey];
   if(!g){alert('Could not find this OT row. Refresh the roster and try again.');return;}
   const name=document.getElementById('ot-group-name').value.trim();
-  const role=document.getElementById('ot-group-role').value.trim()||'Nurse';
+  const role=document.getElementById('ot-group-role').value.trim()||'Staff Nurse';
   const date=document.getElementById('ot-group-date').value;
   const start=document.getElementById('ot-group-start').value||'07:00';
   const end=document.getElementById('ot-group-end').value;
@@ -1758,7 +1760,7 @@ async function deleteOTLogGroup(groupKey){
 // ADD TIL
 async function addTIL(type){
   const name=document.getElementById('til-name').value.trim();
-  const role=document.getElementById('til-role')?.value||'Nurse';
+  const role=document.getElementById('til-role')?.value||'Staff Nurse';
   const date=document.getElementById('til-date').value;
   const start=document.getElementById('til-start').value||'07:00';
   const until=document.getElementById('til-until').value;
@@ -1873,7 +1875,7 @@ async function openBankTILEdit(assignmentId){
   const untilT=String(b.shift_end||timeMatch?.[2]||'').slice(0,5);
   const extra=rawNotes.includes('—')?rawNotes.split('—').slice(1).join('—').trim():'';
   const name=b.bank_staff?.full_name||'';
-  const role=b.bank_staff?.role||'Nurse';
+  const role=cleanRoleValue(b.bank_staff?.role);
   document.getElementById('mb').innerHTML=`
     <h2>Edit TIL Row</h2>
     <div class="msub">Editing the existing TIL log row &mdash; ${htmlSafe(b.work_date||'')}</div>
@@ -1894,7 +1896,7 @@ async function openBankTILEdit(assignmentId){
 
 async function saveBankTILEdit(assignmentId){
   const name=document.getElementById('bank-til-edit-name').value.trim();
-  const role=document.getElementById('bank-til-edit-role').value.trim()||'Nurse';
+  const role=document.getElementById('bank-til-edit-role').value.trim()||'Staff Nurse';
   const date=document.getElementById('bank-til-edit-date').value;
   const type=document.getElementById('bank-til-edit-type').value;
   const start=document.getElementById('bank-til-edit-start').value||'07:00';
@@ -1965,7 +1967,7 @@ async function saveTILLogGroup(groupKey){
   const g=tilLogGroups[groupKey];
   if(!g){alert('Could not find this TIL row. Refresh the roster and try again.');return;}
   const name=document.getElementById('til-group-name').value.trim();
-  const role=document.getElementById('til-group-role').value.trim()||'Nurse';
+  const role=document.getElementById('til-group-role').value.trim()||'Staff Nurse';
   const date=document.getElementById('til-group-date').value;
   const type=document.getElementById('til-group-type').value;
   const start=document.getElementById('til-group-start').value||'07:00';
@@ -2536,7 +2538,7 @@ async function loadStaffAudit(){
     })),
     ...bankOT.map(b=>({
       name:b.bank_staff?.full_name||'Unknown',
-      role:b.bank_staff?.role||'OT Nurse',
+      role:cleanRoleValue(b.bank_staff?.role),
       from:b.work_date,
       to:b.work_date,
       days:1,
@@ -2555,7 +2557,7 @@ async function loadStaffAudit(){
     })),
     ...bankTIL.map(b=>({
       name:b.bank_staff?.full_name||'Unknown',
-      role:b.bank_staff?.role||'OT/TIL Staff',
+      role:cleanRoleValue(b.bank_staff?.role),
       date:b.work_date,
       notes:b.notes||'',
       sortDate:b.work_date
@@ -3032,9 +3034,9 @@ async function getDailyAttendanceData(dateStr){
     const name=fullDisplayName(b.bank_staff?.full_name||'Unknown OT / Bank Staff');
     const key=makeAssignmentGroupKey('attendance-bank',dateStr,name,type);
     if(!bankAttendanceGroups[key]){
-      bankAttendanceGroups[key]={name,role:b.bank_staff?.role||'Nurse',type,isTil,start:String(b.shift_start||'07:00').slice(0,5),end:String(b.shift_end||'').slice(0,5),notes:[]};
+      bankAttendanceGroups[key]={name,role:cleanRoleValue(b.bank_staff?.role),type,isTil,start:String(b.shift_start||'07:00').slice(0,5),end:String(b.shift_end||'').slice(0,5),notes:[]};
     }
-    bankAttendanceGroups[key].role=betterRole(bankAttendanceGroups[key].role,b.bank_staff?.role||'Nurse');
+    bankAttendanceGroups[key].role=betterRole(bankAttendanceGroups[key].role,cleanRoleValue(b.bank_staff?.role));
     bankAttendanceGroups[key].start=minTime(bankAttendanceGroups[key].start,String(b.shift_start||'07:00').slice(0,5));
     bankAttendanceGroups[key].end=maxTime(bankAttendanceGroups[key].end,String(b.shift_end||'').slice(0,5));
     if(note)bankAttendanceGroups[key].notes.push(note);
