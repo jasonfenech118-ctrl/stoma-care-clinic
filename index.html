@@ -474,6 +474,28 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 
 
+/* v32 — All Months Clinic Book and clean print workflow */
+.clinic-all-months-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.clinic-all-month-card{background:white;border:1px solid var(--border);border-radius:9px;overflow:hidden;min-height:110px;}
+.clinic-all-month-title{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#eef2f7;border-bottom:1px solid var(--border);padding:7px 9px;color:var(--navy);}
+.clinic-all-month-title strong{font-size:12px;font-weight:900;}
+.clinic-all-month-title span{font-size:10px;color:var(--muted);font-weight:800;white-space:nowrap;}
+.clinic-all-month-days{padding:6px;display:grid;gap:5px;max-height:280px;overflow:auto;}
+.clinic-all-day-row{display:grid;grid-template-columns:56px 1fr;gap:5px;align-items:start;border-bottom:1px solid #eef2f7;padding-bottom:5px;}
+.clinic-all-day-row:last-child{border-bottom:none;padding-bottom:0;}
+.clinic-all-day-date{font-size:9.5px;font-weight:900;color:var(--navy);line-height:1.2;}
+.clinic-all-day-list{display:grid;gap:2px;}
+.clinic-all-appt{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:5px;align-items:center;border-left:3px solid var(--teal);border-radius:5px;background:#fff;padding:3px 5px;}
+.clinic-all-appt.attended{border-left-color:var(--green);background:#f6fff8;}
+.clinic-all-appt.cancelled{border-left-color:var(--red);background:#fff7f7;}
+.clinic-all-appt.dntu{border-left-color:var(--orange);background:#fffaf0;}
+.clinic-all-time{font-size:9px;font-weight:900;color:var(--teal);}
+.clinic-all-name{font-size:10px;font-weight:850;color:var(--navy);line-height:1.12;white-space:normal;}
+.clinic-all-status{font-size:7px;font-weight:900;text-transform:uppercase;border-radius:999px;background:#eef2f7;padding:1px 4px;color:var(--navy);white-space:nowrap;}
+@media(max-width:1100px){.clinic-all-months-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:700px){.clinic-all-months-grid{grid-template-columns:1fr;}.clinic-all-appt{grid-template-columns:40px minmax(0,1fr);}.clinic-all-status{grid-column:2;justify-self:start;}}
+
+
 /* v31 — print/save PDF for Clinic Audit monthly book */
 .clinic-print-only-title{display:none;}
 @media print{
@@ -1041,6 +1063,8 @@ let selCode='working';
 let snapCurrentDate=TODAY;
 let selectedJumpDate=null;
 let caSort='desc';
+let clinicAuditCache=[];
+let clinicAuditPrintContext={month:'',year:'',search:''};
 let reportCharts={};
 let otLogGroups={};
 let tilLogGroups={};
@@ -3142,18 +3166,74 @@ function renderClinicMonthBook(data,month,year){
   const count=document.getElementById('clinic-month-book-count');
   const body=document.getElementById('clinic-month-book-body');
   if(!title||!count||!body)return;
-  const now=new Date();
-  if(!month)month=String(now.getMonth()+1).padStart(2,'0');
-  if(!year)year=String(now.getFullYear());
 
+  const rows=(data||[]).slice().sort((a,b)=>
+    String(a.appt_date||'').localeCompare(String(b.appt_date||'')) ||
+    String(a.appt_slot||'').localeCompare(String(b.appt_slot||''))
+  );
+
+  if(!month){
+    const yearLabel=year?year:'All Years';
+    title.textContent=`Clinic Book — All Months (${yearLabel})`;
+    count.textContent=`${rows.length} appointment${rows.length!==1?'s':''}`;
+
+    if(!rows.length){
+      body.innerHTML='<div class="clinic-month-help">No appointments found for the selected filter.</div>';
+      return;
+    }
+
+    const byMonth={};
+    rows.forEach(a=>{
+      const key=String(a.appt_date||'').slice(0,7) || 'Unknown';
+      if(!byMonth[key])byMonth[key]=[];
+      byMonth[key].push(a);
+    });
+
+    const keys=Object.keys(byMonth).sort();
+    let html='<div class="clinic-all-months-grid">';
+    keys.forEach(key=>{
+      const parts=key.split('-');
+      const y=Number(parts[0]);
+      const m=Number(parts[1])-1;
+      const label=(parts.length===2&&!Number.isNaN(y)&&!Number.isNaN(m))
+        ? new Date(y,m,1).toLocaleDateString('en-MT',{month:'long',year:'numeric'})
+        : key;
+      const monthRows=byMonth[key].slice().sort((a,b)=>
+        String(a.appt_date||'').localeCompare(String(b.appt_date||'')) ||
+        String(a.appt_slot||'').localeCompare(String(b.appt_slot||''))
+      );
+      const byDate={};
+      monthRows.forEach(a=>{if(!byDate[a.appt_date])byDate[a.appt_date]=[];byDate[a.appt_date].push(a);});
+      html+=`<div class="clinic-all-month-card">
+        <div class="clinic-all-month-title"><strong>${htmlSafe(label)}</strong><span>${monthRows.length} appointment${monthRows.length!==1?'s':''}</span></div>
+        <div class="clinic-all-month-days">`;
+      Object.keys(byDate).sort().forEach(ds=>{
+        const dt=new Date(ds+'T12:00:00');
+        const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short'});
+        const dayRows=byDate[ds];
+        html+=`<div class="clinic-all-day-row"><div class="clinic-all-day-date">${htmlSafe(dayLabel)}</div><div class="clinic-all-day-list">`;
+        dayRows.forEach(a=>{
+          const st=a.status==='cancelled'?'cancelled':a.status==='did_not_attend'?'dntu':a.status==='attended'?'attended':'booked';
+          html+=`<div class="clinic-all-appt ${st}"><span class="clinic-all-time">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</span><span class="clinic-all-name">${htmlSafe(patientName(a))}</span><span class="clinic-all-status">${htmlSafe(statusShort(a.status))}</span></div>`;
+        });
+        html+='</div></div>';
+      });
+      html+='</div></div>';
+    });
+    html+='</div>';
+    body.innerHTML=html;
+    return;
+  }
+
+  const now=new Date();
+  if(!year)year=String(now.getFullYear());
   const y=Number(year),m=Number(month)-1;
   const monthLabel=new Date(y,m,1).toLocaleDateString('en-MT',{month:'long',year:'numeric'});
   title.textContent=`Compact Monthly Clinic Book — ${monthLabel}`;
   const days=dim(y,m);
   const start=`${year}-${month}-01`;
   const end=monthEndDate(year,month);
-  const monthRows=(data||[]).filter(a=>String(a.appt_date||'')>=start&&String(a.appt_date||'')<=end)
-    .sort((a,b)=>String(a.appt_date||'').localeCompare(String(b.appt_date||''))||String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
+  const monthRows=rows.filter(a=>String(a.appt_date||'')>=start&&String(a.appt_date||'')<=end);
   count.textContent=`${monthRows.length} appointment${monthRows.length!==1?'s':''}`;
   const byDate={};
   monthRows.forEach(a=>{if(!byDate[a.appt_date])byDate[a.appt_date]=[];byDate[a.appt_date].push(a);});
@@ -3167,16 +3247,16 @@ function renderClinicMonthBook(data,month,year){
   for(let d=1;d<=days;d++){
     const ds=`${year}-${month}-${String(d).padStart(2,'0')}`;
     const dt=new Date(ds+'T12:00:00');
-    const rows=byDate[ds]||[];
+    const dayRows=byDate[ds]||[];
     const dayName=dt.toLocaleDateString('en-MT',{weekday:'short'});
     const longDate=dt.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long'});
-    html+=`<div class="clinic-day-card ${rows.length?'':'empty'}" title="${htmlSafe(longDate)}">
-      <div class="clinic-day-hdr"><div><strong>${d}</strong> <span>${htmlSafe(dayName)}</span></div><div class="clinic-day-count">${rows.length}</div></div>`;
-    if(!rows.length){
+    html+=`<div class="clinic-day-card ${dayRows.length?'':'empty'}" title="${htmlSafe(longDate)}">
+      <div class="clinic-day-hdr"><div><strong>${d}</strong> <span>${htmlSafe(dayName)}</span></div><div class="clinic-day-count">${dayRows.length}</div></div>`;
+    if(!dayRows.length){
       html+='<div class="clinic-day-empty">—</div>';
     }else{
       html+='<div class="clinic-day-list">';
-      rows.forEach(a=>{
+      dayRows.forEach(a=>{
         const st=statusToken(a.status);
         const nm=compactPatientName(a);
         const nurse=a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');
@@ -3196,13 +3276,8 @@ function renderClinicMonthBook(data,month,year){
 }
 
 async function loadClinicAudit(){
-  let month=document.getElementById('ca-month')?.value;
-  let year=document.getElementById('ca-year')?.value;
-  const now=new Date();
-  if(!month)month=String(now.getMonth()+1).padStart(2,'0');
-  if(!year)year=String(now.getFullYear());
-  if(document.getElementById('ca-month')&&!document.getElementById('ca-month').value)document.getElementById('ca-month').value=month;
-  if(document.getElementById('ca-year')&&!document.getElementById('ca-year').value)document.getElementById('ca-year').value=year;
+  const month=document.getElementById('ca-month')?.value || '';
+  const year=document.getElementById('ca-year')?.value || '';
   const asc=caSort==='asc';
   let query=SB.from('appointments').select('*').order('appt_date',{ascending:asc}).order('appt_slot',{ascending:asc});
   if(year&&month){query=query.gte('appt_date',`${year}-${month}-01`).lte('appt_date',monthEndDate(year,month));}
@@ -3216,6 +3291,8 @@ async function loadClinicAudit(){
       return hay.includes(search);
     });
   }
+  clinicAuditCache=data||[];
+  clinicAuditPrintContext={month,year,search};
   const tot=data?.length||0,att=data?.filter(a=>a.status==='attended').length||0,can=data?.filter(a=>a.status==='cancelled').length||0,dna=data?.filter(a=>a.status==='did_not_attend').length||0;
   document.getElementById('clinic-stats').innerHTML=`
     <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${tot}</div><div class="ss">filtered</div></div>
@@ -3229,10 +3306,10 @@ async function loadClinicAudit(){
   const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
   tbody.innerHTML=data.map(a=>`<tr>
     <td>${a.appt_date}</td><td><strong>${a.appt_slot?.slice(0,5)}</strong></td>
-    <td><strong>${a.patients?.first_name} ${a.patients?.surname}</strong></td>
-    <td style="font-family:monospace;font-size:12px;">${a.patients?.id_card}</td>
-    <td>${a.patients?.phone_number||'—'}</td>
-    <td>${a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—')}</td>
+    <td><strong>${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</strong></td>
+    <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
+    <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+    <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
       <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
@@ -4036,13 +4113,118 @@ function closeModal(){document.getElementById('mo').classList.remove('open');}
 function moOut(e){if(e.target===document.getElementById('mo'))closeModal();}
 
 
-function printClinicAuditBook(){
-  document.body.classList.add('print-clinic-audit');
-  setTimeout(()=>{
-    window.print();
-    setTimeout(()=>document.body.classList.remove('print-clinic-audit'),500);
-  },150);
+function clinicPrintPeriodLabel(){
+  const ctx=clinicAuditPrintContext||{};
+  if(ctx.month&&ctx.year){
+    const d=new Date(Number(ctx.year),Number(ctx.month)-1,1);
+    return d.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
+  }
+  if(ctx.year)return `All Months ${ctx.year}`;
+  return 'All Months / All Years';
 }
+
+function clinicStatusPrintClass(status){
+  if(status==='attended')return 'p-attended';
+  if(status==='cancelled')return 'p-cancelled';
+  if(status==='did_not_attend')return 'p-dntu';
+  return 'p-booked';
+}
+
+function buildClinicPrintHtml(rows){
+  const period=clinicPrintPeriodLabel();
+  const sorted=(rows||[]).slice().sort((a,b)=>
+    String(a.appt_date||'').localeCompare(String(b.appt_date||'')) ||
+    String(a.appt_slot||'').localeCompare(String(b.appt_slot||''))
+  );
+  const attended=sorted.filter(a=>a.status==='attended').length;
+  const cancelled=sorted.filter(a=>a.status==='cancelled').length;
+  const dntu=sorted.filter(a=>a.status==='did_not_attend').length;
+  const booked=sorted.filter(a=>a.status==='booked').length;
+  const generated=new Date().toLocaleString('en-MT',{dateStyle:'short',timeStyle:'short'});
+  const search=clinicAuditPrintContext?.search?` · Search: ${htmlSafe(clinicAuditPrintContext.search)}`:'';
+  const byDate={};
+  sorted.forEach(a=>{if(!byDate[a.appt_date])byDate[a.appt_date]=[];byDate[a.appt_date].push(a);});
+  let body='';
+  if(!sorted.length){
+    body='<div class="empty-print">No appointments found for this filter.</div>';
+  }else{
+    Object.keys(byDate).sort().forEach(ds=>{
+      const dt=new Date(ds+'T12:00:00');
+      const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+      const dayRows=byDate[ds];
+      body+=`<section class="day-section">
+        <div class="day-title"><span>${htmlSafe(dayLabel)}</span><strong>${dayRows.length} appointment${dayRows.length!==1?'s':''}</strong></div>
+        <table>
+          <thead><tr><th style="width:58px;">Time</th><th>Patient name</th><th style="width:92px;">ID Card</th><th style="width:88px;">Phone</th><th style="width:105px;">Nurse / Column</th><th style="width:86px;">Status</th></tr></thead>
+          <tbody>`;
+      dayRows.forEach(a=>{
+        const nurse=a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');
+        const status=statusLabel(a.status);
+        body+=`<tr>
+          <td class="time">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</td>
+          <td class="patient">${htmlSafe(patientName(a))}</td>
+          <td>${htmlSafe(a.patients?.id_card||'—')}</td>
+          <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+          <td>${htmlSafe(nurse)}</td>
+          <td><span class="status ${clinicStatusPrintClass(a.status)}">${htmlSafe(status)}</span></td>
+        </tr>`;
+      });
+      body+='</tbody></table></section>';
+    });
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Clinic Appointment Book — ${htmlSafe(period)}</title>
+  <style>
+    @page{size:A4 landscape;margin:8mm;}
+    *{box-sizing:border-box;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;background:white;margin:0;font-size:10.5px;}
+    .header{border-bottom:2px solid #1a2e4a;padding:0 0 6px 0;margin-bottom:6px;display:flex;justify-content:space-between;gap:12px;align-items:flex-end;}
+    h1{font-size:18px;line-height:1.05;margin:0;color:#1a2e4a;}
+    .sub{font-size:10px;color:#333;margin-top:3px;}
+    .meta{text-align:right;font-size:9px;color:#444;line-height:1.35;}
+    .summary{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:6px 0 8px 0;}
+    .sum{border:1px solid #cbd5e1;border-radius:5px;padding:5px 6px;background:#f8fafc;}
+    .sum .n{font-size:15px;font-weight:800;color:#1a2e4a;line-height:1;}
+    .sum .l{font-size:8px;text-transform:uppercase;color:#475569;font-weight:700;margin-top:2px;}
+    .day-section{break-inside:avoid;page-break-inside:avoid;margin-bottom:6px;}
+    .day-title{display:flex;justify-content:space-between;align-items:center;background:#1a2e4a;color:white;border-radius:4px 4px 0 0;padding:4px 7px;font-size:10px;font-weight:800;}
+    .day-title strong{font-size:9px;font-weight:700;}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #111;}
+    th,td{border:1px solid #222;padding:3px 5px;vertical-align:top;line-height:1.2;word-wrap:break-word;}
+    th{background:#e9eef5;font-size:8.5px;text-transform:uppercase;letter-spacing:.2px;color:#111;}
+    td{font-size:10px;}
+    td.time{font-weight:800;color:#0d7377;white-space:nowrap;}
+    td.patient{font-weight:800;font-size:10.5px;color:#111;}
+    .status{display:inline-block;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:800;text-transform:uppercase;white-space:nowrap;border:1px solid #cbd5e1;background:#eef2f7;color:#111;}
+    .p-attended{background:#d4edda;border-color:#8fc99e;color:#155724;}
+    .p-cancelled{background:#f8d7da;border-color:#e5a1a7;color:#721c24;}
+    .p-dntu{background:#fff3cd;border-color:#e7c766;color:#856404;}
+    .p-booked{background:#e3f2fd;border-color:#9bc7ec;color:#0d47a1;}
+    .empty-print{border:1px solid #cbd5e1;border-radius:8px;padding:18px;text-align:center;color:#475569;font-weight:700;}
+    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.no-print{display:none!important;}}
+  </style></head><body>
+    <div class="header"><div><h1>MDH Stoma Care Clinic — Appointment Book</h1><div class="sub">Period: <strong>${htmlSafe(period)}</strong>${search}</div></div><div class="meta">Generated: ${htmlSafe(generated)}<br/>Use browser print or Save as PDF</div></div>
+    <div class="summary">
+      <div class="sum"><div class="n">${sorted.length}</div><div class="l">Total</div></div>
+      <div class="sum"><div class="n">${booked}</div><div class="l">Booked</div></div>
+      <div class="sum"><div class="n">${attended}</div><div class="l">Attended</div></div>
+      <div class="sum"><div class="n">${cancelled}</div><div class="l">Cancelled</div></div>
+      <div class="sum"><div class="n">${dntu}</div><div class="l">Did Not Turn Up</div></div>
+    </div>
+    ${body}
+  </body></html>`;
+}
+
+function printClinicAuditBook(){
+  const rows=clinicAuditCache||[];
+  const html=buildClinicPrintHtml(rows);
+  const win=window.open('','_blank','width=1200,height=850');
+  if(!win){alert('Please allow pop-ups for this site so the clean print view can open.');return;}
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>{win.focus();win.print();},450);
+}
+
 
 checkSession();
 </script>
