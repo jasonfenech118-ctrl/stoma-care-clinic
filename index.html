@@ -102,6 +102,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rt tbody td.td-sel{background:#e8f5f4!important;outline:2px solid var(--teal);outline-offset:-2px;}
 .dchip{width:30px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;transition:transform .12s;user-select:none;}
 .dchip:hover{transform:scale(1.18);box-shadow:0 3px 8px rgba(0,0,0,.18);}
+.cell-mini-leave{margin-top:2px;font-size:8px;font-weight:800;line-height:1.1;color:var(--teal);background:#e8f5f4;border-radius:5px;padding:1px 2px;display:inline-block;max-width:38px;white-space:normal;}
+.cell-mini-leave.sick{color:#c0392b;background:#fdecea;}
+.cell-mini-leave.maternity{color:#c2185b;background:#fce4ec;}
+.cell-mini-leave.study{color:#1f618d;background:#eaf4fb;}
+.cell-mini-leave.annual{color:#1b7f4b;background:#eafaf1;}
+.hourly-leave-box{margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;}
+.hourly-leave-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px;align-items:end;}
+.hourly-leave-grid .fg{margin:0;}
+.hourly-quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.hourly-quick button{border:none;border-radius:8px;background:#e8f5f4;color:var(--teal);font-weight:800;font-size:11px;padding:6px 10px;cursor:pointer;}
+.hourly-quick button:hover{filter:brightness(.96);}
+@media(max-width:760px){.hourly-leave-grid{grid-template-columns:1fr;}}
 
 /* OT/TIL LISTS */
 .ot-list-wrap{margin-top:16px;background:white;border-radius:12px;border:1px solid var(--border);box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden;}
@@ -665,7 +677,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         </select>
       </div>
       <div class="card"><div class="card-title">🌴 Annual &amp; Maternity Leave</div>
-        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="leave-tbody"></tbody></table></div></div>
+        <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>Type</th><th>From</th><th>To</th><th>Days / Hours</th><th>Notes</th></tr></thead><tbody id="leave-tbody"></tbody></table></div></div>
       <div class="card"><div class="card-title">🤒 Sick Leave</div>
         <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Staff</th><th>From</th><th>To</th><th>Days</th><th>Notes</th></tr></thead><tbody id="sick-tbody"></tbody></table></div></div>
       <div class="card"><div class="card-title">📚 Study Leave</div>
@@ -845,6 +857,10 @@ const CODES=[
   {v:'overtime',l:'OT',s:'Overtime',cls:'dc-OT'},
   {v:'annual_leave',l:'L',s:'Annual Leave',cls:'dc-L'},
 ];
+// Day-cell modal hides Rest/Off and Overtime. Rest is pattern-based; OT/TIL uses the dedicated controls above the calendar.
+const SHIFT_MODAL_CODES=CODES.filter(c=>!['off','overtime'].includes(c.v));
+const LEAVE_LABELS={sick_leave:'Sick Leave',maternity_leave:'Maternity Leave',study_leave:'Study Leave',annual_leave:'Annual Leave'};
+const LEAVE_SHORT={sick_leave:'S',maternity_leave:'M',study_leave:'St',annual_leave:'L'};
 const CODE_MAP={working:'D',off:'R',sick_leave:'S',maternity_leave:'M',study_leave:'St',overtime:'OT',annual_leave:'L'};
 const PATTERN_DDR=['working','working','off'];
 const PATTERN_DDDOO=['working','working','working','off','off'];
@@ -1289,6 +1305,19 @@ async function renderRoster(){
 
   const{data:bd}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name,role)').gte('work_date',s1).lte('work_date',s2);
   const{data:tilData}=await SB.from('leave_records').select('*, staff(id,full_name,role)').eq('leave_type','overtime').or('notes.like.TIL-Off:%,notes.like.TIL-In:%').gte('start_date',s1).lte('start_date',s2);
+  const{data:leaveMonth}=await SB.from('leave_records').select('*').lte('start_date',s2).gte('end_date',s1);
+  const hourlyLeaveByCell={};
+  (leaveMonth||[]).filter(isHourlyLeaveRecord).forEach(l=>{
+    const start=new Date(l.start_date+'T12:00:00');
+    const end=new Date((l.end_date||l.start_date)+'T12:00:00');
+    for(let cur=new Date(start);cur<=end;cur.setDate(cur.getDate()+1)){
+      const ds=fmt(cur);
+      if(ds<s1||ds>s2)continue;
+      const key=`${l.staff_id}_${ds}`;
+      if(!hourlyLeaveByCell[key])hourlyLeaveByCell[key]=[];
+      hourlyLeaveByCell[key].push(l);
+    }
+  });
 
   const th=isHol(TODAY);
   document.getElementById('hban-roster').innerHTML=th?`<div class="hban">🇲🇹 Today is a Malta Public Holiday: <strong>${th}</strong></div>`:'';
@@ -1315,7 +1344,9 @@ async function renderRoster(){
       const entry=rCache[`${st.id}_${ds}`];
       const code=entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D';
       const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
-      html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${hol?hol+' — ':''}${ds}">${code}</div></td>`;
+      const hourly=(hourlyLeaveByCell[`${st.id}_${ds}`]||[]);
+      const mini=hourly.length?`<div class="cell-mini-leave ${leaveMiniClass(hourly[0].leave_type)}" title="${htmlSafe(hourly.map(l=>`${LEAVE_LABELS[l.leave_type]||'Leave'} · ${leaveMiniText(l)} · ${String(l.start_time||'').slice(0,5)}-${String(l.end_time||'').slice(0,5)}${l.notes?' · '+l.notes:''}`).join(' | '))}">${htmlSafe(hourly.map(leaveMiniText).join('+'))}</div>`:'';
+      html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${hol?hol+' — ':''}${ds}">${code}</div>${mini}</td>`;
     }
     html+='</tr>';
   }
@@ -1598,6 +1629,36 @@ function minutesBetweenTimes(start,end){
 function hoursLabelFromMinutes(mins){
   if(!mins||mins<=0)return '0h';
   return `${Math.floor(mins/60)}h${mins%60?` ${mins%60}m`:''}`;
+}
+function addMinutesToTime(start,mins){
+  const sm=timeToMinutes(start);
+  if(sm===null)return '08:00';
+  const end=sm+Number(mins||0);
+  const h=Math.floor(end/60)%24;
+  const m=end%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+function isHourlyLeaveRecord(l){
+  const t=String(l?.leave_type||'');
+  const n=String(l?.notes||'');
+  const h=Number(l?.total_hours||0);
+  return ['sick_leave','annual_leave','maternity_leave','study_leave'].includes(t) && (n.startsWith('Hourly leave:') || (h>0 && h<8));
+}
+function leaveMiniClass(leaveType){
+  if(leaveType==='sick_leave')return 'sick';
+  if(leaveType==='maternity_leave')return 'maternity';
+  if(leaveType==='study_leave')return 'study';
+  return 'annual';
+}
+function leaveMiniText(l){
+  const short=LEAVE_SHORT[l.leave_type]||'L';
+  const h=Number(l.total_hours||0);
+  const hTxt=h>0?`${h.toFixed(1).replace('.0','')}h`:'hrs';
+  return `${short} ${hTxt}`;
+}
+function setHourlyLeaveHours(v){
+  const el=document.getElementById('hourly-leave-hours');
+  if(el)el.value=String(v);
 }
 
 // ADD OT
@@ -2019,20 +2080,53 @@ async function deleteTILLogGroup(groupKey){
 function openShift(staffId,staffName,date){
   const hol=isHol(date),entry=rCache[`${staffId}_${date}`];
   selCode=entry?entry.status:defaultCode(staffList.find(s=>s.id===staffId),date);
+  const shiftCodes=SHIFT_MODAL_CODES;
   document.getElementById('mb').innerHTML=`
-    <h2>Update Shift</h2>
-    <div class="msub">${staffName} &mdash; ${date}${hol?` &nbsp;🇲🇹 ${hol}`:''}</div>
+    <h2>Update Shift / Add Hourly Leave</h2>
+    <div class="msub">${htmlSafe(staffName)} &mdash; ${date}${hol?` &nbsp;🇲🇹 ${htmlSafe(hol)}`:''}</div>
+    <div style="font-size:12px;color:var(--muted);margin:8px 0 6px;">Full-day change</div>
     <div class="shift-picker">
-      ${CODES.map(c=>`<div class="sp-btn ${c.cls}${selCode===c.v?' selected':''}" onclick="pickCode('${c.v}',this)">
+      ${shiftCodes.map(c=>`<div class="sp-btn ${c.cls}${selCode===c.v?' selected':''}" onclick="pickCode('${c.v}',this)">
         <div style="font-size:15px;">${c.l}</div><div style="font-size:9px;opacity:.85;margin-top:3px;">${c.s}</div>
       </div>`).join('')}
     </div>
-    <div class="fg" style="margin-top:14px;"><label>Notes (optional)</label>
-      <input type="text" id="snotes" value="${entry?.notes||''}" placeholder="Any notes..."/>
+    <div class="fg" style="margin-top:14px;"><label>Notes for full-day change (optional)</label>
+      <input type="text" id="snotes" value="${htmlSafe(entry?.notes||'')}" placeholder="Any notes..."/>
     </div>
+
+    <div class="hourly-leave-box">
+      <div style="font-weight:800;color:var(--navy);margin-bottom:4px;">Add hourly leave</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Use this for 1 hour leave, 2 hours leave, short annual leave, sick leave hours, maternity hours, or study leave hours. This does not change the whole shift.</div>
+      <div class="hourly-leave-grid">
+        <div class="fg"><label>Leave Type</label><select id="hourly-leave-type">
+          <option value="annual_leave">Annual Leave</option>
+          <option value="sick_leave">Sick Leave</option>
+          <option value="maternity_leave">Maternity Leave</option>
+          <option value="study_leave">Study Leave</option>
+        </select></div>
+        <div class="fg"><label>Start</label><input type="time" id="hourly-leave-start" value="07:00"/></div>
+        <div class="fg"><label>Hours</label><select id="hourly-leave-hours">
+          <option value="1" selected>1 hour</option>
+          <option value="2">2 hours</option>
+          <option value="3">3 hours</option>
+          <option value="4">4 hours</option>
+          <option value="5">5 hours</option>
+          <option value="6">6 hours</option>
+          <option value="7">7 hours</option>
+        </select></div>
+      </div>
+      <div class="hourly-quick">
+        <button type="button" onclick="setHourlyLeaveHours(1)">1 hour leave</button>
+        <button type="button" onclick="setHourlyLeaveHours(2)">2 hours</button>
+        <button type="button" onclick="setHourlyLeaveHours(4)">4 hours</button>
+      </div>
+      <div class="fg" style="margin-top:10px;"><label>Hourly Leave Notes</label><input type="text" id="hourly-leave-notes" placeholder="Optional reason / note..."/></div>
+      <button class="btn-save" style="width:100%;margin-top:10px;" onclick="saveHourlyLeave('${staffId}','${date}')">Save Hourly Leave</button>
+    </div>
+
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveShift('${staffId}','${date}')">Save</button>
+      <button class="btn-save" onclick="saveShift('${staffId}','${date}')">Save Full-Day Change</button>
     </div>`;
   openMo();
 }
@@ -2052,7 +2146,7 @@ async function saveShift(staffId,date){
 
   const leaveTypes=['sick_leave','maternity_leave','study_leave','annual_leave'];
   if(leaveTypes.includes(selCode)){
-    const label={sick_leave:'Sick Leave',maternity_leave:'Maternity Leave',study_leave:'Study Leave',annual_leave:'Annual Leave'}[selCode]||selCode;
+    const label=LEAVE_LABELS[selCode]||selCode;
     await SB.from('leave_records').insert({
       staff_id:staffId,
       leave_type:selCode,
@@ -2064,6 +2158,43 @@ async function saveShift(staffId,date){
   }
 
   closeModal();renderRoster();loadStaffAudit();if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+}
+
+async function saveHourlyLeave(staffId,date){
+  const type=document.getElementById('hourly-leave-type')?.value||'annual_leave';
+  const start=document.getElementById('hourly-leave-start')?.value||'07:00';
+  const hours=Number(document.getElementById('hourly-leave-hours')?.value||1);
+  const rawNotes=document.getElementById('hourly-leave-notes')?.value.trim()||'';
+  if(!staffId||!date||!start||!hours||hours<=0){alert('Please choose leave type, start time and hours.');return;}
+  const end=addMinutesToTime(start,hours*60);
+  const label=LEAVE_LABELS[type]||'Leave';
+  const hourWord=hours===1?'hour':'hours';
+  const notes=`Hourly leave: ${label} — ${hours} ${hourWord} leave (${start}–${end})${rawNotes?' — '+rawNotes:''}`;
+  const payload={
+    staff_id:staffId,
+    leave_type:type,
+    start_date:date,
+    end_date:date,
+    start_time:start,
+    end_time:end,
+    total_hours:hours,
+    total_days:hours/8,
+    notes
+  };
+  try{
+    const {error}=await SB.from('leave_records').insert(payload);
+    if(error){
+      const fallback=await SB.from('leave_records').insert({staff_id:staffId,leave_type:type,start_date:date,end_date:date,total_days:hours/8,notes});
+      if(fallback.error)throw new Error(fallback.error.message);
+    }
+    alert(`${hours} ${hourWord} ${label.toLowerCase()} saved on the calendar.`);
+    closeModal();
+    renderRoster();
+    loadStaffAudit();
+    if(document.getElementById('page-daily-attendance')?.classList.contains('active'))loadDailyAttendance();
+  }catch(e){
+    alert('Could not save hourly leave: '+(e?.message||String(e))+'. Run the v23 SQL if you have not done so.');
+  }
 }
 
 // APPOINTMENTS — MULTI-COLUMN PER NURSE
@@ -2581,7 +2712,7 @@ async function loadStaffAudit(){
   const leaveAll=[...annual,...mat].sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||'')));
   const leaveTb=document.getElementById('leave-tbody');
   if(!leaveAll.length){leaveTb.innerHTML='<tr><td colspan="6" class="empty">No records</td></tr>';}
-  else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';return`<tr><td><strong>${htmlSafe(l.staff?.full_name||'Unknown')}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(l.staff?.role||'Staff')}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td><strong>${l.total_days||daysBetween(l.start_date,l.end_date)}</strong> days</td><td style="color:var(--muted)">${htmlSafe(l.notes||'—')}</td></tr>`;}).join('');}
+  else{leaveTb.innerHTML=leaveAll.map(l=>{const cls=l.leave_type==='annual_leave'?'b-al':'b-mat';const lbl=l.leave_type==='annual_leave'?'Annual':'Maternity';const hours=Number(l.total_hours||0);const days=Number(l.total_days||daysBetween(l.start_date,l.end_date)||0);const amount=hours>0?`<strong>${hours.toFixed(1).replace('.0','')}</strong> hours`:`<strong>${days}</strong> days`;return`<tr><td><strong>${htmlSafe(l.staff?.full_name||'Unknown')}</strong><br/><span style="font-size:11px;color:var(--muted)">${htmlSafe(l.staff?.role||'Staff')}</span></td><td><span class="badge ${cls}">${lbl}</span></td><td>${l.start_date}</td><td>${l.end_date}</td><td>${amount}</td><td style="color:var(--muted)">${htmlSafe(l.notes||'—')}</td></tr>`;}).join('');}
 
   renderLeaveSimple('sick-tbody',sick.sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||''))));
   renderLeaveSimple('study-tbody',study.sort((a,b)=>String(b.start_date||'').localeCompare(String(a.start_date||''))));
@@ -2989,12 +3120,13 @@ async function getDailyAttendanceData(dateStr){
       if(ln)noteParts.push(ln);
       if(isCodNote(ln))flags.cod=true;
 
+      const hourlyLeave=isHourlyLeaveRecord(leave);
       if(leave.leave_type==='sick_leave'){
-        flags.sl=true; hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus='sick_leave';
+        flags.sl=true; if(!hourlyLeave){hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus='sick_leave';}
       }else if(leave.leave_type==='annual_leave'){
-        flags.vl=true; hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus='annual_leave';
+        flags.vl=true; if(!hourlyLeave){hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus='annual_leave';}
       }else if(leave.leave_type==='maternity_leave'||leave.leave_type==='study_leave'){
-        flags.abs=true; hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus=leave.leave_type;
+        flags.abs=true; if(!hourlyLeave){hasRealLeave=true; if(!realLeaveStatus)realLeaveStatus=leave.leave_type;}
       }else if(leave.leave_type==='overtime'){
         if(isTilOffNote(ln)){
           const tr=extractTimeRangeFromTilNote(ln);
