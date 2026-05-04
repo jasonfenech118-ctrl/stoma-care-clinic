@@ -4,10 +4,12 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
-<!-- Build v25: Daily Attendance download workflow; send/print removed -->
+<!-- Build v26: Daily Attendance image PDF download + monthly appointment snapshot -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -137,6 +139,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pt-count{background:white;color:var(--teal);border-radius:20px;padding:2px 12px;font-size:12px;font-weight:700;}
 .pt-row{display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;background:#fafafa;}
 .pt-row:last-child{margin-bottom:0;}
+.pt-month-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.pt-month-tools button{background:white;border:none;color:var(--navy);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px;font-weight:700;}
+.pt-month-group{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden;background:#fff;}
+.pt-month-date{background:#f8fafc;color:var(--navy);font-size:12px;font-weight:800;padding:8px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.pt-month-list{display:grid;gap:6px;padding:8px;}
+.pt-month-row{display:grid;grid-template-columns:70px 1.2fr 100px 1fr 90px;gap:8px;align-items:center;padding:7px 8px;border:1px solid var(--border);border-radius:8px;background:#fafafa;font-size:12px;}
+.pt-month-slot{font-weight:800;color:var(--teal);}
+.pt-month-patient{font-weight:700;color:var(--navy);}
+.pt-month-id{font-family:monospace;color:var(--muted);font-size:11px;}
+.pt-month-nurse{color:var(--muted);font-size:11px;}
+.pt-month-status{justify-self:end;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:800;text-transform:uppercase;}
+@media(max-width:760px){.pt-month-row{grid-template-columns:1fr;}.pt-month-status{justify-self:start;}}
 .pt-row-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end;min-width:230px;}
 .pt-action-btn{padding:4px 9px;border-radius:6px;font-size:10px;font-weight:800;cursor:pointer;border:none;font-family:'Inter',sans-serif;line-height:1;}
 .pt-action-seen{background:#d4edda;color:#155724;}
@@ -471,6 +485,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         </div>
         <div class="pt-snap-body" id="snap-body"><div class="pt-snap-empty">No patients booked</div></div>
       </div>
+      <!-- MONTHLY PATIENT SNAPSHOT -->
+      <div class="pt-snap">
+        <div class="pt-snap-hdr" style="background:var(--navy);">
+          <div class="pt-month-tools">
+            <button onclick="changeMonth(-1)">‹ Prev Month</button>
+            <span>📅 Monthly Appointment Snapshot — <strong><span id="snap-month-label"></span></strong></span>
+            <button onclick="changeMonth(1)">Next Month ›</button>
+            <button onclick="goToday()" style="background:var(--gold);color:white;">This Month</button>
+          </div>
+          <span id="snap-month-count" class="pt-count">0 patients</span>
+        </div>
+        <div class="pt-snap-body" id="snap-month-body"><div class="pt-snap-empty">No patients booked this month</div></div>
+      </div>
     </div>
 
     <!-- APPOINTMENTS — MULTI-COLUMN -->
@@ -540,7 +567,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="phdr">
         <div>
           <h2>Daily Attendance</h2>
-          <p>Auto-generated Daily Attendance report from roster, leave, overtime, TIL, and change-of-duty records. Download and send manually via Outlook.</p>
+          <p>Auto-generated Daily Attendance report from roster, leave, overtime, TIL, and change-of-duty records.</p>
         </div>
       </div>
       <div class="daily-toolbar">
@@ -556,14 +583,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <label>Submitted By</label>
           <input type="text" id="daily-submitter" placeholder="Logged-in user" readonly/>
         </div>
-        <div class="daily-recipient-note">
-          Download the report and attach/send it manually using Outlook. The report is stamped with the logged-in user name.
-        </div>
         <button class="daily-btn secondary" onclick="dailyChangeDay(-1)">← Previous Day</button>
         <button class="daily-btn secondary" onclick="dailyGoToday()">Today</button>
         <button class="daily-btn secondary" onclick="dailyChangeDay(1)">Next Day →</button>
         <button class="daily-btn" onclick="loadDailyAttendance()">Refresh</button>
-        <button class="daily-btn gold" onclick="downloadDailyAttendanceReport()">Download Daily Attendance</button>
+        <button class="daily-btn gold" onclick="downloadDailyAttendanceReport()">Download Image PDF</button>
       </div>
       <div class="daily-shell">
         <div class="attendance-sheet" id="daily-attendance-sheet">
@@ -1224,6 +1248,7 @@ async function startApp(){
   updateSignedInUI();
   renderRoster();
   loadTodaySnapshot();
+  loadMonthlyAppointmentSnapshot();
   initAppts();
   populateCODDropdowns();
   loadCOD();
@@ -1265,6 +1290,7 @@ function jumpToDate(){
   snapCurrentDate=val;
   renderRoster();
   loadTodaySnapshot();
+  loadMonthlyAppointmentSnapshot();
   setTimeout(()=>{
     const el=document.querySelector('.th-sel');
     if(el)el.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
@@ -1289,8 +1315,8 @@ function clearJumpDate(){
 }
 
 // ROSTER
-function changeMonth(dir){curMonth=new Date(curMonth);curMonth.setMonth(curMonth.getMonth()+dir);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
-function goToday(){curMonth=new Date();curMonth.setDate(1);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
+function changeMonth(dir){curMonth=new Date(curMonth);curMonth.setMonth(curMonth.getMonth()+dir);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();loadMonthlyAppointmentSnapshot();}
+function goToday(){curMonth=new Date();curMonth.setDate(1);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();loadMonthlyAppointmentSnapshot();}
 
 async function renderRoster(){
   const y=curMonth.getFullYear(),m=curMonth.getMonth(),days=dim(y,m);
@@ -1658,6 +1684,73 @@ function leaveMiniText(l){
 function setHourlyLeaveHours(v){
   const el=document.getElementById('hourly-leave-hours');
   if(el)el.value=String(v);
+}
+
+
+async function loadMonthlyAppointmentSnapshot(){
+  const labelEl=document.getElementById('snap-month-label');
+  const countEl=document.getElementById('snap-month-count');
+  const body=document.getElementById('snap-month-body');
+  if(!labelEl||!countEl||!body)return;
+
+  const y=curMonth.getFullYear();
+  const m=curMonth.getMonth();
+  const start=`${y}-${String(m+1).padStart(2,'0')}-01`;
+  const end=`${y}-${String(m+1).padStart(2,'0')}-${String(dim(y,m)).padStart(2,'0')}`;
+  labelEl.textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
+  body.innerHTML='<div class="pt-snap-empty">Loading monthly appointment list...</div>';
+
+  const {data:rawAppts,error}=await SB.from('appointments')
+    .select('*')
+    .gte('appt_date',start)
+    .lte('appt_date',end)
+    .order('appt_date',{ascending:true})
+    .order('appt_slot',{ascending:true});
+
+  if(error){
+    console.error('Monthly appointment snapshot error:',error);
+    body.innerHTML=`<div class="pt-snap-empty">Could not load monthly appointment snapshot: ${htmlSafe(error.message)}</div>`;
+    countEl.textContent='Error';
+    return;
+  }
+
+  const appts=await enrichAppointments(rawAppts||[]);
+  const active=appts.filter(a=>a.status!=='cancelled');
+  countEl.textContent=`${active.length} patient${active.length!==1?'s':''}`;
+  if(!appts.length){
+    body.innerHTML='<div class="pt-snap-empty">No patients booked this month</div>';
+    return;
+  }
+
+  const statusClass={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'};
+  const statusLabelMap={booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'};
+  const byDate={};
+  appts.forEach(a=>{
+    if(!byDate[a.appt_date])byDate[a.appt_date]=[];
+    byDate[a.appt_date].push(a);
+  });
+
+  body.innerHTML=Object.entries(byDate).map(([date,rows])=>{
+    const d=new Date(date+'T12:00:00');
+    const dateLabel=d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const activeRows=rows.filter(r=>r.status!=='cancelled').length;
+    const list=rows.map(a=>{
+      const patient=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Unknown patient';
+      const nurse=a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');
+      const status=statusLabelMap[a.status]||a.status||'Booked';
+      return `<div class="pt-month-row">
+        <div class="pt-month-slot">${htmlSafe(String(a.appt_slot||'').slice(0,5)||'—')}</div>
+        <div class="pt-month-patient">${htmlSafe(patient)}</div>
+        <div class="pt-month-id">${htmlSafe(a.patients?.id_card||'')}</div>
+        <div class="pt-month-nurse">${htmlSafe(nurse)}</div>
+        <div class="pt-month-status ${statusClass[a.status]||'ps-booked'}">${htmlSafe(status)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="pt-month-group">
+      <div class="pt-month-date"><span>${htmlSafe(dateLabel)}</span><span>${activeRows} active / ${rows.length} total</span></div>
+      <div class="pt-month-list">${list}</div>
+    </div>`;
+  }).join('');
 }
 
 // ADD OT
@@ -3284,19 +3377,65 @@ async function downloadDailyAttendanceReport(){
   if(!dailyAttendanceCache)await loadDailyAttendance();
   const d=dailyAttendanceCache;
   if(!d){alert('Daily Attendance is not ready yet. Please refresh and try again.');return;}
-  const htmlReport=buildDailyAttendanceEmailHtml();
-  const fileHtml=`<!doctype html><html><head><meta charset="utf-8"><title>Stoma Care Daily Attendance ${htmlSafe(d.date)}</title></head><body>${htmlReport}</body></html>`;
-  const blob=new Blob(['\ufeff'+fileHtml],{type:'application/vnd.ms-excel;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  const safeDate=String(d.date||TODAY).replace(/[^0-9-]/g,'');
-  a.href=url;
-  a.download=`Stoma_Care_Daily_Attendance_${safeDate}.xls`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  await logAuditTrailAction('daily_attendance_download','daily_attendance',safeDate,{description:'Daily Attendance report downloaded for manual sending',report_date:safeDate,ward:d.ward,submitter:d.submitter||''});
+  const sheet=document.getElementById('daily-attendance-sheet');
+  if(!sheet){alert('Daily Attendance sheet was not found.');return;}
+  if(typeof html2canvas==='undefined'||!window.jspdf?.jsPDF){
+    alert('PDF tools are still loading. Please wait a few seconds and try again.');
+    return;
+  }
+
+  const btn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Download Image PDF');
+  const oldText=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Creating PDF...';}
+  try{
+    const previousBg=sheet.style.background;
+    sheet.style.background='white';
+    const canvas=await html2canvas(sheet,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY});
+    sheet.style.background=previousBg;
+
+    const imgData=canvas.toDataURL('image/png');
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    const pageW=pdf.internal.pageSize.getWidth();
+    const pageH=pdf.internal.pageSize.getHeight();
+    const margin=8;
+    const imgW=pageW-(margin*2);
+    const imgH=(canvas.height*imgW)/canvas.width;
+
+    if(imgH<=pageH-(margin*2)){
+      pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,'','FAST');
+    }else{
+      const pageCanvas=document.createElement('canvas');
+      const pageCtx=pageCanvas.getContext('2d');
+      const pxPerMm=canvas.width/imgW;
+      const sliceH=Math.floor((pageH-(margin*2))*pxPerMm);
+      const overlap=20;
+      pageCanvas.width=canvas.width;
+      let y=0;
+      let page=0;
+      while(y<canvas.height){
+        const h=Math.min(sliceH,canvas.height-y);
+        pageCanvas.height=h;
+        pageCtx.clearRect(0,0,pageCanvas.width,pageCanvas.height);
+        pageCtx.drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
+        const sliceData=pageCanvas.toDataURL('image/png');
+        const sliceMmH=(h*imgW)/canvas.width;
+        if(page>0)pdf.addPage('a4','landscape');
+        pdf.addImage(sliceData,'PNG',margin,margin,imgW,sliceMmH,'','FAST');
+        y+=Math.max(1,h-overlap);
+        page++;
+      }
+    }
+
+    const safeDate=String(d.date||TODAY).replace(/[^0-9-]/g,'');
+    pdf.save(`Stoma_Care_Daily_Attendance_${safeDate}.pdf`);
+    await logAuditTrailAction('daily_attendance_download','daily_attendance',safeDate,{description:'Daily Attendance image PDF downloaded for manual sending',report_date:safeDate,ward:d.ward,submitter:d.submitter||''});
+  }catch(e){
+    console.error('PDF download failed:',e);
+    alert('Could not create the image PDF: '+(e?.message||String(e)));
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=oldText||'Download Image PDF';}
+  }
 }
 function emailCell(value){return String(value||'').replace(/\n/g,' / ').trim();}
 function appendDailyAttendanceEmailSection(lines,title,rows){
