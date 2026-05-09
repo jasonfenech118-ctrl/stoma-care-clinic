@@ -323,6 +323,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-filters button{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
+
+.registry-lookup-note{margin-top:-6px;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#f8fafc;color:var(--muted);border:1px solid var(--border);}
+.registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
+.registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
+.registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
+
 </style>
 </head>
 <body>
@@ -456,10 +462,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="patient-search-card">
         <div class="patient-search-head">
           <strong>🔎 Search Patient &amp; Rebook</strong>
-          <span class="dntu-note">Search by name, surname, ID card, or phone. Rebooking keeps the patient history.</span>
+          <span class="dntu-note">Search by ID card, name, surname, or phone. ID card is the main patient registry key and history is preserved.</span>
         </div>
         <div class="patient-search-row">
-          <input type="text" id="patient-rebook-search" placeholder="Search existing patient..." onkeydown="if(event.key==='Enter')searchPatientsForRebook()"/>
+          <input type="text" id="patient-rebook-search" placeholder="Search existing patient by ID card, name, surname, or phone..." onkeydown="if(event.key==='Enter')searchPatientsForRebook()"/>
           <button onclick="searchPatientsForRebook()">Search</button>
           <button onclick="clearPatientRebookSearch()" style="background:#edf1f5;color:var(--navy);">Clear</button>
         </div>
@@ -1517,13 +1523,69 @@ async function savePatientRebook(patientId){
   refreshAppointmentViews();
   searchPatientsForRebook();
 }
+
+function normaliseIdCard(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
+async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId,phoneInputId,noteId){
+  const idEl=document.getElementById(idInputId);
+  const note=document.getElementById(noteId);
+  if(!idEl)return null;
+  const id=normaliseIdCard(idEl.value);
+  idEl.value=id;
+  if(!id){
+    if(note){note.className='registry-lookup-note';note.textContent='Enter the ID card first. Existing patients will auto-fill and keep their history.';}
+    idEl.dataset.patientId='';
+    return null;
+  }
+  if(note){note.className='registry-lookup-note';note.textContent='Checking saved patient registry...';}
+  const{data,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year')
+    .ilike('id_card',id)
+    .maybeSingle();
+  if(error){
+    console.error('Patient registry lookup error:',error);
+    if(note){note.className='registry-lookup-note error';note.textContent='Could not check patient registry. You can still continue, but please verify details.';}
+    idEl.dataset.patientId='';
+    return null;
+  }
+  if(data?.id){
+    const f=document.getElementById(firstInputId),s=document.getElementById(surnameInputId),p=document.getElementById(phoneInputId);
+    if(f)f.value=data.first_name||'';
+    if(s)s.value=data.surname||'';
+    if(p)p.value=data.phone_number||'';
+    idEl.dataset.patientId=data.id;
+    if(note){note.className='registry-lookup-note found';note.textContent=`Saved patient found: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to the existing history.`;}
+    return data;
+  }
+  idEl.dataset.patientId='';
+  if(note){note.className='registry-lookup-note new';note.textContent='No saved patient found for this ID card. A new patient record will be saved when you book.';}
+  return null;
+}
+async function saveOrUpdatePatientByIdCard(idCard,firstName,surname,phone){
+  const id=normaliseIdCard(idCard);
+  if(!id||!firstName||!surname)return {patient:null,error:{message:'Missing patient details.'}};
+  const existing=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year')
+    .ilike('id_card',id)
+    .maybeSingle();
+  if(existing.error)return {patient:null,error:existing.error};
+  if(existing.data?.id){
+    const updatePayload={first_name:firstName,surname:surname,phone_number:phone||existing.data.phone_number||null,id_card:id};
+    const updated=await SB.from('patients').update(updatePayload).eq('id',existing.data.id).select('id,first_name,surname,id_card,phone_number').single();
+    if(updated.error)return {patient:existing.data,error:updated.error};
+    return {patient:updated.data||existing.data,error:null};
+  }
+  const inserted=await SB.from('patients').insert({first_name:firstName,surname:surname,id_card:id,phone_number:phone||null}).select('id,first_name,surname,id_card,phone_number').single();
+  return {patient:inserted.data,error:inserted.error};
+}
+
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
     <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · ${htmlSafe(targetLabel)}</div>
+    <div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="Enter ID card first" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')}"/></div>
+    <div id="p-reg-note" class="registry-lookup-note">Enter the ID card first. Existing patients will auto-fill and keep their history.</div>
     <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
     <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
-    <div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div>
     <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}','${jsSafe(nid)}','${jsSafe(ntype)}')">Book Patient</button></div>`;
   openMo();
@@ -1531,13 +1593,13 @@ async function bookSlot(slot,date,nid,nname,ntype){
 async function doBook(slot,date,nurseIdParam,nurseType){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
-  const id=document.getElementById('p-id').value.trim();
+  const id=normaliseIdCard(document.getElementById('p-id').value);
   const ph=document.getElementById('p-ph').value.trim();
-  if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
+  if(!fn||!sn||!id){alert('Please enter the ID card first, then confirm first name and surname.');return;}
 
-  let{data:pat,error:patErr}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:id,phone_number:ph||null},{onConflict:'id_card'}).select().single();
-  if(patErr&&!pat?.id){const r=await SB.from('patients').select('id').eq('id_card',id).single();pat=r.data;}
-  if(!pat?.id){alert('Error saving patient.');return;}
+  const saved=await saveOrUpdatePatientByIdCard(id,fn,sn,ph);
+  if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
+  const pat=saved.patient;
 
   const payload={patient_id:pat.id,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
   if(nurseType==='ot') payload.bank_staff_id=nurseIdParam;
@@ -1862,7 +1924,13 @@ function printMonthlyCalendar(){
   const calendar=document.getElementById('clinic-calendar-grid')?.innerHTML||'';
   const totals={total:clinicAuditData.length,booked:clinicAuditData.filter(a=>a.status==='booked').length,attended:clinicAuditData.filter(a=>a.status==='attended').length,cancelled:clinicAuditData.filter(a=>a.status==='cancelled').length,dntu:clinicAuditData.filter(a=>a.status==='did_not_attend').length};
   const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>Clinic Audit Calendar ${clinicMonthLabel(month,year)}</title><style>${printableClinicStyles()}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment Calendar — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div><div class="cal">${calendar.replaceAll('clinic-cal-head','head').replaceAll('clinic-day empty-day','day empty').replaceAll('clinic-day has-appts','day').replaceAll('clinic-day','day').replaceAll('clinic-day-num','daynum').replaceAll('clinic-cal-appt','appt').replaceAll('clinic-badge','badge')}</div></body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><title>Clinic Audit Calendar ${clinicMonthLabel(month,year)}</title><style>${printableClinicStyles()}
+.registry-lookup-note{margin-top:-6px;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#f8fafc;color:var(--muted);border:1px solid var(--border);}
+.registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
+.registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
+.registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
+
+</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment Calendar — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div><div class="cal">${calendar.replaceAll('clinic-cal-head','head').replaceAll('clinic-day empty-day','day empty').replaceAll('clinic-day has-appts','day').replaceAll('clinic-day','day').replaceAll('clinic-day-num','daynum').replaceAll('clinic-cal-appt','appt').replaceAll('clinic-badge','badge')}</div></body></html>`);
   w.document.close();w.focus();w.print();
 }
 function printMonthlyList(){
@@ -1870,7 +1938,13 @@ function printMonthlyList(){
   if(!clinicAuditData.length){alert('No appointments found for this month.');return;}
   const totals={total:clinicAuditData.length,booked:clinicAuditData.filter(a=>a.status==='booked').length,attended:clinicAuditData.filter(a=>a.status==='attended').length,cancelled:clinicAuditData.filter(a=>a.status==='cancelled').length,dntu:clinicAuditData.filter(a=>a.status==='did_not_attend').length};
   const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>Clinic Audit List ${clinicMonthLabel(month,year)}</title><style>${printableClinicStyles().replace('@page{size:A4 landscape;margin:10mm;}','@page{size:A4 portrait;margin:10mm;}')}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment List — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div>${buildPrintableClinicList()}</body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><title>Clinic Audit List ${clinicMonthLabel(month,year)}</title><style>${printableClinicStyles().replace('@page{size:A4 landscape;margin:10mm;}','@page{size:A4 portrait;margin:10mm;}')}
+.registry-lookup-note{margin-top:-6px;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#f8fafc;color:var(--muted);border:1px solid var(--border);}
+.registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
+.registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
+.registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
+
+</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment List — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div>${buildPrintableClinicList()}</body></html>`);
   w.document.close();w.focus();w.print();
 }
 async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
@@ -2176,9 +2250,10 @@ async function openModal(type,...args){
     const[slot,date,nurseId,nurseName]=args;
     html=`<h2>Book Patient</h2>
       <div class="msub">${date} — ${slot}${nurseName?` · ${nurseName}`:''}</div>
+      <div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="Enter ID card first" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-phone','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-phone','p-reg-note')}"/></div>
+      <div id="p-reg-note" class="registry-lookup-note">Enter the ID card first. Existing patients will auto-fill and keep their history.</div>
       <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
-      <div class="fg"><label>ID Card Number *</label><input type="text" id="p-id" placeholder="Malta ID card"/></div>
       <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -2213,13 +2288,12 @@ async function openModal(type,...args){
 async function saveAppt(slot,date,nurseId){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
-  const idno=document.getElementById('p-id').value.trim();
+  const idno=normaliseIdCard(document.getElementById('p-id').value);
   const phone=document.getElementById('p-phone')?.value.trim()||'';
-  if(!fn||!sn||!idno){alert('Please fill in all patient details.');return;}
-  const{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:idno,phone_number:phone||null},{onConflict:'id_card'}).select().single();
-  let patId=pat?.id;
-  if(!patId){const{data:ep}=await SB.from('patients').select('id').eq('id_card',idno).single();patId=ep?.id;}
-  if(!patId){alert('Error saving patient.');return;}
+  if(!fn||!sn||!idno){alert('Please enter the ID card first, then confirm first name and surname.');return;}
+  const saved=await saveOrUpdatePatientByIdCard(idno,fn,sn,phone);
+  if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
+  const patId=saved.patient.id;
   const{error}=await SB.from('appointments').insert({
     patient_id:patId,appt_date:date,appt_slot:slot,
     assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
