@@ -533,7 +533,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="followup-toolbar">
         <label>Follow-up Year:</label>
         <select id="followup-year" onchange="loadStaffAudit()">
-          <option value="2025">2025</option>
           <option value="2026">2026</option>
           <option value="2027">2027</option>
           <option value="2028">2028</option>
@@ -1486,12 +1485,6 @@ async function openPatientRebookModal(patientId){
   const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year').eq('id',patientId).maybeSingle();
   if(error||!pat){alert('Could not open this patient for rebooking.');return;}
   const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
-  const selectedOwner=pat.followup_owner||'Common';
-  const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}" ${selectedOwner===o?'selected':''}>${o}</option>`).join('');
-  const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(pat.followup_due_month||new Date().getMonth()+1)===m?'selected':''}>${followupMonthName(m)}</option>`).join('');
-  const thisYear=new Date().getFullYear();
-  const fy=Number(pat.followup_year||thisYear);
-  const yearOptions=[2025,2026,2027,2028,2029,2030].map(y=>`<option value="${y}" ${fy===y?'selected':''}>${y}</option>`).join('');
   const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}">${htmlSafe(s.full_name)}</option>`).join('');
   const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}">${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
   const slotOptions=SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('');
@@ -1501,9 +1494,6 @@ async function openPatientRebookModal(patientId){
     <div class="fg"><label>Appointment Date *</label><input type="date" id="rb-date" value="${TODAY}"/></div>
     <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
     <div class="fg"><label>Nurse / Column</label><select id="rb-nurse"><option value="common">Common</option>${coreOptions}${bankOptions}</select></div>
-    <div class="fg"><label>Follow-up Owner</label><select id="rb-owner">${ownerOptions}</select></div>
-    <div class="fg"><label>Due Month</label><select id="rb-month">${monthOptions}</select></div>
-    <div class="fg"><label>Follow-up Year</label><select id="rb-year">${yearOptions}</select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
   openMo();
 }
@@ -1511,16 +1501,12 @@ async function savePatientRebook(patientId){
   const date=document.getElementById('rb-date')?.value;
   const slot=document.getElementById('rb-slot')?.value;
   const nurse=document.getElementById('rb-nurse')?.value||'common';
-  const owner=document.getElementById('rb-owner')?.value||'Common';
-  const dueMonth=document.getElementById('rb-month')?.value;
-  const followupYear=document.getElementById('rb-year')?.value;
   if(!date||!slot){alert('Please select appointment date and time.');return;}
   const payload={patient_id:patientId,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
   if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
   const{error:aErr}=await SB.from('appointments').insert(payload);
   if(aErr){alert('Could not rebook appointment: '+aErr.message);return;}
-  await SB.from('patients').update({followup_owner:owner,followup_due_month:Number(dueMonth),followup_year:Number(followupYear)}).eq('id',patientId);
   closeModal();
   alert('✅ Patient rebooked successfully.');
   refreshAppointmentViews();
@@ -1762,7 +1748,7 @@ async function loadStaffAudit(){
   const grouped={};
   patients.forEach(p=>{const m=Number(p.followup_due_month)||0;if(!grouped[m])grouped[m]=[];grouped[m].push(p);});
   const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)}</option>`).join('');
-  const yearOptions=[2025,2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
+  const yearOptions=[2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
   const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
   const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
   let html='';
