@@ -273,6 +273,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .history-table td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;}
 
 
+/* PATIENT SEARCH / REBOOK */
+.patient-search-card{background:white;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
+.patient-search-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+.patient-search-head strong{color:var(--navy);font-size:14px;}
+.patient-search-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.patient-search-row input{flex:1;min-width:260px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.patient-search-row input:focus{border-color:var(--teal);}
+.patient-search-row button{padding:8px 14px;border:none;border-radius:8px;background:var(--teal);color:white;font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.patient-search-results{margin-top:10px;display:grid;gap:8px;}
+.patient-search-result{border:1px solid var(--border);border-radius:10px;background:#fafafa;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.patient-search-result .ps-name{font-weight:800;color:var(--navy);font-size:13px;}
+.patient-search-result .ps-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.patient-search-result .ps-actions{display:flex;gap:5px;flex-wrap:wrap;}
+.patient-search-empty{font-size:12px;color:var(--muted);font-style:italic;padding:6px 2px;}
+
+
 /* DNTU POLICY */
 .dntu-controls{background:white;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
 .dntu-control-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;}
@@ -436,6 +452,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <input type="date" id="appt-date" onchange="loadAppts()"/>
         <button onclick="apptChangeDay(1)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);">→</button>
         <span class="sbadge" id="sbadge"></span>
+      </div>
+      <div class="patient-search-card">
+        <div class="patient-search-head">
+          <strong>🔎 Search Patient &amp; Rebook</strong>
+          <span class="dntu-note">Search by name, surname, ID card, or phone. Rebooking keeps the patient history.</span>
+        </div>
+        <div class="patient-search-row">
+          <input type="text" id="patient-rebook-search" placeholder="Search existing patient..." onkeydown="if(event.key==='Enter')searchPatientsForRebook()"/>
+          <button onclick="searchPatientsForRebook()">Search</button>
+          <button onclick="clearPatientRebookSearch()" style="background:#edf1f5;color:var(--navy);">Clear</button>
+        </div>
+        <div class="patient-search-results" id="patient-rebook-results"><div class="patient-search-empty">Enter at least 2 characters to search.</div></div>
       </div>
       <div style="background:white;border-radius:12px;border:1px solid #dde3ea;overflow:hidden;">
         <div style="background:#1a2e4a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
@@ -1356,6 +1384,7 @@ async function refreshAppointmentViews(){
   loadTodaySnapshot();
   if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
   if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
@@ -1407,6 +1436,86 @@ async function saveEditedAppointment(apptId,patientId){
   closeModal();
   if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
   refreshAppointmentViews();
+}
+
+async function searchPatientsForRebook(){
+  const input=document.getElementById('patient-rebook-search');
+  const box=document.getElementById('patient-rebook-results');
+  const q=(input?.value||'').trim().toLowerCase();
+  if(!box)return;
+  if(q.length<2){box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';return;}
+  box.innerHTML='<div class="patient-search-empty">Searching patients...</div>';
+  const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year').order('surname',{ascending:true}).limit(700);
+  if(error){console.error('Patient search error:',error);box.innerHTML='<div class="patient-search-empty">Could not search patients.</div>';return;}
+  const matches=(data||[]).filter(p=>[
+    p.first_name,p.surname,p.id_card,p.phone_number,`${p.first_name||''} ${p.surname||''}`
+  ].join(' ').toLowerCase().includes(q)).slice(0,20);
+  if(!matches.length){box.innerHTML='<div class="patient-search-empty">No matching patients found.</div>';return;}
+  const ids=matches.map(p=>p.id);
+  let appts=[];
+  if(ids.length){
+    const{data:raw}=await SB.from('appointments').select('*').in('patient_id',ids).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+    appts=await enrichAppointments(raw||[]);
+  }
+  box.innerHTML=matches.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+    const latest=appts.find(a=>String(a.patient_id)===String(p.id));
+    const latestText=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
+    return `<div class="patient-search-result">
+      <div><div class="ps-name">${htmlSafe(nm)}</div><div class="ps-meta">ID: ${htmlSafe(p.id_card||'—')} · Phone: ${htmlSafe(p.phone_number||'—')} · Owner: ${htmlSafe(p.followup_owner||'Common')} · Due: ${followupMonthName(p.followup_due_month)} ${htmlSafe(p.followup_year||'')}</div><div class="ps-meta">Latest: ${htmlSafe(latestText)}</div></div>
+      <div class="ps-actions"><button class="ncb-btn" onclick="openPatientRebookModal('${p.id}')" style="background:#e8f5f4;color:var(--teal);">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div>
+    </div>`;
+  }).join('');
+}
+function clearPatientRebookSearch(){
+  const input=document.getElementById('patient-rebook-search');
+  const box=document.getElementById('patient-rebook-results');
+  if(input)input.value='';
+  if(box)box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';
+}
+async function openPatientRebookModal(patientId){
+  const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year').eq('id',patientId).maybeSingle();
+  if(error||!pat){alert('Could not open this patient for rebooking.');return;}
+  const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
+  const selectedOwner=pat.followup_owner||'Common';
+  const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}" ${selectedOwner===o?'selected':''}>${o}</option>`).join('');
+  const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(pat.followup_due_month||new Date().getMonth()+1)===m?'selected':''}>${followupMonthName(m)}</option>`).join('');
+  const thisYear=new Date().getFullYear();
+  const fy=Number(pat.followup_year||thisYear);
+  const yearOptions=[2025,2026,2027,2028,2029,2030].map(y=>`<option value="${y}" ${fy===y?'selected':''}>${y}</option>`).join('');
+  const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}">${htmlSafe(s.full_name)}</option>`).join('');
+  const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}">${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
+  const slotOptions=SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('');
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  document.getElementById('mb').innerHTML=`<h2>Rebook Patient</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>This creates a new booked appointment and keeps the full patient history.</div>
+    <div class="fg"><label>Appointment Date *</label><input type="date" id="rb-date" value="${TODAY}"/></div>
+    <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
+    <div class="fg"><label>Nurse / Column</label><select id="rb-nurse"><option value="common">Common</option>${coreOptions}${bankOptions}</select></div>
+    <div class="fg"><label>Follow-up Owner</label><select id="rb-owner">${ownerOptions}</select></div>
+    <div class="fg"><label>Due Month</label><select id="rb-month">${monthOptions}</select></div>
+    <div class="fg"><label>Follow-up Year</label><select id="rb-year">${yearOptions}</select></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
+  openMo();
+}
+async function savePatientRebook(patientId){
+  const date=document.getElementById('rb-date')?.value;
+  const slot=document.getElementById('rb-slot')?.value;
+  const nurse=document.getElementById('rb-nurse')?.value||'common';
+  const owner=document.getElementById('rb-owner')?.value||'Common';
+  const dueMonth=document.getElementById('rb-month')?.value;
+  const followupYear=document.getElementById('rb-year')?.value;
+  if(!date||!slot){alert('Please select appointment date and time.');return;}
+  const payload={patient_id:patientId,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
+  if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
+  if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
+  const{error:aErr}=await SB.from('appointments').insert(payload);
+  if(aErr){alert('Could not rebook appointment: '+aErr.message);return;}
+  await SB.from('patients').update({followup_owner:owner,followup_due_month:Number(dueMonth),followup_year:Number(followupYear)}).eq('id',patientId);
+  closeModal();
+  alert('✅ Patient rebooked successfully.');
+  refreshAppointmentViews();
+  searchPatientsForRebook();
 }
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
@@ -1586,7 +1695,7 @@ async function loadStaffAudit(){
         <td><select class="followup-small-select" id="fu-year-${p.id}">${yearOptions}</select></td>
         <td><select class="followup-small-select" id="fu-owner-${p.id}">${ownerOptions}</select></td>
         <td>${htmlSafe(latestLabel)}</td>
-        <td><div class="followup-actions"><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="savePatientFollowup('${p.id}')">Save</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
+        <td><div class="followup-actions"><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="savePatientFollowup('${p.id}')">Save</button><button class="ncb-btn" onclick="openPatientRebookModal('${p.id}')" style="background:#fff8e1;color:#856404;">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
       </tr>`;
     });
   });
@@ -1620,7 +1729,7 @@ async function openFollowupHistory(patientId){
   document.getElementById('mb').innerHTML=`<h2>Follow-up History</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat?.id_card||'No ID')} · ${htmlSafe(pat?.phone_number||'No phone')}<br/>Owner: ${htmlSafe(pat?.followup_owner||'Common')} · Due Month: ${followupMonthName(pat?.followup_due_month)} · Year: ${htmlSafe(pat?.followup_year||'—')}</div>
     <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Seen By</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal();loadStaffAudit();">Close</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="closeModal();loadStaffAudit();">Close</button><button class="btn-save" onclick="openPatientRebookModal('${patientId}')">Rebook Patient</button></div>`;
   openMo();
 }
 
@@ -1856,6 +1965,7 @@ function renderDntuPolicy(){
     <td>${htmlSafe(r.lastDntuDate||'—')}</td>
     <td><span class="dntu-owner-pill">${htmlSafe(r.owner)}</span></td>
     <td><div class="dntu-actions">
+      ${r.patientId?`<button class="ncb-btn" title="Rebook" onclick="openPatientRebookModal('${r.patientId}')" style="background:#fff8e1;color:#856404;">Rebook</button>`:''}
       ${r.latestDntuId?`<button class="ncb-btn" title="Edit" onclick="editAppointment('${r.latestDntuId}')" style="background:#e8f5f4;color:var(--teal);">Edit</button>`:''}
       ${r.latestDntuId?`<button class="ncb-btn ncb-del" title="Delete" onclick="deleteDntuEntry('${r.latestDntuId}')">🗑</button>`:''}
     </div></td>
