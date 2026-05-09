@@ -239,7 +239,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .clinic-day-count{font-size:9px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:10px;padding:1px 6px;}
 .clinic-cal-appt{font-size:10px;line-height:1.25;border-radius:7px;background:#f8fafc;border:1px solid #edf1f5;padding:4px 5px;margin-bottom:4px;}
 .clinic-cal-appt strong{color:var(--navy);}
-.clinic-more{font-size:10px;color:var(--muted);font-weight:700;margin-top:4px;}
+.clinic-more{font-size:10px;color:var(--teal);font-weight:800;margin-top:4px;background:#e8f5f4;border:1px solid #b7ddd9;border-radius:7px;padding:4px 6px;cursor:pointer;font-family:'Inter',sans-serif;width:100%;text-align:center;}
+.clinic-more:hover{background:#d7efed;}
+.clinic-cal-nurse{font-size:9px;color:var(--teal);font-weight:800;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .clinic-list-date{background:#eef2f7!important;color:var(--navy);font-weight:800;text-transform:uppercase;font-size:11px;}
 .clinic-list-date td{padding:8px 14px!important;}
 .clinic-badge{display:inline-block;padding:2px 7px;border-radius:9px;font-size:9px;font-weight:800;text-transform:uppercase;white-space:nowrap;}
@@ -1882,11 +1884,40 @@ function renderClinicCalendar(data,month,year){
     const shown=appts.slice(0,5);
     html+=`<div class="clinic-day ${appts.length?'has-appts':''}">
       <div class="clinic-day-num"><span>${d}</span>${appts.length?`<span class="clinic-day-count">${appts.length}</span>`:''}</div>
-      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/>${clinicBadge(a.status)}</div>`).join('')}
-      ${appts.length>5?`<div class="clinic-more">+ ${appts.length-5} more</div>`:''}
+      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<div class="clinic-cal-nurse">👤 ${htmlSafe(clinicNurseName(a))}</div>${clinicBadge(a.status)}</div>`).join('')}
+      ${appts.length>5?`<button type="button" class="clinic-more" onclick="showClinicDayAppointments('${ds}')">+ ${appts.length-5} more</button>`:''}
     </div>`;
   }
   grid.innerHTML=html;
+}
+function showClinicDayAppointments(dateStr){
+  const rows=(clinicAuditData||[])
+    .filter(a=>a.appt_date===dateStr)
+    .sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
+  const label=new Date(dateStr+'T12:00:00').toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const body=rows.length?rows.map(a=>`
+    <tr>
+      <td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
+      <td><strong>${htmlSafe(clinicPatientName(a))}</strong><br/><span style="font-size:11px;color:var(--muted);font-family:monospace;">${htmlSafe(a.patients?.id_card||'')}</span></td>
+      <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+      <td>${htmlSafe(clinicNurseName(a))}</td>
+      <td>${clinicBadge(a.status)}</td>
+      <td style="white-space:nowrap;">
+        ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setOutcome('${a.id}','attended')">✅</button>`:''}
+        ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" title="DNTU" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>`:''}
+        ${a.status!=='cancelled'?`<button class="ncb-btn ncb-cancel" title="Cancel" onclick="setOutcome('${a.id}','cancelled')" style="margin-left:3px;">✖</button>`:''}
+        <button class="ncb-btn" title="Edit" onclick="editAppointment('${a.id}')" style="margin-left:3px;background:#e8f5f4;color:var(--teal);">Edit</button>
+        <button class="ncb-btn ncb-del" title="Delete" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">🗑</button>
+      </td>
+    </tr>`).join(''):'<tr><td colspan="6" class="empty">No appointments found</td></tr>';
+  document.getElementById('mb').innerHTML=`
+    <h2>Clinic Appointments</h2>
+    <div class="msub">${htmlSafe(label)} — ${rows.length} appointment${rows.length!==1?'s':''}</div>
+    <div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:10px;">
+      <table class="dt"><thead><tr><th>Time</th><th>Patient</th><th>Phone</th><th>Nurse</th><th>Status</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
 }
 function renderClinicMonthlyList(data){
   const tbody=document.getElementById('clinic-tbody');
@@ -1929,7 +1960,7 @@ function printableClinicStyles(){return `
   h1{font-size:20px;margin:0 0 4px;color:#1a2e4a;} h2{font-size:14px;margin:0 0 12px;color:#0d7377;} h3{font-size:12px;margin:12px 0 5px;color:#1a2e4a;}
   .stats{display:flex;gap:8px;margin:10px 0 12px;flex-wrap:wrap}.stat{border:1px solid #dde3ea;border-radius:8px;padding:7px 10px}.stat b{font-size:16px;color:#1a2e4a;display:block}.stat span{font-size:9px;text-transform:uppercase;color:#7a8fa6;font-weight:bold}
   table{width:100%;border-collapse:collapse;margin-bottom:8px;} th,td{border:1px solid #cfd8e3;padding:5px;text-align:left;vertical-align:top;} th{background:#eef2f7;color:#1a2e4a;font-size:9px;text-transform:uppercase;}
-  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.head{background:#1a2e4a;color:white;text-align:center;padding:5px;font-weight:bold;font-size:9px;border-radius:4px}.day{border:1px solid #cfd8e3;min-height:88px;border-radius:5px;padding:4px;page-break-inside:avoid}.empty{background:#f5f7f9}.daynum{font-weight:bold;color:#1a2e4a;margin-bottom:3px}.appt{font-size:8.5px;border:1px solid #e5eaf0;background:#fafafa;border-radius:4px;padding:2px;margin-bottom:2px}.badge{font-size:8px;font-weight:bold;text-transform:uppercase}.booked{color:#0d47a1}.attended{color:#155724}.cancelled{color:#721c24}.did_not_attend{color:#856404}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.head{background:#1a2e4a;color:white;text-align:center;padding:5px;font-weight:bold;font-size:9px;border-radius:4px}.day{border:1px solid #cfd8e3;min-height:88px;border-radius:5px;padding:4px;page-break-inside:avoid}.empty{background:#f5f7f9}.daynum{font-weight:bold;color:#1a2e4a;margin-bottom:3px}.appt{font-size:8.5px;border:1px solid #e5eaf0;background:#fafafa;border-radius:4px;padding:2px;margin-bottom:2px}.clinic-cal-nurse{font-size:8px;color:#0d7377;font-weight:bold;margin:1px 0}.badge{font-size:8px;font-weight:bold;text-transform:uppercase}.booked{color:#0d47a1}.attended{color:#155724}.cancelled{color:#721c24}.did_not_attend{color:#856404}
   @page{size:A4 landscape;margin:10mm;} @media print{body{margin:0}.no-print{display:none}}
 `;}
 function printMonthlyCalendar(){
