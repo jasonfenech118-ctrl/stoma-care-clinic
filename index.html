@@ -271,6 +271,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .patient-mini-btn{padding:5px 9px;border:none;border-radius:7px;background:var(--navy);color:white;font-size:10px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
 .patient-mini-btn.secondary{background:var(--teal);} 
 .patient-mini-btn.warn{background:var(--orange);} 
+.patient-mini-btn.rebook{background:var(--green);} 
+.rebook-alert{background:#fff3cd;border:1px solid #ffeeba;border-left:5px solid var(--orange);border-radius:10px;padding:10px 12px;color:#856404;font-size:12px;line-height:1.45;margin:8px 0;}
 .patient-policy-flag{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#f8d7da;color:#721c24;font-size:10px;font-weight:800;}
 
 /* DNTU POLICY TAB */
@@ -295,6 +297,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .dntu-action-buttons button{padding:4px 8px;border-radius:6px;border:none;font-size:10px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
 .dntu-action-buttons .view{background:var(--teal);color:white;}
 .dntu-action-buttons .copy{background:#eef2f7;color:var(--navy);}
+.dntu-action-buttons .rebook{background:var(--green);color:white;}
 @media(max-width:900px){.dntu-toolbar{align-items:stretch;}.dntu-field{min-width:100%;}.dntu-toolbar button{width:100%;}.dntu-action-buttons{justify-content:flex-start;}}
 .patient-history-table{width:100%;border-collapse:collapse;margin-top:10px;}
 .patient-history-table th{text-align:left;padding:8px 10px;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;background:#fafafa;border-bottom:1px solid var(--border);} 
@@ -757,6 +760,29 @@ function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLoca
 function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
 function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
+
+/* FOLLOW-UP APPOINTMENT STATUS RULE
+   RIP, deceased, reversed, reversal, closure, rod removal and similar non-follow-up reasons
+   are not separate appointment outcomes in this follow-up system. They are treated as Cancelled. */
+const CANCELLED_FOLLOWUP_STATUS_WORDS=new Set([
+  'rip','r_i_p','r.i.p','deceased','dead','death','patient_deceased','passed_away',
+  'reversed','reversal','stoma_reversed','stoma_reversal','reversal_done',
+  'closure','closed','stoma_closed','rod_removal','rod_removed','rod_remove',
+  'not_for_follow_up','no_follow_up','nfa','not_applicable_follow_up'
+]);
+function normaliseAppointmentStatus(status){
+  const raw=String(status??'').trim();
+  if(!raw)return 'booked';
+  const s=raw.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_\.]/g,'');
+  if(CANCELLED_FOLLOWUP_STATUS_WORDS.has(s)||s.includes('deceas')||s.includes('death')||s.includes('passed_away')||s.includes('revers')||s.includes('rip')||s.includes('stoma_closed')||s.includes('rod_remov')||s.includes('not_for_follow')||s.includes('no_follow'))return 'cancelled';
+  if(['cancel','cancelled','canceled','cancelled_by_patient','patient_cancelled','pt_cancelled'].includes(s))return 'cancelled';
+  if(['dna','dntu','did_not_attend','did_not_turn_up','not_attended','no_show'].includes(s))return 'did_not_attend';
+  if(['seen','attended','completed'].includes(s))return 'attended';
+  if(['booked','scheduled','appointment_booked','pending'].includes(s))return 'booked';
+  return raw;
+}
+function isCancelledFollowupStatus(status){return normaliseAppointmentStatus(status)==='cancelled';}
+
 const OT_TIL_ROLE_OPTIONS=['Practice Nurse','Senior Staff Nurse','Staff Nurse'];
 let lastOTRows=[];
 
@@ -853,6 +879,7 @@ async function enrichAppointments(rows){
 
   return base.map(a=>({
     ...a,
+    status:normaliseAppointmentStatus(a.status),
     patients:a.patient_id?patientsMap[String(a.patient_id)]||null:null,
     staff:a.assigned_to?staffMap[String(a.assigned_to)]||null:null,
     bank_staff:a.bank_staff_id?bankMap[String(a.bank_staff_id)]||null:null
@@ -1510,7 +1537,7 @@ async function loadAppts(){
   con.innerHTML=html;
 }
 
-async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();}
+async function setAS(id,status){status=normaliseAppointmentStatus(status);await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();}
 async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();}
 
 
@@ -1657,6 +1684,7 @@ async function searchPatients(){
       </div>
       <div class="patient-result-actions">
         <button class="patient-mini-btn secondary" onclick="openPatientHistory('${p.id}')">View History</button>
+        <button class="patient-mini-btn rebook" onclick="openRebookFollowup('${p.id}','patient')">${streak>=3?'Rebook Anyway':'Rebook Follow-up'}</button>
         <button class="patient-mini-btn" onclick="copyPatientId('${htmlSafe(jsSafe(p.id_card||''))}')">Copy ID</button>
       </div>
     </div>`;
@@ -1690,7 +1718,7 @@ function openPatientHistory(patientId){
     <div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px;">
       <table class="patient-history-table"><thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Nurse/Column</th><th>Notes</th></tr></thead><tbody>${bodyRows}</tbody></table>
     </div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="openRebookFollowup('${p.id}','patient')">${streak>=3?'Rebook Anyway':'Rebook Follow-up'}</button></div>`;
   openMo();
 }
 
@@ -1828,7 +1856,7 @@ async function loadDntuPolicy(){
       <td><strong>${r.maxStreak}</strong><br/><span style="font-size:11px;color:var(--muted);">historical max</span></td>
       <td>${latest?`${htmlSafe(latest.appt_date)} ${String(latest.appt_slot||'').slice(0,5)}<br/>${statusBadgeHtml(latest.status)}`:'No completed outcome'}</td>
       <td>${recentOutcomeHtml(r.appointments,5)}</td>
-      <td><div class="dntu-action-buttons"><button class="view" onclick="openDntuPatientHistory('${p.id}')">View History</button><button class="copy" onclick="copyPatientId('${htmlSafe(jsSafe(p.id_card||''))}')">Copy ID</button></div></td>
+      <td><div class="dntu-action-buttons"><button class="view" onclick="openDntuPatientHistory('${p.id}')">View History</button><button class="rebook" onclick="openRebookFollowup('${p.id}','dntu')">${r.streak>=3?'Rebook Anyway':'Rebook Follow-up'}</button><button class="copy" onclick="copyPatientId('${htmlSafe(jsSafe(p.id_card||''))}')">Copy ID</button></div></td>
     </tr>`;
   }).join('');
 }
@@ -1852,8 +1880,95 @@ function openDntuPatientHistory(patientId){
     <div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px;">
       <table class="patient-history-table"><thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Nurse/Column</th><th>Notes</th></tr></thead><tbody>${bodyRows}</tbody></table>
     </div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="openRebookFollowup('${p.id}','dntu')">${streak>=3?'Rebook Anyway':'Rebook Follow-up'}</button></div>`;
   openMo();
+}
+
+
+function getCachedPatientForRebook(patientId,source){
+  const id=String(patientId);
+  let p=null,rows=[];
+  if(source==='dntu'){
+    p=dntuPolicyCache.patients[id]||null;
+    rows=dntuPolicyCache.appointments[id]||[];
+  }else{
+    p=patientSearchCache.patients?.[id]||null;
+    rows=patientSearchCache.appointments?.[id]||[];
+  }
+  if(!p&&patientSearchCache.patients?.[id]){p=patientSearchCache.patients[id];rows=patientSearchCache.appointments?.[id]||rows;}
+  if(!p&&dntuPolicyCache.patients?.[id]){p=dntuPolicyCache.patients[id];rows=dntuPolicyCache.appointments?.[id]||rows;}
+  return {p,rows};
+}
+async function fetchPatientForRebook(patientId){
+  const {data:p,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number').eq('id',patientId).maybeSingle();
+  if(error||!p)return {p:null,rows:[]};
+  const {data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+  const rows=await enrichAppointments(rawAppts||[]);
+  return {p,rows};
+}
+async function openRebookFollowup(patientId,source='patient'){
+  let {p,rows}=getCachedPatientForRebook(patientId,source);
+  if(!p){
+    const fetched=await fetchPatientForRebook(patientId);
+    p=fetched.p;rows=fetched.rows;
+  }
+  if(!p){alert('Patient not found. Please search again.');return;}
+  const streak=currentDntuStreak(rows);
+  const maxStreak=maxDntuStreak(rows);
+  const today=document.getElementById('appt-date')?.value||TODAY;
+  const slotOptions=SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('');
+  document.getElementById('mb').innerHTML=`<h2>Rebook Follow-up</h2>
+    <div class="msub"><strong>${htmlSafe(patientNameParts(p.first_name,p.surname)||'Unnamed patient')}</strong><br/>ID: ${htmlSafe(p.id_card||'—')} · ${htmlSafe(p.phone_number||'No phone saved')}</div>
+    ${streak>=3?'<div class="rebook-alert"><strong>3 consecutive DNTU warning:</strong> this patient can still be rebooked, but only if clinically required. The new appointment will be saved as Booked and the previous DNTU history will remain.</div>':''}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Current consecutive DNTU: <strong>${streak}</strong> · Maximum historical DNTU streak: <strong>${maxStreak}</strong></div>
+    <div class="fg"><label>Appointment Date *</label><input type="date" id="rebook-date" value="${htmlSafe(today)}" onchange="populateRebookColumnOptions()"/></div>
+    <div class="fg"><label>Appointment Time *</label><select id="rebook-slot">${slotOptions}</select></div>
+    <div class="fg"><label>Nurse / Column *</label><select id="rebook-column"><option value="common::">Common column</option></select><div style="font-size:11px;color:var(--muted);margin-top:5px;">The list refreshes from the selected date. Use Common if the appointment should not be tied to one nurse.</div></div>
+    <div class="fg"><label>Notes</label><input type="text" id="rebook-notes" value="Rebooked follow-up${streak>=3?' after 3 consecutive DNTU':''}"/></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveRebookFollowup('${jsSafe(p.id)}')">${streak>=3?'Rebook Anyway':'Book Follow-up'}</button></div>`;
+  openMo();
+  await populateRebookColumnOptions();
+}
+async function populateRebookColumnOptions(){
+  const sel=document.getElementById('rebook-column');
+  const date=document.getElementById('rebook-date')?.value;
+  if(!sel||!date)return;
+  sel.innerHTML='<option value="common::">Common column</option><option value="loading::">Loading working nurses...</option>';
+  try{
+    const nurses=await getWorkingNurses(date);
+    const opts=['<option value="common::">Common column</option>'];
+    for(const n of nurses){
+      const type=n.type||'core';
+      const label=`${htmlSafe(n.name||'Unnamed nurse')}${type==='core-ot'?' (OT)':type==='til-in'?' (TIL In)':type==='ot'?' (OT bank)':type==='til'?' (TIL bank)':''}`;
+      opts.push(`<option value="${htmlSafe(type)}::${htmlSafe(n.id)}">${label}</option>`);
+    }
+    sel.innerHTML=opts.join('');
+  }catch(e){
+    console.error('Rebook nurse lookup error:',e);
+    sel.innerHTML='<option value="common::">Common column</option>';
+  }
+}
+async function saveRebookFollowup(patientId){
+  const date=document.getElementById('rebook-date')?.value;
+  const slot=document.getElementById('rebook-slot')?.value;
+  const col=document.getElementById('rebook-column')?.value||'common::';
+  const notes=(document.getElementById('rebook-notes')?.value||'').trim();
+  if(!date||!slot){alert('Please choose the appointment date and time.');return;}
+  const [type,id]=col.split('::');
+  const payload={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
+  if(notes)payload.notes=notes;
+  if((type==='ot'||type==='til')&&id)payload.bank_staff_id=id;
+  else if(type&&type!=='common'&&type!=='loading'&&id)payload.assigned_to=id;
+  const {error}=await SB.from('appointments').insert(payload);
+  if(error){alert('Rebooking error: '+error.message);return;}
+  closeModal();
+  const apptDate=document.getElementById('appt-date');
+  if(apptDate)apptDate.value=date;
+  await loadAppts();
+  loadTodaySnapshot();
+  if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
+  if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
+  alert('Follow-up appointment rebooked.');
 }
 
 async function bookSlot(slot,date,nid,nname,ntype){
@@ -1887,7 +2002,7 @@ async function doBook(slot,date,nurseIdParam,nurseType){
 
   const{error}=await SB.from('appointments').insert(payload);
   if(error){alert('Booking error: '+error.message);return;}
-  closeModal();loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
+  closeModal();loadAppts();loadTodaySnapshot();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 
 // COD
@@ -2133,7 +2248,7 @@ async function loadClinicAudit(){
   </tr>`).join('');
 }
 
-async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();}
+async function setOutcome(id,status){status=normaliseAppointmentStatus(status);await SB.from('appointments').update({status}).eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();}
 async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
 
 
@@ -2161,7 +2276,7 @@ function makeMultiChart(id,type,labels,datasets,extra={}){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}
   });
 }
-function statusLabel(status){return {booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
+function statusLabel(status){status=normaliseAppointmentStatus(status);return {booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
 function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
 
