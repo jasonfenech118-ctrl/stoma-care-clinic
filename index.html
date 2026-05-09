@@ -248,6 +248,35 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-filters label{font-size:12px;font-weight:700;color:var(--navy);}
 .report-filters select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
 .report-filters button{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+
+
+/* PATIENT SEARCH PANEL */
+.patient-search-panel{background:white;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 6px rgba(0,0,0,.05);} 
+.patient-search-top{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
+.patient-search-field{display:flex;flex-direction:column;gap:5px;min-width:280px;flex:1;}
+.patient-search-field label{font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;}
+.patient-search-field input{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.patient-search-field input:focus{border-color:var(--teal);} 
+.patient-search-actions{display:flex;gap:8px;align-items:center;}
+.patient-search-actions button{padding:9px 14px;border-radius:8px;border:1.5px solid var(--border);background:white;color:var(--navy);font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+.patient-search-actions button.primary{background:var(--teal);border-color:var(--teal);color:white;}
+.patient-search-actions button:hover{opacity:.9;}
+.patient-search-help{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;}
+.patient-results{margin-top:12px;display:grid;gap:8px;}
+.patient-result-card{border:1px solid var(--border);border-radius:10px;background:#fafafa;padding:10px 12px;display:grid;grid-template-columns:1.2fr .8fr .9fr auto;gap:10px;align-items:center;}
+.patient-result-name{font-size:13px;font-weight:800;color:var(--navy);}
+.patient-result-meta{font-size:11px;color:var(--muted);line-height:1.45;}
+.patient-result-counts{font-size:11px;color:var(--muted);line-height:1.45;}
+.patient-result-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+.patient-mini-btn{padding:5px 9px;border:none;border-radius:7px;background:var(--navy);color:white;font-size:10px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+.patient-mini-btn.secondary{background:var(--teal);} 
+.patient-mini-btn.warn{background:var(--orange);} 
+.patient-policy-flag{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#f8d7da;color:#721c24;font-size:10px;font-weight:800;}
+.patient-history-table{width:100%;border-collapse:collapse;margin-top:10px;}
+.patient-history-table th{text-align:left;padding:8px 10px;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;background:#fafafa;border-bottom:1px solid var(--border);} 
+.patient-history-table td{padding:8px 10px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:top;}
+@media(max-width:850px){.patient-result-card{grid-template-columns:1fr;}.patient-result-actions{justify-content:flex-start;}}
+
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
 </style>
@@ -374,6 +403,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="page" id="page-appointments">
       <div class="phdr"><div><h2>Patient Appointments</h2><p>08:30 – 13:30 · 30 min slots · One column per nurse working</p></div></div>
       <div id="hban-appt"></div>
+      <div class="patient-search-panel">
+        <div class="patient-search-top">
+          <div class="patient-search-field">
+            <label>Search Saved Patient</label>
+            <input type="text" id="appt-patient-search" placeholder="Search by ID card, name, surname or phone" oninput="searchPatientsDebounced()" onkeydown="if(event.key==='Enter')searchPatients()"/>
+          </div>
+          <div class="patient-search-actions">
+            <button class="primary" onclick="searchPatients()">Search</button>
+            <button onclick="clearPatientSearch()">Clear</button>
+          </div>
+        </div>
+        <div class="patient-search-help">Use this to quickly find a saved patient, check previous appointments, and identify patients with repeated DNTU history.</div>
+        <div id="appt-patient-results" class="patient-results"></div>
+      </div>
       <div class="appt-date-row">
         <label>Date:</label>
         <button onclick="apptChangeDay(-1)" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:7px;background:white;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy);">←</button>
@@ -1431,6 +1474,143 @@ async function patientAutoFill(idField,firstField,surnameField,phoneField,msgId)
     setPatientLookupMessage(msgId,'New patient ID. Enter details once; they will be saved for future appointments.','warn');
   }
 }
+
+
+// PATIENT SEARCH IN APPOINTMENTS TAB
+let patientSearchTimer=null;
+let patientSearchCache={};
+function searchPatientsDebounced(){
+  clearTimeout(patientSearchTimer);
+  patientSearchTimer=setTimeout(()=>searchPatients(),350);
+}
+function clearPatientSearch(){
+  const input=document.getElementById('appt-patient-search');
+  const results=document.getElementById('appt-patient-results');
+  if(input)input.value='';
+  if(results)results.innerHTML='';
+}
+function completedAppointmentsOnly(rows){
+  return (rows||[]).filter(a=>['attended','cancelled','did_not_attend'].includes(a.status));
+}
+function currentDntuStreak(rows){
+  const completed=completedAppointmentsOnly(rows).sort((a,b)=>{
+    const ad=`${a.appt_date||''} ${String(a.appt_slot||'').slice(0,5)}`;
+    const bd=`${b.appt_date||''} ${String(b.appt_slot||'').slice(0,5)}`;
+    return bd.localeCompare(ad);
+  });
+  let streak=0;
+  for(const a of completed){
+    if(a.status==='did_not_attend')streak++;
+    else break;
+  }
+  return streak;
+}
+function statusBadgeHtml(status){
+  const cls={booked:'sb-booked',attended:'sb-attended',cancelled:'sb-cancelled',did_not_attend:'sb-dna'}[status]||'sb-booked';
+  return `<span class="status-badge ${cls}">${statusLabel(status)}</span>`;
+}
+async function searchPatients(){
+  const input=document.getElementById('appt-patient-search');
+  const results=document.getElementById('appt-patient-results');
+  if(!input||!results)return;
+  const raw=(input.value||'').trim();
+  if(raw.length<2){results.innerHTML='';return;}
+  const safe=raw.replace(/[,%()]/g,'').trim();
+  if(safe.length<2){results.innerHTML='<div class="empty" style="padding:12px;">Enter at least 2 letters or numbers.</div>';return;}
+  results.innerHTML='<div class="empty" style="padding:12px;">Searching saved patients...</div>';
+  const term=`%${safe}%`;
+  const{data:patients,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number')
+    .or(`id_card.ilike.${term},first_name.ilike.${term},surname.ilike.${term},phone_number.ilike.${term}`)
+    .order('surname',{ascending:true})
+    .limit(20);
+  if(error){
+    console.error('Patient search error:',error);
+    results.innerHTML='<div class="empty" style="padding:12px;color:#721c24;">Search failed. Please try again.</div>';
+    return;
+  }
+  if(!patients||!patients.length){
+    results.innerHTML='<div class="empty" style="padding:12px;">No saved patients found.</div>';
+    return;
+  }
+  const ids=patients.map(p=>p.id);
+  let appts=[];
+  if(ids.length){
+    const{data:rawAppts,error:apptErr}=await SB.from('appointments')
+      .select('*')
+      .in('patient_id',ids)
+      .order('appt_date',{ascending:false})
+      .order('appt_slot',{ascending:false})
+      .limit(300);
+    if(apptErr)console.error('Patient search appointment lookup error:',apptErr);
+    appts=await enrichAppointments(rawAppts||[]);
+  }
+  patientSearchCache={patients:{},appointments:{}};
+  patients.forEach(p=>{patientSearchCache.patients[String(p.id)]=p;patientSearchCache.appointments[String(p.id)]=appts.filter(a=>String(a.patient_id)===String(p.id));});
+  results.innerHTML=patients.map(p=>{
+    const rows=patientSearchCache.appointments[String(p.id)]||[];
+    const total=rows.length;
+    const dntu=rows.filter(a=>a.status==='did_not_attend').length;
+    const attended=rows.filter(a=>a.status==='attended').length;
+    const cancelled=rows.filter(a=>a.status==='cancelled').length;
+    const booked=rows.filter(a=>a.status==='booked').length;
+    const latest=rows[0]||null;
+    const streak=currentDntuStreak(rows);
+    const phone=p.phone_number?`📞 ${htmlSafe(p.phone_number)}`:'No phone saved';
+    return `<div class="patient-result-card">
+      <div>
+        <div class="patient-result-name">${htmlSafe(patientNameParts(p.first_name,p.surname)||'Unnamed patient')}</div>
+        <div class="patient-result-meta">ID: <strong>${htmlSafe(p.id_card||'—')}</strong><br/>${phone}</div>
+        ${streak>=3?'<span class="patient-policy-flag">3 consecutive DNTU policy flag</span>':''}
+      </div>
+      <div class="patient-result-counts">
+        <strong>${total}</strong> appointment${total!==1?'s':''}<br/>
+        Attended ${attended} · DNTU ${dntu}<br/>
+        Cancelled ${cancelled} · Booked ${booked}
+      </div>
+      <div class="patient-result-counts">
+        Latest:<br/>
+        ${latest?`${htmlSafe(latest.appt_date)} ${String(latest.appt_slot||'').slice(0,5)}<br/>${statusBadgeHtml(latest.status)}`:'No appointments found'}
+      </div>
+      <div class="patient-result-actions">
+        <button class="patient-mini-btn secondary" onclick="openPatientHistory('${p.id}')">View History</button>
+        <button class="patient-mini-btn" onclick="copyPatientId('${htmlSafe(jsSafe(p.id_card||''))}')">Copy ID</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function copyPatientId(idCard){
+  const id=normaliseIdCard(idCard);
+  if(navigator.clipboard&&id){navigator.clipboard.writeText(id);alert('ID card copied: '+id);}
+  else if(id){alert('ID card: '+id);}
+}
+function openPatientHistory(patientId){
+  const p=patientSearchCache.patients[String(patientId)];
+  const rows=(patientSearchCache.appointments[String(patientId)]||[]).sort((a,b)=>{
+    const ad=`${a.appt_date||''} ${String(a.appt_slot||'').slice(0,5)}`;
+    const bd=`${b.appt_date||''} ${String(b.appt_slot||'').slice(0,5)}`;
+    return bd.localeCompare(ad);
+  });
+  if(!p){alert('Patient not found in search results.');return;}
+  const streak=currentDntuStreak(rows);
+  const bodyRows=rows.length?rows.map(a=>`<tr>
+    <td>${htmlSafe(a.appt_date||'—')}</td>
+    <td><strong>${String(a.appt_slot||'').slice(0,5)||'—'}</strong></td>
+    <td>${statusBadgeHtml(a.status)}</td>
+    <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
+    <td style="color:var(--muted);">${htmlSafe(a.notes||'')}</td>
+  </tr>`).join(''):'<tr><td colspan="5" class="empty">No appointment history found</td></tr>';
+  document.getElementById('mb').innerHTML=`<h2>Patient History</h2>
+    <div class="msub"><strong>${htmlSafe(patientNameParts(p.first_name,p.surname)||'Unnamed patient')}</strong><br/>ID: ${htmlSafe(p.id_card||'—')} · ${htmlSafe(p.phone_number||'No phone saved')}</div>
+    ${streak>=3?'<div class="hban" style="background:#f8d7da;border-color:#f5c2c7;color:#721c24;">⚠ This patient currently has 3 or more consecutive DNTU appointments.</div>':''}
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Current consecutive DNTU count: <strong>${streak}</strong></div>
+    <div style="max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px;">
+      <table class="patient-history-table"><thead><tr><th>Date</th><th>Time</th><th>Status</th><th>Nurse/Column</th><th>Notes</th></tr></thead><tbody>${bodyRows}</tbody></table>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+}
+
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
