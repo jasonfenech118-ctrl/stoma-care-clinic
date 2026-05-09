@@ -250,6 +250,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .clinic-print-note{font-size:11px;color:var(--muted);margin:4px 0 10px;}
 @media(max-width:1000px){.clinic-calendar-grid{grid-template-columns:repeat(2,minmax(140px,1fr));}.clinic-cal-head{display:none;}.clinic-day.empty-day{display:none;}}
 
+
+
+/* DNTU POLICY */
+.dntu-controls{background:white;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
+.dntu-control-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;}
+.dntu-btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+.dntu-btn{border:1.5px solid var(--border);background:white;color:var(--navy);border-radius:9px;padding:8px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.dntu-btn:hover{border-color:var(--teal);color:var(--teal);}
+.dntu-btn.active{background:var(--teal);border-color:var(--teal);color:white;box-shadow:0 2px 7px rgba(13,115,119,.25);}
+.dntu-btn.paused.active{background:var(--red);border-color:var(--red);}
+.dntu-note{font-size:11px;color:var(--muted);line-height:1.4;margin-top:2px;}
+.dntu-table-wrap{background:white;border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden;}
+.dntu-streak{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:4px 9px;border-radius:14px;font-size:11px;font-weight:900;background:#fff3cd;color:#856404;}
+.dntu-streak.paused{background:#f8d7da;color:#721c24;}
+.dntu-owner-pill{display:inline-block;padding:4px 9px;border-radius:14px;font-size:10px;font-weight:800;background:#e8f5f4;color:var(--teal);}
+.dntu-row-paused td{background:#fff8f8;}
+.dntu-actions{display:flex;gap:5px;flex-wrap:wrap;}
+
 /* REPORTS & CHARTS */
 .report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px;}
 .report-card{background:white;border-radius:12px;border:1px solid var(--border);padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05);min-height:260px;}
@@ -300,6 +318,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
     <div class="tab" onclick="switchTab('staff-audit',this)">Staff Audit</div>
     <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
+    <div class="tab" onclick="switchTab('dntu-policy',this)">DNTU Policy</div>
     <div class="tab" onclick="switchTab('reports',this)">Reports &amp; Charts</div>
   </div>
 
@@ -515,6 +534,36 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
     </div>
 
+
+
+    <!-- DNTU POLICY -->
+    <div class="page" id="page-dntu-policy">
+      <div class="phdr"><div><h2>DNTU Policy</h2><p>Patient-grouped Did Not Turn Up follow-up control</p></div></div>
+      <div class="srow" id="dntu-stats"></div>
+      <div class="dntu-controls">
+        <div class="dntu-control-title">DNTU streak filters</div>
+        <div class="dntu-btn-row">
+          <button id="dntu-filter-1" class="dntu-btn active" onclick="setDntuFilter('1')">1 DNTU</button>
+          <button id="dntu-filter-2" class="dntu-btn" onclick="setDntuFilter('2')">2 DNTU</button>
+          <button id="dntu-filter-3" class="dntu-btn paused" onclick="setDntuFilter('3')">3 DNTU / Paused</button>
+        </div>
+        <div class="dntu-control-title">Follow-up owner filters</div>
+        <div class="dntu-btn-row" style="margin-bottom:4px;">
+          <button id="dntu-owner-jason" class="dntu-btn" onclick="setDntuOwner('Jason')">Jason</button>
+          <button id="dntu-owner-lorraine" class="dntu-btn" onclick="setDntuOwner('Lorraine')">Lorraine</button>
+          <button id="dntu-owner-jacqueline" class="dntu-btn" onclick="setDntuOwner('Jacqueline')">Jacqueline</button>
+          <button id="dntu-owner-common" class="dntu-btn" onclick="setDntuOwner('Common')">Common</button>
+        </div>
+        <div class="dntu-note">Click an owner button again to clear that owner filter. Patients with 3 consecutive DNTUs are shown as paused in this view.</div>
+      </div>
+      <div class="dntu-table-wrap">
+        <table class="dt">
+          <thead><tr><th>Patient Name and Surname</th><th>ID Card Number</th><th>Phone Number</th><th>Current DNTU Streak</th><th>Last DNTU Date</th><th>Nurse Assigned</th><th>Actions</th></tr></thead>
+          <tbody id="dntu-tbody"><tr><td colspan="7" class="empty">Loading DNTU patients...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- REPORTS & CHARTS -->
     <div class="page" id="page-reports">
       <div class="phdr">
@@ -627,6 +676,9 @@ let selCode='working';
 let snapCurrentDate=TODAY;
 let selectedJumpDate=null;
 let caSort='desc';
+let dntuFilter='1';
+let dntuOwner='all';
+let dntuRows=[];
 let reportCharts={};
 
 const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
@@ -751,6 +803,7 @@ function switchTab(name,el){
   el.classList.add('active');
   if(name==='staff-audit')loadStaffAudit();
   if(name==='clinic-audit')loadClinicAudit();
+  if(name==='dntu-policy')loadDntuPolicy();
   if(name==='reports')loadReports();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
 }
@@ -1277,9 +1330,10 @@ async function refreshAppointmentViews(){
   else loadAppts();
   loadTodaySnapshot();
   if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
+  if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
-async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
+async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
 async function delApp(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
 async function editAppointment(id){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
@@ -1325,7 +1379,9 @@ async function saveEditedAppointment(apptId,patientId){
   if(nurse.startsWith('bank:')) apptUpdate.bank_staff_id=nurse.replace('bank:','');
   const{error:aErr}=await SB.from('appointments').update(apptUpdate).eq('id',apptId);
   if(aErr){alert('Appointment update error: '+aErr.message);return;}
-  closeModal();refreshAppointmentViews();
+  closeModal();
+  if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
+  refreshAppointmentViews();
 }
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
@@ -1696,8 +1752,128 @@ function printMonthlyList(){
   w.document.write(`<!DOCTYPE html><html><head><title>Clinic Audit List ${clinicMonthLabel(month,year)}</title><style>${printableClinicStyles().replace('@page{size:A4 landscape;margin:10mm;}','@page{size:A4 portrait;margin:10mm;}')}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment List — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div>${buildPrintableClinicList()}</body></html>`);
   w.document.close();w.focus();w.print();
 }
-async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
+async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
 async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
+
+
+// DNTU POLICY — patient grouped view
+function setDntuFilter(value){dntuFilter=value;renderDntuPolicy();}
+function setDntuOwner(owner){dntuOwner=(dntuOwner===owner)?'all':owner;renderDntuPolicy();}
+function updateDntuButtons(){
+  ['1','2','3'].forEach(v=>document.getElementById('dntu-filter-'+v)?.classList.toggle('active',dntuFilter===v));
+  ['Jason','Lorraine','Jacqueline','Common'].forEach(o=>document.getElementById('dntu-owner-'+o.toLowerCase())?.classList.toggle('active',dntuOwner===o));
+}
+function dntuOwnerForGroup(rows){
+  const ordered=[...rows].sort((a,b)=>String(b.appt_date||'').localeCompare(String(a.appt_date||''))||String(b.appt_slot||'').localeCompare(String(a.appt_slot||'')));
+  for(const a of ordered){
+    const n=String(a.staff?.full_name||'').toLowerCase();
+    if(n.includes('jason'))return 'Jason';
+    if(n.includes('jacqueline')||n.includes('jacklyn'))return 'Jacqueline';
+    if(n.includes('lorraine'))return 'Lorraine';
+  }
+  return 'Common';
+}
+function calculateCurrentDntuStreak(rows){
+  const completed=[...rows]
+    .filter(a=>a.status!=='booked')
+    .sort((a,b)=>String(b.appt_date||'').localeCompare(String(a.appt_date||''))||String(b.appt_slot||'').localeCompare(String(a.appt_slot||'')));
+  let streak=0;
+  for(const a of completed){
+    if(a.status==='did_not_attend')streak++;
+    else break;
+  }
+  return streak;
+}
+function latestDntuAppointment(rows){
+  return [...rows]
+    .filter(a=>a.status==='did_not_attend')
+    .sort((a,b)=>String(b.appt_date||'').localeCompare(String(a.appt_date||''))||String(b.appt_slot||'').localeCompare(String(a.appt_slot||'')))[0]||null;
+}
+async function loadDntuPolicy(){
+  const tbody=document.getElementById('dntu-tbody');
+  if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Loading DNTU patients...</td></tr>';
+  const{data:raw,error}=await SB.from('appointments').select('*').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+  if(error){console.error('DNTU load error:',error);if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Could not load DNTU records.</td></tr>';return;}
+  const appts=await enrichAppointments(raw||[]);
+  const groups={};
+  appts.forEach(a=>{
+    const key=a.patient_id||a.patients?.id_card||a.id;
+    if(!groups[key])groups[key]=[];
+    groups[key].push(a);
+  });
+  dntuRows=Object.values(groups).map(rows=>{
+    const latestDntu=latestDntuAppointment(rows);
+    const sample=latestDntu||rows[0]||{};
+    const streak=calculateCurrentDntuStreak(rows);
+    return {
+      patientId:sample.patient_id,
+      patientName:clinicPatientName(sample),
+      idCard:sample.patients?.id_card||'',
+      phone:sample.patients?.phone_number||'',
+      streak,
+      lastDntuDate:latestDntu?.appt_date||'',
+      owner:dntuOwnerForGroup(rows),
+      latestDntuId:latestDntu?.id||null,
+      paused:streak>=3
+    };
+  }).filter(r=>r.streak>0).sort((a,b)=>b.streak-a.streak||String(b.lastDntuDate).localeCompare(String(a.lastDntuDate))||a.patientName.localeCompare(b.patientName));
+  renderDntuPolicy();
+}
+function renderDntuPolicy(){
+  updateDntuButtons();
+  const all=dntuRows||[];
+  const one=all.filter(r=>r.streak===1).length;
+  const two=all.filter(r=>r.streak===2).length;
+  const paused=all.filter(r=>r.streak>=3).length;
+  const stats=document.getElementById('dntu-stats');
+  if(stats){stats.innerHTML=`
+    <div class="sbox"><div class="sl">1 DNTU</div><div class="sv">${one}</div><div class="ss">watch</div></div>
+    <div class="sbox"><div class="sl">2 DNTU</div><div class="sv">${two}</div><div class="ss">close watch</div></div>
+    <div class="sbox"><div class="sl">3 DNTU / Paused</div><div class="sv">${paused}</div><div class="ss" style="color:var(--red)">paused follow-up</div></div>
+    <div class="sbox"><div class="sl">Current Filter</div><div class="sv" style="font-size:24px;">${dntuFilter} DNTU</div><div class="ss">${dntuOwner==='all'?'all owners':dntuOwner}</div></div>`;}
+  let rows=all.filter(r=>dntuFilter==='3'?r.streak>=3:r.streak===Number(dntuFilter));
+  if(dntuOwner!=='all')rows=rows.filter(r=>r.owner===dntuOwner);
+  const tbody=document.getElementById('dntu-tbody');
+  if(!tbody)return;
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No patients match the selected DNTU filter.</td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>`<tr class="${r.paused?'dntu-row-paused':''}">
+    <td><strong>${htmlSafe(r.patientName)}</strong></td>
+    <td style="font-family:monospace;font-size:12px;">${htmlSafe(r.idCard)}</td>
+    <td>${htmlSafe(r.phone||'—')}</td>
+    <td><span class="dntu-streak ${r.paused?'paused':''}">${r.streak}</span></td>
+    <td>${htmlSafe(r.lastDntuDate||'—')}</td>
+    <td><span class="dntu-owner-pill">${htmlSafe(r.owner)}</span></td>
+    <td><div class="dntu-actions">
+      ${r.latestDntuId?`<button class="ncb-btn" title="Edit" onclick="editAppointment('${r.latestDntuId}')" style="background:#e8f5f4;color:var(--teal);">Edit</button>`:''}
+      ${r.latestDntuId?`<button class="ncb-btn ncb-del" title="Delete" onclick="deleteDntuEntry('${r.latestDntuId}')">🗑</button>`:''}
+    </div></td>
+  </tr>`).join('');
+}
+async function deleteDntuEntry(apptId){
+  if(!confirm('Delete this DNTU appointment entry?'))return;
+  await SB.from('appointments').delete().eq('id',apptId);
+  refreshAppointmentViews();
+}
+async function getPatientCurrentDntuStreak(patientId){
+  if(!patientId)return 0;
+  const{data}=await SB.from('appointments').select('status,appt_date,appt_slot').eq('patient_id',patientId).neq('status','booked').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+  let streak=0;
+  for(const a of(data||[])){
+    if(a.status==='did_not_attend')streak++;
+    else break;
+  }
+  return streak;
+}
+async function checkDntuThresholdForAppointment(apptId){
+  const{data:appt}=await SB.from('appointments').select('patient_id').eq('id',apptId).single();
+  if(!appt?.patient_id)return;
+  const streak=await getPatientCurrentDntuStreak(appt.patient_id);
+  if(streak>=3){
+    const{data:p}=await SB.from('patients').select('first_name,surname,id_card').eq('id',appt.patient_id).single();
+    const name=`${p?.first_name||''} ${p?.surname||''}`.trim()||'This patient';
+    alert(`${name} has reached 3 consecutive DNTUs. The follow-up is now shown as paused in the DNTU Policy page.`);
+  }
+}
 
 
 // REPORTS & CHARTS - no staff leave metrics and no per-nurse booking metrics
