@@ -1386,21 +1386,68 @@ async function loadAppts(){
 
 async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
 async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+
+
+// PATIENT AUTO-FILL BY ID CARD
+let patientLookupTimers={};
+function normaliseIdCard(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
+function patientNameParts(firstName,surname){return `${firstName||''} ${surname||''}`.trim();}
+function setPatientLookupMessage(msgId,text,kind='info'){
+  const el=document.getElementById(msgId);
+  if(!el)return;
+  const colours={ok:'#155724',warn:'#856404',info:'var(--muted)',error:'#721c24'};
+  el.style.color=colours[kind]||colours.info;
+  el.textContent=text||'';
+}
+function patientAutoFillDebounced(idField,firstField,surnameField,phoneField,msgId){
+  clearTimeout(patientLookupTimers[idField]);
+  patientLookupTimers[idField]=setTimeout(()=>patientAutoFill(idField,firstField,surnameField,phoneField,msgId),350);
+}
+async function patientAutoFill(idField,firstField,surnameField,phoneField,msgId){
+  const idEl=document.getElementById(idField);
+  if(!idEl)return;
+  const id=normaliseIdCard(idEl.value);
+  idEl.value=id;
+  if(!id||id.length<4){setPatientLookupMessage(msgId,'');return;}
+  setPatientLookupMessage(msgId,'Checking saved patient details...','info');
+  const{data,error}=await SB.from('patients')
+    .select('first_name,surname,phone_number,id_card')
+    .ilike('id_card',id)
+    .maybeSingle();
+  if(error){
+    console.error('Patient lookup error:',error);
+    setPatientLookupMessage(msgId,'Could not check saved patient details. You can still continue.','error');
+    return;
+  }
+  if(data){
+    const fn=document.getElementById(firstField);
+    const sn=document.getElementById(surnameField);
+    const ph=document.getElementById(phoneField);
+    if(fn)fn.value=data.first_name||'';
+    if(sn)sn.value=data.surname||'';
+    if(ph)ph.value=data.phone_number||'';
+    setPatientLookupMessage(msgId,`Saved patient found: ${patientNameParts(data.first_name,data.surname)}. Details filled automatically.`,'ok');
+  }else{
+    setPatientLookupMessage(msgId,'New patient ID. Enter details once; they will be saved for future appointments.','warn');
+  }
+}
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
     <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · ${htmlSafe(targetLabel)}</div>
-    <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
-    <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
-    <div class="fg"><label>ID Card *</label><input type="text" id="p-id"/></div>
-    <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
+    <div class="fg"><label>ID Card *</label><input type="text" id="p-id" placeholder="Enter ID card first" oninput="patientAutoFillDebounced('p-id','p-fn','p-sn','p-ph','p-autofill-msg')" onblur="patientAutoFill('p-id','p-fn','p-sn','p-ph','p-autofill-msg')"/><div id="p-autofill-msg" style="font-size:11px;margin-top:5px;color:var(--muted);"></div></div>
+    <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="Auto-filled if ID exists"/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Auto-filled if ID exists"/></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="p-ph" placeholder="Auto-filled if saved"/></div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-top:4px;">Saved patient details are pulled from the patient database by ID card. New or corrected details are saved when the appointment is booked.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}','${jsSafe(nid)}','${jsSafe(ntype)}')">Book Patient</button></div>`;
   openMo();
+  setTimeout(()=>document.getElementById('p-id')?.focus(),80);
 }
 async function doBook(slot,date,nurseIdParam,nurseType){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
-  const id=document.getElementById('p-id').value.trim();
+  const id=normaliseIdCard(document.getElementById('p-id').value);
   const ph=document.getElementById('p-ph').value.trim();
   if(!fn||!sn||!id){alert('Please fill in patient details.');return;}
 
@@ -1843,10 +1890,11 @@ async function openModal(type,...args){
     const[slot,date,nurseId,nurseName]=args;
     html=`<h2>Book Patient</h2>
       <div class="msub">${date} — ${slot}${nurseName?` · ${nurseName}`:''}</div>
-      <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
-      <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
-      <div class="fg"><label>ID Card Number *</label><input type="text" id="p-id" placeholder="Malta ID card"/></div>
-      <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
+      <div class="fg"><label>ID Card Number *</label><input type="text" id="p-id" placeholder="Enter ID card first" oninput="patientAutoFillDebounced('p-id','p-fn','p-sn','p-phone','p-autofill-msg')" onblur="patientAutoFill('p-id','p-fn','p-sn','p-phone','p-autofill-msg')"/><div id="p-autofill-msg" style="font-size:11px;margin-top:5px;color:var(--muted);"></div></div>
+      <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="Auto-filled if ID exists"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Auto-filled if ID exists"/></div>
+      <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="Auto-filled if saved"/></div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-top:4px;">Saved patient details are pulled from the patient database by ID card. New or corrected details are saved when the appointment is booked.</div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
@@ -1875,12 +1923,13 @@ async function openModal(type,...args){
   }
   document.getElementById('mb').innerHTML=html;
   openMo();
+  if(type==='appt')setTimeout(()=>document.getElementById('p-id')?.focus(),80);
 }
 
 async function saveAppt(slot,date,nurseId){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
-  const idno=document.getElementById('p-id').value.trim();
+  const idno=normaliseIdCard(document.getElementById('p-id').value);
   const phone=document.getElementById('p-phone')?.value.trim()||'';
   if(!fn||!sn||!idno){alert('Please fill in all patient details.');return;}
   const{data:pat}=await SB.from('patients').upsert({first_name:fn,surname:sn,id_card:idno,phone_number:phone||null},{onConflict:'id_card'}).select().single();
