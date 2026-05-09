@@ -921,12 +921,19 @@ async function loadTodaySnapshot(){
   if(countEl)countEl.textContent=`${booked.length} patient${booked.length!==1?'s':''}`;
   if(!appts||!appts.length){body.innerHTML='<div class="pt-snap-empty">No patients booked</div>';return;}
   const sc={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'};
-  const sl={booked:'Booked',attended:'✓ Attended',cancelled:'Cancelled',did_not_attend:'DNTU'};
-  body.innerHTML=appts.map(a=>`<div class="pt-row">
+  const sl={booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'};
+  body.innerHTML=appts.map(a=>`<div class="pt-row" style="align-items:flex-start;">
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
-    <div style="flex:1;"><div style="font-weight:600;">${a.patients?.first_name} ${a.patients?.surname}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${a.patients.phone_number}</div>`:''}</div>
-    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);">${a.staff?.full_name||a.bank_staff?.full_name||'Common'}</div>`:''}
+    <div style="flex:1;min-width:180px;"><div style="font-weight:600;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}</div>
+    ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
     <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
+      ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" onclick="setAS('${a.id}','attended')">Seen</button>`:''}
+      ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setAS('${a.id}','did_not_attend')">DNTU</button>`:''}
+      ${a.status!=='cancelled'?`<button class="ncb-btn ncb-cancel" onclick="setAS('${a.id}','cancelled')">Cancel</button>`:''}
+      <button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button>
+      <button class="ncb-btn ncb-del" onclick="delApp('${a.id}')">Delete</button>
+    </div>
   </div>`).join('');
 }
 
@@ -1212,10 +1219,11 @@ async function loadAppts(){
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
             <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
-            ${appt.status!=='attended'?`<button onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✓</button>`:''}
+            ${appt.status!=='attended'?`<button onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">Seen</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
             ${appt.status!=='cancelled'?`<button onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>`:''}
-            <button onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
+            <button onclick="editAppointment('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#e8f5f4;color:#0d7377;">Edit</button>
+            <button onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Delete</button>
           </div>
         </td>`;
       }else if(n.type==='absent'||n.type==='ot-booked'){
@@ -1232,8 +1240,61 @@ async function loadAppts(){
   con.innerHTML=html;
 }
 
-async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
-async function delApp(id){if(!confirm('Delete?'))return;await SB.from('appointments').delete().eq('id',id);loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+async function refreshAppointmentViews(){
+  if(document.getElementById('page-appointments')?.classList.contains('active')) loadAppts();
+  else loadAppts();
+  loadTodaySnapshot();
+  if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
+  if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
+}
+async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
+async function delApp(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
+async function editAppointment(id){
+  const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
+  if(error||!raw){alert('Could not load this appointment for editing.');return;}
+  const enriched=(await enrichAppointments([raw]))[0]||raw;
+  const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
+  const currentNurse=enriched.bank_staff_id?`bank:${enriched.bank_staff_id}`:(enriched.assigned_to?`core:${enriched.assigned_to}`:'common');
+  const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}" ${currentNurse===`core:${s.id}`?'selected':''}>${htmlSafe(s.full_name)}</option>`).join('');
+  const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}" ${currentNurse===`bank:${b.id}`?'selected':''}>${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
+  document.getElementById('mb').innerHTML=`<h2>Edit Appointment</h2>
+    <div class="msub">Correct patient, date, time, nurse/column, or outcome.</div>
+    <div class="fg"><label>First Name *</label><input type="text" id="e-fn" value="${htmlSafe(enriched.patients?.first_name||'')}"/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="e-sn" value="${htmlSafe(enriched.patients?.surname||'')}"/></div>
+    <div class="fg"><label>ID Card *</label><input type="text" id="e-idcard" value="${htmlSafe(enriched.patients?.id_card||'')}"/></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="e-phone" value="${htmlSafe(enriched.patients?.phone_number||'')}"/></div>
+    <div class="fg"><label>Appointment Date *</label><input type="date" id="e-date" value="${htmlSafe(enriched.appt_date||'')}"/></div>
+    <div class="fg"><label>Appointment Time *</label><input type="time" id="e-slot" value="${htmlSafe(String(enriched.appt_slot||'').slice(0,5))}"/></div>
+    <div class="fg"><label>Nurse / Column</label><select id="e-nurse"><option value="common" ${currentNurse==='common'?'selected':''}>Common</option>${coreOptions}${bankOptions}</select></div>
+    <div class="fg"><label>Outcome</label><select id="e-status">
+      <option value="booked" ${enriched.status==='booked'?'selected':''}>Booked</option>
+      <option value="attended" ${enriched.status==='attended'?'selected':''}>Seen</option>
+      <option value="did_not_attend" ${enriched.status==='did_not_attend'?'selected':''}>DNTU</option>
+      <option value="cancelled" ${enriched.status==='cancelled'?'selected':''}>Cancelled</option>
+    </select></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
+  openMo();
+}
+async function saveEditedAppointment(apptId,patientId){
+  const fn=document.getElementById('e-fn').value.trim();
+  const sn=document.getElementById('e-sn').value.trim();
+  const idcard=document.getElementById('e-idcard').value.trim();
+  const phone=document.getElementById('e-phone').value.trim();
+  const date=document.getElementById('e-date').value;
+  const slot=document.getElementById('e-slot').value;
+  const nurse=document.getElementById('e-nurse').value;
+  const status=document.getElementById('e-status').value;
+  if(!fn||!sn||!idcard||!date||!slot){alert('Please fill in first name, surname, ID card, date and time.');return;}
+  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null};
+  const{error:pErr}=await SB.from('patients').update(patientUpdate).eq('id',patientId);
+  if(pErr){alert('Patient update error: '+pErr.message);return;}
+  const apptUpdate={appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status};
+  if(nurse.startsWith('core:')) apptUpdate.assigned_to=nurse.replace('core:','');
+  if(nurse.startsWith('bank:')) apptUpdate.bank_staff_id=nurse.replace('bank:','');
+  const{error:aErr}=await SB.from('appointments').update(apptUpdate).eq('id',apptId);
+  if(aErr){alert('Appointment update error: '+aErr.message);return;}
+  closeModal();refreshAppointmentViews();
+}
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
@@ -1501,16 +1562,17 @@ async function loadClinicAudit(){
     <td>${a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—')}</td>
     <td><span class="status-badge ${sm[a.status]||''}">${sl[a.status]||''}</span></td>
     <td style="white-space:nowrap;">
-      <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">✓ Attended</button>
-      <button class="ncb-btn ncb-dna" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">✗ DNTU</button>
+      <button class="ncb-btn ncb-attended" onclick="setOutcome('${a.id}','attended')">Seen</button>
+      <button class="ncb-btn ncb-dna" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>
       <button class="ncb-btn ncb-cancel" onclick="setOutcome('${a.id}','cancelled')" style="margin-left:3px;">Cancel</button>
-      <button class="ncb-btn ncb-del" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">🗑</button>
+      <button class="ncb-btn" onclick="editAppointment('${a.id}')" style="margin-left:3px;background:#e8f5f4;color:var(--teal);">Edit</button>
+      <button class="ncb-btn ncb-del" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">Delete</button>
     </td>
   </tr>`).join('');
 }
 
-async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
-async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);loadClinicAudit();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();}
+async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
+async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
 
 
 // REPORTS & CHARTS - no staff leave metrics and no per-nurse booking metrics
