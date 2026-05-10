@@ -334,11 +334,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .outcome-btn{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
 .outcome-btn:hover{border-color:var(--teal);color:var(--teal);}
 .outcome-btn.active{background:var(--teal);border-color:var(--teal);color:white;}
-.followup-status-badge{display:inline-block;margin-top:4px;padding:3px 8px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
-.followup-status-badge.active{background:#e8f5f4;color:var(--teal);}
-.followup-status-badge.awaiting_feedback{background:#fff3cd;color:#856404;}
-.followup-status-badge.paused{background:#f8d7da;color:#721c24;}
-.followup-status-badge.further_postponed{background:#e8eaf6;color:#3949ab;}
+.followup-status-badge{display:block;width:max-content;margin:6px 0 2px 0;padding:3px 9px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
+.followup-status-badge.active{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
+.followup-status-badge.awaiting_feedback{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
+.followup-status-badge.paused{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;}
+.followup-status-badge.further_postponed{background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;}
 .outcome-click-row{cursor:pointer;}
 .outcome-click-row:hover td{background:#f8fafc!important;}
 
@@ -380,7 +380,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
     <div class="tab" onclick="switchTab('staff-audit',this)">Staff Audit</div>
     <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
-    <div class="tab" onclick="switchTab('dntu-policy',this)">DNTU / Paused</div>
+    <div class="tab" onclick="switchTab('dntu-policy',this)">DNTU</div>
     <div class="tab" onclick="switchTab('reports',this)">Reports &amp; Charts</div>
   </div>
 
@@ -652,16 +652,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
     <!-- DNTU -->
     <div class="page" id="page-dntu-policy">
-      <div class="phdr"><div><h2>DNTU / Paused Follow-ups</h2><p>Patient-grouped Did Not Turn Up and paused follow-up control</p></div></div>
+      <div class="phdr"><div><h2>DNTU</h2><p>Patient-grouped Did Not Turn Up tracking</p></div></div>
       <div class="srow" id="dntu-stats"></div>
       <div class="dntu-controls">
-        <div class="dntu-control-title">DNTU / Paused selection</div>
+        <div class="dntu-control-title">DNTU selection</div>
         <div class="dntu-btn-row">
           <button id="dntu-filter-1" class="dntu-btn active" onclick="setDntuFilter('1')">1 DNTU</button>
           <button id="dntu-filter-2" class="dntu-btn" onclick="setDntuFilter('2')">2 DNTU</button>
           <button id="dntu-filter-3" class="dntu-btn" onclick="setDntuFilter('3')">3 DNTU</button>
-          <button id="dntu-filter-paused" class="dntu-btn paused" onclick="setDntuFilter('paused')">Paused</button>
-          <button id="dntu-filter-awaiting_feedback" class="dntu-btn" onclick="setDntuFilter('awaiting_feedback')">Awaiting Feedback</button>
         </div>
         <div class="dntu-control-title">Follow-up owner filters</div>
         <div class="dntu-btn-row" style="margin-bottom:4px;">
@@ -670,7 +668,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <button id="dntu-owner-jacqueline" class="dntu-btn" onclick="setDntuOwner('Jacqueline')">Jacqueline</button>
           <button id="dntu-owner-common" class="dntu-btn" onclick="setDntuOwner('Common')">Common</button>
         </div>
-        <div class="dntu-note">Click an owner button again to clear that owner filter. Use Paused or Awaiting Feedback to show those patients separately from active nurse lists.</div>
+        <div class="dntu-note">Click an owner button again to clear that owner filter. Paused and Awaiting Feedback are managed separately in Appointment Outcomes.</div>
       </div>
       <div class="dntu-table-wrap">
         <table class="dt">
@@ -822,6 +820,43 @@ function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLoca
 
 function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
 function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+
+function normStaffName(v){
+  return String(v||'')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function findCoreStaffByName(name){
+  const n=normStaffName(name);
+  if(!n)return null;
+  return (staffList||[]).find(st=>{
+    const s=normStaffName(st.full_name);
+    if(!s)return false;
+    const nf=n.split(' ')[0];
+    const sf=s.split(' ')[0];
+    return n===s || n===sf || s===nf || n.startsWith(s+' ') || s.startsWith(n+' ') || nf===sf;
+  })||null;
+}
+function isTILNote(notes){
+  const n=String(notes||'');
+  return n.startsWith('TIL-Off')||n.startsWith('TIL-In');
+}
+function parseNoteTimeRange(notes){
+  const m=String(notes||'').match(/\[\s*([0-9]{1,2}:[0-9]{2})\s*[–\-]\s*([0-9]{1,2}:[0-9]{2})\s*\]/);
+  return m?{start:m[1],end:m[2]}:null;
+}
+function calcHourLabel(start,end){
+  if(!start||!end)return '—';
+  const [sh,sm]=String(start).split(':').map(Number);
+  const [eh,em]=String(end).split(':').map(Number);
+  if(Number.isNaN(sh)||Number.isNaN(eh))return '—';
+  const mins=(eh*60+(em||0))-(sh*60+(sm||0));
+  if(mins<=0)return '—';
+  return `${Math.floor(mins/60)}h${mins%60?` ${mins%60}m`:''}`;
+}
 
 
 /* SAFE APPOINTMENT LOADER
@@ -986,8 +1021,22 @@ async function renderRoster(){
   const{data:rd}=await SB.from('roster').select('*').gte('roster_date',s1).lte('roster_date',s2);
   rCache={};(rd||[]).forEach(r=>{rCache[`${r.staff_id}_${r.roster_date}`]=r;});
 
-  const{data:bd}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').gte('work_date',s1).lte('work_date',s2);
-  const{data:tilData}=await SB.from('leave_records').select('*, staff(full_name)').eq('leave_type','overtime').or('notes.like.TIL-Off:%,notes.like.TIL-In:%').gte('start_date',s1).lte('start_date',s2);
+  const{data:bdRaw}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').gte('work_date',s1).lte('work_date',s2);
+  const{data:allOvertimeRecords}=await SB.from('leave_records').select('*, staff(full_name)').eq('leave_type','overtime').gte('start_date',s1).lte('start_date',s2);
+  const tilData=(allOvertimeRecords||[]).filter(r=>isTILNote(r.notes));
+  const coreOTData=(allOvertimeRecords||[]).filter(r=>!isTILNote(r.notes));
+
+  const bankCoreOT=[];
+  const bd=[];
+  (bdRaw||[]).forEach(b=>{
+    const core=findCoreStaffByName(b.bank_staff?.full_name);
+    if(core) bankCoreOT.push({...b,core_staff:core});
+    else bd.push(b);
+  });
+
+  const coreOTByKey={};
+  coreOTData.forEach(r=>{coreOTByKey[`${r.staff_id}_${r.start_date}`]={...r,source:'core_leave'};});
+  bankCoreOT.forEach(b=>{coreOTByKey[`${b.core_staff.id}_${b.work_date}`]={...b,source:'core_bank'};});
 
   const th=isHol(TODAY);
   document.getElementById('hban-roster').innerHTML=th?`<div class="hban">🇲🇹 Today is a Malta Public Holiday: <strong>${th}</strong></div>`:'';
@@ -1012,9 +1061,14 @@ async function renderRoster(){
       const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
       const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
       const entry=rCache[`${st.id}_${ds}`];
-      const code=entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D';
+      const coreOT=coreOTByKey[`${st.id}_${ds}`];
+      const code=coreOT?'OT':(entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D');
       const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
-      html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${hol?hol+' — ':''}${ds}">${code}</div></td>`;
+      const otTimes=coreOT?.source==='core_leave'?parseNoteTimeRange(coreOT.notes):null;
+      const otStart=(coreOT?.shift_start||otTimes?.start||'07:00').slice(0,5);
+      const otEnd=(coreOT?.shift_end||otTimes?.end||'').slice(0,5);
+      const chipTitle=coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`;
+      html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${htmlSafe(chipTitle)}">${code}</div></td>`;
     }
     html+='</tr>';
   }
@@ -1058,11 +1112,17 @@ async function renderRoster(){
   document.getElementById('rt').innerHTML=html;
 
   // If jump date selected, filter OT/TIL lists to that date; otherwise show full month
+  const coreOTList=[
+    ...coreOTData.map(r=>({...r,source:'core_leave',work_date:r.start_date,shift_start:(parseNoteTimeRange(r.notes)?.start||'07:00'),shift_end:(parseNoteTimeRange(r.notes)?.end||''),display_name:r.staff?.full_name||'Core Staff'})),
+    ...bankCoreOT.map(b=>({...b,source:'core_bank',display_name:b.core_staff?.full_name||b.bank_staff?.full_name||'Core Staff'}))
+  ];
+  const visibleOT=[...(bd||[]),...coreOTList];
+
   if(selectedJumpDate){
-    renderOTList(bd?bd.filter(b=>b.work_date===selectedJumpDate):null,selectedJumpDate);
+    renderOTList(visibleOT.filter(b=>b.work_date===selectedJumpDate),selectedJumpDate);
     renderTILList(tilData?tilData.filter(t=>t.start_date===selectedJumpDate):null,selectedJumpDate);
   }else{
-    renderOTList(bd,null);
+    renderOTList(visibleOT,null);
     renderTILList(tilData,null);
   }
 }
@@ -1072,15 +1132,20 @@ function renderOTList(bd,filterDate){
   document.getElementById('ot-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('ot-tbody');
   if(!bd||!bd.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No overtime nurses</td></tr>';return;}
-  const sorted=[...bd].sort((a,b)=>a.work_date.localeCompare(b.work_date));
+  const sorted=[...bd].sort((a,b)=>String(a.work_date||'').localeCompare(String(b.work_date||'')));
   tbody.innerHTML=sorted.map(b=>{
-    const start=b.shift_start?.slice(0,5)||'07:00',end=b.shift_end?.slice(0,5)||'—';
-    let hrs='—';
-    if(b.shift_start&&b.shift_end){const[sh,sm]=b.shift_start.split(':').map(Number);const[eh,em]=b.shift_end.split(':').map(Number);const t=(eh*60+em)-(sh*60+sm);if(t>0)hrs=`${Math.floor(t/60)}h${t%60>0?' '+t%60+'m':''}`;}
+    const times=parseNoteTimeRange(b.notes);
+    const start=(b.shift_start?.slice(0,5)||times?.start||'07:00');
+    const end=(b.shift_end?.slice(0,5)||times?.end||'—');
+    const hrs=calcHourLabel(start,end);
     const dt=new Date(b.work_date+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const hol=isHol(b.work_date);
-    return`<tr><td><strong>${b.bank_staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button title="Delete" onclick="delOT('${b.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button></td></tr>`;
+    const isCore=b.source==='core_leave'||b.source==='core_bank';
+    const name=isCore?(b.display_name||b.staff?.full_name||'Core Staff'):(b.bank_staff?.full_name||'Unknown');
+    const typeBadge=isCore?'<span style="margin-left:6px;padding:2px 7px;border-radius:10px;background:#e8f5f4;color:#0d7377;font-size:10px;font-weight:800;">Core staff OT</span>':'<span style="margin-left:6px;padding:2px 7px;border-radius:10px;background:#fff8e1;color:#856404;font-size:10px;font-weight:800;">Extra OT</span>';
+    const delAction=b.source==='core_leave'?`delCoreOT('${b.id}')`:`delOT('${b.id}')`;
+    return`<tr><td><strong>${htmlSafe(name)}</strong>${typeBadge}</td><td>${dayLabel}${hol?' 🇲🇹':''}</td><td>${start}</td><td>${end}</td><td><span class="ot-badge">${hrs}</span></td><td><button title="Delete" onclick="${delAction}" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button></td></tr>`;
   }).join('');
 }
 
@@ -1129,9 +1194,9 @@ async function loadTodaySnapshot(){
   const sl={booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'};
   body.innerHTML=appts.map(a=>`<div class="pt-row" style="align-items:flex-start;">
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
-    <div style="flex:1;min-width:180px;"><div style="font-weight:600;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}</div>
+    <div style="flex:1;min-width:180px;"><div style="font-weight:600;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}${followupStatusBadge(a.patients?.followup_status)}</div>
     ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
-    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>${followupStatusBadge(a.patients?.followup_status)}
+    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
     <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
       ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setAS('${a.id}','attended')">✅</button>`:''}
       ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setAS('${a.id}','did_not_attend')">DNTU</button>`:''}
@@ -1149,6 +1214,23 @@ async function addOT(){
   const start=document.getElementById('ot-start').value||'07:00';
   const end=document.getElementById('ot-end').value;
   if(!name||!date||!end){alert('Please fill in nurse name, date and working until time.');return;}
+
+  const coreStaff=findCoreStaffByName(name);
+  if(coreStaff){
+    await SB.from('leave_records').insert({
+      staff_id:coreStaff.id,
+      leave_type:'overtime',
+      start_date:date,
+      end_date:date,
+      total_days:1,
+      notes:`Core OT: ${start}–${end} [${start}–${end}]`
+    });
+    document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
+    renderRoster();
+    if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+    return;
+  }
+
   let{data:existing}=await SB.from('bank_staff').select('id').eq('full_name',name).maybeSingle();
   let bankId=existing?.id;
   if(!bankId){const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();bankId=ns?.id;}
@@ -1247,6 +1329,8 @@ async function getWorkingNurses(date){
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
   const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').eq('work_date',date);
   const{data:tilIn}=await SB.from('leave_records').select('*, staff(full_name,id)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:coreOTTodayRaw}=await SB.from('leave_records').select('*, staff(full_name,id)').eq('leave_type','overtime').eq('start_date',date);
+  const coreOTToday=(coreOTTodayRaw||[]).filter(r=>!isTILNote(r.notes));
   const{data:tilOff}=await SB.from('leave_records').select('id,staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
   const tilOffIds=new Set((tilOff||[]).map(t=>t.staff_id));
 
@@ -1286,10 +1370,22 @@ async function getWorkingNurses(date){
     }
   }
 
-  // OT nurses — always add their column
+  // Core staff OT — add as core staff, never as banked OT
+  for(const o of(coreOTToday||[])){
+    if(o.staff?.full_name && !nurses.find(n=>String(n.id)===String(o.staff_id))){
+      nurses.push({id:o.staff_id,name:o.staff.full_name,type:'core-ot',status:'ot'});
+    }
+  }
+
+  // OT nurses — extra/cover nurses only. If name matches core staff, show under core staff.
   for(const b of(otToday||[])){
     if(b.bank_staff?.full_name){
-      nurses.push({id:b.bank_staff_id,name:b.bank_staff.full_name,type:'ot',status:'ot'});
+      const core=findCoreStaffByName(b.bank_staff.full_name);
+      if(core){
+        if(!nurses.find(n=>String(n.id)===String(core.id))) nurses.push({id:core.id,bankId:b.bank_staff_id,name:core.full_name,type:'core-ot',status:'ot'});
+      }else{
+        nurses.push({id:b.bank_staff_id,name:b.bank_staff.full_name,type:'ot',status:'ot'});
+      }
     }
   }
 
@@ -1330,6 +1426,8 @@ async function loadAppts(){
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
   const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
   const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:coreOTTodayRaw}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').eq('start_date',date);
+  const coreOTToday=(coreOTTodayRaw||[]).filter(r=>!isTILNote(r.notes));
   const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
   const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
   const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
@@ -1360,8 +1458,16 @@ async function loadAppts(){
     if(t.staff?.full_name)addNurse({id:t.staff_id,name:t.staff.full_name,type:'til'});
   }
 
+  for(const o of(coreOTToday||[])){
+    if(o.staff?.full_name)addNurse({id:o.staff_id,name:o.staff.full_name,type:'core-ot'});
+  }
+
   for(const b of(otToday||[])){
-    if(b.bank_staff?.full_name)addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
+    if(b.bank_staff?.full_name){
+      const core=findCoreStaffByName(b.bank_staff.full_name);
+      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'core-ot'});
+      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
+    }
   }
 
   // Important fix: show existing bookings even when that nurse is now off/sick/leave or not rostered.
@@ -1395,6 +1501,7 @@ async function loadAppts(){
   nurses.forEach(n=>{
     let nbadge='';
     if(n.type==='ot') nbadge='<span style="font-size:9px;background:#e6a817;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">OT</span>';
+    else if(n.type==='core-ot') nbadge='<span style="font-size:9px;background:#e6a817;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">Core OT</span>';
     else if(n.type==='til') nbadge='<span style="font-size:9px;background:#0d7377;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">TIL</span>';
     else if(n.type==='common') nbadge='<span style="font-size:9px;background:#6c757d;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">General</span>';
     else if(n.type==='absent'||n.type==='ot-booked') nbadge='<span style="font-size:9px;background:#c0392b;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">Booked / Not Working</span>';
@@ -1409,6 +1516,7 @@ async function loadAppts(){
         const s=String(a.appt_slot||'').slice(0,5);
         if(s!==slot)return false;
         if(n.type==='common') return !a.assigned_to && !a.bank_staff_id;
+        if(n.type==='core-ot') return String(a.assigned_to||'')===String(n.id||'') || (n.bankId && String(a.bank_staff_id||'')===String(n.bankId));
         if(n.type==='ot'||n.type==='ot-booked') return String(a.bank_staff_id||'')===String(n.id||'') || String(a.assigned_to||'')===String(n.id||'');
         return String(a.assigned_to||'')===String(n.id||'');
       });
@@ -1422,8 +1530,11 @@ async function loadAppts(){
           <div style="font-size:10px;color:#7a8fa6;">${htmlSafe(appt.patients?.id_card||'')}</div>
           ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞 ${htmlSafe(appt.patients.phone_number)}</div>`:''}
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
-          <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
-            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>${followupStatusBadge(appt.patients?.followup_status)}
+          <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
+            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
+          </div>
+          ${followupStatusBadge(appt.patients?.followup_status)}
+          <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
             ${appt.status!=='attended'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
             ${appt.status!=='cancelled'?`<button title="Cancel" onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">✖</button>`:''}
@@ -1891,7 +2002,7 @@ async function openFollowupHistory(patientId){
   const rows=appts.length?appts.map(a=>`<tr>
     <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
-    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span> ${followupStatusBadge(a.patients?.followup_status)}</td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span>${followupStatusBadge(a.patients?.followup_status)}</td>
     <td><button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button></td>
   </tr>`).join(''):'<tr><td colspan="5" class="empty">No appointment history found</td></tr>';
   document.getElementById('mb').innerHTML=`<h2>Follow-up History</h2>
@@ -2141,7 +2252,7 @@ function renderClinicCalendar(data,month,year){
     const shown=appts.slice(0,5);
     html+=`<div class="clinic-day ${appts.length?'has-appts':''}">
       <div class="clinic-day-num"><span>${d}</span>${appts.length?`<span class="clinic-day-count">${appts.length}</span>`:''}</div>
-      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status)} ${followupStatusBadge(a.patients?.followup_status)}</div>`).join('')}
+      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status)}<br/>${followupStatusBadge(a.patients?.followup_status)}</div>`).join('')}
       ${appts.length>5?`<div class="clinic-more">+ ${appts.length-5} more</div>`:''}
     </div>`;
   }
@@ -2161,7 +2272,7 @@ function renderClinicMonthlyList(data){
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
       <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
       <td>${htmlSafe(clinicNurseName(a))}</td>
-      <td>${clinicBadge(a.status)} ${followupStatusBadge(a.patients?.followup_status)}</td>
+      <td>${clinicBadge(a.status)}${followupStatusBadge(a.patients?.followup_status)}</td>
       <td style="white-space:nowrap;">
         ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setOutcome('${a.id}','attended')">✅</button>`:''}
         ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" title="DNTU" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>`:''}
@@ -2228,7 +2339,7 @@ async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;a
 function setDntuFilter(value){dntuFilter=value;renderDntuPolicy();}
 function setDntuOwner(owner){dntuOwner=(dntuOwner===owner)?'all':owner;renderDntuPolicy();}
 function updateDntuButtons(){
-  ['1','2','3','paused','awaiting_feedback'].forEach(v=>document.getElementById('dntu-filter-'+v)?.classList.toggle('active',dntuFilter===v));
+  ['1','2','3'].forEach(v=>document.getElementById('dntu-filter-'+v)?.classList.toggle('active',dntuFilter===v));
   ['Jason','Lorraine','Jacqueline','Common'].forEach(o=>document.getElementById('dntu-owner-'+o.toLowerCase())?.classList.toggle('active',dntuOwner===o));
 }
 function dntuOwnerForGroup(rows){
@@ -2282,8 +2393,6 @@ async function loadDntuPolicy(){
       lastDntuDate:latestDntu?.appt_date||'',
       owner:dntuOwnerForGroup(rows),
       latestDntuId:latestDntu?.id||null,
-      paused:(sample.patients?.followup_status==='paused')||streak>=3,
-      awaitingFeedback:sample.patients?.followup_status==='awaiting_feedback'
     };
   }).filter(r=>r.streak>0).sort((a,b)=>b.streak-a.streak||String(b.lastDntuDate).localeCompare(String(a.lastDntuDate))||a.patientName.localeCompare(b.patientName));
   renderDntuPolicy();
@@ -2293,26 +2402,24 @@ function renderDntuPolicy(){
   const all=dntuRows||[];
   const one=all.filter(r=>r.streak===1).length;
   const two=all.filter(r=>r.streak===2).length;
-  const paused=all.filter(r=>r.paused).length;
-  const awaiting=all.filter(r=>r.awaitingFeedback).length;
+  const threePlus=all.filter(r=>r.streak>=3).length;
   const stats=document.getElementById('dntu-stats');
-  const currentFilterLabel=dntuFilter==='paused'?'Paused':dntuFilter==='awaiting_feedback'?'Awaiting Feedback':`${dntuFilter} DNTU`;
+  const currentFilterLabel=dntuFilter==='3'?'3+ DNTU':`${dntuFilter} DNTU`;
   if(stats){stats.innerHTML=`
     <div class="sbox"><div class="sl">1 DNTU</div><div class="sv">${one}</div><div class="ss">watch</div></div>
     <div class="sbox"><div class="sl">2 DNTU</div><div class="sv">${two}</div><div class="ss">close watch</div></div>
-    <div class="sbox"><div class="sl">Paused</div><div class="sv">${paused}</div><div class="ss" style="color:var(--red)">paused follow-ups</div></div>
-    <div class="sbox"><div class="sl">Awaiting Feedback</div><div class="sv">${awaiting}</div><div class="ss" style="color:#3949ab">separate nurse selection</div></div>
+    <div class="sbox"><div class="sl">3+ DNTU</div><div class="sv">${threePlus}</div><div class="ss" style="color:var(--orange)">review</div></div>
     <div class="sbox"><div class="sl">Current Selection</div><div class="sv" style="font-size:24px;">${currentFilterLabel}</div><div class="ss">${dntuOwner==='all'?'all owners':dntuOwner}</div></div>`;}
-  let rows=all.filter(r=>dntuFilter==='paused'?r.paused:(dntuFilter==='awaiting_feedback'?r.awaitingFeedback:(dntuFilter==='3'?r.streak===3:r.streak===Number(dntuFilter))));
+  let rows=all.filter(r=>dntuFilter==='3'?r.streak>=3:r.streak===Number(dntuFilter));
   if(dntuOwner!=='all')rows=rows.filter(r=>r.owner===dntuOwner);
   const tbody=document.getElementById('dntu-tbody');
   if(!tbody)return;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="5" class="empty">No patients match the selected DNTU / Paused / Awaiting Feedback selection.</td></tr>';return;}
-  tbody.innerHTML=rows.map(r=>`<tr class="${r.paused?'dntu-row-paused':''}">
-    <td><strong>${htmlSafe(r.patientName)}</strong>${r.awaitingFeedback?'<br/><span class="dntu-streak awaiting" style="margin-top:4px;">Awaiting Feedback</span>':''}${r.paused?'<br/><span class="dntu-streak paused" style="margin-top:4px;">Paused</span>':''}</td>
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="5" class="empty">No patients match the selected DNTU selection.</td></tr>';return;}
+  tbody.innerHTML=rows.map(r=>`<tr>
+    <td><strong>${htmlSafe(r.patientName)}</strong></td>
     <td style="font-family:monospace;font-size:12px;">${htmlSafe(r.idCard)}</td>
     <td>${htmlSafe(r.phone||'—')}</td>
-    <td><span class="dntu-streak ${r.paused?'paused':''}">${r.streak}</span></td>
+    <td><span class="dntu-streak">${r.streak}</span></td>
     <td>${htmlSafe(r.lastDntuDate||'—')}</td>
   </tr>`).join('');
 }
@@ -2338,7 +2445,7 @@ async function checkDntuThresholdForAppointment(apptId){
   if(streak>=3){
     const{data:p}=await SB.from('patients').select('first_name,surname,id_card').eq('id',appt.patient_id).single();
     const name=`${p?.first_name||''} ${p?.surname||''}`.trim()||'This patient';
-    alert(`${name} has reached 3 consecutive DNTUs. The follow-up is now shown as paused in the DNTU page.`);
+    alert(`${name} has reached 3 consecutive DNTUs. DNTU is recorded as an appointment outcome. Paused follow-up status is managed separately in Appointment Outcomes.`);
   }
 }
 
@@ -2589,6 +2696,7 @@ async function saveLeave(){
 }
 
 async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
+async function delCoreOT(id){if(!confirm('Delete core staff OT?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeMo(){document.getElementById('mo').classList.remove('open');}
