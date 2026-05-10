@@ -338,7 +338,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .followup-status-badge.active{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 .followup-status-badge.awaiting_feedback{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 .followup-status-badge.paused{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;}
-.followup-status-badge.further_postponed{background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;}
 .outcome-click-row{cursor:pointer;}
 .outcome-click-row:hover td{background:#f8fafc!important;}
 
@@ -509,7 +508,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <button id="ao-filter-active" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('active')">Active</button>
           <button id="ao-filter-awaiting_feedback" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('awaiting_feedback')">Awaiting Feedback</button>
           <button id="ao-filter-paused" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('paused')">Paused</button>
-          <button id="ao-filter-further_postponed" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('further_postponed')">Further Postponed</button>
         </div>
         <label>Appointment Outcome:</label>
         <select id="appointment-outcome-filter" onchange="loadAppointmentOutcomes()">
@@ -598,7 +596,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <option value="active">Active Follow-ups</option>
           <option value="awaiting_feedback">Awaiting Feedback</option>
           <option value="paused">Paused Follow-ups</option>
-          <option value="further_postponed">Further Postponed</option>
           <option value="all">All Follow-ups</option>
         </select>
         <span class="dntu-note">Paused patients are hidden from the normal nurse list. Use Awaiting Feedback or Paused Follow-ups to view those groups separately.</span>
@@ -1496,7 +1493,7 @@ async function loadAppts(){
   const con=document.getElementById('slots-container');
   if(!con)return;
 
-  let html='<table style="width:100%;border-collapse:collapse;">';
+  let html='<table style="width:100%;border-collapse:separate;border-spacing:0 5px;">';
   html+='<thead><tr><th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#7a8fa6;border-bottom:2px solid #dde3ea;background:#fafafa;min-width:65px;">Time</th>';
   nurses.forEach(n=>{
     let nbadge='';
@@ -1525,7 +1522,7 @@ async function loadAppts(){
         const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
         const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
         const nm=`${appt.patients?.first_name||''} ${appt.patients?.surname||''}`.trim();
-        html+=`<td style="padding:8px 10px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${bg};vertical-align:top;">
+        html+=`<td style="padding:8px 10px;border:1px solid #d6e5e2;border-left:4px solid #0d7377;border-radius:8px;background:${bg};vertical-align:top;box-shadow:0 1px 3px rgba(0,0,0,.06);">
           <div style="font-weight:600;font-size:12px;">${htmlSafe(nm)}</div>
           <div style="font-size:10px;color:#7a8fa6;">${htmlSafe(appt.patients?.id_card||'')}</div>
           ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞 ${htmlSafe(appt.patients.phone_number)}</div>`:''}
@@ -1543,9 +1540,9 @@ async function loadAppts(){
           </div>
         </td>`;
       }else if(n.type==='absent'||n.type==='ot-booked'){
-        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;">Not rostered</td>`;
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;">Not rostered</td>`;
       }else{
-        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};">
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};border-radius:7px;">
           <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
         </td>`;
       }
@@ -1592,10 +1589,9 @@ async function editAppointment(id){
       <option value="cancelled" ${enriched.status==='cancelled'?'selected':''}>Cancelled</option>
     </select></div>
     <div class="fg"><label>Follow-up Status</label><select id="e-followup-status">
-      <option value="active" ${(enriched.patients?.followup_status||'active')==='active'?'selected':''}>Active</option>
+      <option value="active" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${enriched.patients?.followup_status==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${enriched.patients?.followup_status==='paused'?'selected':''}>Paused</option>
-      <option value="further_postponed" ${enriched.patients?.followup_status==='further_postponed'?'selected':''}>Further Postponed</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
@@ -1904,10 +1900,9 @@ async function loadStaffAudit(){
   const dntuStreakByPatient={};
   candidatePatientIds.forEach(id=>{dntuStreakByPatient[id]=calculateCurrentDntuStreak(allRowsByPatient[id]||[]);});
 
-  if(followupStatus==='active')patients=patients.filter(p=>(p.followup_status||'active')==='active' && (dntuStreakByPatient[p.id]||0)<3);
-  if(followupStatus==='awaiting_feedback')patients=patients.filter(p=>(p.followup_status||'active')==='awaiting_feedback');
-  if(followupStatus==='paused')patients=patients.filter(p=>(p.followup_status||'active')==='paused' || (dntuStreakByPatient[p.id]||0)>=3);
-  if(followupStatus==='further_postponed')patients=patients.filter(p=>(p.followup_status||'active')==='further_postponed');
+  if(followupStatus==='active')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='active' && (dntuStreakByPatient[p.id]||0)<3);
+  if(followupStatus==='awaiting_feedback')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='awaiting_feedback');
+  if(followupStatus==='paused')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='paused' || (dntuStreakByPatient[p.id]||0)>=3);
 
   followupPatients=patients;
   const patientIds=patients.map(p=>p.id).filter(Boolean);
@@ -1931,11 +1926,11 @@ async function loadStaffAudit(){
       <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
       <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
       <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
-      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='further_postponed'?'Further Postponed':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
+      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
   }
 
   if(!tbody)return;
-  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='further_postponed'?'further postponed':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
+  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='all'?'all':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
   const latestByPatient={};
   appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
   const grouped={};
@@ -1943,7 +1938,7 @@ async function loadStaffAudit(){
   const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)}</option>`).join('');
   const yearOptions=[2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
   const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
-  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option><option value="further_postponed">Further Postponed</option>`;
+  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option>`;
   const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
   let html='';
   order.forEach(m=>{
@@ -1957,11 +1952,10 @@ async function loadStaffAudit(){
       const nextAppt=nextByPatient[p.id];
       const nextLabel=nextAppt?`${nextAppt.appt_date} ${String(nextAppt.appt_slot||'').slice(0,5)}`:'—';
       const dntuStreak=dntuStreakByPatient[p.id]||0;
-      const manualStatus=p.followup_status||'active';
+      const manualStatus=normaliseFollowupStatus(p.followup_status);
       const rowStatus=(dntuStreak>=3 && manualStatus!=='awaiting_feedback')?'paused':manualStatus;
       const pausedBadge=(rowStatus==='paused'||dntuStreak>=3)?`<br/><span class="dntu-streak paused" style="margin-top:4px;">Paused${dntuStreak?` · ${dntuStreak} DNTU`:''}</span>`:'';
       const awaitingBadge=rowStatus==='awaiting_feedback'?`<br/><span class="dntu-streak awaiting" style="margin-top:4px;">Awaiting Feedback</span>`:'';
-      const furtherBadge=rowStatus==='further_postponed'?`<br/><span class="followup-status-badge further_postponed">Further Postponed</span>`:'';
       html+=`<tr class="followup-click-row ${(rowStatus==='paused'||dntuStreak>=3)?'dntu-row-paused':''}" onclick="openFollowupHistory('${p.id}')" title="Open full follow-up appointment history">
         <td><strong>${htmlSafe(nm)}</strong>${pausedBadge}${awaitingBadge}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
         <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
@@ -1981,7 +1975,7 @@ async function loadStaffAudit(){
     const mEl=document.getElementById('fu-month-'+p.id); if(mEl)mEl.value=String(p.followup_due_month||'');
     const yEl=document.getElementById('fu-year-'+p.id); if(yEl)yEl.value=String(p.followup_year||year);
     const oEl=document.getElementById('fu-owner-'+p.id); if(oEl)oEl.value=p.followup_owner||'Common';
-    const sEl=document.getElementById('fu-status-'+p.id); if(sEl)sEl.value=p.followup_status||((dntuStreakByPatient[p.id]||0)>=3?'paused':'active');
+    const sEl=document.getElementById('fu-status-'+p.id); if(sEl)sEl.value=normaliseFollowupStatus(p.followup_status||((dntuStreakByPatient[p.id]||0)>=3?'paused':'active'));
   });
 }
 async function savePatientFollowup(patientId){
@@ -2013,20 +2007,24 @@ async function openFollowupHistory(patientId){
 }
 
 
+function normaliseFollowupStatus(status){
+  const st=String(status||'active');
+  return (st==='awaiting_feedback'||st==='paused')?st:'active';
+}
 function followupStatusText(status){
+  const st=normaliseFollowupStatus(status);
   return {
     active:'Active',
     awaiting_feedback:'Awaiting Feedback',
-    paused:'Paused',
-    further_postponed:'Further Postponed'
-  }[status||'active']||'Active';
+    paused:'Paused'
+  }[st]||'Active';
 }
 function followupStatusBadge(status,showActive=false){
-  const st=status||'active';
+  const st=normaliseFollowupStatus(status);
   if(st==='active'&&!showActive)return '';
   return `<span class="followup-status-badge ${htmlSafe(st)}">${htmlSafe(followupStatusText(st))}</span>`;
 }
-function patientFollowupStatus(a){return a?.patients?.followup_status||'active';}
+function patientFollowupStatus(a){return normaliseFollowupStatus(a?.patients?.followup_status);}
 
 
 // APPOINTMENT OUTCOMES TAB — filter fix
@@ -2056,8 +2054,8 @@ function currentDntuStreakForPatientAppointments(rows){
   return streak;
 }
 function appointmentOutcomeEffectiveFollowupStatus(patient,streak){
-  const manual=(patient?.followup_status||'active');
-  if(streak>=3 && manual!=='awaiting_feedback' && manual!=='further_postponed')return 'paused';
+  const manual=normaliseFollowupStatus(patient?.followup_status);
+  if(streak>=3 && manual!=='awaiting_feedback')return 'paused';
   return manual;
 }
 async function loadAppointmentOutcomes(){
@@ -2141,7 +2139,7 @@ async function loadAppointmentOutcomes(){
       <div class="sbox"><div class="sl">Active</div><div class="sv">${countStatus('active')}</div><div class="ss" style="color:var(--green)">normal follow-up</div></div>
       <div class="sbox"><div class="sl">Awaiting Feedback</div><div class="sv">${countStatus('awaiting_feedback')}</div><div class="ss" style="color:var(--orange)">manual status</div></div>
       <div class="sbox"><div class="sl">Paused</div><div class="sv">${countStatus('paused')}</div><div class="ss" style="color:var(--red)">paused follow-up</div></div>
-      <div class="sbox"><div class="sl">Further Postponed</div><div class="sv">${countStatus('further_postponed')}</div><div class="ss" style="color:var(--blue)">manual status</div></div>`;
+      `;
   }
 
   if(!rows.length){
@@ -2155,7 +2153,7 @@ async function loadAppointmentOutcomes(){
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'—';
     const nurse=latest.staff?.full_name||latest.bank_staff?.full_name||(!latest.assigned_to&&!latest.bank_staff_id?'Common':'—');
     const latestLabel=latest.appt_date?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)}`:'—';
-    const statusOptions=['active','awaiting_feedback','paused','further_postponed'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
+    const statusOptions=['active','awaiting_feedback','paused'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
     return `<tr class="outcome-click-row" onclick="openFollowupHistory('${r.patientId}')" title="Open full follow-up history">
       <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">Click row for history</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
