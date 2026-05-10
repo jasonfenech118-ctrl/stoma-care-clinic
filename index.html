@@ -328,6 +328,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
 
 
+
+/* APPOINTMENT OUTCOMES */
+.outcome-filter-buttons{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.outcome-btn{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.outcome-btn:hover{border-color:var(--teal);color:var(--teal);}
+.outcome-btn.active{background:var(--teal);border-color:var(--teal);color:white;}
+.followup-status-badge{display:inline-block;margin-top:4px;padding:3px 8px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
+.followup-status-badge.active{background:#e8f5f4;color:var(--teal);}
+.followup-status-badge.awaiting_feedback{background:#fff3cd;color:#856404;}
+.followup-status-badge.paused{background:#f8d7da;color:#721c24;}
+.followup-status-badge.further_postponed{background:#e8eaf6;color:#3949ab;}
+.outcome-click-row{cursor:pointer;}
+.outcome-click-row:hover td{background:#f8fafc!important;}
+
 .registry-lookup-note{margin-top:-6px;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#f8fafc;color:var(--muted);border:1px solid var(--border);}
 .registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
 .registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
@@ -362,6 +376,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   <div class="tabs">
     <div class="tab active" onclick="switchTab('roster',this)">Monthly Roster</div>
     <div class="tab" onclick="switchTab('appointments',this)">Patient Appointments</div>
+    <div class="tab" onclick="switchTab('appointment-outcomes',this)">Appointment Outcomes</div>
     <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
     <div class="tab" onclick="switchTab('staff-audit',this)">Staff Audit</div>
     <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
@@ -484,6 +499,38 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
     </div>
 
+    <!-- APPOINTMENT OUTCOMES -->
+    <div class="page" id="page-appointment-outcomes">
+      <div class="phdr"><div><h2>Appointment Outcomes</h2><p>Separate appointment result from patient follow-up status</p></div></div>
+      <div class="followup-toolbar">
+        <label>Follow-up Status:</label>
+        <div class="outcome-filter-buttons">
+          <button id="ao-filter-all" class="outcome-btn active" onclick="setAppointmentOutcomeFollowupFilter('all')">All</button>
+          <button id="ao-filter-active" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('active')">Active</button>
+          <button id="ao-filter-awaiting_feedback" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('awaiting_feedback')">Awaiting Feedback</button>
+          <button id="ao-filter-paused" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('paused')">Paused</button>
+          <button id="ao-filter-further_postponed" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('further_postponed')">Further Postponed</button>
+        </div>
+        <label>Appointment Outcome:</label>
+        <select id="appointment-outcome-filter" onchange="loadAppointmentOutcomes()">
+          <option value="all">All Outcomes</option>
+          <option value="booked">Booked</option>
+          <option value="attended">Seen / Attended</option>
+          <option value="did_not_attend">DNTU</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <input type="text" id="appointment-outcome-search" placeholder="Search patient, ID card, phone..." oninput="loadAppointmentOutcomes()" style="min-width:240px;"/>
+      </div>
+      <div class="srow" id="appointment-outcomes-stats"></div>
+      <div class="card">
+        <div class="card-title">Patients by follow-up status</div>
+        <div style="overflow-x:auto;"><table class="dt">
+          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Latest Appointment</th><th>Appointment Outcome</th><th>Follow-up Status</th><th>Seen By / Nurse</th><th>Update Status</th><th>Actions</th></tr></thead>
+          <tbody id="appointment-outcomes-tbody"><tr><td colspan="9" class="empty">Select a filter to load appointment outcomes.</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
     <!-- CHANGE OF DUTY -->
     <div class="page" id="page-cod">
       <div class="phdr"><div><h2>Change of Duty</h2><p>Record duty swaps — roster updates automatically</p></div></div>
@@ -551,6 +598,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <option value="active">Active Follow-ups</option>
           <option value="awaiting_feedback">Awaiting Feedback</option>
           <option value="paused">Paused Follow-ups</option>
+          <option value="further_postponed">Further Postponed</option>
           <option value="all">All Follow-ups</option>
         </select>
         <span class="dntu-note">Paused patients are hidden from the normal nurse list. Use Awaiting Feedback or Paused Follow-ups to view those groups separately.</span>
@@ -874,6 +922,7 @@ function switchTab(name,el){
   el.classList.add('active');
   if(name==='staff-audit')loadStaffAudit();
   if(name==='clinic-audit')loadClinicAudit();
+  if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='dntu-policy')loadDntuPolicy();
   if(name==='reports')loadReports();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
@@ -1082,7 +1131,7 @@ async function loadTodaySnapshot(){
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
     <div style="flex:1;min-width:180px;"><div style="font-weight:600;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}</div>
     ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
-    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
+    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>${followupStatusBadge(a.patients?.followup_status)}
     <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
       ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setAS('${a.id}','attended')">✅</button>`:''}
       ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setAS('${a.id}','did_not_attend')">DNTU</button>`:''}
@@ -1374,7 +1423,7 @@ async function loadAppts(){
           ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞 ${htmlSafe(appt.patients.phone_number)}</div>`:''}
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
-            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
+            <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>${followupStatusBadge(appt.patients?.followup_status)}
             ${appt.status!=='attended'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
             ${appt.status!=='cancelled'?`<button title="Cancel" onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">✖</button>`:''}
@@ -1402,6 +1451,7 @@ async function refreshAppointmentViews(){
   loadTodaySnapshot();
   if(document.getElementById('page-clinic-audit')?.classList.contains('active'))loadClinicAudit();
   if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
+  if(document.getElementById('page-appointment-outcomes')?.classList.contains('active'))loadAppointmentOutcomes();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
@@ -1434,6 +1484,7 @@ async function editAppointment(id){
       <option value="active" ${(enriched.patients?.followup_status||'active')==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${enriched.patients?.followup_status==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${enriched.patients?.followup_status==='paused'?'selected':''}>Paused</option>
+      <option value="further_postponed" ${enriched.patients?.followup_status==='further_postponed'?'selected':''}>Further Postponed</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
@@ -1745,6 +1796,7 @@ async function loadStaffAudit(){
   if(followupStatus==='active')patients=patients.filter(p=>(p.followup_status||'active')==='active' && (dntuStreakByPatient[p.id]||0)<3);
   if(followupStatus==='awaiting_feedback')patients=patients.filter(p=>(p.followup_status||'active')==='awaiting_feedback');
   if(followupStatus==='paused')patients=patients.filter(p=>(p.followup_status||'active')==='paused' || (dntuStreakByPatient[p.id]||0)>=3);
+  if(followupStatus==='further_postponed')patients=patients.filter(p=>(p.followup_status||'active')==='further_postponed');
 
   followupPatients=patients;
   const patientIds=patients.map(p=>p.id).filter(Boolean);
@@ -1768,11 +1820,11 @@ async function loadStaffAudit(){
       <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
       <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
       <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
-      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
+      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='further_postponed'?'Further Postponed':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
   }
 
   if(!tbody)return;
-  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
+  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='further_postponed'?'further postponed':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
   const latestByPatient={};
   appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
   const grouped={};
@@ -1780,7 +1832,7 @@ async function loadStaffAudit(){
   const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)}</option>`).join('');
   const yearOptions=[2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
   const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
-  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option>`;
+  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option><option value="further_postponed">Further Postponed</option>`;
   const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
   let html='';
   order.forEach(m=>{
@@ -1798,6 +1850,7 @@ async function loadStaffAudit(){
       const rowStatus=(dntuStreak>=3 && manualStatus!=='awaiting_feedback')?'paused':manualStatus;
       const pausedBadge=(rowStatus==='paused'||dntuStreak>=3)?`<br/><span class="dntu-streak paused" style="margin-top:4px;">Paused${dntuStreak?` · ${dntuStreak} DNTU`:''}</span>`:'';
       const awaitingBadge=rowStatus==='awaiting_feedback'?`<br/><span class="dntu-streak awaiting" style="margin-top:4px;">Awaiting Feedback</span>`:'';
+      const furtherBadge=rowStatus==='further_postponed'?`<br/><span class="followup-status-badge further_postponed">Further Postponed</span>`:'';
       html+=`<tr class="followup-click-row ${(rowStatus==='paused'||dntuStreak>=3)?'dntu-row-paused':''}" onclick="openFollowupHistory('${p.id}')" title="Open full follow-up appointment history">
         <td><strong>${htmlSafe(nm)}</strong>${pausedBadge}${awaitingBadge}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
         <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
@@ -1838,7 +1891,7 @@ async function openFollowupHistory(patientId){
   const rows=appts.length?appts.map(a=>`<tr>
     <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
-    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span></td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span> ${followupStatusBadge(a.patients?.followup_status)}</td>
     <td><button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button></td>
   </tr>`).join(''):'<tr><td colspan="5" class="empty">No appointment history found</td></tr>';
   document.getElementById('mb').innerHTML=`<h2>Follow-up History</h2>
@@ -1847,6 +1900,22 @@ async function openFollowupHistory(patientId){
     <div class="mact"><button class="btn-cancel" onclick="closeModal();loadStaffAudit();">Close</button><button class="btn-save" onclick="openPatientRebookModal('${patientId}')">Rebook Patient</button></div>`;
   openMo();
 }
+
+
+function followupStatusText(status){
+  return {
+    active:'Active',
+    awaiting_feedback:'Awaiting Feedback',
+    paused:'Paused',
+    further_postponed:'Further Postponed'
+  }[status||'active']||'Active';
+}
+function followupStatusBadge(status,showActive=false){
+  const st=status||'active';
+  if(st==='active'&&!showActive)return '';
+  return `<span class="followup-status-badge ${htmlSafe(st)}">${htmlSafe(followupStatusText(st))}</span>`;
+}
+function patientFollowupStatus(a){return a?.patients?.followup_status||'active';}
 
 // CLINIC AUDIT
 let clinicAuditData=[];
@@ -1921,7 +1990,7 @@ function renderClinicCalendar(data,month,year){
     const shown=appts.slice(0,5);
     html+=`<div class="clinic-day ${appts.length?'has-appts':''}">
       <div class="clinic-day-num"><span>${d}</span>${appts.length?`<span class="clinic-day-count">${appts.length}</span>`:''}</div>
-      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status)}</div>`).join('')}
+      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status)} ${followupStatusBadge(a.patients?.followup_status)}</div>`).join('')}
       ${appts.length>5?`<div class="clinic-more">+ ${appts.length-5} more</div>`:''}
     </div>`;
   }
@@ -1941,7 +2010,7 @@ function renderClinicMonthlyList(data){
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
       <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
       <td>${htmlSafe(clinicNurseName(a))}</td>
-      <td>${clinicBadge(a.status)}</td>
+      <td>${clinicBadge(a.status)} ${followupStatusBadge(a.patients?.followup_status)}</td>
       <td style="white-space:nowrap;">
         ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setOutcome('${a.id}','attended')">✅</button>`:''}
         ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" title="DNTU" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>`:''}
