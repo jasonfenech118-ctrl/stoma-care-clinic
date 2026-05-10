@@ -1424,11 +1424,16 @@ async function editAppointment(id){
     <div class="fg"><label>Appointment Date *</label><input type="date" id="e-date" value="${htmlSafe(enriched.appt_date||'')}"/></div>
     <div class="fg"><label>Appointment Time *</label><input type="time" id="e-slot" value="${htmlSafe(String(enriched.appt_slot||'').slice(0,5))}"/></div>
     <div class="fg"><label>Nurse / Column</label><select id="e-nurse"><option value="common" ${currentNurse==='common'?'selected':''}>Common</option>${coreOptions}${bankOptions}</select></div>
-    <div class="fg"><label>Outcome</label><select id="e-status">
+    <div class="fg"><label>Appointment Outcome</label><select id="e-status">
       <option value="booked" ${enriched.status==='booked'?'selected':''}>Booked</option>
-      <option value="attended" ${enriched.status==='attended'?'selected':''}>Seen</option>
+      <option value="attended" ${enriched.status==='attended'?'selected':''}>Seen / Attended</option>
       <option value="did_not_attend" ${enriched.status==='did_not_attend'?'selected':''}>DNTU</option>
       <option value="cancelled" ${enriched.status==='cancelled'?'selected':''}>Cancelled</option>
+    </select></div>
+    <div class="fg"><label>Follow-up Status</label><select id="e-followup-status">
+      <option value="active" ${(enriched.patients?.followup_status||'active')==='active'?'selected':''}>Active</option>
+      <option value="awaiting_feedback" ${enriched.patients?.followup_status==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
+      <option value="paused" ${enriched.patients?.followup_status==='paused'?'selected':''}>Paused</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
@@ -1442,8 +1447,9 @@ async function saveEditedAppointment(apptId,patientId){
   const slot=document.getElementById('e-slot').value;
   const nurse=document.getElementById('e-nurse').value;
   const status=document.getElementById('e-status').value;
+  const followupStatus=document.getElementById('e-followup-status')?.value||'active';
   if(!fn||!sn||!idcard||!date||!slot){alert('Please fill in first name, surname, ID card, date and time.');return;}
-  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null};
+  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_status:followupStatus};
   const{error:pErr}=await SB.from('patients').update(patientUpdate).eq('id',patientId);
   if(pErr){alert('Patient update error: '+pErr.message);return;}
   const apptUpdate={appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status};
