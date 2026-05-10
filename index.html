@@ -1917,6 +1917,157 @@ function followupStatusBadge(status,showActive=false){
 }
 function patientFollowupStatus(a){return a?.patients?.followup_status||'active';}
 
+
+// APPOINTMENT OUTCOMES TAB — filter fix
+let appointmentOutcomeFollowupFilter='all';
+function setAppointmentOutcomeFollowupFilter(filter){
+  appointmentOutcomeFollowupFilter=filter||'all';
+  document.querySelectorAll('.outcome-btn').forEach(btn=>btn.classList.remove('active'));
+  const activeBtn=document.getElementById('ao-filter-'+appointmentOutcomeFollowupFilter);
+  if(activeBtn)activeBtn.classList.add('active');
+  loadAppointmentOutcomes();
+}
+function compareAppointmentDesc(a,b){
+  const ad=String(a?.appt_date||'');
+  const bd=String(b?.appt_date||'');
+  if(ad!==bd)return bd.localeCompare(ad);
+  return String(b?.appt_slot||'').localeCompare(String(a?.appt_slot||''));
+}
+function currentDntuStreakForPatientAppointments(rows){
+  const sorted=[...(rows||[])].sort(compareAppointmentDesc);
+  let streak=0;
+  for(const a of sorted){
+    if(a.status==='did_not_attend')streak++;
+    else if(a.status==='attended'||a.status==='cancelled')break;
+    else if(a.status==='booked')continue;
+    else break;
+  }
+  return streak;
+}
+function appointmentOutcomeEffectiveFollowupStatus(patient,streak){
+  const manual=(patient?.followup_status||'active');
+  if(streak>=3 && manual!=='awaiting_feedback' && manual!=='further_postponed')return 'paused';
+  return manual;
+}
+async function loadAppointmentOutcomes(){
+  const tbody=document.getElementById('appointment-outcomes-tbody');
+  const stats=document.getElementById('appointment-outcomes-stats');
+  if(!tbody)return;
+
+  const outcomeFilter=document.getElementById('appointment-outcome-filter')?.value||'all';
+  const search=(document.getElementById('appointment-outcome-search')?.value||'').trim().toLowerCase();
+
+  tbody.innerHTML='<tr><td colspan="9" class="empty">Loading appointment outcomes...</td></tr>';
+
+  const{data:raw,error}=await SB.from('appointments')
+    .select('*')
+    .order('appt_date',{ascending:false})
+    .order('appt_slot',{ascending:false})
+    .limit(2000);
+
+  if(error){
+    console.error('Appointment Outcomes load error:',error);
+    tbody.innerHTML=`<tr><td colspan="9" class="empty">Could not load appointment outcomes: ${htmlSafe(error.message||'Unknown error')}</td></tr>`;
+    return;
+  }
+
+  const appts=await enrichAppointments(raw||[]);
+  const byPatient={};
+  (appts||[]).forEach(a=>{
+    const pid=a.patient_id;
+    if(!pid)return;
+    if(!byPatient[pid])byPatient[pid]=[];
+    byPatient[pid].push(a);
+  });
+
+  let rows=Object.entries(byPatient).map(([patientId,list])=>{
+    const sorted=list.sort(compareAppointmentDesc);
+    const latest=sorted[0];
+    const patient=latest?.patients||{};
+    const streak=currentDntuStreakForPatientAppointments(sorted);
+    const followupStatus=appointmentOutcomeEffectiveFollowupStatus(patient,streak);
+    return {patientId,patient,latest,history:sorted,streak,followupStatus};
+  });
+
+  if(appointmentOutcomeFollowupFilter!=='all'){
+    rows=rows.filter(r=>r.followupStatus===appointmentOutcomeFollowupFilter);
+  }
+  if(outcomeFilter!=='all'){
+    rows=rows.filter(r=>r.latest?.status===outcomeFilter);
+  }
+  if(search){
+    rows=rows.filter(r=>{
+      const hay=[
+        r.patient?.first_name,
+        r.patient?.surname,
+        r.patient?.id_card,
+        r.patient?.phone_number,
+        r.latest?.appt_date,
+        String(r.latest?.appt_slot||'').slice(0,5),
+        statusLabel(r.latest?.status),
+        r.latest?.staff?.full_name,
+        r.latest?.bank_staff?.full_name,
+        r.followupStatus
+      ].join(' ').toLowerCase();
+      return hay.includes(search);
+    });
+  }
+
+  rows.sort((a,b)=>compareAppointmentDesc(a.latest,b.latest));
+
+  const allRows=Object.entries(byPatient).map(([patientId,list])=>{
+    const sorted=list.sort(compareAppointmentDesc);
+    const latest=sorted[0];
+    const patient=latest?.patients||{};
+    const streak=currentDntuStreakForPatientAppointments(sorted);
+    const followupStatus=appointmentOutcomeEffectiveFollowupStatus(patient,streak);
+    return {patientId,patient,latest,history:sorted,streak,followupStatus};
+  });
+  const countStatus=st=>allRows.filter(r=>r.followupStatus===st).length;
+  if(stats){
+    stats.innerHTML=`
+      <div class="sbox"><div class="sl">All Patients</div><div class="sv">${allRows.length}</div><div class="ss">with appointments</div></div>
+      <div class="sbox"><div class="sl">Active</div><div class="sv">${countStatus('active')}</div><div class="ss" style="color:var(--green)">normal follow-up</div></div>
+      <div class="sbox"><div class="sl">Awaiting Feedback</div><div class="sv">${countStatus('awaiting_feedback')}</div><div class="ss" style="color:var(--orange)">manual status</div></div>
+      <div class="sbox"><div class="sl">Paused</div><div class="sv">${countStatus('paused')}</div><div class="ss" style="color:var(--red)">paused follow-up</div></div>
+      <div class="sbox"><div class="sl">Further Postponed</div><div class="sv">${countStatus('further_postponed')}</div><div class="ss" style="color:var(--blue)">manual status</div></div>`;
+  }
+
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="9" class="empty">No patients match this filter.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML=rows.map(r=>{
+    const p=r.patient||{};
+    const latest=r.latest||{};
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'—';
+    const nurse=latest.staff?.full_name||latest.bank_staff?.full_name||(!latest.assigned_to&&!latest.bank_staff_id?'Common':'—');
+    const latestLabel=latest.appt_date?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)}`:'—';
+    const statusOptions=['active','awaiting_feedback','paused','further_postponed'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
+    return `<tr class="outcome-click-row" onclick="openFollowupHistory('${r.patientId}')" title="Open full follow-up history">
+      <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">Click row for history</span></td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${htmlSafe(p.phone_number||'—')}</td>
+      <td>${htmlSafe(latestLabel)}</td>
+      <td><span class="status-badge ${latest.status==='attended'?'sb-attended':latest.status==='cancelled'?'sb-cancelled':latest.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(latest.status)}</span></td>
+      <td>${followupStatusBadge(r.followupStatus,true)}${r.streak>=3?`<br/><span class="dntu-streak paused" style="margin-top:4px;">${r.streak} DNTU streak</span>`:''}</td>
+      <td>${htmlSafe(nurse)}</td>
+      <td onclick="event.stopPropagation();"><select class="followup-small-select" id="ao-status-${r.patientId}">${statusOptions}</select><button class="ncb-btn" style="margin-left:4px;background:#e8f5f4;color:var(--teal);" onclick="saveAppointmentOutcomeFollowupStatus('${r.patientId}')">Save</button></td>
+      <td onclick="event.stopPropagation();"><button class="ncb-btn" onclick="editAppointment('${latest.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button><button class="ncb-btn" onclick="openPatientRebookModal('${r.patientId}')" style="margin-left:4px;background:#fff8e1;color:#856404;">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${r.patientId}')" style="margin-left:4px;background:#edf1f5;color:var(--navy);">History</button></td>
+    </tr>`;
+  }).join('');
+}
+async function saveAppointmentOutcomeFollowupStatus(patientId){
+  const status=document.getElementById('ao-status-'+patientId)?.value||'active';
+  const{error}=await SB.from('patients').update({followup_status:status}).eq('id',patientId);
+  if(error){alert('Could not update follow-up status: '+error.message);return;}
+  loadAppointmentOutcomes();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+  if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+
 // CLINIC AUDIT
 let clinicAuditData=[];
 const CLINIC_MONTHS={
