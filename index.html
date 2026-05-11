@@ -358,6 +358,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .book-replacement-btn{width:100%;padding:8px 8px!important;margin-top:8px!important;border:2px dashed #0d7377!important;border-radius:9px!important;background:#f0faf9!important;color:#0d7377!important;font-size:11px!important;font-weight:800!important;cursor:pointer!important;}
 .book-replacement-btn:hover{background:#e0f3f1!important;}
 .appt-action-row{margin-top:6px!important;display:flex!important;gap:5px!important;flex-wrap:wrap!important;align-items:center!important;border-top:1px solid rgba(13,115,119,.12);padding-top:6px;}
+
+/* v30AF — make ID card and telephone highly visible on appointment cards */
+.appt-patient-name{font-size:13px!important;font-weight:800!important;color:#10243d!important;line-height:1.2;margin-bottom:5px;}
+.appt-contact-row{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 5px 0;align-items:center;}
+.appt-contact-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:8px;font-size:11px;font-weight:900;line-height:1.15;letter-spacing:.15px;background:#eef6ff;color:#0f3a5f;border:1px solid #bfdbfe;box-shadow:0 1px 2px rgba(15,58,95,.06);}
+.appt-contact-pill.phone{background:#fff1f2;color:#9f1239;border-color:#fecdd3;}
+.appt-contact-label{font-size:8px;text-transform:uppercase;letter-spacing:.35px;opacity:.8;font-weight:900;}
+.appt-contact-value{font-family:'Inter',sans-serif;font-size:11px;font-weight:900;}
 .outcome-click-row{cursor:pointer;}
 .outcome-click-row:hover td{background:#f8fafc!important;}
 
@@ -1211,7 +1219,7 @@ async function loadTodaySnapshot(){
   const sl={booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'};
   body.innerHTML=appts.map(a=>`<div class="pt-row" style="align-items:flex-start;">
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
-    <div style="flex:1;min-width:180px;"><div style="font-weight:600;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div>${a.patients?.phone_number?`<div style="font-size:11px;color:var(--muted);">📞 ${htmlSafe(a.patients.phone_number)}</div>`:''}${followupStatusBadge(a.patients?.followup_status)}</div>
+    <div style="flex:1;min-width:180px;"><div style="font-weight:700;">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div><div class="appt-contact-row" style="margin-top:4px;"><span class="appt-contact-pill"><span class="appt-contact-label">ID</span><span class="appt-contact-value">${htmlSafe(a.patients?.id_card||'No ID')}</span></span>${a.patients?.phone_number?`<span class="appt-contact-pill phone"><span class="appt-contact-label">Tel</span><span class="appt-contact-value">☎ ${htmlSafe(a.patients.phone_number)}</span></span>`:''}</div>${followupStatusBadge(a.patients?.followup_status)}</div>
     ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
     <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
     <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
@@ -1448,16 +1456,26 @@ function appointmentMatchesNurseColumn(a,n){
 function appointmentsForSlotAndColumn(appts,slot,n){
   return (appts||[]).filter(a=>String(a.appt_slot||'').slice(0,5)===slot && appointmentMatchesNurseColumn(a,n));
 }
+
+function visiblePatientContactHTML(patient){
+  const id=htmlSafe(patient?.id_card||'No ID');
+  const phone=htmlSafe(patient?.phone_number||'No phone');
+  return `<div class="appt-contact-row">
+    <span class="appt-contact-pill"><span class="appt-contact-label">ID</span><span class="appt-contact-value">${id}</span></span>
+    <span class="appt-contact-pill phone"><span class="appt-contact-label">Tel</span><span class="appt-contact-value">☎ ${phone}</span></span>
+  </div>`;
+}
+
 function cancelledSlotHistoryHTML(cancelledRows){
   const rows=cancelledRows||[];
   if(!rows.length)return '';
   const shown=rows.slice(0,5).map(a=>{
     const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Patient';
-    const id=a.patients?.id_card?` · ${htmlSafe(a.patients.id_card)}`:'';
-    const phone=a.patients?.phone_number?` · 📞 ${htmlSafe(a.patients.phone_number)}`:'';
+    const id=a.patients?.id_card?htmlSafe(a.patients.id_card):'No ID';
+    const phone=a.patients?.phone_number?htmlSafe(a.patients.phone_number):'No phone';
     return `<div class="cancel-history-item">
       <span class="cancel-chip">CANCELLED</span>
-      <span class="cancel-text">${htmlSafe(nm)}${id}${phone}</span>
+      <span class="cancel-text"><strong>${htmlSafe(nm)}</strong><br/><span style="font-weight:900;">ID ${id}</span> · <span style="font-weight:900;">☎ ${phone}</span></span>
     </div>`;
   }).join('');
   const more=rows.length>5?`<div style="font-size:10px;color:#7f1d1d;margin-top:6px;font-weight:700;">+ ${rows.length-5} more cancelled record${rows.length-5!==1?'s':''} kept</div>`:'';
@@ -1569,9 +1587,8 @@ async function loadAppts(){
         const sl={booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[appt.status]||'';
         const nm=`${appt.patients?.first_name||''} ${appt.patients?.surname||''}`.trim();
         html+=`<td class="appt-cell-card ${appt.status==='attended'?'attended':appt.status==='did_not_attend'?'dntu':'booked'}" style="padding:8px 10px;background:${bg};vertical-align:top;">
-          <div style="font-weight:600;font-size:12px;">${htmlSafe(nm)}</div>
-          <div style="font-size:10px;color:#7a8fa6;">${htmlSafe(appt.patients?.id_card||'')}</div>
-          ${appt.patients?.phone_number?`<div style="font-size:10px;color:#7a8fa6;">📞 ${htmlSafe(appt.patients.phone_number)}</div>`:''}
+          <div class="appt-patient-name">${htmlSafe(nm)}</div>
+          ${visiblePatientContactHTML(appt.patients)}
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
             <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
