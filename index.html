@@ -1416,6 +1416,36 @@ async function getNursesWithBookings(date, workingNurses){
   return extraNurses;
 }
 
+
+
+function appointmentMatchesNurseColumn(a,n){
+  if(!a||!n)return false;
+  if(n.type==='common') return !a.assigned_to && !a.bank_staff_id;
+  if(n.type==='core-ot') return String(a.assigned_to||'')===String(n.id||'') || (n.bankId && String(a.bank_staff_id||'')===String(n.bankId));
+  if(n.type==='ot'||n.type==='ot-booked') return String(a.bank_staff_id||'')===String(n.id||'') || String(a.assigned_to||'')===String(n.id||'');
+  return String(a.assigned_to||'')===String(n.id||'');
+}
+function appointmentsForSlotAndColumn(appts,slot,n){
+  return (appts||[]).filter(a=>String(a.appt_slot||'').slice(0,5)===slot && appointmentMatchesNurseColumn(a,n));
+}
+function cancelledSlotHistoryHTML(cancelledRows){
+  const rows=cancelledRows||[];
+  if(!rows.length)return '';
+  const shown=rows.slice(0,4).map(a=>{
+    const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Patient';
+    const id=a.patients?.id_card?` · ${htmlSafe(a.patients.id_card)}`:'';
+    return `<div style="display:flex;align-items:center;gap:5px;margin-top:3px;padding:4px 6px;border-radius:6px;background:#fff5f5;border:1px solid #f1c4c4;">
+      <span style="font-size:9px;font-weight:800;color:#721c24;background:#f8d7da;border-radius:8px;padding:1px 5px;white-space:nowrap;">CANCELLED</span>
+      <span style="font-size:10px;color:#721c24;line-height:1.2;">${htmlSafe(nm)}${id}</span>
+    </div>`;
+  }).join('');
+  const more=rows.length>4?`<div style="font-size:10px;color:#721c24;margin-top:3px;">+ ${rows.length-4} more cancelled record${rows.length-4!==1?'s':''}</div>`:'';
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e7a6a6;">
+    <div style="font-size:9px;font-weight:800;letter-spacing:.3px;color:#721c24;text-transform:uppercase;">Cancelled history kept</div>
+    ${shown}${more}
+  </div>`;
+}
+
 async function loadAppts(){
   const date=document.getElementById('appt-date').value;
   if(!date)return;
@@ -1509,14 +1539,9 @@ async function loadAppts(){
   SLOTS.forEach(slot=>{
     html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
     nurses.forEach(n=>{
-      const appt=(appts||[]).find(a=>{
-        const s=String(a.appt_slot||'').slice(0,5);
-        if(s!==slot)return false;
-        if(n.type==='common') return !a.assigned_to && !a.bank_staff_id;
-        if(n.type==='core-ot') return String(a.assigned_to||'')===String(n.id||'') || (n.bankId && String(a.bank_staff_id||'')===String(n.bankId));
-        if(n.type==='ot'||n.type==='ot-booked') return String(a.bank_staff_id||'')===String(n.id||'') || String(a.assigned_to||'')===String(n.id||'');
-        return String(a.assigned_to||'')===String(n.id||'');
-      });
+      const slotAppts=appointmentsForSlotAndColumn(appts,slot,n);
+      const appt=slotAppts.find(a=>a.status!=='cancelled');
+      const cancelledHere=slotAppts.filter(a=>a.status==='cancelled');
       const cellBg=n.type==='common'?'#fafafa':(n.type==='absent'||n.type==='ot-booked')?'#fff5f5':'#fff';
       if(appt){
         const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
@@ -1531,6 +1556,7 @@ async function loadAppts(){
             <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
           </div>
           ${followupStatusBadge(appt.patients?.followup_status)}
+          ${cancelledSlotHistoryHTML(cancelledHere)}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
             ${appt.status!=='attended'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
@@ -1542,8 +1568,9 @@ async function loadAppts(){
       }else if(n.type==='absent'||n.type==='ot-booked'){
         html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;">Not rostered</td>`;
       }else{
-        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};border-radius:7px;">
-          <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" style="width:100%;padding:6px;border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">+ Book</button>
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};border-radius:7px;vertical-align:top;">
+          ${cancelledSlotHistoryHTML(cancelledHere)}
+          <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" style="width:100%;padding:6px;margin-top:${cancelledHere.length?'7px':'0'};border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">${cancelledHere.length?'+ Book replacement patient':'+ Book'}</button>
         </td>`;
       }
     });
@@ -1786,7 +1813,15 @@ async function doBook(slot,date,nurseIdParam,nurseType){
   if(manualNurse.startsWith('bank:')) payload.bank_staff_id=manualNurse.replace('bank:','');
 
   const{error}=await SB.from('appointments').insert(payload);
-  if(error){alert('Booking error: '+error.message);return;}
+  if(error){
+    const msg=String(error.message||'');
+    if(msg.toLowerCase().includes('duplicate')||msg.toLowerCase().includes('unique')){
+      alert('Booking blocked by a database slot rule. The cancelled records are kept, but Supabase still has a unique slot constraint. Tell me and I will give you the small SQL fix.');
+    }else{
+      alert('Booking error: '+msg);
+    }
+    return;
+  }
   closeModal();loadAppts();loadTodaySnapshot();if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 
@@ -2675,7 +2710,15 @@ async function saveAppt(slot,date,nurseId){
     assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
     status:'booked'
   });
-  if(error){alert('Booking error: '+error.message);return;}
+  if(error){
+    const msg=String(error.message||'');
+    if(msg.toLowerCase().includes('duplicate')||msg.toLowerCase().includes('unique')){
+      alert('Booking blocked by a database slot rule. The cancelled records are kept, but Supabase still has a unique slot constraint. Tell me and I will give you the small SQL fix.');
+    }else{
+      alert('Booking error: '+msg);
+    }
+    return;
+  }
   closeModal();loadAppts();loadTodaySnapshot();
 }
 
