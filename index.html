@@ -349,6 +349,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .followup-status-badge.active{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 .followup-status-badge.awaiting_feedback{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 .followup-status-badge.paused{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;}
+.followup-status-badge.deceased{background:#111827;color:#fff;border:1px solid #111827;}
 
 
 /* v30AE — clearer appointment cells and cancelled-slot rebooking history */
@@ -552,6 +553,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <button id="ao-filter-active" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('active')">Active</button>
           <button id="ao-filter-awaiting_feedback" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('awaiting_feedback')">Awaiting Feedback</button>
           <button id="ao-filter-paused" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('paused')">Paused</button>
+          <button id="ao-filter-deceased" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('deceased')">Deceased</button>
         </div>
         <label>Appointment Outcome:</label>
         <select id="appointment-outcome-filter" onchange="loadAppointmentOutcomes()">
@@ -640,9 +642,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <option value="active">Active Follow-ups</option>
           <option value="awaiting_feedback">Awaiting Feedback</option>
           <option value="paused">Paused Follow-ups</option>
+          <option value="deceased">Deceased</option>
           <option value="all">All Follow-ups</option>
         </select>
-        <span class="dntu-note">Paused patients are hidden from the normal nurse list. Use Awaiting Feedback or Paused Follow-ups to view those groups separately.</span>
+        <span class="dntu-note">Paused and deceased patients are hidden from the normal active nurse list. Use Awaiting Feedback, Paused, or Deceased to view those groups separately.</span>
       </div>
       <div class="srow" id="followup-stats"></div>
       <div class="card">
@@ -1781,11 +1784,12 @@ async function openOutcomeFollowupModal(apptId,status){
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
+      <option value="deceased" ${statusDefault==='deceased'?'selected':''}>Deceased</option>
     </select></div>
     <div class="fg"><label>Type of follow-up / episode</label><select id="of-followup-type">
       <option value="follow_up" ${normaliseFollowupType(p.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
       <option value="new_case" ${normaliseFollowupType(p.followup_type)==='new_case'?'selected':''}>New case</option>
-    </select></div>
+    </select><div class="dntu-note" style="margin-top:5px;">If this outcome is Seen / Attended, a New case is automatically moved to normal Follow-up after saving.</div></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Outcome</button></div>`;
   openMo();
 }
@@ -1795,11 +1799,12 @@ async function saveOutcomeFollowup(apptId,patientId){
   const year=document.getElementById('of-year')?.value;
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
   const followupType=document.getElementById('of-followup-type')?.value||'follow_up';
+  const savedFollowupType=status==='attended'?'follow_up':normaliseFollowupType(followupType);
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
   const{error:aErr}=await saveAppointmentOutcomeAudit(apptId,status);
   if(aErr){alert('Could not save appointment outcome: '+aErr.message);return;}
   if(patientId){
-    const{error:pErr}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_status:followupStatus,followup_type:normaliseFollowupType(followupType)}).eq('id',patientId);
+    const{error:pErr}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_status:followupStatus,followup_type:savedFollowupType}).eq('id',patientId);
     if(pErr){alert('Outcome saved, but follow-up due details could not be saved: '+pErr.message);}
   }
   closeModal();
@@ -1832,12 +1837,13 @@ async function editAppointment(id){
     <div class="fg"><label>Follow-up Status</label><select id="e-followup-status">
       <option value="active" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${enriched.patients?.followup_status==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
-      <option value="paused" ${enriched.patients?.followup_status==='paused'?'selected':''}>Paused</option>
+      <option value="paused" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='paused'?'selected':''}>Paused</option>
+      <option value="deceased" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='deceased'?'selected':''}>Deceased</option>
     </select></div>
     <div class="fg"><label>Type of follow-up / episode</label><select id="e-followup-type">
       <option value="follow_up" ${normaliseFollowupType(enriched.patients?.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
       <option value="new_case" ${normaliseFollowupType(enriched.patients?.followup_type)==='new_case'?'selected':''}>New case</option>
-    </select></div>
+    </select><div class="dntu-note" style="margin-top:5px;">If saved as Seen / Attended, a New case is automatically moved to normal Follow-up.</div></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
 }
@@ -1852,8 +1858,9 @@ async function saveEditedAppointment(apptId,patientId){
   const status=document.getElementById('e-status').value;
   const followupStatus=document.getElementById('e-followup-status')?.value||'active';
   const followupType=document.getElementById('e-followup-type')?.value||'follow_up';
+  const savedFollowupType=status==='attended'?'follow_up':normaliseFollowupType(followupType);
   if(!fn||!sn||!idcard||!date||!slot){alert('Please fill in first name, surname, ID card, date and time.');return;}
-  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_status:followupStatus,followup_type:normaliseFollowupType(followupType)};
+  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_status:followupStatus,followup_type:savedFollowupType};
   const{error:pErr}=await SB.from('patients').update(patientUpdate).eq('id',patientId);
   if(pErr){alert('Patient update error: '+pErr.message);return;}
   const apptUpdate={appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status};
@@ -2162,7 +2169,8 @@ async function loadStaffAudit(){
 
   if(followupStatus==='active')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='active' && (dntuStreakByPatient[p.id]||0)<3);
   if(followupStatus==='awaiting_feedback')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='awaiting_feedback');
-  if(followupStatus==='paused')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='paused' || (dntuStreakByPatient[p.id]||0)>=3);
+  if(followupStatus==='paused')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='paused' || (normaliseFollowupStatus(p.followup_status)!=='deceased' && (dntuStreakByPatient[p.id]||0)>=3));
+  if(followupStatus==='deceased')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='deceased');
 
   followupPatients=patients;
   const patientIds=patients.map(p=>p.id).filter(Boolean);
@@ -2190,7 +2198,7 @@ async function loadStaffAudit(){
   }
 
   if(!tbody)return;
-  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='all'?'all':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
+  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='deceased'?'deceased':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='all'?'all':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
   const latestByPatient={};
   appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
   const grouped={};
@@ -2268,15 +2276,16 @@ async function openFollowupHistory(patientId){
 
 
 function normaliseFollowupStatus(status){
-  const st=String(status||'active');
-  return (st==='awaiting_feedback'||st==='paused')?st:'active';
+  const st=String(status||'active').trim().toLowerCase();
+  return (st==='awaiting_feedback'||st==='paused'||st==='deceased')?st:'active';
 }
 function followupStatusText(status){
   const st=normaliseFollowupStatus(status);
   return {
     active:'Active',
     awaiting_feedback:'Awaiting Feedback',
-    paused:'Paused'
+    paused:'Paused',
+    deceased:'Deceased'
   }[st]||'Active';
 }
 function normaliseFollowupType(type){
@@ -2346,6 +2355,7 @@ function currentDntuStreakForPatientAppointments(rows){
 }
 function appointmentOutcomeEffectiveFollowupStatus(patient,streak){
   const manual=normaliseFollowupStatus(patient?.followup_status);
+  if(manual==='deceased')return 'deceased';
   if(streak>=3 && manual!=='awaiting_feedback')return 'paused';
   return manual;
 }
@@ -2430,6 +2440,7 @@ async function loadAppointmentOutcomes(){
       <div class="sbox"><div class="sl">Active</div><div class="sv">${countStatus('active')}</div><div class="ss" style="color:var(--green)">normal follow-up</div></div>
       <div class="sbox"><div class="sl">Awaiting Feedback</div><div class="sv">${countStatus('awaiting_feedback')}</div><div class="ss" style="color:var(--orange)">manual status</div></div>
       <div class="sbox"><div class="sl">Paused</div><div class="sv">${countStatus('paused')}</div><div class="ss" style="color:var(--red)">paused follow-up</div></div>
+      <div class="sbox"><div class="sl">Deceased</div><div class="sv">${countStatus('deceased')}</div><div class="ss" style="color:#111827">removed from active planning</div></div>
       `;
   }
 
@@ -2444,7 +2455,7 @@ async function loadAppointmentOutcomes(){
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'—';
     const nurse=latest.staff?.full_name||latest.bank_staff?.full_name||(!latest.assigned_to&&!latest.bank_staff_id?'Common':'—');
     const latestLabel=latest.appt_date?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)}`:'—';
-    const statusOptions=['active','awaiting_feedback','paused'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
+    const statusOptions=['active','awaiting_feedback','paused','deceased'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
     return `<tr class="outcome-click-row" onclick="openFollowupHistory('${r.patientId}')" title="Open full follow-up history">
       <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">Click row for history</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
@@ -2918,6 +2929,7 @@ async function openModal(type,...args){
       <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
       <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
+      <div class="fg"><label>Booking type</label><select id="p-followup-type"><option value="follow_up">Follow-up</option><option value="new_case">New case</option></select><div class="dntu-note" style="margin-top:5px;">A new case will automatically become a normal follow-up after the first Seen / Attended outcome.</div></div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
@@ -2953,10 +2965,14 @@ async function saveAppt(slot,date,nurseId){
   const sn=document.getElementById('p-sn').value.trim();
   const idno=normaliseIdCard(document.getElementById('p-id').value);
   const phone=document.getElementById('p-phone')?.value.trim()||'';
+  const bookingFollowupType=normaliseFollowupType(document.getElementById('p-followup-type')?.value||'follow_up');
   if(!fn||!sn||!idno){alert('Please enter the ID card first, then confirm first name and surname.');return;}
   const saved=await saveOrUpdatePatientByIdCard(idno,fn,sn,phone);
   if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
   const patId=saved.patient.id;
+  // Set the patient as Follow-up or New case at booking time.
+  // If later marked Seen / Attended, the outcome workflow automatically moves New case back to normal Follow-up.
+  await SB.from('patients').update({followup_type:bookingFollowupType,followup_status:'active'}).eq('id',patId);
   const{error}=await SB.from('appointments').insert({
     patient_id:patId,appt_date:date,appt_slot:slot,
     assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
