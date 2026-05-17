@@ -331,6 +331,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-list-toolbar input{min-width:230px;flex:1;}
 .report-list-toolbar select:focus,.report-list-toolbar input:focus{border-color:var(--teal);}
 .rep-status-pill{display:inline-block;padding:3px 8px;border-radius:11px;font-size:10px;font-weight:900;text-transform:uppercase;white-space:nowrap;}
+
+.followup-type-badge{display:inline-block;width:max-content;margin:4px 0 2px 0;padding:3px 9px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;background:#eef6ff;color:#0f3a5f;border:1px solid #bfdbfe;}
+.followup-type-badge.new_case{background:#fff8e1;color:#856404;border-color:#f2df9f;}
+.report-print-btn{padding:7px 12px;border:none;border-radius:8px;background:var(--navy);color:white;font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.report-print-btn:hover{opacity:.9;}
 @media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}.report-list-toolbar{align-items:stretch;}.report-list-toolbar select,.report-list-toolbar input{width:100%;}}
 
 
@@ -778,13 +783,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
             <option value="did_not_attend">DNTU</option>
             <option value="cancelled">Cancelled</option>
           </select>
+          <label>Follow-up Type:</label>
+          <select id="rep-followup-type-filter" onchange="loadReports()">
+            <option value="all">All Types</option>
+            <option value="follow_up">Follow-up</option>
+            <option value="new_case">New case</option>
+          </select>
           <label>Search:</label>
           <input type="text" id="rep-patient-search" placeholder="Search patient, ID card, phone..." oninput="loadReports()"/>
+          <button class="report-print-btn" onclick="printReportPatientList()">Print List</button>
         </div>
         <div class="report-note" id="rep-patient-list-summary">Select a month and filters to view patient bookings.</div>
         <div style="overflow-x:auto;"><table class="dt">
-          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Nurse / Column</th><th>Event Type</th><th>Follow-up Due</th><th>Follow-up Status</th></tr></thead>
-          <tbody id="rep-patient-list-tbody"><tr><td colspan="9" class="empty">Loading patient bookings...</td></tr></tbody>
+          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Allocated Nurse</th><th>Seen / Recorded By</th><th>Event Type</th><th>Follow-up Type</th><th>Follow-up Due</th><th>Follow-up Status</th></tr></thead>
+          <tbody id="rep-patient-list-tbody"><tr><td colspan="11" class="empty">Loading patient bookings...</td></tr></tbody>
         </table></div>
       </div>
     </div>
@@ -898,7 +910,7 @@ async function enrichAppointments(rows){
   let patientsMap={}, staffMap={}, bankMap={};
 
   if(patientIds.length){
-    const{data}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status').in('id',patientIds);
+    const{data}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').in('id',patientIds);
     patientsMap=mapById(data||[]);
   }
   if(staffIds.length){
@@ -1647,6 +1659,11 @@ async function loadAppts(){
         </td>`;
       }else if(n.type==='absent'||n.type==='ot-booked'){
         html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;">Not rostered</td>`;
+      }else if(n.type==='ot'){
+        html+=`<td class="appt-cell-empty" style="padding:8px;background:#fffdf5;vertical-align:top;text-align:center;color:#856404;font-size:10px;font-weight:900;">
+          ${cancelledSlotHistoryHTML(cancelledHere)}
+          OT support only<br/><span style="font-weight:600;color:#7a8fa6;">No patient allocation</span>
+        </td>`;
       }else{
         html+=`<td class="appt-cell-empty" style="padding:8px;background:${cellBg};vertical-align:top;">
           ${cancelledSlotHistoryHTML(cancelledHere)}
@@ -1724,8 +1741,12 @@ async function refreshOutcomeMonthOptions(){
   const ctxLabel=document.getElementById('of-availability-context');
   if(ctxLabel)ctxLabel.textContent=`Availability is calculated for: ${ctx.label}`;
   if(!monthSelect)return;
-  monthSelect.innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
-  monthSelect.value=sel;
+  const now=new Date();
+  const selectedYear=Number(year);
+  const startMonth=selectedYear===now.getFullYear()?now.getMonth()+1:1;
+  const availableMonths=[1,2,3,4,5,6,7,8,9,10,11,12].filter(m=>selectedYear>now.getFullYear() || m>=startMonth);
+  monthSelect.innerHTML=availableMonths.map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
+  monthSelect.value=availableMonths.includes(Number(sel))?sel:String(availableMonths[0]||startMonth);
 }
 async function setAS(id,status){
   await openOutcomeFollowupModal(id,status);
@@ -1737,8 +1758,9 @@ async function openOutcomeFollowupModal(apptId,status){
   const p=appt.patients||{};
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const now=new Date();
-  const defaultMonth=Number(p.followup_due_month)||now.getMonth()+1;
-  const defaultYear=Number(p.followup_year)||now.getFullYear();
+  const defaultYear=Math.max(Number(p.followup_year)||now.getFullYear(),now.getFullYear());
+  const minimumMonth=defaultYear===now.getFullYear()?now.getMonth()+1:1;
+  const defaultMonth=Math.max(Number(p.followup_due_month)||minimumMonth,minimumMonth);
   outcomeAvailabilityContext=getOutcomeAvailabilityContext(appt);
   const availability=await getMonthlyClinicAvailability(defaultYear,outcomeAvailabilityContext);
   const statusDefault=status==='did_not_attend'?normaliseFollowupStatus(p.followup_status||'active'):normaliseFollowupStatus(p.followup_status||'active');
@@ -1750,15 +1772,19 @@ async function openOutcomeFollowupModal(apptId,status){
       <option value="cancelled" ${status==='cancelled'?'selected':''}>Cancelled</option>
     </select></div>
     <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
-      ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
+      ${[now.getFullYear(),now.getFullYear()+1,now.getFullYear()+2,now.getFullYear()+3].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
     </select></div>
     <div class="fg"><label>Follow-up due month — corresponding nurse availability shown in the list</label><select id="of-month">
-      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0,outcomeAvailabilityContext)}</option>`).join('')}
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].filter(m=>Number(defaultYear)>now.getFullYear() || m>=minimumMonth).map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0,outcomeAvailabilityContext)}</option>`).join('')}
     </select><div id="of-availability-context" class="dntu-note" style="margin-top:5px;">Availability is calculated for: ${htmlSafe(outcomeAvailabilityContext?.label||'Clinic')}</div></div>
     <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
+    </select></div>
+    <div class="fg"><label>Type of follow-up / episode</label><select id="of-followup-type">
+      <option value="follow_up" ${normaliseFollowupType(p.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
+      <option value="new_case" ${normaliseFollowupType(p.followup_type)==='new_case'?'selected':''}>New case</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Outcome</button></div>`;
   openMo();
@@ -1768,11 +1794,12 @@ async function saveOutcomeFollowup(apptId,patientId){
   const month=document.getElementById('of-month')?.value;
   const year=document.getElementById('of-year')?.value;
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
+  const followupType=document.getElementById('of-followup-type')?.value||'follow_up';
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
-  const{error:aErr}=await SB.from('appointments').update({status}).eq('id',apptId);
+  const{error:aErr}=await saveAppointmentOutcomeAudit(apptId,status);
   if(aErr){alert('Could not save appointment outcome: '+aErr.message);return;}
   if(patientId){
-    const{error:pErr}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_status:followupStatus}).eq('id',patientId);
+    const{error:pErr}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_status:followupStatus,followup_type:normaliseFollowupType(followupType)}).eq('id',patientId);
     if(pErr){alert('Outcome saved, but follow-up due details could not be saved: '+pErr.message);}
   }
   closeModal();
@@ -1784,10 +1811,9 @@ async function editAppointment(id){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
   if(error||!raw){alert('Could not load this appointment for editing.');return;}
   const enriched=(await enrichAppointments([raw]))[0]||raw;
-  const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
-  const currentNurse=enriched.bank_staff_id?`bank:${enriched.bank_staff_id}`:(enriched.assigned_to?`core:${enriched.assigned_to}`:'common');
+  const currentNurse=enriched.assigned_to?`core:${enriched.assigned_to}`:'common';
   const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}" ${currentNurse===`core:${s.id}`?'selected':''}>${htmlSafe(s.full_name)}</option>`).join('');
-  const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}" ${currentNurse===`bank:${b.id}`?'selected':''}>${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
+  const bankOptions='';
   document.getElementById('mb').innerHTML=`<h2>Edit Appointment</h2>
     <div class="msub">Correct patient, date, time, nurse/column, or outcome.</div>
     <div class="fg"><label>First Name *</label><input type="text" id="e-fn" value="${htmlSafe(enriched.patients?.first_name||'')}"/></div>
@@ -1808,6 +1834,10 @@ async function editAppointment(id){
       <option value="awaiting_feedback" ${enriched.patients?.followup_status==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${enriched.patients?.followup_status==='paused'?'selected':''}>Paused</option>
     </select></div>
+    <div class="fg"><label>Type of follow-up / episode</label><select id="e-followup-type">
+      <option value="follow_up" ${normaliseFollowupType(enriched.patients?.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
+      <option value="new_case" ${normaliseFollowupType(enriched.patients?.followup_type)==='new_case'?'selected':''}>New case</option>
+    </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
 }
@@ -1821,13 +1851,14 @@ async function saveEditedAppointment(apptId,patientId){
   const nurse=document.getElementById('e-nurse').value;
   const status=document.getElementById('e-status').value;
   const followupStatus=document.getElementById('e-followup-status')?.value||'active';
+  const followupType=document.getElementById('e-followup-type')?.value||'follow_up';
   if(!fn||!sn||!idcard||!date||!slot){alert('Please fill in first name, surname, ID card, date and time.');return;}
-  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_status:followupStatus};
+  const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_status:followupStatus,followup_type:normaliseFollowupType(followupType)};
   const{error:pErr}=await SB.from('patients').update(patientUpdate).eq('id',patientId);
   if(pErr){alert('Patient update error: '+pErr.message);return;}
   const apptUpdate={appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status};
   if(nurse.startsWith('core:')) apptUpdate.assigned_to=nurse.replace('core:','');
-  if(nurse.startsWith('bank:')) apptUpdate.bank_staff_id=nurse.replace('bank:','');
+  if(nurse.startsWith('bank:')){alert('OT nurses are support-only and should not have patients allocated. Please choose a core nurse or Common.');return;}
   const{error:aErr}=await SB.from('appointments').update(apptUpdate).eq('id',apptId);
   if(aErr){alert('Appointment update error: '+aErr.message);return;}
   closeModal();
@@ -1842,7 +1873,7 @@ async function searchPatientsForRebook(){
   if(!box)return;
   if(q.length<2){box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';return;}
   box.innerHTML='<div class="patient-search-empty">Searching patients...</div>';
-  const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status').order('surname',{ascending:true}).limit(700);
+  const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').order('surname',{ascending:true}).limit(700);
   if(error){console.error('Patient search error:',error);box.innerHTML='<div class="patient-search-empty">Could not search patients.</div>';return;}
   const matches=(data||[]).filter(p=>[
     p.first_name,p.surname,p.id_card,p.phone_number,`${p.first_name||''} ${p.surname||''}`
@@ -1871,7 +1902,7 @@ function clearPatientRebookSearch(){
   if(box)box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';
 }
 async function openPatientRebookModal(patientId){
-  const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status').eq('id',patientId).maybeSingle();
+  const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
   if(error||!pat){alert('Could not open this patient for rebooking.');return;}
   const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
   const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}">${htmlSafe(s.full_name)}</option>`).join('');
@@ -1924,7 +1955,7 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
   }
   if(note){note.className='registry-lookup-note';note.textContent='Checking saved patient registry...';}
   const{data,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
     .ilike('id_card',id)
     .maybeSingle();
   if(error){
@@ -1950,7 +1981,7 @@ async function saveOrUpdatePatientByIdCard(idCard,firstName,surname,phone){
   const id=normaliseIdCard(idCard);
   if(!id||!firstName||!surname)return {patient:null,error:{message:'Missing patient details.'}};
   const existing=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
     .ilike('id_card',id)
     .maybeSingle();
   if(existing.error)return {patient:null,error:existing.error};
@@ -1966,18 +1997,16 @@ async function saveOrUpdatePatientByIdCard(idCard,firstName,surname,phone){
 
 
 async function buildNurseAllocationOptions(selectedType,selectedId){
-  const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
   let selected='common';
-  if(selectedType==='ot'||selectedType==='ot-booked') selected=`bank:${selectedId}`;
-  else if(selectedType==='common') selected='common';
+  if(selectedType==='common'||selectedType==='ot'||selectedType==='ot-booked') selected='common';
   else if(selectedId&&selectedId!=='undefined') selected=`core:${selectedId}`;
   const commonOpt=`<option value="common" ${selected==='common'?'selected':''}>Common</option>`;
   const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}" ${selected===`core:${s.id}`?'selected':''}>${htmlSafe(s.full_name)}</option>`).join('');
-  const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}" ${selected===`bank:${b.id}`?'selected':''}>${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
-  return `${commonOpt}${coreOptions}${bankOptions}`;
+  return `${commonOpt}${coreOptions}`;
 }
 
 async function bookSlot(slot,date,nid,nname,ntype){
+  if(ntype==='ot'){alert('OT nurses are support-only and should not have patients allocated. Please book under a core nurse or Common.');return;}
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   const nurseOptions=await buildNurseAllocationOptions(ntype,nid);
   document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
@@ -2006,7 +2035,7 @@ async function doBook(slot,date,nurseIdParam,nurseType){
   const manualNurse=document.getElementById('p-nurse')?.value||'common';
   const payload={patient_id:pat.id,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
   if(manualNurse.startsWith('core:')) payload.assigned_to=manualNurse.replace('core:','');
-  if(manualNurse.startsWith('bank:')) payload.bank_staff_id=manualNurse.replace('bank:','');
+  if(manualNurse.startsWith('bank:')){alert('OT nurses are support-only and should not have patients allocated. Please choose a core nurse or Common.');return;}
 
   const{error}=await SB.from('appointments').insert(payload);
   if(error){
@@ -2098,7 +2127,7 @@ async function loadStaffAudit(){
   if(title)title.textContent=selectedFollowupOwner;
 
   let allPatients=[];
-  const patientSelect='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status';
+  const patientSelect='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
   const{data,error}=await SB.from('patients').select(patientSelect).order('surname',{ascending:true}).order('first_name',{ascending:true});
   if(error){
     console.error('Follow-up patient query error:',error);
@@ -2220,7 +2249,7 @@ async function savePatientFollowup(patientId){
   loadStaffAudit();
 }
 async function openFollowupHistory(patientId){
-  const{data:pat}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status').eq('id',patientId).maybeSingle();
+  const{data:pat}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
   const{data:raw}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
   const appts=await enrichAppointments(raw||[]);
   const nm=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'Patient';
@@ -2249,6 +2278,32 @@ function followupStatusText(status){
     awaiting_feedback:'Awaiting Feedback',
     paused:'Paused'
   }[st]||'Active';
+}
+function normaliseFollowupType(type){
+  const t=String(type||'follow_up').trim().toLowerCase();
+  return (t==='new_case'||t==='new case'||t==='new-case')?'new_case':'follow_up';
+}
+function followupTypeText(type){
+  return normaliseFollowupType(type)==='new_case'?'New case':'Follow-up';
+}
+function followupTypeBadge(type){
+  const t=normaliseFollowupType(type);
+  return `<span class="followup-type-badge ${htmlSafe(t)}">${htmlSafe(followupTypeText(t))}</span>`;
+}
+function recordedByLabel(a){
+  return htmlSafe(a?.outcome_recorded_by||a?.updated_by||a?.seen_by||'—');
+}
+async function currentUserEmail(){
+  try{const{data}=await SB.auth.getUser();return data?.user?.email||'';}catch(e){return '';}
+}
+async function saveAppointmentOutcomeAudit(apptId,status){
+  const email=await currentUserEmail();
+  const payload={status,outcome_recorded_by:email||null,outcome_recorded_at:new Date().toISOString()};
+  let res=await SB.from('appointments').update(payload).eq('id',apptId);
+  if(res.error && String(res.error.message||'').toLowerCase().includes('column')){
+    res=await SB.from('appointments').update({status}).eq('id',apptId);
+  }
+  return res;
 }
 function normaliseFollowupOwner(owner){
   const v=String(owner||'Common').trim();
@@ -2774,9 +2829,11 @@ async function loadReports(){
   renderReportPatientBookings(appts,year,month);
 }
 
+let currentReportPatientRows=[];
 function renderReportPatientBookings(appts,year,month){
   const nurseSelect=document.getElementById('rep-nurse-filter');
   const eventSelect=document.getElementById('rep-event-filter');
+  const typeSelect=document.getElementById('rep-followup-type-filter');
   const searchInput=document.getElementById('rep-patient-search');
   const tbody=document.getElementById('rep-patient-list-tbody');
   const summary=document.getElementById('rep-patient-list-summary');
@@ -2785,7 +2842,8 @@ function renderReportPatientBookings(appts,year,month){
   const prevNurse=nurseSelect?.value||'all';
   const nurseOptions=new Map();
   nurseOptions.set('all','All Nurses / Common');
-  (appts||[]).forEach(a=>nurseOptions.set(appointmentNurseKey(a),appointmentNurseLabel(a)));
+  nurseOptions.set('common','Common');
+  (appts||[]).forEach(a=>{ if(a.assigned_to) nurseOptions.set(`staff:${a.assigned_to}`,appointmentNurseLabel(a)); });
   if(nurseSelect){
     nurseSelect.innerHTML=[...nurseOptions.entries()].map(([v,l])=>`<option value="${htmlSafe(v)}">${htmlSafe(l)}</option>`).join('');
     nurseSelect.value=nurseOptions.has(prevNurse)?prevNurse:'all';
@@ -2793,23 +2851,27 @@ function renderReportPatientBookings(appts,year,month){
 
   const nurseFilter=nurseSelect?.value||'all';
   const eventFilter=eventSelect?.value||'all';
+  const typeFilter=typeSelect?.value||'all';
   const q=String(searchInput?.value||'').toLowerCase().trim();
 
   let rows=[...(appts||[])];
-  if(nurseFilter!=='all')rows=rows.filter(a=>appointmentNurseKey(a)===nurseFilter);
+  if(nurseFilter==='common')rows=rows.filter(a=>!a.assigned_to && !a.bank_staff_id);
+  else if(nurseFilter!=='all')rows=rows.filter(a=>appointmentNurseKey(a)===nurseFilter);
   if(eventFilter!=='all')rows=rows.filter(a=>a.status===eventFilter);
+  if(typeFilter!=='all')rows=rows.filter(a=>normaliseFollowupType(a.patients?.followup_type)===typeFilter);
   if(q){
     rows=rows.filter(a=>{
-      const txt=`${patientName(a)} ${a.patients?.id_card||''} ${a.patients?.phone_number||''} ${appointmentNurseLabel(a)} ${statusLabel(a.status)}`.toLowerCase();
+      const txt=`${patientName(a)} ${a.patients?.id_card||''} ${a.patients?.phone_number||''} ${appointmentNurseLabel(a)} ${recordedByLabel(a)} ${statusLabel(a.status)} ${followupTypeText(a.patients?.followup_type)}`.toLowerCase();
       return txt.includes(q);
     });
   }
 
+  currentReportPatientRows=rows;
   const periodLabel=month?`${followupMonthName(Number(month))} ${year}`:`Full year ${year}`;
   const uniqueInRows=[...new Set(rows.map(a=>a.patient_id).filter(Boolean))].length;
-  if(summary)summary.textContent=`${periodLabel}: ${rows.length} booking record${rows.length!==1?'s':''}, ${uniqueInRows} unique patient${uniqueInRows!==1?'s':''}. Use the nurse and event type filters to narrow the list.`;
+  if(summary)summary.textContent=`${periodLabel}: ${rows.length} booking record${rows.length!==1?'s':''}, ${uniqueInRows} unique patient${uniqueInRows!==1?'s':''}. Use the nurse, event type and follow-up type filters to narrow the list.`;
 
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patient bookings match these filters.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No patient bookings match these filters.</td></tr>';return;}
   tbody.innerHTML=rows.map(a=>{
     const followupDue=(a.patients?.followup_due_month&&a.patients?.followup_year)?`${followupMonthName(a.patients.followup_due_month)} ${a.patients.followup_year}`:'—';
     return `<tr>
@@ -2819,11 +2881,28 @@ function renderReportPatientBookings(appts,year,month){
       <td>${htmlSafe(a.patients?.id_card||'—')}</td>
       <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
       <td>${htmlSafe(appointmentNurseLabel(a))}</td>
+      <td>${recordedByLabel(a)}</td>
       <td><span class="rep-status-pill ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${htmlSafe(statusLabel(a.status))}</span></td>
+      <td>${followupTypeBadge(a.patients?.followup_type)}</td>
       <td>${htmlSafe(followupDue)}</td>
-      <td>${followupStatusBadge(a.patients?.followup_status)}</td>
+      <td>${followupStatusBadge(a.patients?.followup_status,true)||'—'}</td>
     </tr>`;
   }).join('');
+}
+
+function printReportPatientList(){
+  const rows=currentReportPatientRows||[];
+  const year=document.getElementById('rep-year')?.value||'';
+  const month=document.getElementById('rep-month')?.value||'';
+  const period=month?`${followupMonthName(Number(month))} ${year}`:`Full year ${year}`;
+  const htmlRows=rows.length?rows.map(a=>{
+    const due=(a.patients?.followup_due_month&&a.patients?.followup_year)?`${followupMonthName(a.patients.followup_due_month)} ${a.patients.followup_year}`:'—';
+    return `<tr><td>${htmlSafe(a.appt_date||'—')}</td><td>${htmlSafe(String(a.appt_slot||'').slice(0,5)||'—')}</td><td>${htmlSafe(patientName(a))}</td><td>${htmlSafe(a.patients?.id_card||'—')}</td><td>${htmlSafe(a.patients?.phone_number||'—')}</td><td>${htmlSafe(appointmentNurseLabel(a))}</td><td>${recordedByLabel(a)}</td><td>${htmlSafe(statusLabel(a.status))}</td><td>${htmlSafe(followupTypeText(a.patients?.followup_type))}</td><td>${htmlSafe(due)}</td><td>${htmlSafe(followupStatusText(a.patients?.followup_status))}</td></tr>`;
+  }).join(''):'<tr><td colspan="11">No patient bookings match these filters.</td></tr>';
+  const w=window.open('','_blank');
+  if(!w){alert('Popup blocked. Please allow popups to print.');return;}
+  w.document.write(`<!DOCTYPE html><html><head><title>Patient Bookings ${htmlSafe(period)}</title><style>@page{size:A4 landscape;margin:10mm;}body{font-family:Arial,sans-serif;color:#1a2e4a;}h1{font-size:18px;margin:0 0 4px;}p{font-size:11px;color:#555;margin:0 0 10px;}table{width:100%;border-collapse:collapse;font-size:10px;}th,td{border:1px solid #d8dee8;padding:5px;text-align:left;vertical-align:top;}th{background:#eef2f7;text-transform:uppercase;font-size:9px;}tr:nth-child(even){background:#fafafa;}</style></head><body><h1>MDH Stoma Care Clinic — Patient Bookings</h1><p>${htmlSafe(period)} · ${rows.length} booking record${rows.length!==1?'s':''}</p><table><thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Allocated Nurse</th><th>Seen / Recorded By</th><th>Event</th><th>Follow-up Type</th><th>Follow-up Due</th><th>Status</th></tr></thead><tbody>${htmlRows}</tbody></table></body></html>`);
+  w.document.close();w.focus();w.print();
 }
 
 
