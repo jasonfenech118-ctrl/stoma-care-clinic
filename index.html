@@ -325,7 +325,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-filters label{font-size:12px;font-weight:700;color:var(--navy);}
 .report-filters select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
 .report-filters button{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
-@media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}}
+.report-list-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.report-list-toolbar label{font-size:12px;font-weight:800;color:var(--navy);}
+.report-list-toolbar select,.report-list-toolbar input{padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
+.report-list-toolbar input{min-width:230px;flex:1;}
+.report-list-toolbar select:focus,.report-list-toolbar input:focus{border-color:var(--teal);}
+.rep-status-pill{display:inline-block;padding:3px 8px;border-radius:11px;font-size:10px;font-weight:900;text-transform:uppercase;white-space:nowrap;}
+@media(max-width:900px){.report-card.wide{grid-column:span 1;}.report-grid{grid-template-columns:1fr;}.report-list-toolbar{align-items:stretch;}.report-list-toolbar select,.report-list-toolbar input{width:100%;}}
 
 
 
@@ -758,6 +764,29 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <canvas id="chart-monthly-status"></canvas>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">👥 Patients Booked for Selected Month / Period</div>
+        <div class="report-list-toolbar">
+          <label>Nurse:</label>
+          <select id="rep-nurse-filter" onchange="loadReports()"><option value="all">All Nurses / Common</option></select>
+          <label>Event Type:</label>
+          <select id="rep-event-filter" onchange="loadReports()">
+            <option value="all">All Events</option>
+            <option value="booked">Booked</option>
+            <option value="attended">Seen / Attended</option>
+            <option value="did_not_attend">DNTU</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <label>Search:</label>
+          <input type="text" id="rep-patient-search" placeholder="Search patient, ID card, phone..." oninput="loadReports()"/>
+        </div>
+        <div class="report-note" id="rep-patient-list-summary">Select a month and filters to view patient bookings.</div>
+        <div style="overflow-x:auto;"><table class="dt">
+          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Nurse / Column</th><th>Event Type</th><th>Follow-up Due</th><th>Follow-up Status</th></tr></thead>
+          <tbody id="rep-patient-list-tbody"><tr><td colspan="9" class="empty">Loading patient bookings...</td></tr></tbody>
+        </table></div>
+      </div>
     </div>
 
   </div>
@@ -786,6 +815,7 @@ let selectedFollowupOwner='Common';
 let followupPatients=[];
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine'];
 let reportCharts={};
+let outcomeAvailabilityContext=null;
 
 const SLOTS=['08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30'];
 
@@ -1641,30 +1671,60 @@ async function refreshAppointmentViews(){
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 function outcomeLabel(status){return {attended:'Seen / Attended',did_not_attend:'DNTU',cancelled:'Cancelled',booked:'Booked'}[status]||status;}
-function monthLoadText(count){
+function monthLoadText(count,context){
   const n=Number(count)||0;
-  if(n>=80)return `${n} active bookings — busy`;
-  if(n>=40)return `${n} active bookings — moderate`;
-  return `${n} active bookings — good availability`;
+  const label=context?.label||'clinic';
+  if(n>=80)return `${label}: ${n} active bookings — busy`;
+  if(n>=40)return `${label}: ${n} active bookings — moderate`;
+  return `${label}: ${n} active bookings — good availability`;
 }
-async function getMonthlyClinicAvailability(year){
+function appointmentNurseLabel(a){
+  if(a?.staff?.full_name)return a.staff.full_name;
+  if(a?.bank_staff?.full_name)return a.bank_staff.full_name;
+  return 'Common';
+}
+function appointmentNurseKey(a){
+  if(a?.assigned_to)return `staff:${a.assigned_to}`;
+  if(a?.bank_staff_id)return `bank:${a.bank_staff_id}`;
+  return 'common';
+}
+function getOutcomeAvailabilityContext(appt){
+  if(appt?.assigned_to)return {kind:'staff',id:String(appt.assigned_to),label:appointmentNurseLabel(appt)};
+  if(appt?.bank_staff_id)return {kind:'bank',id:String(appt.bank_staff_id),label:appointmentNurseLabel(appt)};
+  const owner=normaliseFollowupOwner(appt?.patients?.followup_owner||'Common');
+  if(owner && owner!=='Common')return {kind:'owner',id:owner,label:owner};
+  return {kind:'common',id:'common',label:'Common'};
+}
+function availabilityMatchesContext(a,context){
+  if(!context||context.kind==='all')return true;
+  if(context.kind==='staff')return String(a.assigned_to||'')===String(context.id);
+  if(context.kind==='bank')return String(a.bank_staff_id||'')===String(context.id);
+  if(context.kind==='common')return !a.assigned_to && !a.bank_staff_id;
+  if(context.kind==='owner')return normaliseFollowupOwner(a.patients?.followup_owner||'Common')===context.id;
+  return true;
+}
+async function getMonthlyClinicAvailability(year,context){
   const y=String(year||new Date().getFullYear());
   const counts={};for(let m=1;m<=12;m++)counts[m]=0;
-  const{data}=await SB.from('appointments')
-    .select('appt_date,status')
+  const{data:raw}=await SB.from('appointments')
+    .select('*')
     .gte('appt_date',`${y}-01-01`)
     .lte('appt_date',`${y}-12-31`)
     .neq('status','cancelled');
-  (data||[]).forEach(a=>{const m=Number(String(a.appt_date||'').slice(5,7));if(counts[m]!==undefined)counts[m]++;});
+  const rows=await enrichAppointments(raw||[]);
+  rows.filter(a=>availabilityMatchesContext(a,context)).forEach(a=>{const m=Number(String(a.appt_date||'').slice(5,7));if(counts[m]!==undefined)counts[m]++;});
   return counts;
 }
 async function refreshOutcomeMonthOptions(){
   const year=document.getElementById('of-year')?.value||String(new Date().getFullYear());
   const sel=document.getElementById('of-month')?.value||String(new Date().getMonth()+1);
-  const counts=await getMonthlyClinicAvailability(year);
+  const ctx=outcomeAvailabilityContext||{kind:'all',label:'Clinic'};
+  const counts=await getMonthlyClinicAvailability(year,ctx);
   const monthSelect=document.getElementById('of-month');
+  const ctxLabel=document.getElementById('of-availability-context');
+  if(ctxLabel)ctxLabel.textContent=`Availability is calculated for: ${ctx.label}`;
   if(!monthSelect)return;
-  monthSelect.innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0)}</option>`).join('');
+  monthSelect.innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
   monthSelect.value=sel;
 }
 async function setAS(id,status){
@@ -1679,7 +1739,8 @@ async function openOutcomeFollowupModal(apptId,status){
   const now=new Date();
   const defaultMonth=Number(p.followup_due_month)||now.getMonth()+1;
   const defaultYear=Number(p.followup_year)||now.getFullYear();
-  const availability=await getMonthlyClinicAvailability(defaultYear);
+  outcomeAvailabilityContext=getOutcomeAvailabilityContext(appt);
+  const availability=await getMonthlyClinicAvailability(defaultYear,outcomeAvailabilityContext);
   const statusDefault=status==='did_not_attend'?normaliseFollowupStatus(p.followup_status||'active'):normaliseFollowupStatus(p.followup_status||'active');
   document.getElementById('mb').innerHTML=`<h2>Record ${htmlSafe(outcomeLabel(status))}</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
@@ -1691,9 +1752,9 @@ async function openOutcomeFollowupModal(apptId,status){
     <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
       ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
     </select></div>
-    <div class="fg"><label>Follow-up due month — clinic availability shown in the list</label><select id="of-month">
-      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0)}</option>`).join('')}
-    </select></div>
+    <div class="fg"><label>Follow-up due month — corresponding nurse availability shown in the list</label><select id="of-month">
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0,outcomeAvailabilityContext)}</option>`).join('')}
+    </select><div id="of-availability-context" class="dntu-note" style="margin-top:5px;">Availability is calculated for: ${htmlSafe(outcomeAvailabilityContext?.label||'Clinic')}</div></div>
     <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
@@ -2188,6 +2249,11 @@ function followupStatusText(status){
     awaiting_feedback:'Awaiting Feedback',
     paused:'Paused'
   }[st]||'Active';
+}
+function normaliseFollowupOwner(owner){
+  const v=String(owner||'Common').trim();
+  const found=FOLLOWUP_OWNERS.find(o=>o.toLowerCase()===v.toLowerCase());
+  return found||v||'Common';
 }
 function followupStatusBadge(status,showActive=false){
   const st=normaliseFollowupStatus(status);
@@ -2704,6 +2770,60 @@ async function loadReports(){
     {label:'DNTU',data:monthDntu,borderWidth:2},
     {label:'Cancelled',data:monthCancelled,borderWidth:2}
   ],{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
+
+  renderReportPatientBookings(appts,year,month);
+}
+
+function renderReportPatientBookings(appts,year,month){
+  const nurseSelect=document.getElementById('rep-nurse-filter');
+  const eventSelect=document.getElementById('rep-event-filter');
+  const searchInput=document.getElementById('rep-patient-search');
+  const tbody=document.getElementById('rep-patient-list-tbody');
+  const summary=document.getElementById('rep-patient-list-summary');
+  if(!tbody)return;
+
+  const prevNurse=nurseSelect?.value||'all';
+  const nurseOptions=new Map();
+  nurseOptions.set('all','All Nurses / Common');
+  (appts||[]).forEach(a=>nurseOptions.set(appointmentNurseKey(a),appointmentNurseLabel(a)));
+  if(nurseSelect){
+    nurseSelect.innerHTML=[...nurseOptions.entries()].map(([v,l])=>`<option value="${htmlSafe(v)}">${htmlSafe(l)}</option>`).join('');
+    nurseSelect.value=nurseOptions.has(prevNurse)?prevNurse:'all';
+  }
+
+  const nurseFilter=nurseSelect?.value||'all';
+  const eventFilter=eventSelect?.value||'all';
+  const q=String(searchInput?.value||'').toLowerCase().trim();
+
+  let rows=[...(appts||[])];
+  if(nurseFilter!=='all')rows=rows.filter(a=>appointmentNurseKey(a)===nurseFilter);
+  if(eventFilter!=='all')rows=rows.filter(a=>a.status===eventFilter);
+  if(q){
+    rows=rows.filter(a=>{
+      const txt=`${patientName(a)} ${a.patients?.id_card||''} ${a.patients?.phone_number||''} ${appointmentNurseLabel(a)} ${statusLabel(a.status)}`.toLowerCase();
+      return txt.includes(q);
+    });
+  }
+
+  const periodLabel=month?`${followupMonthName(Number(month))} ${year}`:`Full year ${year}`;
+  const uniqueInRows=[...new Set(rows.map(a=>a.patient_id).filter(Boolean))].length;
+  if(summary)summary.textContent=`${periodLabel}: ${rows.length} booking record${rows.length!==1?'s':''}, ${uniqueInRows} unique patient${uniqueInRows!==1?'s':''}. Use the nurse and event type filters to narrow the list.`;
+
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patient bookings match these filters.</td></tr>';return;}
+  tbody.innerHTML=rows.map(a=>{
+    const followupDue=(a.patients?.followup_due_month&&a.patients?.followup_year)?`${followupMonthName(a.patients.followup_due_month)} ${a.patients.followup_year}`:'—';
+    return `<tr>
+      <td>${htmlSafe(a.appt_date||'—')}</td>
+      <td><strong>${htmlSafe(String(a.appt_slot||'').slice(0,5)||'—')}</strong></td>
+      <td><strong>${htmlSafe(patientName(a))}</strong></td>
+      <td>${htmlSafe(a.patients?.id_card||'—')}</td>
+      <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+      <td>${htmlSafe(appointmentNurseLabel(a))}</td>
+      <td><span class="rep-status-pill ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${htmlSafe(statusLabel(a.status))}</span></td>
+      <td>${htmlSafe(followupDue)}</td>
+      <td>${followupStatusBadge(a.patients?.followup_status)}</td>
+    </tr>`;
+  }).join('');
 }
 
 
