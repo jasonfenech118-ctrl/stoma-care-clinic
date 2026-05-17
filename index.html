@@ -713,7 +713,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="phdr">
         <div>
           <h2>Reports &amp; Charts</h2>
-          <p>Clinic activity dashboard — excludes staff leave and per-nurse booking metrics</p>
+          <p>Clinic activity and patient workload dashboard</p>
         </div>
         <button class="btn-add" onclick="loadReports()">Refresh</button>
       </div>
@@ -724,6 +724,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <option value="2025">2025</option>
           <option value="2026">2026</option>
           <option value="2027">2027</option>
+          <option value="2028">2028</option>
         </select>
         <label>Month:</label>
         <select id="rep-month" onchange="loadReports()">
@@ -747,56 +748,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <h3>✅ Outcome Distribution</h3>
           <canvas id="chart-status-distribution"></canvas>
         </div>
-        <div class="report-card">
-          <h3>🗓️ Day-of-Week Demand</h3>
-          <canvas id="chart-day-demand"></canvas>
-        </div>
-        <div class="report-card">
-          <h3>⏰ Busiest Appointment Slots</h3>
-          <canvas id="chart-slot-demand"></canvas>
-        </div>
         <div class="report-card wide">
-          <h3>📅 Upcoming 14-Day Clinic Load</h3>
-          <canvas id="chart-upcoming-load"></canvas>
-        </div>
-        <div class="report-card wide">
-          <h3>⚠️ DNTU &amp; Cancelled Trend</h3>
-          <canvas id="chart-exception-trend"></canvas>
+          <h3>👥 Monthly Patient Count</h3>
+          <div class="report-note">Counts unique patients per month, not repeated appointment bookings.</div>
+          <canvas id="chart-monthly-patient-trend"></canvas>
         </div>
         <div class="report-card wide">
           <h3>📊 Monthly Status Breakdown</h3>
           <canvas id="chart-monthly-status"></canvas>
-        </div>
-        <div class="report-card">
-          <h3>📦 Week-of-Month Workload</h3>
-          <canvas id="chart-week-load"></canvas>
-        </div>
-        <div class="report-card">
-          <h3>🚫 DNTU by Appointment Slot</h3>
-          <canvas id="chart-dntu-slot"></canvas>
-        </div>
-      </div>
-
-      <div class="report-grid">
-        <div class="report-card wide">
-          <h3>📋 Upcoming Appointments</h3>
-          <div class="report-note">Next 14 days. This is a workload view, not a staff leave or per-nurse booking metric.</div>
-          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Status</th></tr></thead><tbody id="rep-upcoming-tbody"></tbody></table></div>
-        </div>
-        <div class="report-card wide">
-          <h3>⚠️ Recent DNTU / Cancelled</h3>
-          <div class="report-note">Recent non-attendance and cancelled appointments for follow-up review.</div>
-          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Outcome</th></tr></thead><tbody id="rep-exceptions-tbody"></tbody></table></div>
-        </div>
-        <div class="report-card wide">
-          <h3>⏱️ Slot Utilisation Table</h3>
-          <div class="report-note">Counts by appointment time only. No staff/per-nurse breakdown included.</div>
-          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Slot</th><th>Total Bookings</th><th>Attended</th><th>DNTU</th><th>Cancelled</th></tr></thead><tbody id="rep-slots-tbody"></tbody></table></div>
-        </div>
-        <div class="report-card wide">
-          <h3>🔥 Busiest Clinic Days</h3>
-          <div class="report-note">Highest-load clinic dates in the selected period. No nurse breakdown included.</div>
-          <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Date</th><th>Total Bookings</th><th>Attended</th><th>DNTU</th><th>Cancelled</th></tr></thead><tbody id="rep-busy-days-tbody"></tbody></table></div>
         </div>
       </div>
     </div>
@@ -909,7 +868,7 @@ async function enrichAppointments(rows){
   let patientsMap={}, staffMap={}, bankMap={};
 
   if(patientIds.length){
-    const{data}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_status').in('id',patientIds);
+    const{data}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status').in('id',patientIds);
     patientsMap=mapById(data||[]);
   }
   if(staffIds.length){
@@ -1055,11 +1014,19 @@ async function renderRoster(){
   const{data:allOvertimeRecords}=await SB.from('leave_records').select('*, staff(full_name)').eq('leave_type','overtime').gte('start_date',s1).lte('start_date',s2);
   const tilData=(allOvertimeRecords||[]).filter(r=>isTILNote(r.notes));
   const coreOTData=(allOvertimeRecords||[]).filter(r=>!isTILNote(r.notes));
+  const coreStaffIds=new Set((staffList||[]).map(s=>String(s.id)));
 
   const bankCoreOT=[];
   const bd=[];
+  const bankCoreTIL=[];
+  const bankTilData=[];
   (bdRaw||[]).forEach(b=>{
     const core=findCoreStaffByName(b.bank_staff?.full_name);
+    if(isTILNote(b.notes)){
+      if(core) bankCoreTIL.push({...b,source:'core_bank_til',core_staff:core,display_name:core.full_name});
+      else bankTilData.push({...b,source:'bank_til',display_name:b.bank_staff?.full_name||'TIL Staff'});
+      return;
+    }
     if(core) bankCoreOT.push({...b,core_staff:core});
     else bd.push(b);
   });
@@ -1067,6 +1034,12 @@ async function renderRoster(){
   const coreOTByKey={};
   coreOTData.forEach(r=>{coreOTByKey[`${r.staff_id}_${r.start_date}`]={...r,source:'core_leave'};});
   bankCoreOT.forEach(b=>{coreOTByKey[`${b.core_staff.id}_${b.work_date}`]={...b,source:'core_bank'};});
+
+  const coreTILLeave=tilData.filter(r=>coreStaffIds.has(String(r.staff_id)));
+  const otherTILLeave=tilData.filter(r=>!coreStaffIds.has(String(r.staff_id))).map(r=>({...r,source:'staff_til',work_date:r.start_date,display_name:r.staff?.full_name||'TIL Staff'}));
+  const coreTILByKey={};
+  coreTILLeave.forEach(r=>{coreTILByKey[`${r.staff_id}_${r.start_date}`]={...r,source:'core_leave_til',work_date:r.start_date,display_name:r.staff?.full_name||'Core Staff'};});
+  bankCoreTIL.forEach(b=>{coreTILByKey[`${b.core_staff.id}_${b.work_date}`]={...b,source:'core_bank_til',display_name:b.core_staff?.full_name||b.bank_staff?.full_name||'Core Staff'};});
 
   const th=isHol(TODAY);
   document.getElementById('hban-roster').innerHTML=th?`<div class="hban">🇲🇹 Today is a Malta Public Holiday: <strong>${th}</strong></div>`:'';
@@ -1092,12 +1065,18 @@ async function renderRoster(){
       const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
       const entry=rCache[`${st.id}_${ds}`];
       const coreOT=coreOTByKey[`${st.id}_${ds}`];
-      const code=coreOT?'OT':(entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D');
+      const coreTIL=coreTILByKey[`${st.id}_${ds}`];
+      const isCoreTilOff=coreTIL?.notes?.startsWith('TIL-Off');
+      const isCoreTilIn=coreTIL?.notes?.startsWith('TIL-In');
+      const code=coreTIL?(isCoreTilOff?'TO':'TI'):(coreOT?'OT':(entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D'));
       const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
       const otTimes=coreOT?.source==='core_leave'?parseNoteTimeRange(coreOT.notes):null;
       const otStart=(coreOT?.shift_start||otTimes?.start||'07:00').slice(0,5);
       const otEnd=(coreOT?.shift_end||otTimes?.end||'').slice(0,5);
-      const chipTitle=coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`;
+      const tilTimes=parseNoteTimeRange(coreTIL?.notes);
+      const tilStart=(coreTIL?.shift_start||tilTimes?.start||'07:00').slice(0,5);
+      const tilEnd=(coreTIL?.shift_end||tilTimes?.end||'').slice(0,5);
+      const chipTitle=coreTIL?`Core staff ${isCoreTilOff?'TIL Off':'TIL In'}${tilEnd?` ${tilStart}–${tilEnd}`:''}`:(coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`);
       html+=`<td class="${tdCls}"><div class="dchip dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${htmlSafe(chipTitle)}">${code}</div></td>`;
     }
     html+='</tr>';
@@ -1120,12 +1099,13 @@ async function renderRoster(){
     }
   }
 
-  // TIL rows
-  if(tilData&&tilData.length>0){
+  // TIL rows — core staff TIL is shown in the main Core Staff row, so this section only shows extra/non-core TIL.
+  const rosterTILRows=[...otherTILLeave,...bankTilData];
+  if(rosterTILRows&&rosterTILRows.length>0){
     html+=`<tr class="sr"><td colspan="${days+2}">TIL Staff</td></tr>`;
-    const byTIL={};tilData.forEach(t=>{const n=t.staff?.full_name||'Unknown';if(!byTIL[n])byTIL[n]={};byTIL[n][t.start_date]=t;});
+    const byTIL={};rosterTILRows.forEach(t=>{const n=t.display_name||t.staff?.full_name||t.bank_staff?.full_name||'Unknown';const dtKey=t.work_date||t.start_date;if(!byTIL[n])byTIL[n]={};byTIL[n][dtKey]=t;});
     for(const[name,dates] of Object.entries(byTIL)){
-      html+=`<tr><td class="td-name">${name}</td><td class="td-role">TIL</td>`;
+      html+=`<tr><td class="td-name">${htmlSafe(name)}</td><td class="td-role">TIL</td>`;
       for(let d=1;d<=days;d++){
         const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
         const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
@@ -1147,13 +1127,18 @@ async function renderRoster(){
     ...bankCoreOT.map(b=>({...b,source:'core_bank',display_name:b.core_staff?.full_name||b.bank_staff?.full_name||'Core Staff'}))
   ];
   const visibleOT=[...(bd||[]),...coreOTList];
+  const coreTILList=[
+    ...coreTILLeave.map(r=>({...r,source:'core_leave_til',work_date:r.start_date,display_name:r.staff?.full_name||'Core Staff'})),
+    ...bankCoreTIL.map(b=>({...b,source:'core_bank_til',display_name:b.core_staff?.full_name||b.bank_staff?.full_name||'Core Staff'}))
+  ];
+  const visibleTIL=[...coreTILList,...otherTILLeave,...bankTilData];
 
   if(selectedJumpDate){
     renderOTList(visibleOT.filter(b=>b.work_date===selectedJumpDate),selectedJumpDate);
-    renderTILList(tilData?tilData.filter(t=>t.start_date===selectedJumpDate):null,selectedJumpDate);
+    renderTILList(visibleTIL.filter(t=>(t.work_date||t.start_date)===selectedJumpDate),selectedJumpDate);
   }else{
     renderOTList(visibleOT,null);
-    renderTILList(tilData,null);
+    renderTILList(visibleTIL,null);
   }
 }
 
@@ -1184,16 +1169,23 @@ async function renderTILList(data,filterDate){
   document.getElementById('til-list-label').textContent=filterDate?`— ${label}`:label;
   const tbody=document.getElementById('til-tbody');
   if(!data||!data.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No TIL records</td></tr>';return;}
-  tbody.innerHTML=data.map(r=>{
-    const dt=new Date(r.start_date+'T12:00:00');
+  const sorted=[...data].sort((a,b)=>String(a.work_date||a.start_date||'').localeCompare(String(b.work_date||b.start_date||'')));
+  tbody.innerHTML=sorted.map(r=>{
+    const dateKey=r.work_date||r.start_date;
+    const dt=new Date(dateKey+'T12:00:00');
     const dayLabel=dt.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
     const isOff=r.notes?.startsWith('TIL-Off');
     const typeLabel=isOff?'TIL Off':'TIL In';
+    const isCore=String(r.source||'').includes('core');
+    const badgeLabel=isCore?`Core staff ${typeLabel}`:typeLabel;
     const typeCls=isOff?'background:#e8f5f4;color:var(--teal);':'background:#e8eaf6;color:#3949ab;';
-    const hoursMatch=r.notes?.match(/([0-9.]+)h/);const hrs=hoursMatch?hoursMatch[1]:'—';
-    const timeMatch=r.notes?.match(/\[([0-9:]+)[^0-9]([0-9:]+)\]/);
-    const startT=timeMatch?timeMatch[1]:'07:00',untilT=timeMatch?timeMatch[2]:'—';
-    return`<tr><td><strong>${r.staff?.full_name||'Unknown'}</strong></td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${typeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}h</span></td><td><button title="Delete" onclick="delTIL('${r.id}')" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button></td></tr>`;
+    const timeRange=parseNoteTimeRange(r.notes)||{};
+    const startT=(r.shift_start||timeRange.start||'07:00').slice(0,5);
+    const untilT=(r.shift_end||timeRange.end||'—').slice(0,5);
+    const hrs=calcHourLabel(startT,untilT);
+    const nm=r.display_name||r.staff?.full_name||r.bank_staff?.full_name||'Unknown';
+    const delAction=(r.source==='bank_til'||r.source==='core_bank_til')?`delBankTIL('${r.id}')`:`delTIL('${r.id}')`;
+    return`<tr><td><strong>${htmlSafe(nm)}</strong>${isCore?'<span style="margin-left:6px;padding:2px 7px;border-radius:10px;background:#e8f5f4;color:#0d7377;font-size:10px;font-weight:800;">Core staff TIL</span>':''}</td><td>${dayLabel}</td><td><span class="til-badge" style="${typeCls}padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">${badgeLabel}</span></td><td>${startT}</td><td>${untilT}</td><td><span class="til-badge">${hrs}</span></td><td><button title="Delete" onclick="${delAction}" style="padding:4px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button></td></tr>`;
   }).join('');
 }
 
@@ -1499,12 +1491,15 @@ async function loadAppts(){
   if(!date)return;
 
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
-  const{data:otToday}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
+  const{data:otTodayRaw}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
+  const otToday=(otTodayRaw||[]).filter(b=>!isTILNote(b.notes));
+  const bankTILToday=(otTodayRaw||[]).filter(b=>isTILNote(b.notes));
   const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
   const{data:coreOTTodayRaw}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').eq('start_date',date);
   const coreOTToday=(coreOTTodayRaw||[]).filter(r=>!isTILNote(r.notes));
   const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
   const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
+  bankTILToday.filter(b=>b.notes?.startsWith('TIL-Off')).forEach(b=>{const core=findCoreStaffByName(b.bank_staff?.full_name);if(core)offIds.add(String(core.id));});
   const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
 
   const{data:rawAppts}=await SB.from('appointments')
@@ -1531,6 +1526,14 @@ async function loadAppts(){
 
   for(const t of(tilIn||[])){
     if(t.staff?.full_name)addNurse({id:t.staff_id,name:t.staff.full_name,type:'til'});
+  }
+
+  for(const b of bankTILToday.filter(x=>x.notes?.startsWith('TIL-In'))){
+    if(b.bank_staff?.full_name){
+      const core=findCoreStaffByName(b.bank_staff.full_name);
+      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'til'});
+      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'til'});
+    }
   }
 
   for(const o of(coreOTToday||[])){
@@ -1637,7 +1640,84 @@ async function refreshAppointmentViews(){
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
-async function setAS(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
+function outcomeLabel(status){return {attended:'Seen / Attended',did_not_attend:'DNTU',cancelled:'Cancelled',booked:'Booked'}[status]||status;}
+function monthLoadText(count){
+  const n=Number(count)||0;
+  if(n>=80)return `${n} active bookings — busy`;
+  if(n>=40)return `${n} active bookings — moderate`;
+  return `${n} active bookings — good availability`;
+}
+async function getMonthlyClinicAvailability(year){
+  const y=String(year||new Date().getFullYear());
+  const counts={};for(let m=1;m<=12;m++)counts[m]=0;
+  const{data}=await SB.from('appointments')
+    .select('appt_date,status')
+    .gte('appt_date',`${y}-01-01`)
+    .lte('appt_date',`${y}-12-31`)
+    .neq('status','cancelled');
+  (data||[]).forEach(a=>{const m=Number(String(a.appt_date||'').slice(5,7));if(counts[m]!==undefined)counts[m]++;});
+  return counts;
+}
+async function refreshOutcomeMonthOptions(){
+  const year=document.getElementById('of-year')?.value||String(new Date().getFullYear());
+  const sel=document.getElementById('of-month')?.value||String(new Date().getMonth()+1);
+  const counts=await getMonthlyClinicAvailability(year);
+  const monthSelect=document.getElementById('of-month');
+  if(!monthSelect)return;
+  monthSelect.innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0)}</option>`).join('');
+  monthSelect.value=sel;
+}
+async function setAS(id,status){
+  await openOutcomeFollowupModal(id,status);
+}
+async function openOutcomeFollowupModal(apptId,status){
+  const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
+  if(error||!raw){alert('Could not load this appointment.');return;}
+  const appt=(await enrichAppointments([raw]))[0]||raw;
+  const p=appt.patients||{};
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  const now=new Date();
+  const defaultMonth=Number(p.followup_due_month)||now.getMonth()+1;
+  const defaultYear=Number(p.followup_year)||now.getFullYear();
+  const availability=await getMonthlyClinicAvailability(defaultYear);
+  const statusDefault=status==='did_not_attend'?normaliseFollowupStatus(p.followup_status||'active'):normaliseFollowupStatus(p.followup_status||'active');
+  document.getElementById('mb').innerHTML=`<h2>Record ${htmlSafe(outcomeLabel(status))}</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
+    <div class="fg"><label>Appointment outcome</label><select id="of-status">
+      <option value="attended" ${status==='attended'?'selected':''}>Seen / Attended</option>
+      <option value="did_not_attend" ${status==='did_not_attend'?'selected':''}>DNTU</option>
+      <option value="cancelled" ${status==='cancelled'?'selected':''}>Cancelled</option>
+    </select></div>
+    <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
+      ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
+    </select></div>
+    <div class="fg"><label>Follow-up due month — clinic availability shown in the list</label><select id="of-month">
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0)}</option>`).join('')}
+    </select></div>
+    <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
+      <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
+      <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
+      <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
+    </select></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Outcome</button></div>`;
+  openMo();
+}
+async function saveOutcomeFollowup(apptId,patientId){
+  const status=document.getElementById('of-status')?.value||'attended';
+  const month=document.getElementById('of-month')?.value;
+  const year=document.getElementById('of-year')?.value;
+  const followupStatus=document.getElementById('of-followup-status')?.value||'active';
+  if(!month||!year){alert('Please select follow-up due month and year.');return;}
+  const{error:aErr}=await SB.from('appointments').update({status}).eq('id',apptId);
+  if(aErr){alert('Could not save appointment outcome: '+aErr.message);return;}
+  if(patientId){
+    const{error:pErr}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_status:followupStatus}).eq('id',patientId);
+    if(pErr){alert('Outcome saved, but follow-up due details could not be saved: '+pErr.message);}
+  }
+  closeModal();
+  if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
+  refreshAppointmentViews();
+}
 async function delApp(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
 async function editAppointment(id){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
@@ -2586,19 +2666,24 @@ async function loadReports(){
   const dna=appts.filter(a=>a.status==='did_not_attend').length;
   const booked=appts.filter(a=>a.status==='booked').length;
   const activeTotal=appts.filter(a=>a.status!=='cancelled').length;
+  const uniquePatients=[...new Set(appts.map(a=>a.patient_id).filter(Boolean))].length;
 
-  const slotCounts={};SLOTS.forEach(s=>slotCounts[s]=0);appts.forEach(a=>{const s=String(a.appt_slot||'').slice(0,5);if(slotCounts[s]!==undefined)slotCounts[s]++;});
-  const busiestSlot=Object.entries(slotCounts).sort((a,b)=>b[1]-a[1])[0]||['—',0];
+  let totalRegisteredPatients='—';
+  try{
+    const{count,error:pCountErr}=await SB.from('patients').select('id',{count:'exact',head:true});
+    if(!pCountErr)totalRegisteredPatients=count??0;
+  }catch(e){console.warn('Patient total count not available',e);}
 
   const kpiEl=document.getElementById('report-kpis');
   if(kpiEl){
     kpiEl.innerHTML=`
       <div class="kpi"><div class="k-label">Total Appointments</div><div class="k-value">${total}</div><div class="k-sub">selected period</div></div>
+      <div class="kpi"><div class="k-label">Unique Patients</div><div class="k-value">${uniquePatients}</div><div class="k-sub">selected period</div></div>
+      <div class="kpi"><div class="k-label">Total Patients</div><div class="k-value">${totalRegisteredPatients}</div><div class="k-sub">registered in system</div></div>
       <div class="kpi"><div class="k-label">Attended Rate</div><div class="k-value">${pct(attended,total)}%</div><div class="k-sub">${attended} attended</div></div>
       <div class="kpi"><div class="k-label">DNTU Rate</div><div class="k-value">${pct(dna,total)}%</div><div class="k-sub">${dna} did not turn up</div></div>
       <div class="kpi"><div class="k-label">Cancellation Rate</div><div class="k-value">${pct(cancelled,total)}%</div><div class="k-sub">${cancelled} cancelled</div></div>
-      <div class="kpi"><div class="k-label">Active Bookings</div><div class="k-value">${activeTotal}</div><div class="k-sub">excluding cancelled</div></div>
-      <div class="kpi"><div class="k-label">Busiest Slot</div><div class="k-value" style="font-size:24px;">${busiestSlot[0]}</div><div class="k-sub">${busiestSlot[1]} booking${busiestSlot[1]!==1?'s':''}</div></div>`;
+      <div class="kpi"><div class="k-label">Active Bookings</div><div class="k-value">${activeTotal}</div><div class="k-sub">excluding cancelled</div></div>`;
   }
 
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2608,104 +2693,17 @@ async function loadReports(){
   const monthAttended=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='attended').length);
   const monthDntu=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='did_not_attend').length);
   const monthCancelled=monthNums.map(m=>appts.filter(a=>String(a.appt_date).slice(5,7)===m && a.status==='cancelled').length);
+  const monthPatients=monthNums.map(m=>new Set(appts.filter(a=>String(a.appt_date).slice(5,7)===m).map(a=>a.patient_id).filter(Boolean)).size);
+
   makeChart('chart-monthly-trend','line',monthLabels,monthTotals,'Appointments');
-  makeMultiChart('chart-exception-trend','bar',monthLabels,[
-    {label:'DNTU',data:monthDntu,borderWidth:2},
-    {label:'Cancelled',data:monthCancelled,borderWidth:2}
-  ]);
+  makeChart('chart-monthly-patient-trend','line',monthLabels,monthPatients,'Unique Patients');
+  makeChart('chart-status-distribution','doughnut',['Booked','Attended','Cancelled','DNTU'],[booked,attended,cancelled,dna],'Outcomes',{cutout:'55%'});
   makeMultiChart('chart-monthly-status','bar',monthLabels,[
     {label:'Booked',data:monthBooked,borderWidth:2},
     {label:'Attended',data:monthAttended,borderWidth:2},
     {label:'DNTU',data:monthDntu,borderWidth:2},
     {label:'Cancelled',data:monthCancelled,borderWidth:2}
   ],{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
-
-  makeChart('chart-status-distribution','doughnut',['Booked','Attended','Cancelled','DNTU'],[booked,attended,cancelled,dna],'Outcomes',{cutout:'55%'});
-
-  const dayLabels=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const dayData=chartDataCount(appts,a=>{
-    const d=new Date(a.appt_date+'T12:00:00');
-    return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
-  },dayLabels);
-  makeChart('chart-day-demand','bar',dayLabels,dayData,'Appointments');
-
-  makeChart('chart-slot-demand','bar',SLOTS,SLOTS.map(s=>slotCounts[s]||0),'Bookings');
-
-  const weekLabels=['Week 1','Week 2','Week 3','Week 4','Week 5'];
-  const weekCounts={};weekLabels.forEach(w=>weekCounts[w]=0);
-  appts.forEach(a=>{
-    const day=Number(String(a.appt_date||'').slice(8,10));
-    const wk='Week '+Math.min(5,Math.max(1,Math.ceil(day/7)));
-    if(weekCounts[wk]!==undefined)weekCounts[wk]++;
-  });
-  makeChart('chart-week-load','bar',weekLabels,weekLabels.map(w=>weekCounts[w]||0),'Appointments');
-
-  const dntuSlotCounts={};SLOTS.forEach(s=>dntuSlotCounts[s]=0);
-  appts.filter(a=>a.status==='did_not_attend').forEach(a=>{
-    const s=String(a.appt_slot||'').slice(0,5);
-    if(dntuSlotCounts[s]!==undefined)dntuSlotCounts[s]++;
-  });
-  makeChart('chart-dntu-slot','bar',SLOTS,SLOTS.map(s=>dntuSlotCounts[s]||0),'DNTU');
-
-  const today=TODAY;
-  const upLabels=[];const upData=[];
-  for(let i=0;i<14;i++){
-    const ds=dateAddStr(today,i);
-    const d=new Date(ds+'T12:00:00');
-    upLabels.push(d.toLocaleDateString('en-MT',{day:'numeric',month:'short'}));
-    upData.push(0);
-  }
-  const upStart=today,upEnd=dateAddStr(today,13);
-  const{data:rawUpcoming}=await SB.from('appointments')
-    .select('*')
-    .gte('appt_date',upStart)
-    .lte('appt_date',upEnd)
-    .neq('status','cancelled')
-    .order('appt_date',{ascending:true})
-    .order('appt_slot',{ascending:true});
-  const upcoming=await enrichAppointments(rawUpcoming||[]);
-
-  (upcoming||[]).forEach(a=>{
-    const diff=Math.round((new Date(a.appt_date+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);
-    if(diff>=0&&diff<14)upData[diff]++;
-  });
-  makeChart('chart-upcoming-load','bar',upLabels,upData,'Booked Appointments');
-
-  const statusClass=a=>a.status==='attended'?'sb-attended':a.status==='did_not_attend'?'sb-dna':a.status==='cancelled'?'sb-cancelled':'sb-booked';
-  const upTb=document.getElementById('rep-upcoming-tbody');
-  if(upTb){
-    const upRows=(upcoming||[]).slice(0,25);
-    upTb.innerHTML=upRows.length?upRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${statusClass(a)}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No upcoming appointments in the next 14 days</td></tr>';
-  }
-
-  const exTb=document.getElementById('rep-exceptions-tbody');
-  if(exTb){
-    const exceptionRows=appts.filter(a=>a.status==='did_not_attend'||a.status==='cancelled').slice(-25).reverse();
-    exTb.innerHTML=exceptionRows.length?exceptionRows.map(a=>`<tr><td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td><td><strong>${htmlSafe(patientName(a))}</strong></td><td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td><td><span class="status-badge ${a.status==='did_not_attend'?'sb-dna':'sb-cancelled'}">${statusLabel(a.status)}</span></td></tr>`).join(''):'<tr><td colspan="5" class="empty">No DNTU or cancelled appointments in this period</td></tr>';
-  }
-
-  const slotsTb=document.getElementById('rep-slots-tbody');
-  if(slotsTb){
-    const slotRows=SLOTS.map(s=>{
-      const rows=appts.filter(a=>String(a.appt_slot||'').slice(0,5)===s);
-      return {slot:s,total:rows.length,attended:rows.filter(a=>a.status==='attended').length,dna:rows.filter(a=>a.status==='did_not_attend').length,cancelled:rows.filter(a=>a.status==='cancelled').length};
-    }).filter(r=>r.total>0).sort((a,b)=>b.total-a.total);
-    slotsTb.innerHTML=slotRows.length?slotRows.map(r=>`<tr><td><strong>${r.slot}</strong></td><td>${r.total}</td><td>${r.attended}</td><td>${r.dna}</td><td>${r.cancelled}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No slot data for this period</td></tr>';
-  }
-
-  const busyTb=document.getElementById('rep-busy-days-tbody');
-  if(busyTb){
-    const byDate={};
-    appts.forEach(a=>{
-      if(!byDate[a.appt_date])byDate[a.appt_date]={date:a.appt_date,total:0,attended:0,dna:0,cancelled:0};
-      byDate[a.appt_date].total++;
-      if(a.status==='attended')byDate[a.appt_date].attended++;
-      if(a.status==='did_not_attend')byDate[a.appt_date].dna++;
-      if(a.status==='cancelled')byDate[a.appt_date].cancelled++;
-    });
-    const busyRows=Object.values(byDate).sort((a,b)=>b.total-a.total||a.date.localeCompare(b.date)).slice(0,15);
-    busyTb.innerHTML=busyRows.length?busyRows.map(r=>`<tr><td><strong>${r.date}</strong></td><td>${r.total}</td><td>${r.attended}</td><td>${r.dna}</td><td>${r.cancelled}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No clinic day data for this period</td></tr>';
-  }
 }
 
 
@@ -2794,6 +2792,7 @@ async function saveLeave(){
 async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delCoreOT(id){if(!confirm('Delete core staff OT?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
+async function delBankTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeMo(){document.getElementById('mo').classList.remove('open');}
 function closeModal(){document.getElementById('mo').classList.remove('open');}
