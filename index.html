@@ -266,6 +266,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .followup-month-row td{background:#eef2f7!important;color:var(--navy);font-weight:900;text-transform:uppercase;font-size:11px;padding:8px 14px!important;letter-spacing:.5px;}
 .followup-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;}
 .followup-small-select{padding:5px 8px;border:1.3px solid var(--border);border-radius:7px;background:white;font-size:11px;font-family:'Inter',sans-serif;}
+.followup-small-select.month-availability-select{min-width:260px;max-width:360px;}
 .followup-pill{display:inline-block;padding:4px 9px;border-radius:14px;font-size:10px;font-weight:800;background:#e8f5f4;color:var(--teal);}
 .followup-click-row{cursor:pointer;}
 .followup-click-row:hover td{background:#f8fafc!important;}
@@ -673,7 +674,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div class="card">
         <div class="card-title">Patient Follow-up List — <span id="followup-owner-title">Common</span></div>
         <div style="overflow-x:auto;"><table class="dt">
-          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Due Month</th><th>Follow-up Year</th><th>Owner</th><th>Status</th><th>Last Appointment</th><th>Next Appointment Date</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Due Month<br/><span style="font-size:9px;color:var(--muted);font-weight:600;">Clinic Availability</span></th><th>Follow-up Year</th><th>Owner</th><th>Status</th><th>Last Appointment</th><th>Next Appointment Date</th><th>Actions</th></tr></thead>
           <tbody id="followup-patient-tbody"><tr><td colspan="10" class="empty">Loading follow-up patients...</td></tr></tbody>
         </table></div>
       </div>
@@ -956,7 +957,7 @@ async function refreshBookingMonthOptions(prefix){
   const ctx=contextForFollowupOwner(owner);
   const counts=await getMonthlyClinicAvailability(year,ctx);
   const months=dueMonthListForYear(year);
-  select.innerHTML=months.map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
+  select.innerHTML=months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
   if(months.map(String).includes(String(current)))select.value=String(current);
   storeAvailabilityOnSelect(select,counts,ctx);
   select.onchange=()=>updateBookingAvailabilityPreview(prefix);
@@ -971,7 +972,7 @@ function followupBookingFields(prefix, defaults={}){
     <div class="fg"><label>Booking type / episode</label><select id="${prefix}-followup-type">${followupTypeOptions(defaults.followup_type||defaults.type||'follow_up')}</select></div>
     <div class="fg"><label>Follow-up allocation / owner</label><select id="${prefix}-followup-owner" onchange="refreshBookingMonthOptions('${prefix}')">${followupOwnerOptions(owner)}</select></div>
     <div class="fg"><label>Follow-up due year</label><select id="${prefix}-fu-year" onchange="refreshBookingMonthOptions('${prefix}')">${followupYearOptions(year)}</select></div>
-    <div class="fg"><label>Follow-up due month — allocation availability shown</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
+    <div class="fg"><label>Follow-up due month — according to clinic availability</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
 }
 function readFollowupBookingPayload(prefix){
   const month=document.getElementById(`${prefix}-fu-month`)?.value;
@@ -1864,6 +1865,45 @@ function monthLoadText(load,context){
   if(capacity>0)return `${label}${booked}/${capacity} slots booked — ${level.text}`;
   return `${label}${booked} active bookings — slots not calculated`;
 }
+function availabilityOptionText(month,load,context){
+  return `${followupMonthName(month)} — According to clinic availability — ${monthLoadText(load,context)}`;
+}
+function dueMonthListForPlanning(year,selectedMonth){
+  const months=dueMonthListForYear(year);
+  const selected=Number(selectedMonth)||0;
+  if(selected>=1 && selected<=12 && !months.includes(selected))return [selected,...months];
+  return months;
+}
+function buildAvailabilityMonthOptions(year,owner,selectedMonth,counts){
+  const ctx=contextForFollowupOwner(owner||'Common');
+  const months=dueMonthListForPlanning(year,selectedMonth);
+  const selected=Number(selectedMonth)||0;
+  return months.map(m=>`<option value="${m}" ${Number(m)===selected?'selected':''}>${availabilityOptionText(m,(counts||{})[m]||0,ctx)}</option>`).join('');
+}
+const followupPlanningAvailabilityCache={};
+async function getFollowupPlanningAvailability(year,owner){
+  const y=String(year||new Date().getFullYear());
+  const o=normaliseFollowupOwner(owner||'Common');
+  const key=`${o}_${y}`;
+  if(followupPlanningAvailabilityCache[key])return followupPlanningAvailabilityCache[key];
+  const counts=await getMonthlyClinicAvailability(y,contextForFollowupOwner(o));
+  followupPlanningAvailabilityCache[key]=counts||{};
+  return followupPlanningAvailabilityCache[key];
+}
+async function refreshFollowupPlanningMonthOptions(patientId){
+  const monthEl=document.getElementById('fu-month-'+patientId);
+  const yearEl=document.getElementById('fu-year-'+patientId);
+  const ownerEl=document.getElementById('fu-owner-'+patientId);
+  if(!monthEl)return;
+  const selected=monthEl.value || monthEl.dataset.selectedMonth || String(new Date().getMonth()+1);
+  const year=yearEl?.value||String(new Date().getFullYear());
+  const owner=ownerEl?.value||'Common';
+  monthEl.innerHTML='<option>Loading clinic availability...</option>';
+  const counts=await getFollowupPlanningAvailability(year,owner);
+  monthEl.innerHTML=buildAvailabilityMonthOptions(year,owner,selected,counts);
+  if([...monthEl.options].some(o=>String(o.value)===String(selected)))monthEl.value=String(selected);
+  monthEl.dataset.selectedMonth=monthEl.value;
+}
 function availabilityPreviewHTML(load,context,month){
   const data=normaliseAvailabilityData(load);
   const level=availabilityLevel(data);
@@ -1999,7 +2039,7 @@ async function refreshOutcomeMonthOptions(){
   const note=document.getElementById('of-availability-note');
   if(!monthSelect)return;
   const months=dueMonthListForYear(year);
-  monthSelect.innerHTML=months.map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
+  monthSelect.innerHTML=months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
   monthSelect.value=months.map(String).includes(String(sel))?String(sel):String(months[0]||new Date().getMonth()+1);
   storeAvailabilityOnSelect(monthSelect,counts,ctx);
   monthSelect.onchange=updateOutcomeAvailabilityPreview;
@@ -2035,8 +2075,8 @@ async function openOutcomeFollowupModal(apptId,status){
     <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
       ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
     </select></div>
-    <div class="fg"><label>Follow-up due month — allocation availability shown in the list</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
-      ${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
+    <div class="fg"><label>Follow-up due month — according to clinic availability</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
+      ${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
     </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div></div>
     <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
@@ -2506,8 +2546,21 @@ async function loadStaffAudit(){
   appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
   const grouped={};
   patients.forEach(p=>{const m=Number(p.followup_due_month)||0;if(!grouped[m])grouped[m]=[];grouped[m].push(p);});
-  const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)}</option>`).join('');
-  const yearOptions=[2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
+
+  const followupAvailabilityByOwnerYear={};
+  const combos=[...new Set(patients.map(p=>{
+    const rowOwner=normaliseFollowupOwner(p.followup_owner||selectedFollowupOwner||'Common');
+    const rowYear=Number(p.followup_year)||Number(year)||new Date().getFullYear();
+    return `${rowOwner}_${rowYear}`;
+  }))];
+  for(const key of combos){
+    const idx=key.lastIndexOf('_');
+    const rowOwner=key.slice(0,idx);
+    const rowYear=key.slice(idx+1);
+    followupAvailabilityByOwnerYear[key]=await getFollowupPlanningAvailability(rowYear,rowOwner);
+  }
+
+  const yearOptions=[2026,2027,2028,2029].map(y=>`<option value="${y}">${y}</option>`).join('');
   const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
   const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option><option value="deceased">Deceased</option><option value="reversed">Reversed</option>`;
   const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
@@ -2527,13 +2580,18 @@ async function loadStaffAudit(){
       const rowStatus=(dntuStreak>=3 && manualStatus!=='awaiting_feedback')?'paused':manualStatus;
       const pausedBadge=(rowStatus==='paused'||dntuStreak>=3)?`<br/><span class="dntu-streak paused" style="margin-top:4px;">Paused${dntuStreak?` · ${dntuStreak} DNTU`:''}</span>`:'';
       const awaitingBadge=rowStatus==='awaiting_feedback'?`<br/><span class="dntu-streak awaiting" style="margin-top:4px;">Awaiting Feedback</span>`:'';
+      const rowOwner=normaliseFollowupOwner(p.followup_owner||selectedFollowupOwner||'Common');
+      const rowYear=Number(p.followup_year)||Number(year)||new Date().getFullYear();
+      const rowMonth=Number(p.followup_due_month)||0;
+      const availabilityKey=`${rowOwner}_${rowYear}`;
+      const rowMonthOptions=buildAvailabilityMonthOptions(rowYear,rowOwner,rowMonth,followupAvailabilityByOwnerYear[availabilityKey]||{});
       html+=`<tr class="followup-click-row ${(rowStatus==='paused'||dntuStreak>=3)?'dntu-row-paused':''}" onclick="openFollowupHistory('${p.id}')" title="Open full follow-up appointment history">
         <td><strong>${htmlSafe(nm)}</strong>${pausedBadge}${awaitingBadge}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
         <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
         <td>${htmlSafe(p.phone_number||'—')}</td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-month-${p.id}">${monthOptions}</select></td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-year-${p.id}">${yearOptions}</select></td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-owner-${p.id}">${ownerOptions}</select></td>
+        <td onclick="event.stopPropagation();"><select class="followup-small-select month-availability-select" id="fu-month-${p.id}" data-selected-month="${rowMonth}">${rowMonthOptions}</select></td>
+        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-year-${p.id}" onchange="refreshFollowupPlanningMonthOptions('${p.id}')">${yearOptions}</select></td>
+        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-owner-${p.id}" onchange="refreshFollowupPlanningMonthOptions('${p.id}')">${ownerOptions}</select></td>
         <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-status-${p.id}">${followupStatusOptions}</select></td>
         <td>${htmlSafe(latestLabel)}</td>
         <td><span class="next-appt-pill">${htmlSafe(nextLabel)}</span></td>
