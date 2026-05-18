@@ -764,6 +764,41 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <canvas id="chart-monthly-status"></canvas>
         </div>
       </div>
+
+      <div class="report-card wide" style="min-height:auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <h3 style="margin:0;">👥 Patients Booked for Selected Month / Period</h3>
+          <button class="btn-add" onclick="printReportPatientList()" style="padding:7px 14px;">Print List</button>
+        </div>
+        <div class="report-note">Filter by allocated nurse, nurse/column, event type and patient details. OT nurses remain support-only and are not used as patient allocation owners.</div>
+        <div class="filter-row" style="margin-bottom:10px;">
+          <label>Allocated nurse:</label>
+          <select id="rep-patient-owner" onchange="renderReportPatientList()">
+            <option value="all">All owners</option>
+            <option value="Common">Common</option>
+            <option value="Jason">Jason</option>
+            <option value="Jacqueline">Jacqueline</option>
+            <option value="Lorraine">Lorraine</option>
+          </select>
+          <label>Nurse / column:</label>
+          <select id="rep-patient-column" onchange="renderReportPatientList()"><option value="all">All columns</option></select>
+          <label>Event type:</label>
+          <select id="rep-patient-event" onchange="renderReportPatientList()">
+            <option value="all">All events</option>
+            <option value="booked">Booked</option>
+            <option value="attended">Seen / Attended</option>
+            <option value="did_not_attend">DNTU</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <label>Search:</label>
+          <input type="text" id="rep-patient-search" placeholder="Search patient, ID card, phone..." oninput="renderReportPatientList()" style="min-width:240px;"/>
+        </div>
+        <div id="rep-patient-summary" class="report-note"></div>
+        <div style="overflow-x:auto;"><table class="dt" id="rep-patient-table">
+          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Allocated Nurse</th><th>Nurse / Column</th><th>Event Type</th><th>Follow-up Due</th><th>Follow-up Status</th></tr></thead>
+          <tbody id="rep-patient-tbody"><tr><td colspan="10" class="empty">Select a period to load patients.</td></tr></tbody>
+        </table></div>
+      </div>
     </div>
 
   </div>
@@ -792,6 +827,7 @@ let selectedFollowupOwner='Common';
 let followupPatients=[];
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine'];
 let reportCharts={};
+let reportPatientRows=[];
 
 function normaliseFollowupOwner(owner){
   const raw=String(owner||'Common').trim();
@@ -1104,7 +1140,7 @@ async function renderRoster(){
   const bd=[];
   const bankCoreTIL=[];
   const bankTilData=[];
-  (bdRaw||[]).forEach(b=>{
+  (bdRaw||[]).filter(b=>(b.status||'active')!=='cancelled').forEach(b=>{
     const core=findCoreStaffByName(b.bank_staff?.full_name);
     if(isTILNote(b.notes)){
       if(core) bankCoreTIL.push({...b,source:'core_bank_til',core_staff:core,display_name:core.full_name});
@@ -1725,34 +1761,55 @@ async function refreshAppointmentViews(){
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 function outcomeLabel(status){return {attended:'Seen / Attended',did_not_attend:'DNTU',cancelled:'Cancelled',booked:'Booked'}[status]||status;}
-function monthLoadText(count){
+function monthLoadText(count,context){
   const n=Number(count)||0;
-  if(n>=80)return `${n} active bookings — busy`;
-  if(n>=40)return `${n} active bookings — moderate`;
-  return `${n} active bookings — good availability`;
+  const label=context?.label ? `${context.label}: ` : '';
+  if(n>=80)return `${label}${n} active bookings — busy`;
+  if(n>=40)return `${label}${n} active bookings — moderate`;
+  return `${label}${n} active bookings — good availability`;
 }
-async function getMonthlyClinicAvailability(year){
+function appointmentOwnerFallback(a){
+  const nurse=appointmentNurseLabel(a);
+  return normaliseFollowupOwner(a?.patients?.followup_owner||nurse||'Common');
+}
+function reportAllocatedOwner(a){
+  return normaliseFollowupOwner(a?.patients?.followup_owner||appointmentNurseLabel(a)||'Common');
+}
+async function getMonthlyClinicAvailability(year,context){
   const y=String(year||new Date().getFullYear());
   const counts={};for(let m=1;m<=12;m++)counts[m]=0;
-  const{data}=await SB.from('appointments')
-    .select('appt_date,status')
+  const{data,error}=await SB.from('appointments')
+    .select('*')
     .gte('appt_date',`${y}-01-01`)
     .lte('appt_date',`${y}-12-31`)
     .neq('status','cancelled');
-  (data||[]).forEach(a=>{const m=Number(String(a.appt_date||'').slice(5,7));if(counts[m]!==undefined)counts[m]++;});
+  if(error){console.warn('Availability load error:',error);return counts;}
+  const rows=await enrichAppointments(data||[]);
+  const owner=context?.kind==='owner'?normaliseFollowupOwner(context.id):context?.kind==='common'?'Common':null;
+  rows.forEach(a=>{
+    if(owner && reportAllocatedOwner(a)!==owner)return;
+    const m=Number(String(a.appt_date||'').slice(5,7));
+    if(counts[m]!==undefined)counts[m]++;
+  });
   return counts;
 }
 async function refreshOutcomeMonthOptions(){
   const year=document.getElementById('of-year')?.value||String(new Date().getFullYear());
   const sel=document.getElementById('of-month')?.value||String(new Date().getMonth()+1);
-  const counts=await getMonthlyClinicAvailability(year);
+  const owner=document.getElementById('of-owner')?.value||'Common';
+  const ctx=contextForFollowupOwner(owner);
+  const counts=await getMonthlyClinicAvailability(year,ctx);
   const monthSelect=document.getElementById('of-month');
+  const note=document.getElementById('of-availability-note');
   if(!monthSelect)return;
-  monthSelect.innerHTML=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0)}</option>`).join('');
-  monthSelect.value=sel;
+  const months=dueMonthListForYear(year);
+  monthSelect.innerHTML=months.map(m=>`<option value="${m}">${followupMonthName(m)} — ${monthLoadText(counts[m]||0,ctx)}</option>`).join('');
+  monthSelect.value=months.map(String).includes(String(sel))?String(sel):String(months[0]||new Date().getMonth()+1);
+  if(note)note.textContent=`Availability is calculated for: ${ctx.label}. Previous months are hidden.`;
 }
 async function setAS(id,status){
-  await openOutcomeFollowupModal(id,status);
+  try{await openOutcomeFollowupModal(id,status);}
+  catch(e){console.error('Outcome button error:',e);alert('Could not open the outcome box: '+(e.message||e));}
 }
 async function openOutcomeFollowupModal(apptId,status){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
@@ -1761,9 +1818,11 @@ async function openOutcomeFollowupModal(apptId,status){
   const p=appt.patients||{};
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const now=new Date();
-  const defaultMonth=Number(p.followup_due_month)||now.getMonth()+1;
-  const defaultYear=Number(p.followup_year)||now.getFullYear();
-  const availability=await getMonthlyClinicAvailability(defaultYear);
+  const ownerDefault=normaliseFollowupOwner(p.followup_owner||appointmentNurseLabel(appt)||'Common');
+  const defaultYear=Math.max(Number(p.followup_year)||now.getFullYear(),now.getFullYear());
+  const monthsForYear=dueMonthListForYear(defaultYear);
+  const defaultMonth=monthsForYear.includes(Number(p.followup_due_month))?Number(p.followup_due_month):(monthsForYear[0]||now.getMonth()+1);
+  const availability=await getMonthlyClinicAvailability(defaultYear,contextForFollowupOwner(ownerDefault));
   const statusDefault=status==='did_not_attend'?normaliseFollowupStatus(p.followup_status||'active'):normaliseFollowupStatus(p.followup_status||'active');
   document.getElementById('mb').innerHTML=`<h2>Record ${htmlSafe(outcomeLabel(status))}</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
@@ -1778,9 +1837,9 @@ async function openOutcomeFollowupModal(apptId,status){
     <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
       ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
     </select></div>
-    <div class="fg"><label>Follow-up due month — clinic availability shown in the list</label><select id="of-month">
-      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0)}</option>`).join('')}
-    </select></div>
+    <div class="fg"><label>Follow-up due month — allocation availability shown in the list</label><select id="of-month">
+      ${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${followupMonthName(m)} — ${monthLoadText(availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
+    </select><div id="of-availability-note" class="dntu-note" style="margin-top:5px;">Availability is calculated for: ${htmlSafe(ownerDefault)}. Previous months are hidden.</div></div>
     <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
       <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
@@ -1797,7 +1856,13 @@ async function saveOutcomeFollowup(apptId,patientId){
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
   const owner=document.getElementById('of-owner')?.value||'Common';
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
-  const{error:aErr}=await SB.from('appointments').update({status}).eq('id',apptId);
+  const currentUser=await getCurrentUserForAudit();
+  const outcomeUpdate={status,outcome_recorded_at:new Date().toISOString(),outcome_recorded_by_email:currentUser.email,outcome_recorded_by_name:currentUser.name};
+  let{error:aErr}=await SB.from('appointments').update(outcomeUpdate).eq('id',apptId);
+  if(aErr && String(aErr.message||'').toLowerCase().includes('column')){
+    const retry=await SB.from('appointments').update({status}).eq('id',apptId);
+    aErr=retry.error;
+  }
   if(aErr){alert('Could not save appointment outcome: '+aErr.message);return;}
   if(patientId){
     const updatePayload={followup_due_month:Number(month),followup_year:Number(year),followup_owner:owner,followup_status:followupStatus};
@@ -1809,7 +1874,12 @@ async function saveOutcomeFollowup(apptId,patientId){
   if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
   refreshAppointmentViews();
 }
-async function delApp(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
+async function delApp(id){
+  if(!confirm('Delete this appointment?'))return;
+  const{error}=await SB.from('appointments').delete().eq('id',id);
+  if(error){alert('Delete failed: '+error.message);return;}
+  refreshAppointmentViews();
+}
 async function editAppointment(id){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
   if(error||!raw){alert('Could not load this appointment for editing.');return;}
@@ -2773,6 +2843,18 @@ function statusLabel(status){return {booked:'Booked',attended:'Attended',cancell
 function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
 
+async function getCurrentUserForAudit(){
+  try{
+    const{data}=await SB.auth.getUser();
+    const email=data?.user?.email||'';
+    return {email,name:email||'Logged-in user'};
+  }catch(e){return {email:'',name:'Logged-in user'};}
+}
+function reportNurseColumn(a){return a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');}
+function reportEventType(a){return statusLabel(a.status);}
+function reportFollowupDue(a){return `${followupMonthName(a.patients?.followup_due_month)} ${a.patients?.followup_year||''}`.trim();}
+function reportSeenRecordedBy(a){return a.outcome_recorded_by_name||a.outcome_recorded_by_email||((a.status==='attended'||a.status==='did_not_attend'||a.status==='cancelled')?reportNurseColumn(a):'—');}
+
 async function loadReports(){
   const year=document.getElementById('rep-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('rep-month')?.value||'';
@@ -2831,6 +2913,59 @@ async function loadReports(){
     {label:'DNTU',data:monthDntu,borderWidth:2},
     {label:'Cancelled',data:monthCancelled,borderWidth:2}
   ],{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
+
+  reportPatientRows=appts;
+  syncReportPatientColumnFilter(reportPatientRows);
+  renderReportPatientList();
+}
+
+
+function syncReportPatientColumnFilter(rows){
+  const sel=document.getElementById('rep-patient-column');
+  if(!sel)return;
+  const current=sel.value||'all';
+  const names=[...new Set((rows||[]).map(reportNurseColumn).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML='<option value="all">All columns</option>'+names.map(n=>`<option value="${htmlSafe(n)}">${htmlSafe(n)}</option>`).join('');
+  if([...sel.options].some(o=>o.value===current))sel.value=current;
+}
+function renderReportPatientList(){
+  const tbody=document.getElementById('rep-patient-tbody');
+  const summary=document.getElementById('rep-patient-summary');
+  if(!tbody)return;
+  let rows=[...(reportPatientRows||[])].filter(a=>normaliseFollowupStatus(a.patients?.followup_status)!=='deceased');
+  const owner=document.getElementById('rep-patient-owner')?.value||'all';
+  const col=document.getElementById('rep-patient-column')?.value||'all';
+  const event=document.getElementById('rep-patient-event')?.value||'all';
+  const search=(document.getElementById('rep-patient-search')?.value||'').trim().toLowerCase();
+  if(owner!=='all')rows=rows.filter(a=>reportAllocatedOwner(a)===owner);
+  if(col!=='all')rows=rows.filter(a=>reportNurseColumn(a)===col);
+  if(event!=='all')rows=rows.filter(a=>a.status===event);
+  if(search){
+    rows=rows.filter(a=>[patientName(a),a.patients?.id_card,a.patients?.phone_number,reportAllocatedOwner(a),reportNurseColumn(a),statusLabel(a.status)].join(' ').toLowerCase().includes(search));
+  }
+  if(summary)summary.textContent=`Showing ${rows.length} booking record${rows.length!==1?'s':''}. Use the filters above to view seen patients, DNTU, cancelled or booked patients.`;
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No patients match the selected filters.</td></tr>';return;}
+  tbody.innerHTML=rows.map(a=>`<tr>
+    <td>${htmlSafe(a.appt_date||'')}</td>
+    <td><strong>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</strong></td>
+    <td><strong>${htmlSafe(patientName(a))}</strong></td>
+    <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'—')}</td>
+    <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
+    <td>${htmlSafe(reportAllocatedOwner(a))}</td>
+    <td>${htmlSafe(reportNurseColumn(a))}</td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${htmlSafe(statusLabel(a.status))}</span></td>
+    <td>${htmlSafe(reportFollowupDue(a)||'—')}</td>
+    <td>${followupStatusBadge(a.patients?.followup_status,true)}${followupTypeBadge(a.patients?.followup_type)}</td>
+  </tr>`).join('');
+}
+function printReportPatientList(){
+  const table=document.getElementById('rep-patient-table');
+  if(!table){window.print();return;}
+  const year=document.getElementById('rep-year')?.value||'';
+  const month=document.getElementById('rep-month')?.value||'Full Year';
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Patients Booked Report</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#1a2e4a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:0 0 18px;color:#506070}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#1a2e4a;color:white;text-align:left;padding:7px}td{border-bottom:1px solid #ddd;padding:7px;vertical-align:top}.status-badge,.followup-status-badge,.followup-type-badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold;background:#eef;color:#123;margin:1px}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Patients Booked Report — ${htmlSafe(month)} ${htmlSafe(year)}</h2>${table.outerHTML}</body></html>`);
+  w.document.close();w.focus();w.print();
 }
 
 
@@ -2920,7 +3055,18 @@ async function saveLeave(){
   closeModal();loadStaffAudit();renderRoster();
 }
 
-async function delOT(id){if(!confirm('Delete OT?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
+async function delOT(id){
+  if(!confirm('Cancel this OT entry and keep it in the overtime audit?'))return;
+  const currentUser=await getCurrentUserForAudit();
+  let{error}=await SB.from('bank_staff_assignments').update({status:'cancelled',cancelled_at:new Date().toISOString(),cancelled_by_email:currentUser.email,cancelled_by_name:currentUser.name}).eq('id',id);
+  if(error && String(error.message||'').toLowerCase().includes('column')){
+    alert('OT audit columns are not installed yet. Please run the OT audit SQL first, then cancel the OT entry again.');
+    return;
+  }
+  if(error){alert('Could not cancel OT entry: '+error.message);return;}
+  renderRoster();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+}
 async function delCoreOT(id){if(!confirm('Delete core staff OT?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delBankTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
