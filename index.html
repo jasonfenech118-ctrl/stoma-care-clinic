@@ -903,6 +903,7 @@ let selectedFollowupOwner='Common';
 let followupPatients=[];
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine'];
 const FOLLOWUP_OWNER_FILTERS=['Common','All Patients','Jacqueline','Jason','Lorraine'];
+const AUTO_AVAILABILITY_VALUE='auto_availability';
 let reportCharts={};
 let reportPatientRows=[];
 
@@ -957,8 +958,9 @@ async function refreshBookingMonthOptions(prefix){
   const ctx=contextForFollowupOwner(owner);
   const counts=await getMonthlyClinicAvailability(year,ctx);
   const months=dueMonthListForYear(year);
-  select.innerHTML=months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
-  if(months.map(String).includes(String(current)))select.value=String(current);
+  select.innerHTML=`<option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>`+months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
+  if(String(current)===AUTO_AVAILABILITY_VALUE)select.value=AUTO_AVAILABILITY_VALUE;
+  else if(months.map(String).includes(String(current)))select.value=String(current);
   storeAvailabilityOnSelect(select,counts,ctx);
   select.onchange=()=>updateBookingAvailabilityPreview(prefix);
   updateBookingAvailabilityPreview(prefix);
@@ -972,11 +974,12 @@ function followupBookingFields(prefix, defaults={}){
     <div class="fg"><label>Booking type / episode</label><select id="${prefix}-followup-type">${followupTypeOptions(defaults.followup_type||defaults.type||'follow_up')}</select></div>
     <div class="fg"><label>Follow-up allocation / owner</label><select id="${prefix}-followup-owner" onchange="refreshBookingMonthOptions('${prefix}')">${followupOwnerOptions(owner)}</select></div>
     <div class="fg"><label>Follow-up due year</label><select id="${prefix}-fu-year" onchange="refreshBookingMonthOptions('${prefix}')">${followupYearOptions(year)}</select></div>
-    <div class="fg"><label>Follow-up due month — according to clinic availability</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
+    <div class="fg"><label>Follow-up due month</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
 }
 function readFollowupBookingPayload(prefix){
-  const month=document.getElementById(`${prefix}-fu-month`)?.value;
+  const monthSelect=document.getElementById(`${prefix}-fu-month`);
   const year=document.getElementById(`${prefix}-fu-year`)?.value;
+  const month=resolveMonthValueFromSelect(monthSelect,year);
   return {
     followup_type:document.getElementById(`${prefix}-followup-type`)?.value||'follow_up',
     followup_owner:document.getElementById(`${prefix}-followup-owner`)?.value||'Common',
@@ -1866,7 +1869,43 @@ function monthLoadText(load,context){
   return `${label}${booked} active bookings — slots not calculated`;
 }
 function availabilityOptionText(month,load,context){
-  return `${followupMonthName(month)} — According to clinic availability — ${monthLoadText(load,context)}`;
+  return `${followupMonthName(month)} — ${monthLoadText(load,context)}`;
+}
+function availabilitySortScore(load){
+  const data=normaliseAvailabilityData(load);
+  if(!data.capacity)return {priority:4,ratio:1,free:0};
+  const ratio=data.booked/data.capacity;
+  const free=Math.max(0,data.capacity-data.booked);
+  if(ratio>=0.95)return {priority:3,ratio,free};
+  if(ratio>=0.75)return {priority:2,ratio,free};
+  if(ratio>=0.50)return {priority:1,ratio,free};
+  return {priority:0,ratio,free};
+}
+function recommendedMonthFromAvailability(year,counts,fallbackMonth){
+  const months=dueMonthListForYear(year);
+  if(!months.length)return Number(fallbackMonth)||new Date().getMonth()+1;
+  const rows=months.map(m=>{
+    const score=availabilitySortScore((counts||{})[m]||{booked:0,capacity:0});
+    return {month:m,...score};
+  });
+  const withCapacity=rows.filter(r=>r.free>0 || r.priority<3);
+  const pool=withCapacity.length?withCapacity:rows;
+  pool.sort((a,b)=>a.priority-b.priority || a.ratio-b.ratio || b.free-a.free || a.month-b.month);
+  return pool[0]?.month || months[0];
+}
+function selectedAvailabilityMonth(select,year){
+  const raw=String(select?.value||'');
+  const {counts}=readAvailabilityFromSelect(select);
+  if(raw===AUTO_AVAILABILITY_VALUE){
+    return {month:recommendedMonthFromAvailability(year,counts,select?.dataset?.defaultMonth),isAuto:true};
+  }
+  return {month:Number(raw)||Number(select?.dataset?.defaultMonth)||new Date().getMonth()+1,isAuto:false};
+}
+function resolveMonthValueFromSelect(select,year){
+  return selectedAvailabilityMonth(select,year).month;
+}
+function availabilityAutoNoteHTML(month){
+  return `<div class="registry-lookup-note found" style="margin-bottom:8px;">According to clinic availability selected. Recommended due month: <strong>${htmlSafe(followupMonthName(month))}</strong>.</div>`;
 }
 function dueMonthListForPlanning(year,selectedMonth){
   const months=dueMonthListForYear(year);
@@ -1877,8 +1916,12 @@ function dueMonthListForPlanning(year,selectedMonth){
 function buildAvailabilityMonthOptions(year,owner,selectedMonth,counts){
   const ctx=contextForFollowupOwner(owner||'Common');
   const months=dueMonthListForPlanning(year,selectedMonth);
+  const rawSelected=String(selectedMonth||'');
   const selected=Number(selectedMonth)||0;
-  return months.map(m=>`<option value="${m}" ${Number(m)===selected?'selected':''}>${availabilityOptionText(m,(counts||{})[m]||0,ctx)}</option>`).join('');
+  const autoSelected=rawSelected===AUTO_AVAILABILITY_VALUE;
+  const autoOption=`<option value="${AUTO_AVAILABILITY_VALUE}" ${autoSelected?'selected':''}>According to clinic availability</option>`;
+  const monthOptions=months.map(m=>`<option value="${m}" ${!autoSelected&&Number(m)===selected?'selected':''}>${availabilityOptionText(m,(counts||{})[m]||0,ctx)}</option>`).join('');
+  return autoOption+monthOptions;
 }
 const followupPlanningAvailabilityCache={};
 async function getFollowupPlanningAvailability(year,owner){
@@ -1942,16 +1985,18 @@ function updateBookingAvailabilityPreview(prefix){
   const note=document.getElementById(`${prefix}-fu-availability`);
   if(!select||!note)return;
   const {counts,ctx}=readAvailabilityFromSelect(select);
-  const month=Number(select.value)||new Date().getMonth()+1;
-  note.innerHTML=availabilityPreviewHTML(counts[month]||{booked:0,capacity:0},ctx,month);
+  const year=document.getElementById(`${prefix}-fu-year`)?.value||String(new Date().getFullYear());
+  const chosen=selectedAvailabilityMonth(select,year);
+  note.innerHTML=(chosen.isAuto?availabilityAutoNoteHTML(chosen.month):'')+availabilityPreviewHTML(counts[chosen.month]||{booked:0,capacity:0},ctx,chosen.month);
 }
 function updateOutcomeAvailabilityPreview(){
   const select=document.getElementById('of-month');
   const note=document.getElementById('of-availability-note');
   if(!select||!note)return;
   const {counts,ctx}=readAvailabilityFromSelect(select);
-  const month=Number(select.value)||new Date().getMonth()+1;
-  note.innerHTML=availabilityPreviewHTML(counts[month]||{booked:0,capacity:0},ctx,month);
+  const year=document.getElementById('of-year')?.value||String(new Date().getFullYear());
+  const chosen=selectedAvailabilityMonth(select,year);
+  note.innerHTML=(chosen.isAuto?availabilityAutoNoteHTML(chosen.month):'')+availabilityPreviewHTML(counts[chosen.month]||{booked:0,capacity:0},ctx,chosen.month);
 }
 function appointmentOwnerFallback(a){
   const nurse=appointmentNurseLabel(a);
@@ -2039,8 +2084,9 @@ async function refreshOutcomeMonthOptions(){
   const note=document.getElementById('of-availability-note');
   if(!monthSelect)return;
   const months=dueMonthListForYear(year);
-  monthSelect.innerHTML=months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
-  monthSelect.value=months.map(String).includes(String(sel))?String(sel):String(months[0]||new Date().getMonth()+1);
+  monthSelect.innerHTML=`<option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>`+months.map(m=>`<option value="${m}">${availabilityOptionText(m,counts[m]||0,ctx)}</option>`).join('');
+  if(String(sel)===AUTO_AVAILABILITY_VALUE)monthSelect.value=AUTO_AVAILABILITY_VALUE;
+  else monthSelect.value=months.map(String).includes(String(sel))?String(sel):String(months[0]||new Date().getMonth()+1);
   storeAvailabilityOnSelect(monthSelect,counts,ctx);
   monthSelect.onchange=updateOutcomeAvailabilityPreview;
   updateOutcomeAvailabilityPreview();
@@ -2075,8 +2121,8 @@ async function openOutcomeFollowupModal(apptId,status){
     <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
       ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
     </select></div>
-    <div class="fg"><label>Follow-up due month — according to clinic availability</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
-      ${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
+    <div class="fg"><label>Follow-up due month</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
+      <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
     </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div></div>
     <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
       <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
@@ -2094,8 +2140,8 @@ async function openOutcomeFollowupModal(apptId,status){
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
-  const month=document.getElementById('of-month')?.value;
   const year=document.getElementById('of-year')?.value;
+  const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
   const owner=document.getElementById('of-owner')?.value||'Common';
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
@@ -2608,8 +2654,8 @@ async function loadStaffAudit(){
   });
 }
 async function savePatientFollowup(patientId){
-  const month=document.getElementById('fu-month-'+patientId)?.value;
   const year=document.getElementById('fu-year-'+patientId)?.value;
+  const month=resolveMonthValueFromSelect(document.getElementById('fu-month-'+patientId),year);
   const owner=document.getElementById('fu-owner-'+patientId)?.value||selectedFollowupOwner;
   const status=document.getElementById('fu-status-'+patientId)?.value||'active';
   if(!month||!year){alert('Please select Due Month and Follow-up Year.');return;}
