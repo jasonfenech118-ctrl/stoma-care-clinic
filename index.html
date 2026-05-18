@@ -359,6 +359,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .followup-status-badge.awaiting_feedback{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 .followup-status-badge.paused{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
 .followup-status-badge.deceased{background:#e5e7eb;color:#374151;border:1px solid #9ca3af;}
+.followup-status-badge.reversed{background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;}
 .followup-type-badge{display:inline-block;width:max-content;margin:5px 4px 2px 0;padding:3px 9px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
 .followup-type-badge.follow_up{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc;}
 .followup-type-badge.new_case{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;}
@@ -436,6 +437,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="tab" onclick="switchTab('cod',this)">Change of Duty</div>
     <div class="tab" onclick="switchTab('ot-audit',this)">OT Audit</div>
     <div class="tab" onclick="switchTab('staff-audit',this)">Follow-up Planning</div>
+    <div class="tab" onclick="switchTab('reversal',this)">Reversal</div>
     <div class="tab" onclick="switchTab('clinic-audit',this)">Clinic Audit</div>
     <div class="tab" onclick="switchTab('dntu-policy',this)">DNTU</div>
     <div class="tab" onclick="switchTab('reports',this)">Reports &amp; Charts</div>
@@ -567,6 +569,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <button id="ao-filter-awaiting_feedback" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('awaiting_feedback')">Awaiting Feedback</button>
           <button id="ao-filter-paused" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('paused')">Paused</button>
           <button id="ao-filter-deceased" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('deceased')">Deceased</button>
+          <button id="ao-filter-reversed" class="outcome-btn" onclick="setAppointmentOutcomeFollowupFilter('reversed')">Reversed</button>
         </div>
         <label>Appointment Outcome:</label>
         <select id="appointment-outcome-filter" onchange="loadAppointmentOutcomes()">
@@ -656,7 +659,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
           <option value="awaiting_feedback">Awaiting Feedback</option>
           <option value="paused">Paused Follow-ups</option>
           <option value="deceased">Deceased Register</option>
-          <option value="all">All Active/Non-Deceased</option>
+          <option value="reversed">Reversed / Reversal Register</option>
+          <option value="all">All Active/Non-Closed</option>
         </select>
         <span class="dntu-note">Paused patients are hidden from the normal nurse list. Use Awaiting Feedback or Paused Follow-ups to view those groups separately.</span>
       </div>
@@ -666,6 +670,33 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <div style="overflow-x:auto;"><table class="dt">
           <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Due Month</th><th>Follow-up Year</th><th>Owner</th><th>Status</th><th>Last Appointment</th><th>Next Appointment Date</th><th>Actions</th></tr></thead>
           <tbody id="followup-patient-tbody"><tr><td colspan="10" class="empty">Loading follow-up patients...</td></tr></tbody>
+        </table></div>
+      </div>
+
+    </div>
+
+    <!-- REVERSAL REGISTER -->
+    <div class="page" id="page-reversal">
+      <div class="phdr">
+        <div><h2>Reversal Register</h2><p>Patients whose stoma has been reversed, kept separately from active follow-up planning.</p></div>
+        <button class="btn-add" onclick="loadReversalRegister()">Refresh</button>
+      </div>
+      <div class="followup-toolbar">
+        <label>Year:</label>
+        <select id="rev-year" onchange="loadReversalRegister()">
+          <option value="">All Years</option>
+          <option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option>
+        </select>
+        <label>Search:</label>
+        <input type="text" id="rev-search" placeholder="Search patient, ID card, phone, owner..." oninput="loadReversalRegister()" style="min-width:240px;"/>
+        <button class="btn-add" onclick="printReversalRegister()" style="padding:7px 14px;">Print Reversal List</button>
+      </div>
+      <div class="srow" id="reversal-stats"></div>
+      <div class="card">
+        <div class="card-title">Reversal Patient List</div>
+        <div style="overflow-x:auto;"><table class="dt" id="reversal-table">
+          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Owner</th><th>Reversal / Due Year</th><th>Last Appointment</th><th>Seen By / Nurse</th><th>Actions</th></tr></thead>
+          <tbody id="reversal-tbody"><tr><td colspan="8" class="empty">Loading reversal register...</td></tr></tbody>
         </table></div>
       </div>
 
@@ -892,6 +923,7 @@ let dntuRows=[];
 let selectedFollowupOwner='Common';
 let followupPatients=[];
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine'];
+const FOLLOWUP_OWNER_FILTERS=['Common','All Patients','Jacqueline','Jason','Lorraine'];
 let reportCharts={};
 let reportPatientRows=[];
 
@@ -1133,6 +1165,7 @@ function switchTab(name,el){
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
   if(name==='staff-audit')loadStaffAudit();
+  if(name==='reversal')loadReversalRegister();
   if(name==='ot-audit')loadOvertimeAudit();
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
@@ -1439,6 +1472,7 @@ async function addOT(){
     document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
     renderRoster();
     if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+  if(document.getElementById('page-reversal')?.classList.contains('active'))loadReversalRegister();
     return;
   }
 
@@ -1827,6 +1861,7 @@ async function refreshAppointmentViews(){
   if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
   if(document.getElementById('page-appointment-outcomes')?.classList.contains('active'))loadAppointmentOutcomes();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+  if(document.getElementById('page-reversal')?.classList.contains('active'))loadReversalRegister();
   if(document.getElementById('page-reports')?.classList.contains('active'))loadReports();
 }
 function outcomeLabel(status){return {attended:'Seen / Attended',did_not_attend:'DNTU',cancelled:'Cancelled',booked:'Booked'}[status]||status;}
@@ -2031,6 +2066,7 @@ async function openOutcomeFollowupModal(apptId,status){
       <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
       <option value="deceased" ${statusDefault==='deceased'?'selected':''}>Deceased</option>
+      <option value="reversed" ${statusDefault==='reversed'?'selected':''}>Reversed</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Outcome</button></div>`;
   openMo();
@@ -2100,6 +2136,7 @@ async function editAppointment(id){
       <option value="awaiting_feedback" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
       <option value="paused" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='paused'?'selected':''}>Paused</option>
       <option value="deceased" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='deceased'?'selected':''}>Deceased</option>
+      <option value="reversed" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='reversed'?'selected':''}>Reversed</option>
     </select></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
   openMo();
@@ -2434,14 +2471,15 @@ async function loadStaffAudit(){
   const ownerCounts={};
   FOLLOWUP_OWNERS.forEach(o=>ownerCounts[o]=0);
   allPatients.forEach(p=>{const o=p.followup_owner||'Common'; if(ownerCounts[o]!==undefined)ownerCounts[o]++;});
+  ownerCounts['All Patients']=allPatients.length;
   const ownerGrid=document.getElementById('followup-owner-grid');
   if(ownerGrid){
-    ownerGrid.innerHTML=FOLLOWUP_OWNERS.map(o=>`<button class="followup-owner-card ${selectedFollowupOwner===o?'active':''}" onclick="setFollowupOwner('${o}')">
+    ownerGrid.innerHTML=FOLLOWUP_OWNER_FILTERS.map(o=>`<button class="followup-owner-card ${selectedFollowupOwner===o?'active':''}" onclick="setFollowupOwner('${o}')">
       <div class="owner-name">${htmlSafe(o)}</div><div class="owner-count">${ownerCounts[o]||0} patients</div>
     </button>`).join('');
   }
 
-  let patients=allPatients.filter(p=>(p.followup_owner||'Common')===selectedFollowupOwner);
+  let patients=selectedFollowupOwner==='All Patients'?[...allPatients]:allPatients.filter(p=>(p.followup_owner||'Common')===selectedFollowupOwner);
   patients=patients.filter(p=>String(p.followup_year||year)===String(year));
   if(month)patients=patients.filter(p=>String(p.followup_due_month||'')===String(month));
 
@@ -2455,9 +2493,10 @@ async function loadStaffAudit(){
 
   if(followupStatus==='active')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='active' && (dntuStreakByPatient[p.id]||0)<3);
   if(followupStatus==='awaiting_feedback')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='awaiting_feedback');
-  if(followupStatus==='paused')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='paused' || ((dntuStreakByPatient[p.id]||0)>=3 && normaliseFollowupStatus(p.followup_status)!=='deceased'));
+  if(followupStatus==='paused')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='paused' || ((dntuStreakByPatient[p.id]||0)>=3 && !isClosedFollowupStatus(p.followup_status)));
   if(followupStatus==='deceased')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='deceased');
-  if(followupStatus==='all')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)!=='deceased');
+  if(followupStatus==='reversed')patients=patients.filter(p=>normaliseFollowupStatus(p.followup_status)==='reversed');
+  if(followupStatus==='all')patients=patients.filter(p=>!isClosedFollowupStatus(p.followup_status));
 
   followupPatients=patients;
   const patientIds=patients.map(p=>p.id).filter(Boolean);
@@ -2481,11 +2520,11 @@ async function loadStaffAudit(){
       <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
       <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
       <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
-      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='deceased'?'Deceased':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
+      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='paused'?'Paused':followupStatus==='awaiting_feedback'?'Awaiting Feedback':followupStatus==='deceased'?'Deceased':followupStatus==='reversed'?'Reversed':followupStatus==='all'?'All':'Active'}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
   }
 
   if(!tbody)return;
-  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='all'?'all':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
+  if(!patients.length){const statusLabel=followupStatus==='paused'?'paused':followupStatus==='awaiting_feedback'?'awaiting feedback':followupStatus==='deceased'?'deceased':followupStatus==='reversed'?'reversed':followupStatus==='all'?'all':'active';tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
   const latestByPatient={};
   appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
   const grouped={};
@@ -2493,7 +2532,7 @@ async function loadStaffAudit(){
   const monthOptions=[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}">${followupMonthName(m)}</option>`).join('');
   const yearOptions=[2026,2027,2028].map(y=>`<option value="${y}">${y}</option>`).join('');
   const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
-  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option><option value="deceased">Deceased</option>`;
+  const followupStatusOptions=`<option value="active">Active</option><option value="awaiting_feedback">Awaiting Feedback</option><option value="paused">Paused</option><option value="deceased">Deceased</option><option value="reversed">Reversed</option>`;
   const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
   let html='';
   order.forEach(m=>{
@@ -2542,6 +2581,7 @@ async function savePatientFollowup(patientId){
   const{error}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_owner:owner,followup_status:status}).eq('id',patientId);
   if(error){alert('Could not save follow-up details: '+error.message);return;}
   loadStaffAudit();
+  if(document.getElementById('page-reversal')?.classList.contains('active'))loadReversalRegister();
 }
 async function openFollowupHistory(patientId){
   const{data:pat}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
@@ -2563,8 +2603,12 @@ async function openFollowupHistory(patientId){
 
 
 function normaliseFollowupStatus(status){
-  const st=String(status||'active').trim().toLowerCase();
-  return (st==='awaiting_feedback'||st==='paused'||st==='deceased')?st:'active';
+  const st=String(status||'active').trim().toLowerCase().replace(/\s+/g,'_');
+  return (st==='awaiting_feedback'||st==='paused'||st==='deceased'||st==='reversed')?st:'active';
+}
+function isClosedFollowupStatus(status){
+  const st=normaliseFollowupStatus(status);
+  return st==='deceased'||st==='reversed';
 }
 function followupStatusText(status){
   const st=normaliseFollowupStatus(status);
@@ -2572,7 +2616,8 @@ function followupStatusText(status){
     active:'Active',
     awaiting_feedback:'Awaiting Feedback',
     paused:'Paused',
-    deceased:'Deceased'
+    deceased:'Deceased',
+    reversed:'Reversed'
   }[st]||'Active';
 }
 function followupStatusBadge(status,showActive=false){
@@ -2611,7 +2656,7 @@ function currentDntuStreakForPatientAppointments(rows){
 }
 function appointmentOutcomeEffectiveFollowupStatus(patient,streak){
   const manual=normaliseFollowupStatus(patient?.followup_status);
-  if(streak>=3 && manual!=='awaiting_feedback')return 'paused';
+  if(streak>=3 && manual!=='awaiting_feedback' && !isClosedFollowupStatus(manual))return 'paused';
   return manual;
 }
 async function loadAppointmentOutcomes(){
@@ -2696,6 +2741,7 @@ async function loadAppointmentOutcomes(){
       <div class="sbox"><div class="sl">Awaiting Feedback</div><div class="sv">${countStatus('awaiting_feedback')}</div><div class="ss" style="color:var(--orange)">manual status</div></div>
       <div class="sbox"><div class="sl">Paused</div><div class="sv">${countStatus('paused')}</div><div class="ss" style="color:var(--red)">paused follow-up</div></div>
       <div class="sbox"><div class="sl">Deceased</div><div class="sv">${countStatus('deceased')}</div><div class="ss" style="color:#6b7280">separate register</div></div>
+      <div class="sbox"><div class="sl">Reversed</div><div class="sv">${countStatus('reversed')}</div><div class="ss" style="color:#1e40af">reversal register</div></div>
       `;
   }
 
@@ -2710,7 +2756,7 @@ async function loadAppointmentOutcomes(){
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'—';
     const nurse=latest.staff?.full_name||latest.bank_staff?.full_name||(!latest.assigned_to&&!latest.bank_staff_id?'Common':'—');
     const latestLabel=latest.appt_date?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)}`:'—';
-    const statusOptions=['active','awaiting_feedback','paused','deceased'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
+    const statusOptions=['active','awaiting_feedback','paused','deceased','reversed'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
     return `<tr class="outcome-click-row" onclick="openFollowupHistory('${r.patientId}')" title="Open full follow-up history">
       <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">Click row for history</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
@@ -2936,7 +2982,7 @@ async function loadDntuPolicy(){
     groups[key].push(a);
   });
   dntuRows=Object.values(groups).map(rows=>{
-    if(rows.some(a=>normaliseFollowupStatus(a.patients?.followup_status)==='deceased'))return null;
+    if(rows.some(a=>isClosedFollowupStatus(a.patients?.followup_status)))return null;
     const latestDntu=latestDntuAppointment(rows);
     const sample=latestDntu||rows[0]||{};
     const streak=calculateCurrentDntuStreak(rows);
@@ -3123,7 +3169,7 @@ function renderReportPatientList(){
   const tbody=document.getElementById('rep-patient-tbody');
   const summary=document.getElementById('rep-patient-summary');
   if(!tbody)return;
-  let rows=[...(reportPatientRows||[])].filter(a=>normaliseFollowupStatus(a.patients?.followup_status)!=='deceased');
+  let rows=[...(reportPatientRows||[])].filter(a=>!isClosedFollowupStatus(a.patients?.followup_status));
   const owner=document.getElementById('rep-patient-owner')?.value||'all';
   const col=document.getElementById('rep-patient-column')?.value||'all';
   const event=document.getElementById('rep-patient-event')?.value||'all';
@@ -3174,6 +3220,80 @@ function ensureOvertimeAuditDefaults(){
     monthEl.dataset.ready='1';
   }
 }
+
+async function loadReversalRegister(){
+  const tbody=document.getElementById('reversal-tbody');
+  const stats=document.getElementById('reversal-stats');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="8" class="empty">Loading reversal register...</td></tr>';
+  const year=document.getElementById('rev-year')?.value||'';
+  const search=(document.getElementById('rev-search')?.value||'').trim().toLowerCase();
+  const{data,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
+    .eq('followup_status','reversed')
+    .order('surname',{ascending:true})
+    .order('first_name',{ascending:true});
+  if(error){
+    console.error('Reversal register load error:',error);
+    tbody.innerHTML=`<tr><td colspan="8" class="empty">Could not load reversal register: ${htmlSafe(error.message||'Unknown error')}</td></tr>`;
+    if(stats)stats.innerHTML='<div class="sbox"><div class="sl">Setup Required</div><div class="sv" style="font-size:22px;color:var(--red);">SQL</div><div class="ss">Run the Reversed status SQL first</div></div>';
+    return;
+  }
+  let patients=data||[];
+  if(year)patients=patients.filter(p=>String(p.followup_year||'')===String(year));
+  if(search){
+    patients=patients.filter(p=>[
+      p.first_name,p.surname,p.id_card,p.phone_number,p.followup_owner,p.followup_year,followupMonthName(p.followup_due_month)
+    ].join(' ').toLowerCase().includes(search));
+  }
+  const ids=patients.map(p=>p.id).filter(Boolean);
+  const appts=await getAppointmentRowsForPatients(ids,'','');
+  const latestByPatient={};
+  appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
+  const seenCount=appts.filter(a=>a.status==='attended').length;
+  if(stats){
+    stats.innerHTML=`
+      <div class="sbox"><div class="sl">Reversed Patients</div><div class="sv">${patients.length}</div><div class="ss">${year||'all years'}</div></div>
+      <div class="sbox"><div class="sl">Appointments</div><div class="sv">${appts.length}</div><div class="ss">recorded history</div></div>
+      <div class="sbox"><div class="sl">Seen Records</div><div class="sv">${seenCount}</div><div class="ss" style="color:var(--green)">attended outcomes</div></div>`;
+  }
+  if(!patients.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No reversed patients found for this filter.</td></tr>';return;}
+  tbody.innerHTML=patients.map(p=>{
+    const latest=latestByPatient[p.id];
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
+    const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
+    const nurse=latest?.staff?.full_name||latest?.bank_staff?.full_name||(!latest?.assigned_to&&!latest?.bank_staff_id&&latest?'Common':'—');
+    return `<tr class="followup-click-row" onclick="openFollowupHistory('${p.id}')" title="Open full history">
+      <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge('reversed',true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${htmlSafe(p.phone_number||'—')}</td>
+      <td>${htmlSafe(p.followup_owner||'Common')}</td>
+      <td>${htmlSafe(p.followup_year||'—')}</td>
+      <td>${htmlSafe(latestLabel)}</td>
+      <td>${htmlSafe(nurse)}</td>
+      <td onclick="event.stopPropagation();"><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button><button class="ncb-btn" onclick="markReversalActive('${p.id}')" style="margin-left:4px;background:#e8f5f4;color:var(--teal);">Move to Active</button></td>
+    </tr>`;
+  }).join('');
+}
+async function markReversalActive(patientId){
+  if(!confirm('Move this patient from Reversal Register back to Active follow-up?'))return;
+  const{error}=await SB.from('patients').update({followup_status:'active'}).eq('id',patientId);
+  if(error){alert('Could not update patient: '+error.message);return;}
+  loadReversalRegister();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+  if(document.getElementById('page-appointment-outcomes')?.classList.contains('active'))loadAppointmentOutcomes();
+}
+function printReversalRegister(){
+  const table=document.getElementById('reversal-table');
+  if(!table){alert('No reversal list available to print.');return;}
+  const year=document.getElementById('rev-year')?.value||'All years';
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Reversal Register</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#1a2e4a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:0 0 18px;color:#506070}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#1a2e4a;color:white;text-align:left;padding:7px}td{border-bottom:1px solid #ddd;padding:7px;vertical-align:top}.followup-status-badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold;background:#dbeafe;color:#1e40af;margin:1px}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Reversal Register — ${htmlSafe(year)}</h2>${table.outerHTML}</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
 async function loadOvertimeAudit(){
   const tbody=document.getElementById('ot-audit-tbody');
   if(!tbody)return;
