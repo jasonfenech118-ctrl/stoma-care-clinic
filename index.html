@@ -434,6 +434,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .outcome-click-row{cursor:pointer;}
 .outcome-click-row:hover td{background:#f8fafc!important;}
 
+
+/* v30AG — simplified booking card and clearer Edit / Seen follow-up card */
+.mb.mb-wide{width:720px;max-width:96vw;max-height:90vh;overflow-y:auto;}
+.edit-seen-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;}
+.edit-seen-grid .fg{margin-bottom:0;}
+.edit-seen-section{margin:14px 0 10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fafafa;color:var(--navy);font-size:12px;font-weight:900;}
+.episode-only-box{display:none;margin:10px 0 12px;padding:12px;border:1px solid #f2df9f;background:#fff8e1;border-radius:12px;}
+.episode-only-box .episode-note{font-size:11px;color:#856404;line-height:1.35;margin-bottom:8px;font-weight:700;}
+.booking-guidance-note{margin:10px 0 12px;padding:9px 11px;border-radius:10px;background:#e8f5f4;border:1px solid #b7ddd9;color:var(--teal);font-size:11px;font-weight:800;line-height:1.35;}
+@media(max-width:720px){.mb.mb-wide{width:95vw;}.edit-seen-grid{grid-template-columns:1fr;}}
+
 .registry-lookup-note{margin-top:-6px;margin-bottom:10px;padding:8px 10px;border-radius:8px;font-size:11px;font-weight:700;background:#f8fafc;color:var(--muted);border:1px solid var(--border);}
 .registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
 .registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
@@ -1046,6 +1057,28 @@ function followupBookingFields(prefix, defaults={}){
     <div class="fg"><label>Follow-up allocation / owner</label><select id="${prefix}-followup-owner" onchange="refreshBookingMonthOptions('${prefix}')">${followupOwnerOptions(owner)}</select></div>
     <div class="fg"><label>Follow-up due year</label><select id="${prefix}-fu-year" onchange="refreshBookingMonthOptions('${prefix}')">${followupYearOptions(year)}</select></div>
     <div class="fg"><label>Follow-up due month</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
+}
+function newPatientEpisodeField(prefix, defaults={}){
+  return `<div id="${prefix}-episode-only" class="episode-only-box">
+    <div class="episode-note">New patient ID card not found in the saved registry. Select the booking type / episode for the first saved record. Follow-up owner and due month are completed later from Edit / Seen.</div>
+    <div class="fg" style="margin-bottom:0;"><label>Booking type / episode</label><select id="${prefix}-followup-type">${followupTypeOptions(defaults.followup_type||defaults.type||'new_case')}</select></div>
+  </div>`;
+}
+function showNewPatientEpisode(prefix,show,type='new_case'){
+  const box=document.getElementById(`${prefix}-episode-only`);
+  if(box)box.style.display=show?'block':'none';
+  const typeEl=document.getElementById(`${prefix}-followup-type`);
+  if(typeEl&&type)typeEl.value=normaliseFollowupType(type);
+}
+function readBookingPatientPayload(prefix,isNewPatient){
+  if(isNewPatient){
+    return {
+      followup_type:document.getElementById(`${prefix}-followup-type`)?.value||'new_case',
+      followup_owner:'Common',
+      followup_status:'active'
+    };
+  }
+  return {};
 }
 function readFollowupBookingPayload(prefix){
   const monthSelect=document.getElementById(`${prefix}-fu-month`);
@@ -2080,6 +2113,9 @@ function updateOutcomeAvailabilityPreview(){
   const chosen=selectedAvailabilityMonth(select,year);
   note.innerHTML=(chosen.isAuto?availabilityAutoNoteHTML(chosen.month):'')+availabilityPreviewHTML(counts[chosen.month]||{booked:0,capacity:0},ctx,chosen.month);
 }
+function appointmentNurseLabel(a){
+  return a?.staff?.full_name||a?.bank_staff?.full_name||(!a?.assigned_to&&!a?.bank_staff_id?'Common':'Assigned nurse');
+}
 function appointmentOwnerFallback(a){
   const nurse=appointmentNurseLabel(a);
   return normaliseFollowupOwner(a?.patients?.followup_owner||nurse||'Common');
@@ -2182,38 +2218,64 @@ async function openOutcomeFollowupModal(apptId,status){
   if(error||!raw){alert('Could not load this appointment.');return;}
   const appt=(await enrichAppointments([raw]))[0]||raw;
   const p=appt.patients||{};
-  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const now=new Date();
+  const requestedStatus=status||appt.status||'booked';
   const ownerDefault=normaliseFollowupOwner(p.followup_owner||appointmentNurseLabel(appt)||'Common');
   const defaultYear=Math.max(Number(p.followup_year)||now.getFullYear(),now.getFullYear());
   const monthsForYear=dueMonthListForYear(defaultYear);
   const defaultMonth=monthsForYear.includes(Number(p.followup_due_month))?Number(p.followup_due_month):(monthsForYear[0]||now.getMonth()+1);
   const availability=await getMonthlyClinicAvailability(defaultYear,contextForFollowupOwner(ownerDefault));
-  const statusDefault=status==='did_not_attend'?normaliseFollowupStatus(p.followup_status||'active'):normaliseFollowupStatus(p.followup_status||'active');
-  document.getElementById('mb').innerHTML=`<h2>Record ${htmlSafe(outcomeLabel(status))}</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
-    <div class="fg"><label>Appointment outcome</label><select id="of-status">
-      <option value="attended" ${status==='attended'?'selected':''}>Seen / Attended</option>
-      <option value="did_not_attend" ${status==='did_not_attend'?'selected':''}>DNTU</option>
-      <option value="cancelled" ${status==='cancelled'?'selected':''}>Cancelled</option>
-    </select></div>
-    <div class="fg"><label>Follow-up allocation / transfer to nurse</label><select id="of-owner" onchange="refreshOutcomeMonthOptions()">
-      ${followupOwnerOptions(ownerDefault)}
-    </select></div>
-    <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
-      ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
-    </select></div>
-    <div class="fg"><label>Follow-up due month</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
-      <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
-    </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div></div>
-    <div class="fg"><label>Follow-up status</label><select id="of-followup-status">
-      <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
-      <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
-      <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
-      <option value="deceased" ${statusDefault==='deceased'?'selected':''}>Deceased</option>
-      <option value="reversed" ${statusDefault==='reversed'?'selected':''}>Reversed</option>
-    </select></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Outcome</button></div>`;
+  const statusDefault=normaliseFollowupStatus(p.followup_status||'active');
+  const currentType=appt.bank_staff_id?'ot':(appt.assigned_to?'core':'common');
+  const currentId=appt.bank_staff_id||appt.assigned_to||'common';
+  const nurseOptions=await buildNurseAllocationOptions(currentType,currentId);
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>Edit / Seen Appointment</h2>
+    <div class="msub">Update patient details, clinic column, appointment outcome and follow-up planning in one card.<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
+
+    <div class="edit-seen-section">Patient details</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>ID Card Number *</label><input type="text" id="of-idcard" value="${htmlSafe(p.id_card||'')}"/></div>
+      <div class="fg"><label>Phone</label><input type="tel" id="of-phone" value="${htmlSafe(p.phone_number||'')}"/></div>
+      <div class="fg"><label>Name *</label><input type="text" id="of-fn" value="${htmlSafe(p.first_name||'')}"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="of-sn" value="${htmlSafe(p.surname||'')}"/></div>
+    </div>
+
+    <div class="edit-seen-section">Appointment details</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Appointment Date *</label><input type="date" id="of-date" value="${htmlSafe(appt.appt_date||'')}"/></div>
+      <div class="fg"><label>Appointment Time *</label><input type="time" id="of-slot" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5))}"/></div>
+      <div class="fg"><label>Nurse / Column</label><select id="of-nurse">${nurseOptions}</select></div>
+      <div class="fg"><label>Appointment outcome</label><select id="of-status">
+        <option value="booked" ${requestedStatus==='booked'?'selected':''}>Booked</option>
+        <option value="attended" ${requestedStatus==='attended'?'selected':''}>Seen / Attended</option>
+        <option value="did_not_attend" ${requestedStatus==='did_not_attend'?'selected':''}>DNTU</option>
+        <option value="cancelled" ${requestedStatus==='cancelled'?'selected':''}>Cancelled</option>
+      </select></div>
+    </div>
+
+    <div class="edit-seen-section">Follow-up planning</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions()">
+        ${followupOwnerOptions(ownerDefault)}
+      </select></div>
+      <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
+        ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
+      </select></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up due month</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
+        <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
+      </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up status</label><select id="of-followup-status">
+        <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
+        <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
+        <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
+        <option value="deceased" ${statusDefault==='deceased'?'selected':''}>Deceased</option>
+        <option value="reversed" ${statusDefault==='reversed'?'selected':''}>Reversed</option>
+      </select></div>
+    </div>
+
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Edit / Seen</button></div>`;
   openMo();
   const ofMonth=document.getElementById('of-month');
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
@@ -2226,20 +2288,58 @@ async function saveOutcomeFollowup(apptId,patientId){
   const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
   const owner=document.getElementById('of-owner')?.value||'Common';
+
+  const fn=document.getElementById('of-fn')?.value.trim()||'';
+  const sn=document.getElementById('of-sn')?.value.trim()||'';
+  const idcard=normaliseIdCard(document.getElementById('of-idcard')?.value||'');
+  const phone=document.getElementById('of-phone')?.value.trim()||'';
+  const date=document.getElementById('of-date')?.value||'';
+  const slot=document.getElementById('of-slot')?.value||'';
+  const nurse=document.getElementById('of-nurse')?.value||'common';
+
+  if(!fn||!sn||!idcard){alert('Please fill in ID card number, name and surname.');return;}
+  if(!date||!slot){alert('Please fill in appointment date and time.');return;}
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
+
   const currentUser=await getCurrentUserForAudit();
-  const outcomeUpdate={status,outcome_recorded_at:new Date().toISOString(),outcome_recorded_by_email:currentUser.email,outcome_recorded_by_name:currentUser.name};
+  const outcomeUpdate={
+    status,
+    appt_date:date,
+    appt_slot:String(slot).slice(0,5),
+    assigned_to:null,
+    bank_staff_id:null,
+    outcome_recorded_at:new Date().toISOString(),
+    outcome_recorded_by_email:currentUser.email,
+    outcome_recorded_by_name:currentUser.name
+  };
+  if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
+  if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
+
   let{error:aErr}=await SB.from('appointments').update(outcomeUpdate).eq('id',apptId);
   if(aErr && String(aErr.message||'').toLowerCase().includes('column')){
-    const retry=await SB.from('appointments').update({status}).eq('id',apptId);
+    const retryUpdate={...outcomeUpdate};
+    delete retryUpdate.outcome_recorded_at;
+    delete retryUpdate.outcome_recorded_by_email;
+    delete retryUpdate.outcome_recorded_by_name;
+    const retry=await SB.from('appointments').update(retryUpdate).eq('id',apptId);
     aErr=retry.error;
   }
-  if(aErr){alert('Could not save appointment outcome: '+aErr.message);return;}
+  if(aErr){alert('Could not save appointment edit/outcome: '+aErr.message);return;}
+
   if(patientId){
-    const updatePayload={followup_due_month:Number(month),followup_year:Number(year),followup_owner:owner,followup_status:followupStatus};
+    const updatePayload={
+      first_name:fn,
+      surname:sn,
+      id_card:idcard,
+      phone_number:phone||null,
+      followup_due_month:Number(month),
+      followup_year:Number(year),
+      followup_owner:owner,
+      followup_status:followupStatus
+    };
     if(status==='attended')updatePayload.followup_type='follow_up';
     const{error:pErr}=await SB.from('patients').update(updatePayload).eq('id',patientId);
-    if(pErr){alert('Outcome saved, but follow-up due details could not be saved: '+pErr.message);}
+    if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
   }
   closeModal();
   if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
@@ -2252,39 +2352,7 @@ async function delApp(id){
   refreshAppointmentViews();
 }
 async function editAppointment(id){
-  const{data:raw,error}=await SB.from('appointments').select('*').eq('id',id).single();
-  if(error||!raw){alert('Could not load this appointment for editing.');return;}
-  const enriched=(await enrichAppointments([raw]))[0]||raw;
-  const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
-  const currentNurse=enriched.bank_staff_id?`bank:${enriched.bank_staff_id}`:(enriched.assigned_to?`core:${enriched.assigned_to}`:'common');
-  const coreOptions=(staffList||[]).map(s=>`<option value="core:${s.id}" ${currentNurse===`core:${s.id}`?'selected':''}>${htmlSafe(s.full_name)}</option>`).join('');
-  const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}" ${currentNurse===`bank:${b.id}`?'selected':''}>${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
-  document.getElementById('mb').innerHTML=`<h2>Edit Appointment</h2>
-    <div class="msub">Correct patient, date, time, nurse/column, or outcome.</div>
-    <div class="fg"><label>First Name *</label><input type="text" id="e-fn" value="${htmlSafe(enriched.patients?.first_name||'')}"/></div>
-    <div class="fg"><label>Surname *</label><input type="text" id="e-sn" value="${htmlSafe(enriched.patients?.surname||'')}"/></div>
-    <div class="fg"><label>ID Card *</label><input type="text" id="e-idcard" value="${htmlSafe(enriched.patients?.id_card||'')}"/></div>
-    <div class="fg"><label>Phone</label><input type="tel" id="e-phone" value="${htmlSafe(enriched.patients?.phone_number||'')}"/></div>
-    <div class="fg"><label>Appointment Date *</label><input type="date" id="e-date" value="${htmlSafe(enriched.appt_date||'')}"/></div>
-    <div class="fg"><label>Appointment Time *</label><input type="time" id="e-slot" value="${htmlSafe(String(enriched.appt_slot||'').slice(0,5))}"/></div>
-    <div class="fg"><label>Nurse / Column</label><select id="e-nurse"><option value="common" ${currentNurse==='common'?'selected':''}>Common</option>${coreOptions}${bankOptions}</select></div>
-    <div class="fg"><label>Appointment Outcome</label><select id="e-status">
-      <option value="booked" ${enriched.status==='booked'?'selected':''}>Booked</option>
-      <option value="attended" ${enriched.status==='attended'?'selected':''}>Seen / Attended</option>
-      <option value="did_not_attend" ${enriched.status==='did_not_attend'?'selected':''}>DNTU</option>
-      <option value="cancelled" ${enriched.status==='cancelled'?'selected':''}>Cancelled</option>
-    </select></div>
-    <div class="fg"><label>Follow-up allocation / owner</label><select id="e-followup-owner">${followupOwnerOptions(enriched.patients?.followup_owner||'Common')}</select></div>
-    <div class="fg"><label>Booking type / episode</label><select id="e-followup-type">${followupTypeOptions(enriched.patients?.followup_type||'follow_up')}</select></div>
-    <div class="fg"><label>Follow-up Status</label><select id="e-followup-status">
-      <option value="active" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='active'?'selected':''}>Active</option>
-      <option value="awaiting_feedback" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
-      <option value="paused" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='paused'?'selected':''}>Paused</option>
-      <option value="deceased" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='deceased'?'selected':''}>Deceased</option>
-      <option value="reversed" ${normaliseFollowupStatus(enriched.patients?.followup_status)==='reversed'?'selected':''}>Reversed</option>
-    </select></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveEditedAppointment('${id}','${enriched.patient_id||''}')">Save Changes</button></div>`;
-  openMo();
+  await openOutcomeFollowupModal(id,null);
 }
 async function saveEditedAppointment(apptId,patientId){
   const fn=document.getElementById('e-fn').value.trim();
@@ -2356,28 +2424,27 @@ async function openPatientRebookModal(patientId){
   const bankOptions=(bankRows||[]).map(b=>`<option value="bank:${b.id}">${htmlSafe(b.full_name)} (OT/Bank)</option>`).join('');
   const slotOptions=SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('');
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
-  document.getElementById('mb').innerHTML=`<h2>Rebook Patient</h2>
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Rebook Patient</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>This creates a new booked appointment and keeps the full patient history.</div>
     <div class="fg"><label>Appointment Date *</label><input type="date" id="rb-date" value="${TODAY}"/></div>
     <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
     <div class="fg"><label>Nurse / Column</label><select id="rb-nurse"><option value="common">Common</option>${coreOptions}${bankOptions}</select></div>
-    ${followupBookingFields('rb',pat)}
+    <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
   openMo();
-  refreshBookingMonthOptions('rb');
 }
 async function savePatientRebook(patientId){
   const date=document.getElementById('rb-date')?.value;
   const slot=document.getElementById('rb-slot')?.value;
   const nurse=document.getElementById('rb-nurse')?.value||'common';
-  const followupPayload=readFollowupBookingPayload('rb');
   if(!date||!slot){alert('Please select appointment date and time.');return;}
   const payload={patient_id:patientId,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
   if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
   const{data:patCheck}=await SB.from('patients').select('followup_status').eq('id',patientId).maybeSingle();
   if(normaliseFollowupStatus(patCheck?.followup_status)==='deceased'){alert('This patient is marked as deceased. Change the patient status first before rebooking.');return;}
-  await SB.from('patients').update(followupPayload).eq('id',patientId);
   const{error:aErr}=await SB.from('appointments').insert(payload);
   if(aErr){
     const msg=String(aErr.message||'');
@@ -2399,11 +2466,14 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
   const idEl=document.getElementById(idInputId);
   const note=document.getElementById(noteId);
   if(!idEl)return null;
+  const prefix=idInputId.startsWith('rb')?'rb':'p';
   const id=normaliseIdCard(idEl.value);
   idEl.value=id;
   if(!id){
     if(note){note.className='registry-lookup-note';note.textContent='Enter the ID card first. Existing patients will auto-fill and keep their history.';}
     idEl.dataset.patientId='';
+    idEl.dataset.deceased='false';
+    showNewPatientEpisode(prefix,false);
     return null;
   }
   if(note){note.className='registry-lookup-note';note.textContent='Checking saved patient registry...';}
@@ -2415,6 +2485,8 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
     console.error('Patient registry lookup error:',error);
     if(note){note.className='registry-lookup-note error';note.textContent='Could not check patient registry. You can still continue, but please verify details.';}
     idEl.dataset.patientId='';
+    idEl.dataset.deceased='false';
+    showNewPatientEpisode(prefix,false);
     return null;
   }
   if(data?.id){
@@ -2424,24 +2496,34 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
     if(p)p.value=data.phone_number||'';
     idEl.dataset.patientId=data.id;
     idEl.dataset.deceased=normaliseFollowupStatus(data.followup_status)==='deceased'?'true':'false';
-    const prefix=idInputId.startsWith('rb')?'rb':'p';
-    const typeEl=document.getElementById(`${prefix}-followup-type`); if(typeEl)typeEl.value=normaliseFollowupType(data.followup_type||'follow_up');
-    const ownerEl=document.getElementById(`${prefix}-followup-owner`); if(ownerEl)ownerEl.value=normaliseFollowupOwner(data.followup_owner||'Common');
-    const yearEl=document.getElementById(`${prefix}-fu-year`); if(yearEl&&data.followup_year)yearEl.value=String(data.followup_year);
-    await refreshBookingMonthOptions(prefix);
-    const monthEl=document.getElementById(`${prefix}-fu-month`); if(monthEl&&data.followup_due_month)monthEl.value=String(data.followup_due_month);
+    showNewPatientEpisode(prefix,false,data.followup_type||'follow_up');
+
+    const ownerEl=document.getElementById(`${prefix}-followup-owner`);
+    if(ownerEl)ownerEl.value=normaliseFollowupOwner(data.followup_owner||'Common');
+    const yearEl=document.getElementById(`${prefix}-fu-year`);
+    if(yearEl&&data.followup_year)yearEl.value=String(data.followup_year);
+    if(document.getElementById(`${prefix}-fu-month`)){
+      await refreshBookingMonthOptions(prefix);
+      const monthEl=document.getElementById(`${prefix}-fu-month`);
+      if(monthEl&&data.followup_due_month)monthEl.value=String(data.followup_due_month);
+    }
+
     if(note){
-      if(normaliseFollowupStatus(data.followup_status)==='deceased'){note.className='registry-lookup-note error';note.textContent=`Saved patient found but marked Deceased: ${(data.first_name||'')} ${(data.surname||'')}. Booking is blocked unless status is changed first.`;}
-      else{note.className='registry-lookup-note found';note.textContent=`Saved patient found: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to the existing history.`;}
+      if(normaliseFollowupStatus(data.followup_status)==='deceased'){
+        note.className='registry-lookup-note error';
+        note.textContent=`Saved patient found but marked Deceased: ${(data.first_name||'')} ${(data.surname||'')}. Booking is blocked unless status is changed first.`;
+      }else{
+        note.className='registry-lookup-note found';
+        note.textContent=`Saved patient found: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to the existing history. Follow-up owner and due month can be updated from Edit / Seen.`;
+      }
     }
     return data;
   }
   idEl.dataset.patientId='';
   idEl.dataset.deceased='false';
-  const prefix=idInputId.startsWith('rb')?'rb':'p';
-  const typeEl=document.getElementById(`${prefix}-followup-type`); if(typeEl)typeEl.value='new_case';
-  await refreshBookingMonthOptions(prefix);
-  if(note){note.className='registry-lookup-note new';note.textContent='No saved patient found for this ID card. A new patient record will be saved when you book. Booking type is set to New case.';}
+  showNewPatientEpisode(prefix,true,'new_case');
+  if(document.getElementById(`${prefix}-fu-month`))await refreshBookingMonthOptions(prefix);
+  if(note){note.className='registry-lookup-note new';note.textContent='No saved patient found for this ID card. Select the Booking type / episode below, then book the appointment.';}
   return null;
 }
 async function saveOrUpdatePatientByIdCard(idCard,firstName,surname,phone,followupPayload={}){
@@ -2479,29 +2561,50 @@ async function buildNurseAllocationOptions(selectedType,selectedId){
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
   const nurseOptions=await buildNurseAllocationOptions(ntype,nid);
-  document.getElementById('mb').innerHTML=`<h2>Book Patient</h2>
-    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · default column: ${htmlSafe(targetLabel)}<br/>Choose the nurse/column manually before saving.</div>
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Book Patient</h2>
+    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · default column: ${htmlSafe(targetLabel)}<br/>This card is only for scheduling the appointment.</div>
     <div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="Enter ID card first" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')}"/></div>
     <div id="p-reg-note" class="registry-lookup-note">Enter the ID card first. Existing patients will auto-fill and keep their history.</div>
     <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
     <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
     <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
-    ${followupBookingFields('p',{followup_owner:normaliseFollowupOwner(nname),followup_type:'new_case'})}
+    ${newPatientEpisodeField('p',{followup_type:'new_case'})}
     <div class="fg"><label>Nurse / Column *</label><select id="p-nurse">${nurseOptions}</select></div>
-    <div class="registry-lookup-note found">The selected nurse/column will be used for this appointment. It will not change the patient follow-up owner unless you update that separately.</div>
+    <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after the appointment is scheduled by clicking Edit or Seen.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}')">Book Patient</button></div>`;
   openMo();
-  refreshBookingMonthOptions('p');
 }
 async function doBook(slot,date,nurseIdParam,nurseType){
   const fn=document.getElementById('p-fn').value.trim();
   const sn=document.getElementById('p-sn').value.trim();
   const id=normaliseIdCard(document.getElementById('p-id').value);
   const ph=document.getElementById('p-ph').value.trim();
-  if(document.getElementById('p-id')?.dataset.deceased==='true'){alert('This patient is marked as deceased. Change the patient status first before booking.');return;}
   if(!fn||!sn||!id){alert('Please enter the ID card first, then confirm first name and surname.');return;}
-  const followupPayload=readFollowupBookingPayload('p');
 
+  const existing=await SB.from('patients')
+    .select('id,followup_status')
+    .ilike('id_card',id)
+    .maybeSingle();
+  if(existing.error){alert('Could not check patient registry: '+existing.error.message);return;}
+  if(normaliseFollowupStatus(existing.data?.followup_status)==='deceased'||document.getElementById('p-id')?.dataset.deceased==='true'){
+    alert('This patient is marked as deceased. Change the patient status first before booking.');
+    return;
+  }
+
+  const isNewPatient=!existing.data?.id;
+  if(isNewPatient){
+    const episodeBox=document.getElementById('p-episode-only');
+    if(episodeBox&&episodeBox.style.display!=='block'){
+      showNewPatientEpisode('p',true,'new_case');
+      const note=document.getElementById('p-reg-note');
+      if(note){note.className='registry-lookup-note new';note.textContent='This is a new ID card. Please select the Booking type / episode, then click Book Patient again.';}
+      return;
+    }
+  }
+
+  const followupPayload=readBookingPatientPayload('p',isNewPatient);
   const saved=await saveOrUpdatePatientByIdCard(id,fn,sn,ph,followupPayload);
   if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
   const pat=saved.patient;
@@ -3560,7 +3663,8 @@ async function openModal(type,...args){
       <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
       <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
-      ${followupBookingFields('p',{followup_type:'new_case',followup_owner:nurseName||'Common'})}
+      ${newPatientEpisodeField('p',{followup_type:'new_case'})}
+      <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are completed later from Edit / Seen.</div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
@@ -3589,7 +3693,6 @@ async function openModal(type,...args){
   }
   document.getElementById('mb').innerHTML=html;
   openMo();
-  if(type==='appt')refreshBookingMonthOptions('p');
 }
 
 async function saveAppt(slot,date,nurseId){
@@ -3597,9 +3700,23 @@ async function saveAppt(slot,date,nurseId){
   const sn=document.getElementById('p-sn').value.trim();
   const idno=normaliseIdCard(document.getElementById('p-id').value);
   const phone=document.getElementById('p-phone')?.value.trim()||'';
-  if(document.getElementById('p-id')?.dataset.deceased==='true'){alert('This patient is marked as deceased. Change the patient status first before booking.');return;}
   if(!fn||!sn||!idno){alert('Please enter the ID card first, then confirm first name and surname.');return;}
-  const followupPayload=readFollowupBookingPayload('p');
+  const existing=await SB.from('patients').select('id,followup_status').ilike('id_card',idno).maybeSingle();
+  if(existing.error){alert('Could not check patient registry: '+existing.error.message);return;}
+  if(normaliseFollowupStatus(existing.data?.followup_status)==='deceased'||document.getElementById('p-id')?.dataset.deceased==='true'){
+    alert('This patient is marked as deceased. Change the patient status first before booking.');
+    return;
+  }
+  const isNewPatient=!existing.data?.id;
+  if(isNewPatient){
+    const episodeBox=document.getElementById('p-episode-only');
+    if(episodeBox&&episodeBox.style.display!=='block'){
+      showNewPatientEpisode('p',true,'new_case');
+      alert('This is a new ID card. Please select the Booking type / episode, then click Book Patient again.');
+      return;
+    }
+  }
+  const followupPayload=readBookingPatientPayload('p',isNewPatient);
   const saved=await saveOrUpdatePatientByIdCard(idno,fn,sn,phone,followupPayload);
   if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
   const patId=saved.patient.id;
@@ -3611,7 +3728,7 @@ async function saveAppt(slot,date,nurseId){
   if(error){
     const msg=String(error.message||'');
     if(msg.toLowerCase().includes('duplicate')||msg.toLowerCase().includes('unique')){
-      alert('Booking blocked by a database slot rule. The cancelled records are kept, but Supabase still has a unique slot constraint. Tell me and I will give you the small SQL fix.');
+      alert('Booking blocked by a database slot rule. Cancelled records are kept, but Supabase still has a unique slot constraint.');
     }else{
       alert('Booking error: '+msg);
     }
@@ -3650,8 +3767,8 @@ async function delCoreOT(id){if(!confirm('Delete core staff OT?'))return;await S
 async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave_records').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 async function delBankTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 function openMo(){document.getElementById('mo').classList.add('open');}
-function closeMo(){document.getElementById('mo').classList.remove('open');}
-function closeModal(){document.getElementById('mo').classList.remove('open');}
+function closeMo(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
+function closeModal(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
 function moOut(e){if(e.target===document.getElementById('mo'))closeModal();}
 
 checkSession();
