@@ -2113,6 +2113,63 @@ function updateOutcomeAvailabilityPreview(){
   const chosen=selectedAvailabilityMonth(select,year);
   note.innerHTML=(chosen.isAuto?availabilityAutoNoteHTML(chosen.month):'')+availabilityPreviewHTML(counts[chosen.month]||{booked:0,capacity:0},ctx,chosen.month);
 }
+function outcomeFollowupChangeCheck(month,year,followupStatus){
+  const st=normaliseFollowupStatus(followupStatus);
+  if(isClosedFollowupStatus(st))return {ok:true,bypass:true,message:''};
+
+  const mb=document.getElementById('mb');
+  const initialMonthRaw=mb?.dataset?.initialFollowupMonth||mb?.dataset?.originalFollowupMonth||'';
+  const initialYearRaw=mb?.dataset?.initialFollowupYear||mb?.dataset?.originalFollowupYear||'';
+  const initialMonth=Number(initialMonthRaw)||null;
+  const initialYear=Number(initialYearRaw)||null;
+  const newMonth=Number(month)||null;
+  const newYear=Number(year)||null;
+
+  if(!newMonth||!newYear){
+    return {ok:false,message:'Please select a follow-up due month and year before saving.'};
+  }
+
+  /* Clinical safety rule:
+     The nurse must actively move the follow-up MONTH away from the month that was shown
+     when the Edit / Seen card opened. A year-only change is not enough. This prevents
+     accidental saving when the next appointment month was not genuinely reconsidered. */
+  if(initialMonth&&initialMonth===newMonth){
+    const yrText=initialYear?` ${initialYear}`:'';
+    return {
+      ok:false,
+      message:`Please choose a different follow-up due month before saving. The month is still ${followupMonthName(initialMonth)}${yrText}.`
+    };
+  }
+
+  return {ok:true,bypass:false,message:''};
+}
+function updateFollowupChangeWarning(){
+  const note=document.getElementById('of-followup-change-note');
+  if(!note)return;
+
+  const year=document.getElementById('of-year')?.value;
+  const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
+  const status=document.getElementById('of-followup-status')?.value||'active';
+  const check=outcomeFollowupChangeCheck(month,year,status);
+  const mb=document.getElementById('mb');
+  const initialMonth=Number(mb?.dataset?.initialFollowupMonth||mb?.dataset?.originalFollowupMonth||'')||null;
+  const initialYear=Number(mb?.dataset?.initialFollowupYear||mb?.dataset?.originalFollowupYear||'')||null;
+
+  if(check.bypass){
+    note.className='registry-lookup-note found';
+    note.innerHTML='Closed follow-up status selected. Month change is not required for Deceased or Reversed patients.';
+  }else if(check.ok){
+    note.className='registry-lookup-note found';
+    if(initialMonth&&initialYear){
+      note.innerHTML=`Follow-up planning reviewed: month changed from <strong>${htmlSafe(followupMonthName(initialMonth))} ${htmlSafe(initialYear)}</strong> to <strong>${htmlSafe(followupMonthName(month))} ${htmlSafe(year)}</strong>.`;
+    }else{
+      note.innerHTML=`Follow-up planning selected: <strong>${htmlSafe(followupMonthName(month))} ${htmlSafe(year)}</strong>.`;
+    }
+  }else{
+    note.className='registry-lookup-note error';
+    note.innerHTML=htmlSafe(check.message);
+  }
+}
 function appointmentNurseLabel(a){
   return a?.staff?.full_name||a?.bank_staff?.full_name||(!a?.assigned_to&&!a?.bank_staff_id?'Common':'Assigned nurse');
 }
@@ -2206,8 +2263,9 @@ async function refreshOutcomeMonthOptions(){
   if(String(sel)===AUTO_AVAILABILITY_VALUE)monthSelect.value=AUTO_AVAILABILITY_VALUE;
   else monthSelect.value=months.map(String).includes(String(sel))?String(sel):String(months[0]||new Date().getMonth()+1);
   storeAvailabilityOnSelect(monthSelect,counts,ctx);
-  monthSelect.onchange=updateOutcomeAvailabilityPreview;
+  monthSelect.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   updateOutcomeAvailabilityPreview();
+  updateFollowupChangeWarning();
 }
 async function setAS(id,status){
   try{await openOutcomeFollowupModal(id,status);}
@@ -2231,6 +2289,10 @@ async function openOutcomeFollowupModal(apptId,status){
   const nurseOptions=await buildNurseAllocationOptions(currentType,currentId);
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
+  mb.dataset.originalFollowupMonth=String(p.followup_due_month||'');
+  mb.dataset.originalFollowupYear=String(p.followup_year||'');
+  mb.dataset.initialFollowupMonth=String(defaultMonth||'');
+  mb.dataset.initialFollowupYear=String(defaultYear||'');
   mb.innerHTML=`<h2>Edit / Seen Appointment</h2>
     <div class="msub">Update patient details, clinic column, appointment outcome and follow-up planning in one card.<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
 
@@ -2257,16 +2319,16 @@ async function openOutcomeFollowupModal(apptId,status){
 
     <div class="edit-seen-section">Follow-up planning</div>
     <div class="edit-seen-grid">
-      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions()">
+      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${followupOwnerOptions(ownerDefault)}
       </select></div>
-      <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions()">
+      <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
       </select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up due month</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview()">
+      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up due month * — different month required before saving</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
         <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
-      </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up status</label><select id="of-followup-status">
+      </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">Clinical safety: choose a different follow-up due month before saving, so the next appointment is actively planned.</div></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Follow-up status</label><select id="of-followup-status" onchange="updateFollowupChangeWarning()">
         <option value="active" ${statusDefault==='active'?'selected':''}>Active</option>
         <option value="awaiting_feedback" ${statusDefault==='awaiting_feedback'?'selected':''}>Awaiting Feedback</option>
         <option value="paused" ${statusDefault==='paused'?'selected':''}>Paused</option>
@@ -2279,8 +2341,9 @@ async function openOutcomeFollowupModal(apptId,status){
   openMo();
   const ofMonth=document.getElementById('of-month');
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
-  if(ofMonth)ofMonth.onchange=updateOutcomeAvailabilityPreview;
+  if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   updateOutcomeAvailabilityPreview();
+  updateFollowupChangeWarning();
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
@@ -2300,6 +2363,13 @@ async function saveOutcomeFollowup(apptId,patientId){
   if(!fn||!sn||!idcard){alert('Please fill in ID card number, name and surname.');return;}
   if(!date||!slot){alert('Please fill in appointment date and time.');return;}
   if(!month||!year){alert('Please select follow-up due month and year.');return;}
+
+  const planningCheck=outcomeFollowupChangeCheck(month,year,followupStatus);
+  if(!planningCheck.ok){
+    updateFollowupChangeWarning();
+    alert(planningCheck.message);
+    return;
+  }
 
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
