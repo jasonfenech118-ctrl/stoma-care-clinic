@@ -357,6 +357,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .dntu-owner-pill{display:inline-block;padding:4px 9px;border-radius:14px;font-size:10px;font-weight:800;background:#e8f5f4;color:var(--teal);}
 .dntu-row-paused td{background:#fff8f8;}
 .dntu-actions{display:flex;gap:5px;flex-wrap:wrap;}
+.dntu-action-btn{padding:6px 10px;border:none;border-radius:8px;background:var(--teal);color:white;font-size:11px;font-weight:900;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;box-shadow:0 2px 6px rgba(13,115,119,.16);}
+.dntu-action-btn:hover{filter:brightness(.96);transform:translateY(-1px);}
+.dntu-action-btn.warn{background:var(--orange);}
+.dntu-locked-pill{display:inline-block;padding:5px 10px;border-radius:14px;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:10px;font-weight:900;white-space:nowrap;}
+.dntu-modal-alert{margin:10px 0 12px;padding:10px 12px;border-radius:10px;background:#fff8e1;border:1px solid #f2df9f;color:#856404;font-size:11px;font-weight:800;line-height:1.35;}
 
 /* REPORTS & CHARTS */
 .report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px;}
@@ -864,8 +869,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div class="dntu-table-wrap">
         <table class="dt">
-          <thead><tr><th>Patient Name and Surname</th><th>ID Card Number</th><th>Phone Number</th><th>Current DNTU Streak</th><th>Last DNTU Date</th></tr></thead>
-          <tbody id="dntu-tbody"><tr><td colspan="5" class="empty">Loading DNTU patients...</td></tr></tbody>
+          <thead><tr><th>Patient Name and Surname</th><th>ID Card Number</th><th>Phone Number</th><th>Current DNTU Streak</th><th>Last DNTU Date</th><th>Action</th></tr></thead>
+          <tbody id="dntu-tbody"><tr><td colspan="6" class="empty">Loading DNTU patients...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -3287,6 +3292,10 @@ function dntuOwnerForGroup(rows){
     if(n.includes('jacqueline')||n.includes('jacklyn'))return 'Jacqueline';
     if(n.includes('lorraine'))return 'Lorraine';
   }
+  for(const a of ordered){
+    const owner=normaliseFollowupOwner(a.patients?.followup_owner||'');
+    if(owner&&owner!=='Common')return owner;
+  }
   return 'Common';
 }
 function calculateCurrentDntuStreak(rows){
@@ -3305,11 +3314,26 @@ function latestDntuAppointment(rows){
     .filter(a=>a.status==='did_not_attend')
     .sort((a,b)=>String(b.appt_date||'').localeCompare(String(a.appt_date||''))||String(b.appt_slot||'').localeCompare(String(a.appt_slot||'')))[0]||null;
 }
+function dntuOrdinal(n){
+  const num=Number(n)||0;
+  if(num===1)return '1st';
+  if(num===2)return '2nd';
+  if(num===3)return '3rd';
+  return `${num}th`;
+}
+function dntuActionHTML(r){
+  if(!r?.patientId)return '<span class="dntu-locked-pill">No patient ID</span>';
+  if(r.streak===1||r.streak===2){
+    const next=r.streak+1;
+    return `<button class="dntu-action-btn ${next>=3?'warn':''}" onclick="openDntuEventModal('${jsSafe(r.patientId)}',${Number(r.streak)||0},'${jsSafe(r.patientName)}','${jsSafe(r.idCard)}','${jsSafe(r.phone)}')">Record ${dntuOrdinal(next)} DNTU</button>`;
+  }
+  return '<span class="dntu-locked-pill">3+ rule reached</span>';
+}
 async function loadDntuPolicy(){
   const tbody=document.getElementById('dntu-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="5" class="empty">Loading DNTU patients...</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading DNTU patients...</td></tr>';
   const{data:raw,error}=await SB.from('appointments').select('*').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
-  if(error){console.error('DNTU load error:',error);if(tbody)tbody.innerHTML='<tr><td colspan="5" class="empty">Could not load DNTU records.</td></tr>';return;}
+  if(error){console.error('DNTU load error:',error);if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Could not load DNTU records.</td></tr>';return;}
   const appts=await enrichAppointments(raw||[]);
   const groups={};
   appts.forEach(a=>{
@@ -3352,14 +3376,66 @@ function renderDntuPolicy(){
   if(dntuOwner!=='all')rows=rows.filter(r=>r.owner===dntuOwner);
   const tbody=document.getElementById('dntu-tbody');
   if(!tbody)return;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="5" class="empty">No patients match the selected DNTU selection.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No patients match the selected DNTU selection.</td></tr>';return;}
   tbody.innerHTML=rows.map(r=>`<tr>
-    <td><strong>${htmlSafe(r.patientName)}</strong></td>
+    <td><strong>${htmlSafe(r.patientName)}</strong><br/><span class="dntu-owner-pill">${htmlSafe(r.owner||'Common')}</span></td>
     <td style="font-family:monospace;font-size:12px;">${htmlSafe(r.idCard)}</td>
     <td>${htmlSafe(r.phone||'—')}</td>
-    <td><span class="dntu-streak">${r.streak}</span></td>
+    <td><span class="dntu-streak ${r.streak>=3?'paused':''}">${r.streak>=3?'3+':r.streak}</span></td>
     <td>${htmlSafe(r.lastDntuDate||'—')}</td>
+    <td>${dntuActionHTML(r)}</td>
   </tr>`).join('');
+}
+function openDntuEventModal(patientId,currentStreak,patientName,idCard,phone){
+  const streak=Number(currentStreak)||0;
+  if(!patientId||patientId==='null'||patientId==='undefined'){
+    alert('This DNTU row is missing a patient ID, so a new DNTU event cannot be added safely.');
+    return;
+  }
+  if(streak>=3){
+    alert('This patient has already reached the 3+ DNTU rule. Manage the follow-up status from Appointment Outcomes.');
+    return;
+  }
+  const next=streak+1;
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Record DNTU Event</h2>
+    <div class="msub"><strong>${htmlSafe(patientName||'Patient')}</strong><br/>ID: ${htmlSafe(idCard||'—')} · Phone: ${htmlSafe(phone||'—')}</div>
+    <div class="dntu-modal-alert">Current streak: <strong>${dntuOrdinal(streak)} DNTU</strong><br/>This will record the <strong>${dntuOrdinal(next)} consecutive DNTU</strong>${next>=3?' and trigger the existing 3-DNTU warning rule.':'.'}</div>
+    <div class="fg"><label>DNTU Date *</label><input type="date" id="dntu-event-date" value="${TODAY}" max="${TODAY}"/></div>
+    <div class="fg"><label>DNTU Time / Slot *</label><select id="dntu-event-slot">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+    <div class="dntu-note">This saves a new appointment outcome with status <strong>DNTU</strong>. The system still calculates the DNTU count automatically; Seen or Cancelled outcomes still break the consecutive DNTU streak.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveDntuEvent('${jsSafe(patientId)}',${streak})">Save DNTU Event</button></div>`;
+  openMo();
+}
+async function saveDntuEvent(patientId,expectedStreak){
+  const date=document.getElementById('dntu-event-date')?.value||'';
+  const slot=document.getElementById('dntu-event-slot')?.value||'';
+  if(!date||!slot){alert('Please choose the DNTU date and time/slot.');return;}
+  if(date>TODAY){alert('DNTU date cannot be in the future.');return;}
+  const currentStreak=await getPatientCurrentDntuStreak(patientId);
+  if(currentStreak<=0){alert('This patient no longer has a current DNTU streak. The DNTU list will refresh now.');closeModal();loadDntuPolicy();return;}
+  if(currentStreak>=3){alert('This patient has already reached the 3+ DNTU rule. Manage the follow-up status from Appointment Outcomes.');closeModal();loadDntuPolicy();return;}
+  if(Number(expectedStreak)&&currentStreak!==Number(expectedStreak)){
+    const proceed=confirm(`The current DNTU streak has changed from ${expectedStreak} to ${currentStreak}. Record the next DNTU anyway?`);
+    if(!proceed){loadDntuPolicy();return;}
+  }
+  const payload={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'did_not_attend'};
+  const{data,error}=await SB.from('appointments').insert(payload).select('id').single();
+  if(error){
+    const msg=String(error.message||'');
+    if(msg.toLowerCase().includes('duplicate')||msg.toLowerCase().includes('unique')){
+      alert('This date/time slot already has an appointment record. Please choose a different slot or edit the existing appointment outcome to DNTU.');
+    }else{
+      alert('Could not save DNTU event: '+msg);
+    }
+    return;
+  }
+  closeModal();
+  if(data?.id)await checkDntuThresholdForAppointment(data.id);
+  else await checkDntuThresholdForPatient(patientId);
+  refreshAppointmentViews();
+  loadDntuPolicy();
 }
 async function deleteDntuEntry(apptId){
   if(!confirm('Delete this DNTU appointment entry?'))return;
@@ -3376,15 +3452,19 @@ async function getPatientCurrentDntuStreak(patientId){
   }
   return streak;
 }
-async function checkDntuThresholdForAppointment(apptId){
-  const{data:appt}=await SB.from('appointments').select('patient_id').eq('id',apptId).single();
-  if(!appt?.patient_id)return;
-  const streak=await getPatientCurrentDntuStreak(appt.patient_id);
+async function checkDntuThresholdForPatient(patientId){
+  if(!patientId)return;
+  const streak=await getPatientCurrentDntuStreak(patientId);
   if(streak>=3){
-    const{data:p}=await SB.from('patients').select('first_name,surname,id_card').eq('id',appt.patient_id).single();
+    const{data:p}=await SB.from('patients').select('first_name,surname,id_card').eq('id',patientId).single();
     const name=`${p?.first_name||''} ${p?.surname||''}`.trim()||'This patient';
     alert(`${name} has reached 3 consecutive DNTUs. DNTU is recorded as an appointment outcome. Paused follow-up status is managed separately in Appointment Outcomes.`);
   }
+}
+async function checkDntuThresholdForAppointment(apptId){
+  const{data:appt}=await SB.from('appointments').select('patient_id').eq('id',apptId).single();
+  if(!appt?.patient_id)return;
+  await checkDntuThresholdForPatient(appt.patient_id);
 }
 
 
