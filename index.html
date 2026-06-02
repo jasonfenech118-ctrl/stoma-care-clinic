@@ -130,13 +130,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rt tbody td.td-sun{background:#f7f9fb!important;}
 .rt tbody td.td-sel{background:#e8f5f4!important;outline:2px solid var(--teal);outline-offset:-2px;}
 .dchip{width:34px;height:30px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;transition:transform .12s;user-select:none;}
-.dchip.cod-chip{width:58px;height:48px;flex-direction:column;gap:3px;line-height:1;padding:4px 3px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.16);}
+.dchip.cod-chip{width:54px;height:42px;flex-direction:column;gap:4px;line-height:1;padding:4px 3px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.16);}
+.dchip.cod-chip.cod-in{background:#0284c7!important;color:#fff!important;border:2px solid #38bdf8;box-shadow:0 1px 5px rgba(2,132,199,.30);}
+.dchip.cod-chip.cod-off{background:#b45309!important;color:#fff!important;border:2px solid #f59e0b;box-shadow:0 1px 5px rgba(180,83,9,.32);}
+.dchip.cod-chip.cod-in .cod-code,.dchip.cod-chip.cod-off .cod-code{color:#fff!important;font-weight:500;}
 .cod-code{font-size:13px;font-weight:500;line-height:1;letter-spacing:.2px;}
-.cod-vice{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:48px;padding:2px 4px;border-radius:5px;background:rgba(26,46,74,.68);color:#ffe066!important;line-height:1;text-transform:uppercase;white-space:nowrap;}
-.cod-vice-label{font-size:7px;font-weight:400;letter-spacing:.25px;opacity:1;}
-.cod-vice-date{font-size:9.4px;font-weight:400;letter-spacing:.1px;}
+.cod-vice{display:flex;align-items:center;justify-content:center;min-width:42px;padding:2px 4px;border-radius:5px;background:rgba(255,255,255,.16);color:#ffe066!important;line-height:1;white-space:nowrap;}
+.cod-vice-date{font-size:10px;font-weight:400;letter-spacing:.1px;}
 .dc-R .cod-code{color:#526578;}
-.dc-R .cod-vice{background:rgba(26,46,74,.76);color:#ffe066!important;}
+.dchip.cod-chip.cod-in.dc-R .cod-code,.dchip.cod-chip.cod-off.dc-R .cod-code{color:#fff!important;}
+.ld.cod-legend{width:52px;font-size:8px;font-weight:500;letter-spacing:.1px;color:#fff;}
+.ld.cod-legend-in{background:#0284c7;border:1px solid #38bdf8;}
+.ld.cod-legend-off{background:#b45309;border:1px solid #f59e0b;}
 .dchip:hover{transform:scale(1.18);box-shadow:0 3px 8px rgba(0,0,0,.18);}
 .dchip.cod-chip:hover{transform:scale(1.08);}
 
@@ -576,6 +581,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <div class="leg"><div class="ld dc-L">L</div>Annual Leave</div>
         <div class="leg"><div class="ld dc-TOL">TOL</div>TIL Off</div>
         <div class="leg"><div class="ld dc-TIL">TIL</div>TIL In</div>
+        <div class="leg"><div class="ld cod-legend cod-legend-in">COD-in</div>Change of duty in</div>
+        <div class="leg"><div class="ld cod-legend cod-legend-off">COD-off</div>Change of duty off</div>
       </div>
       <div id="hban-roster"></div>
       <!-- OT BAR -->
@@ -1180,8 +1187,8 @@ function getCODViceInfo(notes,currentDate){
   if(!String(notes||'').startsWith('COD-'))return null;
   const pair=parseCODPair(notes);
   if(!pair)return null;
-  if(currentDate===pair.dayOff)return {date:pair.dayWork,label:'vice out'};
-  if(currentDate===pair.dayWork)return {date:pair.dayOff,label:'vice in'};
+  if(currentDate===pair.dayOff)return {date:pair.dayWork,label:'COD-off',type:'cod-off'};
+  if(currentDate===pair.dayWork)return {date:pair.dayOff,label:'COD-in',type:'cod-in'};
   return null;
 }
 function getCODViceDate(notes,currentDate){
@@ -1446,11 +1453,12 @@ async function renderRoster(){
       const tilEnd=(coreTIL?.shift_end||tilTimes?.end||'').slice(0,5);
       const codViceInfo=getCODViceInfo(entry?.notes,ds);
       const codViceDate=codViceInfo?.date||null;
-      const codViceLabel=codViceInfo?.label||'vice';
+      const codViceLabel=codViceInfo?.label||'COD';
+      const codViceType=codViceInfo?.type||'';
       const baseChipTitle=coreTIL?`Core staff ${isCoreTilOff?'TIL Off':'TIL In'}${tilEnd?` ${tilStart}–${tilEnd}`:''}`:(coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`);
       const chipTitle=codViceDate?`${baseChipTitle} — ${codViceLabel} ${formatViceDate(codViceDate)} (${codViceDate})`:baseChipTitle;
-      const chipClass=codViceDate?' cod-chip':'';
-      const chipText=codViceDate?`<span class="cod-code">${code}</span><span class="cod-vice"><span class="cod-vice-label">${codViceLabel}</span><span class="cod-vice-date">${formatViceDate(codViceDate)}</span></span>`:code;
+      const chipClass=codViceDate?` cod-chip ${codViceType}`:'';
+      const chipText=codViceDate?`<span class="cod-code">${code}</span><span class="cod-vice"><span class="cod-vice-date">${formatViceDate(codViceDate)}</span></span>`:code;
       html+=`<td class="${tdCls}"><div class="dchip${chipClass} dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${htmlSafe(chipTitle)}">${chipText}</div></td>`;
     }
     html+='</tr>';
