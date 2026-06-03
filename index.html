@@ -2368,8 +2368,8 @@ function dntuSelectionHTML(currentStreak,pendingCurrentDntu=0){
         <div class="dntu-choice-help">${htmlSafe(help)} This keeps the normal Edit / DNTU appointment form, including patient details, appointment details, follow-up due month and the availability donut.</div>
         <input type="hidden" id="of-dntu-target" value=""/>
         <div class="dntu-choice-grid">
-          <button type="button" id="dntu-target-2" class="dntu-choice-btn" ${disable2} onclick="selectDntuTarget(2,${streak},${baseAfterSave})">2 DNTU<span class="dntu-choice-sub">Set the record to two consecutive did-not-turn-up events.</span></button>
-          <button type="button" id="dntu-target-3" class="dntu-choice-btn warn" ${disable3} onclick="selectDntuTarget(3,${streak},${baseAfterSave})">3 DNTU<span class="dntu-choice-sub">Set the record to three consecutive did-not-turn-up events.</span></button>
+          <button type="button" id="dntu-target-2" class="dntu-choice-btn" ${disable2} onclick="selectDntuTarget(2,${streak},${baseAfterSave},${pending})">2 DNTU<span class="dntu-choice-sub">Set the record to two consecutive did-not-turn-up events.</span></button>
+          <button type="button" id="dntu-target-3" class="dntu-choice-btn warn" ${disable3} onclick="selectDntuTarget(3,${streak},${baseAfterSave},${pending})">3 DNTU<span class="dntu-choice-sub">Set the record to three consecutive did-not-turn-up events.</span></button>
         </div>
         <div id="dntu-target-fields" class="dntu-target-fields"></div>
         <div id="dntu-target-note" class="dntu-target-note">Select <strong>2 DNTU</strong> or <strong>3 DNTU</strong>, then confirm the missing historical DNTU date/time before saving.</div>
@@ -2383,10 +2383,11 @@ function toggleDntuFollowupPlanning(target){
   const status=document.getElementById('of-followup-status');
   if(status&&t===3)status.value='paused';
 }
-function selectDntuTarget(target,currentStreak,baseAfterSave){
+function selectDntuTarget(target,currentStreak,baseAfterSave,pendingDntu=0){
   const t=Number(target)||0;
   const streak=Number(currentStreak)||0;
   const base=Number(baseAfterSave)||streak;
+  const pending=Number(pendingDntu)||0;
   const hidden=document.getElementById('of-dntu-target');
   const fields=document.getElementById('dntu-target-fields');
   const note=document.getElementById('dntu-target-note');
@@ -2404,37 +2405,44 @@ function selectDntuTarget(target,currentStreak,baseAfterSave){
     }
     return;
   }
+  // Today's pending appointment is the most recent DNTU (position = t).
+  // Historical missing slots are streak+1 through t-pending (earlier dates).
   const missing=[];
-  for(let n=base+1;n<=t;n++)missing.push(n);
-  fields.innerHTML=missing.map(n=>`<div class="fg"><label>${n} DNTU date *</label><input type="date" id="dntu-missing-date-${n}" max="${TODAY}"/></div><div class="fg"><label>${n} DNTU time / slot *</label><select id="dntu-missing-slot-${n}">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>`).join('');
-  if(note)note.innerHTML=`${missing.length} missing historical DNTU record${missing.length!==1?'s':''} will be added when you save this form. Use the exact date/time from your real records.${t===3?' Follow-up planning is hidden because 3 DNTUs pauses the patient and no further appointment planning is needed.':' Follow-up planning remains visible for 2 DNTU.'}`;
+  for(let n=streak+1;n<=t-pending;n++)missing.push(n);
+  fields.innerHTML=missing.map(n=>`<div class="fg"><label>${dntuOrdinal(n)} DNTU date *</label><input type="date" id="dntu-missing-date-${n}" max="${TODAY}"/></div><div class="fg"><label>${dntuOrdinal(n)} DNTU time / slot *</label><select id="dntu-missing-slot-${n}">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>`).join('');
+  const pendingNote=pending?` Today's appointment will be saved as the ${dntuOrdinal(t)} (most recent) DNTU.`:'';
+  if(note)note.innerHTML=`${missing.length} missing historical DNTU record${missing.length!==1?'s':''} will be added when you save this form. Use the exact date/time from your real records.${pendingNote}${t===3?' Follow-up planning is hidden because 3 DNTUs pauses the patient and no further appointment planning is needed.':' Follow-up planning remains visible for 2 DNTU.'}`;
 }
 function validateMissingDntuFieldsBeforeSave(targetCount){
   const target=Number(targetCount)||0;
-  const base=Number(document.getElementById('mb')?.dataset?.dntuBaseAfterSave)||0;
-  for(let n=base+1;n<=target;n++){
+  const streak=Number(document.getElementById('mb')?.dataset?.dntuStreakBeforeSave)||0;
+  const pending=Number(document.getElementById('mb')?.dataset?.dntuPendingDntu)||0;
+  for(let n=streak+1;n<=target-pending;n++){
     const date=document.getElementById(`dntu-missing-date-${n}`)?.value||'';
     const slot=document.getElementById(`dntu-missing-slot-${n}`)?.value||'';
-    if(!date||!slot){alert(`Please enter the date and time/slot for ${n} DNTU.`);return false;}
-    if(date>TODAY){alert(`${n} DNTU date cannot be in the future.`);return false;}
+    if(!date||!slot){alert(`Please enter the date and time/slot for the ${dntuOrdinal(n)} DNTU.`);return false;}
+    if(date>TODAY){alert(`${dntuOrdinal(n)} DNTU date cannot be in the future.`);return false;}
   }
   return true;
 }
 async function createMissingDntuRowsFromEditForm(patientId,targetCount,sourceApptId){
   if(!patientId){alert('Cannot add missing DNTU records because the patient ID is missing.');return false;}
   const target=Number(targetCount)||0;
-  let current=await getPatientCurrentDntuStreak(patientId);
-  if(current>=target){
+  const streak=Number(document.getElementById('mb')?.dataset?.dntuStreakBeforeSave)||0;
+  const pending=Number(document.getElementById('mb')?.dataset?.dntuPendingDntu)||0;
+  const missingFrom=streak+1;
+  const missingTo=target-pending;
+  if(missingFrom>missingTo){
     await checkDntuThresholdForPatient(patientId);
     return true;
   }
   const nurse=document.getElementById('of-nurse')?.value||'common';
   const rows=[];
-  for(let n=current+1;n<=target;n++){
+  for(let n=missingFrom;n<=missingTo;n++){
     const date=document.getElementById(`dntu-missing-date-${n}`)?.value||'';
     const slot=document.getElementById(`dntu-missing-slot-${n}`)?.value||'';
-    if(!date||!slot){alert(`Please enter the date and time/slot for ${n} DNTU.`);return false;}
-    if(date>TODAY){alert(`${n} DNTU date cannot be in the future.`);return false;}
+    if(!date||!slot){alert(`Please enter the date and time/slot for the ${dntuOrdinal(n)} DNTU.`);return false;}
+    if(date>TODAY){alert(`${dntuOrdinal(n)} DNTU date cannot be in the future.`);return false;}
     const payload={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),status:'did_not_attend',assigned_to:null,bank_staff_id:null};
     if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
     if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
@@ -2498,6 +2506,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       </select></div>`;
   const pendingCurrentDntu=(isDntuEditMode && appt.status!=='did_not_attend')?1:0;
   mb.dataset.dntuBaseAfterSave=String(Math.min(3,dntuCurrentStreak+pendingCurrentDntu));
+  mb.dataset.dntuStreakBeforeSave=String(dntuCurrentStreak);
+  mb.dataset.dntuPendingDntu=String(pendingCurrentDntu);
   const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu):'';
   mb.innerHTML=`<h2>${modalTitle}</h2>
     <div class="msub">${modalSub}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
