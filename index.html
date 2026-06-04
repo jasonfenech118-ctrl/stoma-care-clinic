@@ -33,11 +33,23 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .tb-date{font-size:12px;color:rgba(255,255,255,.55);margin-left:16px;}
 .btn-so{padding:6px 14px;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);background:none;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;}
 .btn-so:hover{background:rgba(255,255,255,.1);}
-.tabs{position:fixed;top:52px;left:0;right:0;background:white;border-bottom:2px solid var(--border);display:flex;padding:0 16px;z-index:200;height:44px;box-shadow:0 2px 4px rgba(0,0,0,.05);overflow-x:auto;}
-.tab{padding:0 12px;height:44px;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;white-space:nowrap;}
+.tabs{position:fixed;top:52px;left:0;right:0;background:white;border-bottom:2px solid var(--border);display:flex;align-items:center;padding:0 16px;z-index:200;height:44px;box-shadow:0 2px 4px rgba(0,0,0,.05);overflow-x:auto;gap:2px;}
+.tab-group{position:relative;height:44px;display:flex;align-items:center;}
+.tab{padding:0 12px;height:44px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;white-space:nowrap;user-select:none;}
 .tab:hover{color:var(--navy);}
-.tab.active{color:var(--navy);border-bottom-color:var(--teal);font-weight:600;}
+.tab.active,.tab-group.active>.tab{color:var(--navy);border-bottom-color:var(--teal);font-weight:600;}
 .tab-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;color:white;font-size:10px;font-weight:700;flex-shrink:0;}
+.tab-arrow{font-size:9px;color:var(--muted);margin-left:1px;transition:transform .15s;}
+.tab-group.open>.tab .tab-arrow{transform:rotate(180deg);}
+.tab-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:230px;background:white;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.13);border:1px solid var(--border);padding:6px 0;z-index:400;}
+.tab-group.open .tab-dropdown{display:block;}
+.tab-dd-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background .12s;border:none;background:none;width:100%;font-family:'Inter',sans-serif;text-align:left;}
+.tab-dd-item:hover{background:#f5f7fa;}
+.tab-dd-item.active{background:#e8f5f4;}
+.tab-dd-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;flex-shrink:0;}
+.tab-dd-label{flex:1;font-size:13px;font-weight:500;color:var(--navy);}
+.tab-dd-sub{font-size:11px;color:var(--muted);}
+.tab-dd-divider{height:1px;background:var(--border);margin:4px 0;}
 
 /* FOLLOW-UP CENTRE NAVIGATION TILES */
 .centre-hub{background:linear-gradient(135deg,#ffffff 0%,#f8fffd 100%);border:1px solid var(--border);border-radius:18px;padding:18px 20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(13,115,119,.08);}
@@ -511,16 +523,89 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     </div>
     <button class="btn-so" onclick="doLogout()">Sign Out</button>
   </div>
-  <div class="tabs">
-    <div class="tab active" data-tab="roster" onclick="switchTab('roster',this)"><span class="tab-icon" style="background:#7c3aed">M</span>Monthly Roster</div>
-    <div class="tab" data-tab="appointments" onclick="switchTab('appointments',this)"><span class="tab-icon" style="background:#2980b9">P</span>Patient Appointments</div>
-    <div class="tab" data-tab="appointment-outcomes" onclick="switchTab('appointment-outcomes',this)"><span class="tab-icon" style="background:#27ae60">A</span>Appointment Outcomes</div>
-    <div class="tab" data-tab="cod" onclick="switchTab('cod',this)"><span class="tab-icon" style="background:#e67e22">C</span>Change of Duty</div>
-    <div class="tab" data-tab="ot-audit" onclick="switchTab('ot-audit',this)"><span class="tab-icon" style="background:#e6a817">O</span>OT Audit</div>
-    <div class="tab" data-tab="staff-audit" onclick="switchTab('staff-audit',this)"><span class="tab-icon" style="background:#0d7377">F</span>Follow-up Planning</div>
-    <div class="tab" data-tab="clinic-audit" onclick="switchTab('clinic-audit',this)"><span class="tab-icon" style="background:#c0392b">C</span>Clinic Audit</div>
-    <div class="tab" data-tab="dntu-policy" onclick="switchTab('dntu-policy',this)"><span class="tab-icon" style="background:#6b21a8">D</span>DNTU</div>
-    <div class="tab" data-tab="reports" onclick="switchTab('reports',this)"><span class="tab-icon" style="background:#1a2e4a">R</span>Reports &amp; Charts</div>
+  <div class="tabs" id="main-tabs">
+    <!-- Home -->
+    <div class="tab active" data-tab="roster" onclick="switchTab('roster',this)">
+      <span class="tab-icon" style="background:#1a2e4a">H</span>Home
+    </div>
+
+    <!-- Staffing group -->
+    <div class="tab-group" id="tg-staffing">
+      <div class="tab" onclick="toggleTabGroup('tg-staffing')">
+        <span class="tab-icon" style="background:#7c3aed">S</span>Staffing<span class="tab-arrow">▾</span>
+      </div>
+      <div class="tab-dropdown">
+        <button class="tab-dd-item" data-tab="roster" onclick="switchTab('roster',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#7c3aed">M</span>
+          <span class="tab-dd-label">Monthly Roster</span>
+          <span class="tab-dd-sub">Roster</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="cod" onclick="switchTab('cod',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#e67e22">C</span>
+          <span class="tab-dd-label">Change of Duty</span>
+          <span class="tab-dd-sub">Swaps</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="ot-audit" onclick="switchTab('ot-audit',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#e6a817">O</span>
+          <span class="tab-dd-label">OT Audit</span>
+          <span class="tab-dd-sub">Overtime</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Appointments group -->
+    <div class="tab-group" id="tg-appointments">
+      <div class="tab" onclick="toggleTabGroup('tg-appointments')">
+        <span class="tab-icon" style="background:#2980b9">A</span>Appointments<span class="tab-arrow">▾</span>
+      </div>
+      <div class="tab-dropdown">
+        <button class="tab-dd-item" data-tab="appointments" onclick="switchTab('appointments',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#2980b9">P</span>
+          <span class="tab-dd-label">Patient Appointments</span>
+          <span class="tab-dd-sub">Book</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="appointment-outcomes" onclick="switchTab('appointment-outcomes',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#27ae60">A</span>
+          <span class="tab-dd-label">Appointment Outcomes</span>
+          <span class="tab-dd-sub">Outcomes</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="staff-audit" onclick="switchTab('staff-audit',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#0d7377">F</span>
+          <span class="tab-dd-label">Follow-up Planning</span>
+          <span class="tab-dd-sub">Owners</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="dntu-policy" onclick="switchTab('dntu-policy',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#6b21a8">D</span>
+          <span class="tab-dd-label">DNTU</span>
+          <span class="tab-dd-sub">Tracking</span>
+        </button>
+        <div class="tab-dd-divider"></div>
+        <button class="tab-dd-item" data-tab="clinic-audit" onclick="switchTab('clinic-audit',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#c0392b">C</span>
+          <span class="tab-dd-label">Clinic Audit</span>
+          <span class="tab-dd-sub">Calendar</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Reports group -->
+    <div class="tab-group" id="tg-reports">
+      <div class="tab" onclick="toggleTabGroup('tg-reports')">
+        <span class="tab-icon" style="background:#1a2e4a">R</span>Reports<span class="tab-arrow">▾</span>
+      </div>
+      <div class="tab-dropdown">
+        <button class="tab-dd-item" data-tab="reports" onclick="switchTab('reports',this);closeAllGroups()">
+          <span class="tab-dd-icon" style="background:#1a2e4a">R</span>
+          <span class="tab-dd-label">Reports &amp; Charts</span>
+          <span class="tab-dd-sub">KPIs</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="main">
@@ -1303,14 +1388,26 @@ async function startApp(){
   const ry=document.getElementById('rep-year'); if(ry) ry.value=String(new Date().getFullYear());
 }
 
+const TAB_GROUP_MAP={
+  'roster':'','cod':'tg-staffing','ot-audit':'tg-staffing',
+  'appointments':'tg-appointments','appointment-outcomes':'tg-appointments',
+  'staff-audit':'tg-appointments','dntu-policy':'tg-appointments','clinic-audit':'tg-appointments',
+  'reports':'tg-reports'
+};
 function switchTab(name,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const page=document.getElementById('page-'+name);
   if(page)page.classList.add('active');
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  // standalone Home tab active state
+  document.querySelectorAll('.tab[data-tab]').forEach(t=>t.classList.toggle('active',t.dataset.tab===name&&!t.closest('.tab-group')));
+  // dropdown item active state
+  document.querySelectorAll('.tab-dd-item').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  // nav-tile active state
   document.querySelectorAll('.nav-tile').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
-  if(el?.classList?.contains('tab'))el.classList.add('active');
-  if(el?.classList?.contains('nav-tile'))el.classList.add('active');
+  // parent group active state
+  document.querySelectorAll('.tab-group').forEach(g=>g.classList.remove('active'));
+  const grpId=TAB_GROUP_MAP[name];
+  if(grpId)document.getElementById(grpId)?.classList.add('active');
   if(name==='staff-audit')loadStaffAudit();
   if(name==='ot-audit')loadOvertimeAudit();
   if(name==='clinic-audit')loadClinicAudit();
@@ -1321,10 +1418,22 @@ function switchTab(name,el){
   if(name==='roster')renderRoster();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
 }
+function toggleTabGroup(id){
+  const grp=document.getElementById(id);
+  const wasOpen=grp.classList.contains('open');
+  closeAllGroups();
+  if(!wasOpen)grp.classList.add('open');
+}
+function closeAllGroups(){
+  document.querySelectorAll('.tab-group.open').forEach(g=>g.classList.remove('open'));
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.tab-group'))closeAllGroups();
+});
 function refreshActivePage(){
   const active=document.querySelector('.page.active');
   const name=active?.id?.replace('page-','')||'roster';
-  const el=document.querySelector(`.nav-tile[data-tab="${name}"]`)||document.querySelector(`.tab[data-tab="${name}"]`);
+  const el=document.querySelector(`.nav-tile[data-tab="${name}"]`)||document.querySelector(`[data-tab="${name}"]`);
   switchTab(name,el);
 }
 
