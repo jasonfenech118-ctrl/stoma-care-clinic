@@ -3345,8 +3345,11 @@ async function loadAppointmentOutcomes(){
     const latestLabel=latest.appt_date?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)}`:'—';
     const statusOptions=['active','awaiting_feedback','paused','deceased','reversed'].map(st=>`<option value="${st}" ${r.followupStatus===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
     const rowCls=latest.status==='attended'?'row-attended':latest.status==='cancelled'?'row-cancelled':latest.status==='did_not_attend'?'row-dna':'row-booked';
-    return `<tr class="outcome-click-row ${rowCls}" onclick="openFollowupHistory('${r.patientId}')" title="Open full follow-up history">
-      <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">Click row for history</span></td>
+    const rowClick=latest.status==='cancelled'?`openCancelledAppointmentModal('${latest.id}','${r.patientId}')`:`openFollowupHistory('${r.patientId}')`;
+    const rowTitle=latest.status==='cancelled'?'Open cancelled appointment details':'Open full follow-up history';
+    const rowSubLabel=latest.status==='cancelled'?'Click row for cancellation details':'Click row for history';
+    return `<tr class="outcome-click-row ${rowCls}" onclick="${rowClick}" title="${rowTitle}">
+      <td><strong>${htmlSafe(nm)}</strong><br/><span style="font-size:10px;color:var(--muted);">${rowSubLabel}</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(latestLabel)}</td>
@@ -3366,6 +3369,39 @@ async function saveAppointmentOutcomeFollowupStatus(patientId){
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
   if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+async function openCancelledAppointmentModal(apptId,patientId){
+  const[{data:raw,error},{data:pat}]=await Promise.all([
+    SB.from('appointments').select('*').eq('id',apptId).single(),
+    SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle()
+  ]);
+  if(error||!raw){alert('Could not load this cancelled appointment.');return;}
+  const appt=(await enrichAppointments([raw]))[0]||raw;
+  const p=pat||appt.patients||{};
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed Patient';
+  const nurse=appt.staff?.full_name||appt.bank_staff?.full_name||(!appt.assigned_to&&!appt.bank_staff_id?'Common':'—');
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2 style="color:#b91c1c;">Cancelled Appointment</h2>
+    <div class="msub" style="background:#fff1f2;border-left:4px solid #f87171;padding:10px 12px;border-radius:6px;margin-bottom:12px;">
+      <strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>
+      This appointment was cancelled. Use the actions below to rebook or restore it.
+    </div>
+    <div class="edit-seen-grid" style="margin-bottom:14px;">
+      <div class="fg"><label>Date</label><input type="text" value="${htmlSafe(appt.appt_date||'—')}" readonly style="background:#f8fafc;"/></div>
+      <div class="fg"><label>Time</label><input type="text" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5)||'—')}" readonly style="background:#f8fafc;"/></div>
+      <div class="fg"><label>Nurse / Column</label><input type="text" value="${htmlSafe(nurse)}" readonly style="background:#f8fafc;"/></div>
+      <div class="fg"><label>Follow-up Owner</label><input type="text" value="${htmlSafe(normaliseFollowupOwner(p.followup_owner||'Common'))}" readonly style="background:#f8fafc;"/></div>
+      <div class="fg"><label>Due Month / Year</label><input type="text" value="${htmlSafe(followupMonthName(p.followup_due_month)+(p.followup_year?' '+p.followup_year:''))}" readonly style="background:#f8fafc;"/></div>
+      <div class="fg"><label>Follow-up Status</label><input type="text" value="${htmlSafe(followupStatusText(normaliseFollowupStatus(p.followup_status||'active')))}" readonly style="background:#f8fafc;"/></div>
+    </div>
+    <div class="mact" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button class="ncb-btn" onclick="closeModal();openFollowupHistory('${patientId}')" style="padding:8px 16px;font-size:13px;background:#edf1f5;color:var(--navy);">View Full History</button>
+      <button class="ncb-btn" onclick="closeModal();setTimeout(()=>editAppointment('${apptId}'),50)" style="padding:8px 16px;font-size:13px;background:#e8f5f4;color:var(--teal);">Edit / Restore</button>
+      <button class="btn-save" onclick="closeModal();setTimeout(()=>openPatientRebookModal('${patientId}'),50)">Rebook Patient</button>
+    </div>`;
+  openMo();
 }
 
 // CLINIC AUDIT
