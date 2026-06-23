@@ -2327,12 +2327,18 @@ function updateFollowupChangeWarning(){
     note.innerHTML='DNTU correction: follow-up due month can be kept or changed. A different month is not required for this form.';
     return;
   }
+  if(mb?.dataset?.followupType==='new_case'){
+    note.className='registry-lookup-note found';
+    note.innerHTML='New case: follow-up due month is optional and can be set later.';
+    return;
+  }
 
   const year=document.getElementById('of-year')?.value;
   const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
   const status=document.getElementById('of-followup-status')?.value||'active';
   const apptOutcome=document.getElementById('of-status')?.value||'booked';
-  const check=apptOutcome==='attended'?outcomeFollowupChangeCheck(month,year,status):{ok:true,bypass:false,message:''};
+  const isNewCaseWarning=document.getElementById('mb')?.dataset?.followupType==='new_case';
+  const check=(apptOutcome==='attended'&&!isNewCaseWarning)?outcomeFollowupChangeCheck(month,year,status):{ok:true,bypass:false,message:''};
   const initialMonth=Number(mb?.dataset?.initialFollowupMonth||mb?.dataset?.originalFollowupMonth||'')||null;
   const initialYear=Number(mb?.dataset?.initialFollowupYear||mb?.dataset?.originalFollowupYear||'')||null;
 
@@ -2599,6 +2605,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   mb.dataset.originalFollowupYear=String(p.followup_year||'');
   mb.dataset.initialFollowupMonth=String(defaultMonth||'');
   mb.dataset.initialFollowupYear=String(defaultYear||'');
+  mb.dataset.followupType=String(p.followup_type||'follow_up');
   const modalTitle=isDntuEditMode?'Edit / DNTU Appointment — Did Not Turn Up':'Edit / Seen Appointment';
   const modalSub=isDntuEditMode?'Update patient details, clinic column, DNTU count and follow-up planning in one card.':'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
   const outcomeControl=isDntuEditMode?
@@ -2678,12 +2685,13 @@ async function saveOutcomeFollowup(apptId,patientId){
   const nurse=document.getElementById('of-nurse')?.value||'common';
   const isDntuEditMode=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
   const dntuTarget=isDntuEditMode?(Number(document.getElementById('of-dntu-target')?.value)||0):0;
+  const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
 
   if(!fn||!sn||!idcard){alert('Please fill in ID card number, name and surname.');return;}
   if(!date||!slot){alert('Please fill in appointment date and time.');return;}
-  if(!(isDntuEditMode&&dntuTarget===3)&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
+  if(!isNewCase&&!(isDntuEditMode&&dntuTarget===3)&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
 
-  if(!isDntuEditMode&&status==='attended'){
+  if(!isNewCase&&!isDntuEditMode&&status==='attended'){
     const planningCheck=outcomeFollowupChangeCheck(month,year,followupStatus);
     if(!planningCheck.ok){
       updateFollowupChangeWarning();
