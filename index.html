@@ -2331,7 +2331,8 @@ function updateFollowupChangeWarning(){
   const year=document.getElementById('of-year')?.value;
   const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
   const status=document.getElementById('of-followup-status')?.value||'active';
-  const check=outcomeFollowupChangeCheck(month,year,status);
+  const apptOutcome=document.getElementById('of-status')?.value||'booked';
+  const check=apptOutcome==='attended'?outcomeFollowupChangeCheck(month,year,status):{ok:true,bypass:false,message:''};
   const initialMonth=Number(mb?.dataset?.initialFollowupMonth||mb?.dataset?.originalFollowupMonth||'')||null;
   const initialYear=Number(mb?.dataset?.initialFollowupYear||mb?.dataset?.originalFollowupYear||'')||null;
 
@@ -2640,7 +2641,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
       </select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month * — different month required before saving'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
+      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month * — different month required when marking as Seen'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
         <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
       </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">${isDntuEditMode?'DNTU correction: confirm or change the follow-up due month if needed. A different month is not required in this DNTU form.':'Clinical safety: choose a different follow-up due month before saving, so the next appointment is actively planned.'}</div></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Follow-up status</label><select id="of-followup-status" onchange="updateFollowupChangeWarning()">
@@ -2682,7 +2683,7 @@ async function saveOutcomeFollowup(apptId,patientId){
   if(!date||!slot){alert('Please fill in appointment date and time.');return;}
   if(!(isDntuEditMode&&dntuTarget===3)&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
 
-  if(!isDntuEditMode){
+  if(!isDntuEditMode&&status==='attended'){
     const planningCheck=outcomeFollowupChangeCheck(month,year,followupStatus);
     if(!planningCheck.ok){
       updateFollowupChangeWarning();
