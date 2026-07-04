@@ -1771,8 +1771,18 @@ async function addTIL(type){
   const typeLabel=type==='off'?'TIL-Off':'TIL-In';
   const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
   let insErr=null;
-  if(coreFound?.[0]?.id){const{error}=await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});insErr=error;}
-  else{const{error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});insErr=error;}
+  if(coreFound?.[0]?.id){
+    // Update the existing TIL record for this nurse+date if there is one, so changing the timing works.
+    const{data:existing}=await SB.from('leave_records').select('id,notes').eq('staff_id',staffId).eq('leave_type','overtime').eq('start_date',date);
+    const existingTil=(existing||[]).find(r=>isTILNote(r.notes));
+    if(existingTil){const{error}=await SB.from('leave_records').update({notes:tilNote,end_date:date,total_days:1}).eq('id',existingTil.id);insErr=error;}
+    else{const{error}=await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});insErr=error;}
+  }else{
+    const{data:existing}=await SB.from('bank_staff_assignments').select('id,notes').eq('bank_staff_id',staffId).eq('work_date',date);
+    const existingTil=(existing||[]).find(r=>isTILNote(r.notes));
+    if(existingTil){const{error}=await SB.from('bank_staff_assignments').update({notes:tilNote,shift_start:start,shift_end:until}).eq('id',existingTil.id);insErr=error;}
+    else{const{error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});insErr=error;}
+  }
   if(insErr){alert(`Could not save ${typeLabel==='TIL-Off'?'TIL Off':'TIL In'}: ${insErr.message}`);return;}
   document.getElementById('til-name').value='';document.getElementById('til-until').value='';
   renderRoster();loadStaffAudit();
