@@ -1770,8 +1770,10 @@ async function addTIL(type){
   if(!staffId){alert('Error saving staff.');return;}
   const typeLabel=type==='off'?'TIL-Off':'TIL-In';
   const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
-  if(coreFound?.[0]?.id){await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});}
-  else{await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});}
+  let insErr=null;
+  if(coreFound?.[0]?.id){const{error}=await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});insErr=error;}
+  else{const{error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});insErr=error;}
+  if(insErr){alert(`Could not save ${typeLabel==='TIL-Off'?'TIL Off':'TIL In'}: ${insErr.message}`);return;}
   document.getElementById('til-name').value='';document.getElementById('til-until').value='';
   renderRoster();loadStaffAudit();
 }
