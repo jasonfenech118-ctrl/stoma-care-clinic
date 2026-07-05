@@ -2316,14 +2316,17 @@ function outcomeFollowupChangeCheck(month,year,followupStatus){
   }
 
   /* Clinical safety rule:
-     The nurse must actively move the follow-up MONTH away from the month that was shown
-     when the Edit / Seen card opened. A year-only change is not enough. This prevents
-     accidental saving when the next appointment month was not genuinely reconsidered. */
-  if(initialMonth&&initialMonth===newMonth){
+     The nurse must actively move the follow-up DUE DATE away from what was shown when the
+     Edit / Seen card opened. Selecting the same month in a different year (e.g. June 2026 ->
+     June 2027) IS a genuine forward move and is allowed; only an unchanged month AND year is
+     blocked. This prevents accidental saving when the next appointment was not reconsidered. */
+  const sameMonth=initialMonth&&initialMonth===newMonth;
+  const sameYear=!initialYear||initialYear===newYear;
+  if(sameMonth&&sameYear){
     const yrText=initialYear?` ${initialYear}`:'';
     return {
       ok:false,
-      message:`Please choose a different follow-up due month before saving. The month is still ${followupMonthName(initialMonth)}${yrText}.`
+      message:`Please choose a different follow-up due month or year before saving. The due date is still ${followupMonthName(initialMonth)}${yrText}.`
     };
   }
 
@@ -2660,7 +2663,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${[2025,2026,2027,2028,2029].map(y=>`<option value="${y}" ${Number(y)===Number(defaultYear)?'selected':''}>${y}</option>`).join('')}
       </select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month * — different month required when marking as Seen'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
+      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month * — different month or year required when marking as Seen'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
         <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
       </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">${isDntuEditMode?'DNTU correction: confirm or change the follow-up due month if needed. A different month is not required in this DNTU form.':'Clinical safety: choose a different follow-up due month before saving, so the next appointment is actively planned.'}</div></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Follow-up status</label><select id="of-followup-status" onchange="updateFollowupChangeWarning()">
