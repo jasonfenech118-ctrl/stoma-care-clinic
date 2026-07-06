@@ -1204,6 +1204,7 @@ const CODES=[
 const CODE_MAP={working:'D',off:'R',sick_leave:'S',maternity_leave:'M',study_leave:'St',overtime:'OT',annual_leave:'L'};
 const PATTERN_DDR=['working','working','off'];
 const PATTERN_DDDOO=['working','working','working','off','off'];
+const PATTERN_DDODO=['working','working','off','working','off'];
 const ANCHOR=new Date(2026,3,26);
 
 function fmt(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
@@ -1321,6 +1322,8 @@ function defaultCode(staff,dateStr){
   if(name==='Jason') return PATTERN_DDR[((diff+2)%3+3)%3];
   if(name==='Jacqueline') return PATTERN_DDR[((diff+1)%3+3)%3];
   if(name==='Lorraine') return PATTERN_DDDOO[((diff+3)%5+5)%5];
+  // Erica Borg — Day, Day, Off, Day, Off (5-day cycle). Anchored so 2026-07-06 is her 2nd day.
+  if(normStaffName(name).includes('erica')) return PATTERN_DDODO[((diff)%5+5)%5];
   return 'working';
 }
 
@@ -1440,7 +1443,22 @@ async function loadHolidays(){
 }
 const isHol=d=>holidays[d]||null;
 
+async function ensureCoreStaff(){
+  // Core nurses that must exist on the roster. Their shift pattern is defined in defaultCode().
+  const targets=[{full_name:'Erica Borg',role:'Nurse'}];
+  for(const t of targets){
+    const{data:existing,error}=await SB.from('staff').select('id,is_active').ilike('full_name',t.full_name);
+    if(error){console.warn('ensureCoreStaff lookup failed:',error.message);continue;}
+    if(existing&&existing.length){
+      if(existing[0].is_active===false)await SB.from('staff').update({is_active:true}).eq('id',existing[0].id);
+    }else{
+      const{error:insErr}=await SB.from('staff').insert({full_name:t.full_name,role:t.role,is_active:true});
+      if(insErr)console.warn(`Could not add core nurse ${t.full_name}:`,insErr.message);
+    }
+  }
+}
 async function loadStaff(){
+  await ensureCoreStaff();
   const{data}=await SB.from('staff').select('*').eq('is_active',true);
   staffList=data||[];
 }
