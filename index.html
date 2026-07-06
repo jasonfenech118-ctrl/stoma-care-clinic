@@ -1448,12 +1448,15 @@ async function ensureCoreStaff(){
   const{data:oldRec}=await SB.from('staff').select('id').ilike('full_name','Erica Borg');
   if(oldRec&&oldRec.length)await SB.from('staff').update({full_name:'Erika Psaila'}).eq('id',oldRec[0].id);
   // Core nurses that must exist on the roster. Their shift pattern is defined in defaultCode().
-  const targets=[{full_name:'Erika Psaila',role:'Nurse'}];
+  const targets=[{full_name:'Erika Psaila',role:'Senior Staff Nurse'}];
   for(const t of targets){
-    const{data:existing,error}=await SB.from('staff').select('id,is_active').ilike('full_name',t.full_name);
+    const{data:existing,error}=await SB.from('staff').select('id,is_active,role').ilike('full_name',t.full_name);
     if(error){console.warn('ensureCoreStaff lookup failed:',error.message);continue;}
     if(existing&&existing.length){
-      if(existing[0].is_active===false)await SB.from('staff').update({is_active:true}).eq('id',existing[0].id);
+      const patch={};
+      if(existing[0].is_active===false)patch.is_active=true;
+      if(existing[0].role!==t.role)patch.role=t.role;
+      if(Object.keys(patch).length)await SB.from('staff').update(patch).eq('id',existing[0].id);
     }else{
       const{error:insErr}=await SB.from('staff').insert({full_name:t.full_name,role:t.role,is_active:true});
       if(insErr)console.warn(`Could not add core nurse ${t.full_name}:`,insErr.message);
