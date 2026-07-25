@@ -850,6 +850,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <span class="dntu-note">Paused patients are hidden from the normal nurse list. Use Awaiting Feedback or Paused Follow-ups to view those groups separately.</span>
       </div>
       <div class="srow" id="followup-stats"></div>
+      <div class="card" id="recall-worklist-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="card-title" style="margin-bottom:0;">📋 Booking Worklist — due &amp; overdue follow-ups <span id="recall-worklist-count" style="font-weight:600;color:var(--muted);font-size:12px;"></span></div>
+          <button class="btn-add" onclick="loadRecallWorklist()" style="padding:7px 14px;">Refresh</button>
+        </div>
+        <div class="report-note">Active patients whose follow-up due month has arrived or passed, with no future appointment recorded. Book them through the official government booking system, then record the appointment here with Rebook. Patients paused by 3 DNTU are excluded.</div>
+        <div style="overflow-x:auto;"><table class="dt">
+          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Due</th><th>Owner</th><th>Last Appointment</th><th>Actions</th></tr></thead>
+          <tbody id="recall-worklist-tbody"><tr><td colspan="7" class="empty">Loading booking worklist...</td></tr></tbody>
+        </table></div>
+      </div>
       <div class="card">
         <div class="card-title">Patient Follow-up List — <span id="followup-owner-title">Common</span></div>
         <div style="overflow-x:auto;"><table class="dt">
@@ -3159,9 +3170,65 @@ async function getAppointmentRowsForPatients(patientIds,year,month){
   const{data}=await q;
   return await enrichAppointments(data||[]);
 }
+async function getRecallWorklistRows(){
+  const now=new Date();
+  const nowKey=now.getFullYear()*100+(now.getMonth()+1);
+  const{data:pats,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type');
+  if(error)return {rows:[],error};
+  const candidates=(pats||[]).filter(p=>{
+    if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
+    const m=Number(p.followup_due_month),y=Number(p.followup_year);
+    return m>=1&&m<=12&&y>2000&&(y*100+m)<=nowKey;
+  });
+  if(!candidates.length)return {rows:[],error:null};
+  const{data:future}=await SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled');
+  const hasFuture=new Set((future||[]).map(r=>String(r.patient_id)));
+  const dueNoBooking=candidates.filter(p=>!hasFuture.has(String(p.id)));
+  if(!dueNoBooking.length)return {rows:[],error:null};
+  const history=await getAppointmentRowsForPatients(dueNoBooking.map(p=>p.id),'','');
+  const byPatient={};
+  history.forEach(a=>{if(!byPatient[a.patient_id])byPatient[a.patient_id]=[];byPatient[a.patient_id].push(a);});
+  const rows=dueNoBooking
+    .filter(p=>calculateCurrentDntuStreak(byPatient[p.id]||[])<3)
+    .map(p=>{
+      const latest=(byPatient[p.id]||[])[0];
+      const dueKey=Number(p.followup_year)*100+Number(p.followup_due_month);
+      return {...p,dueKey,overdue:dueKey<nowKey,latest};
+    });
+  rows.sort((a,b)=>a.dueKey-b.dueKey||String(a.surname||'').localeCompare(String(b.surname||'')));
+  return {rows,error:null};
+}
+async function loadRecallWorklist(){
+  const tbody=document.getElementById('recall-worklist-tbody');
+  const countEl=document.getElementById('recall-worklist-count');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="7" class="empty">Loading booking worklist...</td></tr>';
+  const{rows,error}=await getRecallWorklistRows();
+  if(error){tbody.innerHTML='<tr><td colspan="7" class="empty">Could not load worklist: '+htmlSafe(error.message)+'</td></tr>';return;}
+  if(countEl)countEl.textContent=rows.length?`— ${rows.length} patient${rows.length!==1?'s':''} to book`:'';
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">✅ No follow-ups waiting to be booked. All due patients have a future appointment.</td></tr>';return;}
+  tbody.innerHTML=rows.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
+    const dueLabel=`${followupMonthName(p.followup_due_month)} ${p.followup_year}`;
+    const dueBadge=p.overdue
+      ?`<span class="status-badge sb-dna" title="Due month has passed">OVERDUE · ${htmlSafe(dueLabel)}</span>`
+      :`<span class="status-badge sb-booked" title="Due this month">DUE · ${htmlSafe(dueLabel)}</span>`;
+    const latestLabel=p.latest?`${p.latest.appt_date} ${String(p.latest.appt_slot||'').slice(0,5)} · ${statusLabel(p.latest.status)}`:'No appointment history';
+    return `<tr class="followup-click-row" onclick="openFollowupHistory('${p.id}')" title="Open full history">
+      <td><strong>${htmlSafe(nm)}</strong></td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${htmlSafe(p.phone_number||'—')}</td>
+      <td>${dueBadge}</td>
+      <td>${htmlSafe(normaliseFollowupOwner(p.followup_owner||'Common'))}</td>
+      <td>${htmlSafe(latestLabel)}</td>
+      <td onclick="event.stopPropagation();"><div class="followup-actions"><button class="ncb-btn" onclick="openPatientRebookModal('${p.id}')" style="background:#fff8e1;color:#856404;">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
+    </tr>`;
+  }).join('');
+}
 async function loadStaffAudit(){
   ensureFollowupDefaults();
   loadOvertimeAudit();
+  loadRecallWorklist();
   const year=document.getElementById('followup-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('followup-month')?.value||'';
   const tbody=document.getElementById('followup-patient-tbody');
@@ -3962,6 +4029,14 @@ async function loadReports(){
     if(!pCountErr)totalRegisteredPatients=count??0;
   }catch(e){console.warn('Patient total count not available',e);}
 
+  const newCases=appts.filter(a=>a.status!=='cancelled'&&a.patients?.followup_type==='new_case').length;
+  const fuCases=Math.max(0,activeTotal-newCases);
+  const ratioText=newCases?`1 : ${(fuCases/newCases).toFixed(1)}`:(fuCases?`0 : ${fuCases}`:'—');
+  const clinicDays=new Set(appts.filter(a=>a.status!=='cancelled').map(a=>a.appt_date)).size;
+  const avgPerDay=clinicDays?(activeTotal/clinicDays).toFixed(1):'0';
+  let recallCount='—';
+  try{const{rows:recallRows}=await getRecallWorklistRows();recallCount=recallRows.length;}catch(e){console.warn('Recall KPI failed',e);}
+
   const kpiEl=document.getElementById('report-kpis');
   if(kpiEl){
     kpiEl.innerHTML=`
@@ -3969,9 +4044,12 @@ async function loadReports(){
       <div class="kpi"><div class="k-label">Unique Patients</div><div class="k-value">${uniquePatients}</div><div class="k-sub">selected period</div></div>
       <div class="kpi"><div class="k-label">Total Patients</div><div class="k-value">${totalRegisteredPatients}</div><div class="k-sub">registered in system</div></div>
       <div class="kpi"><div class="k-label">Attended Rate</div><div class="k-value">${pct(attended,total)}%</div><div class="k-sub">${attended} attended</div></div>
-      <div class="kpi"><div class="k-label">DNTU Rate</div><div class="k-value">${pct(dna,total)}%</div><div class="k-sub">${dna} did not turn up</div></div>
+      <div class="kpi"><div class="k-label">DNTU Rate</div><div class="k-value">${pct(dna,total)}%</div><div class="k-sub">${dna} did not turn up · target &lt;15%</div></div>
       <div class="kpi"><div class="k-label">Cancellation Rate</div><div class="k-value">${pct(cancelled,total)}%</div><div class="k-sub">${cancelled} cancelled</div></div>
-      <div class="kpi"><div class="k-label">Active Bookings</div><div class="k-value">${activeTotal}</div><div class="k-sub">excluding cancelled</div></div>`;
+      <div class="kpi"><div class="k-label">Active Bookings</div><div class="k-value">${activeTotal}</div><div class="k-sub">excluding cancelled</div></div>
+      <div class="kpi"><div class="k-label">New : Follow-up</div><div class="k-value">${ratioText}</div><div class="k-sub">${newCases} new case${newCases!==1?'s':''} in period</div></div>
+      <div class="kpi"><div class="k-label">Avg / Clinic Day</div><div class="k-value">${avgPerDay}</div><div class="k-sub">${clinicDays} clinic day${clinicDays!==1?'s':''} with activity</div></div>
+      <div class="kpi"><div class="k-label">Awaiting Booking</div><div class="k-value">${recallCount}</div><div class="k-sub">due/overdue — see Booking Worklist in Follow-up Planning</div></div>`;
   }
 
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
