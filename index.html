@@ -2024,9 +2024,10 @@ function cancelledSlotHistoryHTML(cancelledRows){
 }
 
 async function loadAppts(){
-  const date=document.getElementById('appt-date').value;
-  if(!date)return;
-
+  const dateEl=document.getElementById('appt-date');
+  let date=dateEl?.value;
+  if(!date){date=TODAY;if(dateEl)dateEl.value=TODAY;}
+  try{
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
   const{data:otTodayRaw}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
   const otToday=(otTodayRaw||[]).filter(b=>!isTILNote(b.notes));
@@ -2167,6 +2168,11 @@ async function loadAppts(){
   });
   html+='</tbody></table>';
   con.innerHTML=html;
+  }catch(err){
+    console.error('loadAppts failed:',err);
+    const con=document.getElementById('slots-container');
+    if(con)con.innerHTML=`<div style="padding:20px;color:#c0392b;font-weight:600;">⚠ Could not load the appointments grid: ${htmlSafe((err&&err.message)||String(err))}<br/><span style="font-weight:400;color:#7a8fa6;">Please screenshot this message and send it so the exact cause can be fixed.</span></div>`;
+  }
 }
 
 async function refreshAppointmentViews(){
