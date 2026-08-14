@@ -350,10 +350,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .availability-text .availability-sub{font-size:11px;color:var(--muted);}
 .availability-text .availability-status{font-size:11px;font-weight:800;margin-top:3px;color:var(--teal);}
 .availability-text .availability-cancelled{font-size:10px;font-weight:700;color:#b45309;margin-top:2px;}
-.availability-scale{position:relative;height:7px;border-radius:5px;margin-top:6px;max-width:230px;
-  background:linear-gradient(90deg,hsl(0 88% 14%) 0%,hsl(0 83% 22%) 6%,hsl(4 76% 32%) 14%,hsl(14 82% 40%) 26%,hsl(24 88% 45%) 38%,hsl(32 90% 48%) 50%,hsl(41 92% 49%) 62%,hsl(50 92% 47%) 74%,hsl(78 62% 42%) 86%,hsl(142 66% 37%) 100%);
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);}
-.availability-scale-marker{position:absolute;top:-3px;width:3px;height:13px;border-radius:2px;background:var(--navy);box-shadow:0 0 0 1.5px white;transform:translateX(-50%);transition:left .35s ease;}
 
 /* SAME-MONTH REBOOKING TOGGLE (core staff only) */
 .same-month-toggle{display:flex!important;align-items:center;gap:9px;padding:9px 12px;border:1.5px solid var(--border);border-radius:9px;background:#fffdf5;cursor:pointer;font-size:12px;font-weight:700;color:var(--navy);text-transform:none!important;letter-spacing:0!important;}
@@ -421,6 +417,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-summary-card.next .rem-sc-value{color:#2563eb;}
 .rem-summary-card.later .rem-sc-value{color:#6b7280;}
 
+.rem-plan-card{border:1px solid var(--border);border-radius:14px;background:white;padding:14px 16px;margin-bottom:18px;box-shadow:0 2px 8px rgba(0,0,0,.04);}
+.rem-plan-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
+.rem-plan-head strong{font-size:14px;color:var(--navy);display:block;}
+.rem-plan-sub{font-size:11px;color:var(--muted);display:block;margin-top:3px;max-width:560px;}
+.rem-plan-head select{padding:9px 12px;border:1.5px solid var(--teal);border-radius:9px;font-size:12px;font-weight:700;color:var(--navy);font-family:'Inter',sans-serif;background:white;cursor:pointer;min-width:250px;}
 .rem-daily-note{border-left:4px solid var(--teal);background:#f0fdfa;border-radius:8px;padding:11px 14px;font-size:12px;color:var(--navy);margin-bottom:16px;line-height:1.5;}
 .rem-popup-scroll{max-height:min(52vh,430px);overflow-y:auto;margin:10px 0 4px;padding-right:4px;}
 @media(max-width:640px){
@@ -836,6 +837,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         <button class="centre-refresh" onclick="loadRemindersPage()">↻ Refresh</button></div>
       <div class="rem-daily-note" id="rem-daily-note"></div>
       <div class="rem-summary-grid" id="rem-summary"></div>
+      <div class="rem-plan-card">
+        <div class="rem-plan-head">
+          <div><strong>📋 Plan a month</strong><span class="rem-plan-sub">Who still needs an appointment booked for the month you pick — worked out automatically from each patient's follow-up due date</span></div>
+          <select id="rem-plan-month" onchange="setPlanMonth(this.value)"></select>
+        </div>
+        <div id="rem-plan-body"></div>
+      </div>
       <div id="rem-page-body"><div class="rem-empty">Loading reminders…</div></div>
     </div>
 
@@ -2438,10 +2446,6 @@ function availabilityColorFromRatio(freeRatio){
   const last=stops[stops.length-1];
   return `hsl(${last.h} ${last.s}% ${last.l}%)`;
 }
-function availabilityGradientCSS(){
-  // Left edge = no slots left, right edge = everything free.
-  return AVAILABILITY_COLOR_STOPS.map(s=>`hsl(${s.h} ${s.s}% ${s.l}%) ${(s.t*100).toFixed(0)}%`).join(',');
-}
 function availabilityFreeRatio(load){
   const data=normaliseAvailabilityData(load);
   if(!data.capacity)return null;
@@ -2591,7 +2595,6 @@ function availabilityPreviewHTML(load,context,month){
       <div class="availability-sub">${htmlSafe(slotText)}</div>
       <div class="availability-status" style="color:${color};">${htmlSafe(level.text)}</div>
       ${cancelText}
-      <div class="availability-scale" title="Green = most slots free · dark red = none left"><span class="availability-scale-marker" style="left:${ratio===null?0:Math.round(ratio*100)}%;"></span></div>
     </div>
   </div>`;
 }
@@ -3694,6 +3697,8 @@ async function loadRecallWorklist(){
    patient is actually booked, because the list is derived from live data rather
    than from a one-off notification. */
 let reminderData=null;
+let selectedPlanMonthKey=null;
+const PLAN_MONTHS_AHEAD=12;
 const REMINDER_BUCKETS=[
   {key:'overdue',cls:'overdue',title:'Overdue — should already be booked'},
   {key:'current',cls:'current',title:'Due this month'},
@@ -3708,23 +3713,27 @@ function monthKeyOffset(offset){
 }
 async function getReminderData(){
   const cur=monthKeyOffset(0),next=monthKeyOffset(1),later=monthKeyOffset(2);
+  // Data is gathered a year ahead so any month can be reviewed from the planning
+  // picker, while the bell badge stays on the near-term buckets only.
+  const horizon=monthKeyOffset(PLAN_MONTHS_AHEAD);
   const empty={overdue:[],current:[],next:[],later:[]};
+  const months={cur,next,later,horizon};
   const{data:pats,error}=await SB.from('patients')
     .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type');
-  if(error)return {buckets:empty,total:0,error,months:{cur,next,later}};
+  if(error)return {buckets:empty,all:[],total:0,error,months};
 
   const candidates=(pats||[]).filter(p=>{
     if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
     const m=Number(p.followup_due_month),y=Number(p.followup_year);
-    return m>=1&&m<=12&&y>2000&&(y*100+m)<=later.key;
+    return m>=1&&m<=12&&y>2000&&(y*100+m)<=horizon.key;
   });
-  if(!candidates.length)return {buckets:empty,total:0,error:null,months:{cur,next,later}};
+  if(!candidates.length)return {buckets:empty,all:[],total:0,error:null,months};
 
   // A patient with any future appointment already booked is not a reminder.
   const{data:future}=await SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled');
   const booked=new Set((future||[]).map(r=>String(r.patient_id)));
   const pending=candidates.filter(p=>!booked.has(String(p.id)));
-  if(!pending.length)return {buckets:empty,total:0,error:null,months:{cur,next,later}};
+  if(!pending.length)return {buckets:empty,all:[],total:0,error:null,months};
 
   // Patients already on the 3-strike DNTU pathway are handled by the DNTU policy page.
   const history=await getAppointmentRowsForPatients(pending.map(p=>p.id),'','');
@@ -3732,20 +3741,23 @@ async function getReminderData(){
   history.forEach(a=>{(byPatient[a.patient_id]||(byPatient[a.patient_id]=[])).push(a);});
 
   const buckets={overdue:[],current:[],next:[],later:[]};
+  const all=[];
   pending.forEach(p=>{
     const rows=byPatient[p.id]||[];
     if(calculateCurrentDntuStreak(rows)>=3)return;
     const dueKey=Number(p.followup_year)*100+Number(p.followup_due_month);
     const entry={...p,dueKey,latest:rows[0],owner:normaliseFollowupOwner(p.followup_owner||'Common')};
+    all.push(entry);
     if(dueKey<cur.key)buckets.overdue.push(entry);
     else if(dueKey===cur.key)buckets.current.push(entry);
     else if(dueKey===next.key)buckets.next.push(entry);
-    else buckets.later.push(entry);
+    else if(dueKey===later.key)buckets.later.push(entry);
   });
-  Object.values(buckets).forEach(list=>list.sort((a,b)=>
-    a.dueKey-b.dueKey||String(a.surname||'').localeCompare(String(b.surname||''))));
+  const bySurname=(a,b)=>a.dueKey-b.dueKey||String(a.surname||'').localeCompare(String(b.surname||''));
+  Object.values(buckets).forEach(list=>list.sort(bySurname));
+  all.sort(bySurname);
   const total=Object.values(buckets).reduce((n,l)=>n+l.length,0);
-  return {buckets,total,error:null,months:{cur,next,later}};
+  return {buckets,all,total,error:null,months};
 }
 function groupRemindersByOwner(rows){
   const groups={};
@@ -3846,6 +3858,43 @@ function openReminderHistory(patientId){
   closeReminderPanel();
   openFollowupHistory(patientId);
 }
+/* Planning picker — defaults to next month (the month the clinic is planning
+   right now) but any month up to a year out can be reviewed. */
+function planMonthChoices(){
+  const out=[];
+  for(let i=0;i<=PLAN_MONTHS_AHEAD;i++)out.push(monthKeyOffset(i));
+  return out;
+}
+function defaultPlanMonthKey(){return monthKeyOffset(1).key;}
+function setPlanMonth(key){
+  selectedPlanMonthKey=Number(key)||defaultPlanMonthKey();
+  renderPlanMonthSection();
+}
+function renderPlanMonthSection(){
+  const wrap=document.getElementById('rem-plan-body');
+  const select=document.getElementById('rem-plan-month');
+  if(!wrap||!reminderData)return;
+  const choices=planMonthChoices();
+  if(!selectedPlanMonthKey||!choices.some(c=>c.key===selectedPlanMonthKey))selectedPlanMonthKey=defaultPlanMonthKey();
+  if(select){
+    select.innerHTML=choices.map(c=>{
+      const n=(reminderData.all||[]).filter(p=>p.dueKey===c.key).length;
+      const tag=c.key===monthKeyOffset(0).key?' (this month)':c.key===defaultPlanMonthKey()?' (next month)':'';
+      return `<option value="${c.key}" ${c.key===selectedPlanMonthKey?'selected':''}>${htmlSafe(c.label+tag)} — ${n} to book</option>`;
+    }).join('');
+  }
+  const chosen=choices.find(c=>c.key===selectedPlanMonthKey)||choices[1]||choices[0];
+  const rows=(reminderData.all||[]).filter(p=>p.dueKey===selectedPlanMonthKey);
+  if(!rows.length){
+    wrap.innerHTML=`<div class="rem-empty">✅ Nobody is waiting to be booked for ${htmlSafe(chosen.label)}.</div>`;
+    return;
+  }
+  const groups=groupRemindersByOwner(rows);
+  wrap.innerHTML=groups.map(g=>`<div class="rem-nurse">
+      <div class="rem-nurse-hdr"><span>${htmlSafe(g.owner)}</span><span class="rem-nurse-count">${g.rows.length}</span></div>
+      ${g.rows.map(reminderRowHTML).join('')}
+    </div>`).join('');
+}
 function renderRemindersPage(){
   const body=document.getElementById('rem-page-body');
   const summary=document.getElementById('rem-summary');
@@ -3876,6 +3925,7 @@ function renderRemindersPage(){
       </div>`;
     }).join('');
   }
+  renderPlanMonthSection();
   body.innerHTML=renderReminderBuckets(reminderData,false);
 }
 async function loadRemindersPage(){
