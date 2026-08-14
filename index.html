@@ -1523,15 +1523,46 @@ function clinicDayReason(dateStr){
   if(hol)return isSunday(dateStr)?`Sunday · ${hol}`:hol;
   return isSunday(dateStr)?'Sunday':'';
 }
-function clinicDaysInMonth(year,month){
+/* ── WHICH DAYS A LIST CAN BE BOOKED ON ───────────────────────────────────
+   The nurse-led clinic runs on Sundays and public holidays. The Common list
+   is the routine weekday service and runs Monday to Saturday instead.
+   A public holiday is treated as a nurse-clinic day only: the weekday service
+   does not run on a holiday even when it falls Monday to Saturday. */
+function isCommonDay(dateStr){
+  const d=new Date(String(dateStr)+'T12:00:00');
+  if(Number.isNaN(d.getTime()))return false;
+  const dow=d.getDay();
+  return dow>=1&&dow<=6&&!holidays[dateStr];
+}
+function isBookableDayForOwner(dateStr,owner){
+  return normaliseFollowupOwner(owner)==='Common'?isCommonDay(dateStr):isClinicDay(dateStr);
+}
+function bookableDayReason(dateStr,owner){
+  if(normaliseFollowupOwner(owner)==='Common'){
+    const d=new Date(String(dateStr)+'T12:00:00');
+    return Number.isNaN(d.getTime())?'':d.toLocaleDateString('en-MT',{weekday:'long'});
+  }
+  return clinicDayReason(dateStr);
+}
+function bookableDayRuleText(owner){
+  return normaliseFollowupOwner(owner)==='Common'
+    ?'Monday to Saturday — Common weekday list'
+    :'Sundays and public holidays — nurse-led clinic';
+}
+function daysInMonthMatching(year,month,predicate){
   const y=Number(year),m=Number(month);
   if(!y||!m)return [];
   const out=[];
   for(let d=1;d<=dim(y,m-1);d++){
     const ds=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    if(isClinicDay(ds))out.push(ds);
+    if(predicate(ds))out.push(ds);
   }
   return out;
+}
+function clinicDaysInMonth(year,month){return daysInMonthMatching(year,month,isClinicDay);}
+function commonDaysInMonth(year,month){return daysInMonthMatching(year,month,isCommonDay);}
+function bookableDaysInMonth(year,month,owner){
+  return normaliseFollowupOwner(owner)==='Common'?commonDaysInMonth(year,month):clinicDaysInMonth(year,month);
 }
 // Upcoming Sundays — used by the Change of Duty pickers.
 function getSundays(count=60){
@@ -1546,11 +1577,15 @@ function upcomingHolidays(count=40){
   return Object.keys(holidays).filter(d=>d>=TODAY).sort().slice(0,count)
     .map(d=>({holiday_date:d,name:holidays[d]}));
 }
-function clinicDayLabel(dateStr){
+function clinicDayLabel(dateStr,owner){
   const d=new Date(String(dateStr)+'T12:00:00');
   if(Number.isNaN(d.getTime()))return String(dateStr||'');
+  const base=d.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  // For the Common weekday list the weekday is already in the label, so only
+  // the nurse-clinic reason (Sunday / holiday name) is worth appending.
+  if(normaliseFollowupOwner(owner)==='Common')return base;
   const reason=clinicDayReason(dateStr);
-  return `${d.toLocaleDateString('en-MT',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}${reason?` — ${reason}`:''}`;
+  return `${base}${reason?` — ${reason}`:''}`;
 }
 
 document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -2247,9 +2282,13 @@ async function loadAppts(){
   // The clinic only runs on Sundays and public holidays — say so plainly on the grid.
   const hban=document.getElementById('hban-appt');
   if(hban){
-    hban.innerHTML=isClinicDay(date)
-      ?`<div class="hban" style="background:#ecfdf5;border-color:#6ee7b7;color:#065f46;">🏥 Clinic day — <strong>${htmlSafe(clinicDayReason(date))}</strong></div>`
-      :`<div class="hban">📅 ${htmlSafe(fmtLabel(date))} is not a Sunday or public holiday, so the clinic does not normally run. Existing bookings are still shown and can be edited.</div>`;
+    if(isClinicDay(date)){
+      hban.innerHTML=`<div class="hban" style="background:#ecfdf5;border-color:#6ee7b7;color:#065f46;">🏥 Nurse-led clinic day — <strong>${htmlSafe(clinicDayReason(date))}</strong>. Common patients are booked Monday to Saturday.</div>`;
+    }else if(isCommonDay(date)){
+      hban.innerHTML=`<div class="hban" style="background:#eff6ff;border-color:#93c5fd;color:#1e40af;">📋 Common weekday list — Monday to Saturday. The nurse-led clinic runs on Sundays and public holidays.</div>`;
+    }else{
+      hban.innerHTML=`<div class="hban">📅 ${htmlSafe(fmtLabel(date))} is outside both lists. Existing bookings are still shown and can be edited.</div>`;
+    }
   }
   try{
   const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
@@ -2482,7 +2521,7 @@ function monthLoadText(load,context){
   const cancelNote=cancelled?` · ${cancelled} cancelled slot${cancelled!==1?'s':''} freed`:'';
   if(capacity>0)return `${label}${free} free of ${capacity} slots over ${clinicDays} clinic day${clinicDays!==1?'s':''}${totalNote}${cancelNote} — ${level.text}`;
   if(clinicDays>0)return `${label}${clinicDays} clinic day${clinicDays!==1?'s':''} but no nurse rostered — ${booked} booking${booked!==1?'s':''}`;
-  return `${label}no Sunday or public holiday clinic this month`;
+  return `${label}no clinic days this month`;
 }
 function availabilityOptionText(month,load,context){
   return `${followupMonthName(month)} — ${monthLoadText(load,context)}`;
@@ -2844,7 +2883,9 @@ async function getMonthlyClinicAvailability(year,context){
   const targetStaff=owner==='Common'?null:ownerStaffForCapacity(owner);
   const index=await loadClinicStaffingIndex(start,end);
   for(let m=1;m<=12;m++){
-    clinicDaysInMonth(y,m).forEach(ds=>{
+    // Common runs Monday to Saturday; a named nurse runs the Sunday / public
+    // holiday clinic. Each list is measured against its own days.
+    bookableDaysInMonth(y,m,owner).forEach(ds=>{
       load[m].clinicDays++;
       if(owner==='Common'){
         load[m].capacity+=countClinicNursesForDate(ds,index)*SLOTS.length;
@@ -2864,7 +2905,7 @@ async function getClinicDayAvailability(dateStrs,owner){
   const start=dates[0],end=dates[dates.length-1];
   const normOwner=normaliseFollowupOwner(owner||'Common');
   const{data}=await SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end);
-  const rows=await enrichAppointments(data||[]);
+  const rows=(data||[]);
   rows.forEach(a=>{
     const cell=out[a.appt_date];
     if(!cell)return;
@@ -3277,9 +3318,11 @@ function clearPatientRebookSearch(){
   if(input)input.value='';
   if(box)box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';
 }
-/* Clinic days worth offering when rebooking: the whole due month plus the two
-   months after it, so a full month can be skipped over when it is already full. */
-function rebookCandidateDays(dueYear,dueMonth){
+/* Days worth offering when rebooking: the whole due month plus the two months
+   after it, so a full month can be skipped over when it is already full.
+   Which days qualify depends on the list — Common runs Monday to Saturday,
+   a named nurse runs the Sunday / public holiday clinic. */
+function rebookCandidateDays(dueYear,dueMonth,owner){
   const now=new Date();
   let y=Number(dueYear)||now.getFullYear();
   let m=Number(dueMonth)||now.getMonth()+1;
@@ -3288,15 +3331,51 @@ function rebookCandidateDays(dueYear,dueMonth){
   const days=[];
   for(let i=0;i<3;i++){
     const d=new Date(y,m-1+i,1);
-    days.push(...clinicDaysInMonth(d.getFullYear(),d.getMonth()+1));
+    days.push(...bookableDaysInMonth(d.getFullYear(),d.getMonth()+1,owner));
   }
   return days.filter(ds=>ds>=TODAY);
 }
-function rebookDayOptionText(dateStr,load){
+function rebookDayOptionText(dateStr,load,owner){
   const data=normaliseAvailabilityData(load);
   const free=Math.max(0,data.capacity-data.booked);
-  if(!data.capacity)return `${clinicDayLabel(dateStr)} — no nurse rostered`;
-  return `${clinicDayLabel(dateStr)} — ${free} of ${data.capacity} slots free`;
+  if(!data.capacity)return `${clinicDayLabel(dateStr,owner)} — no nurse rostered`;
+  return `${clinicDayLabel(dateStr,owner)} — ${free} of ${data.capacity} slots free`;
+}
+// The Nurse / Column dropdown decides which list the patient is being put on,
+// so switching it swaps the day options without another round trip.
+function ownerFromNurseSelectValue(value){
+  const v=String(value||'common');
+  if(v==='common')return 'Common';
+  if(v.startsWith('core:')){
+    const st=(staffList||[]).find(s=>String(s.id)===v.replace('core:',''));
+    return st?normaliseFollowupOwner(st.full_name):'Common';
+  }
+  return 'Common';
+}
+function currentRebookOwner(){
+  return ownerFromNurseSelectValue(document.getElementById('rb-nurse')?.value);
+}
+function refreshRebookDayOptions(){
+  const select=document.getElementById('rb-clinic-day');
+  const label=document.getElementById('rb-day-label');
+  if(!select)return;
+  const owner=currentRebookOwner();
+  const isCommon=owner==='Common';
+  let sets={};
+  try{sets=JSON.parse(select.dataset.daySets||'{}')||{};}catch(e){sets={};}
+  const set=sets[isCommon?'common':'clinic']||{days:[],loads:{}};
+  const previous=select.value;
+  const keep=set.days.includes(previous)?previous:null;
+  const firstOpen=keep||set.days.find(d=>{
+    const l=set.loads[d]||{};return (l.capacity||0)-(l.booked||0)>0;
+  })||set.days[0]||'';
+  select.dataset.dayLoads=JSON.stringify(set.loads||{});
+  select.innerHTML=(set.days.map(d=>
+      `<option value="${d}" ${d===firstOpen?'selected':''}>${htmlSafe(rebookDayOptionText(d,set.loads[d],owner))}</option>`
+    ).join('')||'<option value="">No available days found in this period</option>')
+    +'<option value="custom">Other date (outside the calendar)…</option>';
+  if(label)label.textContent=`Appointment Day * — ${bookableDayRuleText(owner)}`;
+  updateRebookDayPreview();
 }
 function updateRebookDayPreview(){
   const select=document.getElementById('rb-clinic-day');
@@ -3308,16 +3387,17 @@ function updateRebookDayPreview(){
   if(customWrap)customWrap.style.display=isCustom?'block':'none';
   if(!isCustom&&dateInput&&select.value)dateInput.value=select.value;
   const chosen=isCustom?(dateInput?.value||''):select.value;
+  const owner=currentRebookOwner();
   let loads={};
   try{loads=JSON.parse(select.dataset.dayLoads||'{}')||{};}catch(e){loads={};}
-  if(!chosen){note.innerHTML='<div class="registry-lookup-note">Pick a clinic day to see how full it is.</div>';return;}
-  if(!isClinicDay(chosen)){
-    note.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(fmtLabel(chosen))} is not a clinic day. The clinic only runs on Sundays and public holidays.</div>`;
+  if(!chosen){note.innerHTML='<div class="registry-lookup-note">Pick a day to see how full it is.</div>';return;}
+  if(!isBookableDayForOwner(chosen,owner)){
+    note.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(fmtLabel(chosen))} is outside this list's days. ${htmlSafe(owner==='Common'?'The Common list runs Monday to Saturday.':'The nurse-led clinic only runs on Sundays and public holidays.')}</div>`;
     return;
   }
   const load=loads[chosen];
-  if(!load){note.innerHTML=`<div class="registry-lookup-note found">${htmlSafe(clinicDayLabel(chosen))} — clinic day.</div>`;return;}
-  note.innerHTML=availabilityPreviewHTML({...load,clinicDays:1},{label:clinicDayLabel(chosen)},Number(String(chosen).slice(5,7)));
+  if(!load){note.innerHTML=`<div class="registry-lookup-note found">${htmlSafe(clinicDayLabel(chosen,owner))} — available day.</div>`;return;}
+  note.innerHTML=availabilityPreviewHTML({...load,clinicDays:1},{label:clinicDayLabel(chosen,owner)},Number(String(chosen).slice(5,7)));
 }
 async function openPatientRebookModal(patientId){
   const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
@@ -3333,32 +3413,35 @@ async function openPatientRebookModal(patientId){
   const fuYear=Number(pat.followup_year)||0;
   const fuMonth=Number(pat.followup_due_month)||0;
   const dueLabel=fuMonth?`${followupMonthName(fuMonth)} ${fuYear||''}`.trim():'no due month recorded';
-  const candidates=rebookCandidateDays(fuYear,fuMonth);
-  const dayLoads=await getClinicDayAvailability(candidates,owner);
-  // Default to the first clinic day in the due month that still has room.
-  const firstOpen=candidates.find(d=>{const l=dayLoads[d]||{};return (l.capacity||0)-(l.booked||0)>0;})||candidates[0]||'';
-  const dayOptions=candidates.map(d=>`<option value="${d}" ${d===firstOpen?'selected':''}>${htmlSafe(rebookDayOptionText(d,dayLoads[d]))}</option>`).join('');
+  // Both day sets are prepared up front so switching the Nurse / Column
+  // dropdown between Common and a named nurse swaps the days instantly.
+  const clinicDays=rebookCandidateDays(fuYear,fuMonth,'Jason');
+  const commonDays=rebookCandidateDays(fuYear,fuMonth,'Common');
+  const [clinicLoads,commonLoads]=await Promise.all([
+    getClinicDayAvailability(clinicDays,owner),
+    getClinicDayAvailability(commonDays,'Common')
+  ]);
+  const daySets={clinic:{days:clinicDays,loads:clinicLoads},common:{days:commonDays,loads:commonLoads}};
   const mb=document.getElementById('mb');
   mb.className='mb';
   mb.innerHTML=`<h2>Rebook Patient</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>
       Follow-up owner: <strong>${htmlSafe(owner)}</strong> · Due: <strong>${htmlSafe(dueLabel)}</strong><br/>
       Patient details are already on file — no need to re-enter the ID card. This creates a new booked appointment and keeps the full history.</div>
-    <div class="fg"><label>Clinic Day * — Sundays and public holidays only</label>
-      <select id="rb-clinic-day" onchange="updateRebookDayPreview()" data-day-loads='${htmlSafe(JSON.stringify(dayLoads))}'>
-        ${dayOptions||'<option value="">No clinic days found in this period</option>'}
-        <option value="custom">Other date (outside the clinic calendar)…</option>
-      </select>
+    <div class="fg"><label>Nurse / Column</label><select id="rb-nurse" onchange="refreshRebookDayOptions()"><option value="common" ${ownerStaff?'':'selected'}>Common</option>${coreOptions}${bankOptions}</select>
+      <div class="dntu-note" style="margin-top:4px;">Common patients are booked Monday to Saturday. A named nurse books into the Sunday and public holiday clinic.</div>
+    </div>
+    <div class="fg"><label id="rb-day-label">Appointment Day *</label>
+      <select id="rb-clinic-day" onchange="updateRebookDayPreview()" data-day-sets='${htmlSafe(JSON.stringify(daySets))}'></select>
       <div id="rb-day-availability" style="margin-top:6px;"></div>
     </div>
     <div class="fg" id="rb-custom-date-wrap" style="display:none;"><label>Custom Date</label><input type="date" id="rb-date-custom" onchange="document.getElementById('rb-date').value=this.value;updateRebookDayPreview()"/></div>
-    <input type="hidden" id="rb-date" value="${htmlSafe(firstOpen)}"/>
+    <input type="hidden" id="rb-date" value=""/>
     <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
-    <div class="fg"><label>Nurse / Column</label><select id="rb-nurse"><option value="common" ${ownerStaff?'':'selected'}>Common</option>${coreOptions}${bankOptions}</select></div>
     <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
   openMo();
-  updateRebookDayPreview();
+  refreshRebookDayOptions();
 }
 async function savePatientRebook(patientId){
   const daySelect=document.getElementById('rb-clinic-day');
@@ -3368,7 +3451,13 @@ async function savePatientRebook(patientId){
   const slot=document.getElementById('rb-slot')?.value;
   const nurse=document.getElementById('rb-nurse')?.value||'common';
   if(!date||!slot){alert('Please select appointment date and time.');return;}
-  if(!isClinicDay(date)&&!confirm(`${fmtLabel(date)} is not a Sunday or a public holiday, so the clinic does not normally run that day.\n\nBook it anyway?`))return;
+  const rebookOwner=currentRebookOwner();
+  if(!isBookableDayForOwner(date,rebookOwner)){
+    const rule=rebookOwner==='Common'
+      ?'the Common list runs Monday to Saturday'
+      :'the nurse-led clinic only runs on Sundays and public holidays';
+    if(!confirm(`${fmtLabel(date)} is outside this list's normal days — ${rule}.\n\nBook it anyway?`))return;
+  }
   const payload={patient_id:patientId,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
   if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
