@@ -2568,12 +2568,14 @@ function monthLoadText(load,context){
 /* Spells out where the load came from, because "12 planned" on a month with no
    appointments in the diary yet is otherwise baffling. */
 function plannedBreakdownText(load){
-  const appts=Number(load?.appts||0),due=Number(load?.due||0);
-  if(!appts&&!due)return '';
+  const appts=Number(load?.appts||0),due=Number(load?.due||0),over=Number(load?.overdue||0);
+  const total=appts+due+over;
+  if(!total)return '';
   const parts=[];
   if(appts)parts.push(`${appts} booked`);
-  if(due)parts.push(`${due} due this month, not yet booked`);
-  return ` · ${appts+due} planned (${parts.join(' + ')})`;
+  if(due)parts.push(`${due} due this month`);
+  if(over)parts.push(`${over} overdue from earlier months`);
+  return ` · ${total} planned (${parts.join(' + ')})`;
 }
 function clinicDayCountText(clinicDays,openDays){
   const d=Number(clinicDays)||0,o=Number(openDays)||0;
@@ -2679,8 +2681,12 @@ function availabilityPreviewHTML(load,context,month){
   const color=availabilityColor(data);
   const label=context?.label||'Clinic';
   const monthLabel=followupMonthName(month)||'Selected month';
-  const appts=Number(load?.appts||0),due=Number(load?.due||0);
-  const plannedText=(appts||due)?`${booked} planned (${appts} booked + ${due} due)`:`${booked} planned`;
+  const appts=Number(load?.appts||0),due=Number(load?.due||0),over=Number(load?.overdue||0);
+  const bits=[];
+  if(appts)bits.push(`${appts} booked`);
+  if(due)bits.push(`${due} due`);
+  if(over)bits.push(`${over} overdue`);
+  const plannedText=bits.length?`${booked} planned (${bits.join(' + ')})`:`${booked} planned`;
   const slotText=capacity>0
     ?`${free} free · ${plannedText} · ${capacity} slots over ${clinicDayCountText(clinicDays,openDays)}`
     :(openDays>0?`${openDays} clinic day${openDays!==1?'s':''} · not working any of them`:'No clinic day this month');
@@ -2919,7 +2925,7 @@ function countClinicNursesForDate(dateStr,index){
 }
 async function getMonthlyClinicAvailability(year,context){
   const y=String(year||new Date().getFullYear());
-  const load={};for(let m=1;m<=12;m++)load[m]={booked:0,capacity:0,cancelled:0,total:0,clinicDays:0,openDays:0,appts:0,due:0};
+  const load={};for(let m=1;m<=12;m++)load[m]={booked:0,capacity:0,cancelled:0,total:0,clinicDays:0,openDays:0,appts:0,due:0,overdue:0};
   const start=`${y}-01-01`,end=`${y}-12-31`;
   const owner=context?.kind==='owner'?normaliseFollowupOwner(context.id):'Common';
   const ownerFilter=context?.kind==='owner'?owner:context?.kind==='common'?'Common':null;
@@ -2949,7 +2955,24 @@ async function getMonthlyClinicAvailability(year,context){
      is recorded as the patient's due month. Counting only booked appointments
      made every future month look wide open. Expected load is therefore the
      appointments already booked plus the patients due that month who have not
-     been given one yet. */
+     been given one yet.
+
+     Overdue patients count against the CURRENT month, not the month that has
+     already gone by: someone due in June with no appointment is still waiting
+     and will take a slot now. Leaving them on a past month made the month you
+     are actually booking into look far emptier than it is. */
+  const now=new Date();
+  const curYear=now.getFullYear(),curMonth=now.getMonth()+1;
+  const curKey=curYear*100+curMonth;
+  const thisYear=Number(y)===curYear;
+
+  let futureBooked=new Set();
+  if(thisYear){
+    const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
+      .select('patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
+    (fut||[]).forEach(r=>futureBooked.add(String(r.patient_id)));
+  }
+
   const{rows:pats,error:patErr}=await fetchAllRows(()=>SB.from('patients')
     .select('id,followup_owner,followup_due_month,followup_year,followup_status'));
   if(patErr){
@@ -2957,15 +2980,22 @@ async function getMonthlyClinicAvailability(year,context){
   }else{
     (pats||[]).forEach(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return;
-      if(Number(p.followup_year)!==Number(y))return;
-      const m=Number(p.followup_due_month);
-      if(!load[m])return;
+      const m=Number(p.followup_due_month),py=Number(p.followup_year);
+      if(!(m>=1&&m<=12&&py>2000))return;
       if(ownerFilter&&normaliseFollowupOwner(p.followup_owner||'Common')!==ownerFilter)return;
+      const dueKey=py*100+m;
+      if(dueKey<curKey){
+        // Backlog from an earlier month — pressure on now, wherever it came from.
+        if(thisYear&&!futureBooked.has(String(p.id)))load[curMonth].overdue++;
+        return;
+      }
+      if(py!==Number(y))return;
+      if(!load[m])return;
       if(bookedInMonth[m].has(String(p.id)))return; // already has an appointment that month
       load[m].due++;
     });
   }
-  for(let m=1;m<=12;m++)load[m].booked=load[m].appts+load[m].due;
+  for(let m=1;m<=12;m++)load[m].booked=load[m].appts+load[m].due+load[m].overdue;
 
   const targetStaff=owner==='Common'?null:ownerStaffForCapacity(owner);
   const index=await loadClinicStaffingIndex(start,end);
