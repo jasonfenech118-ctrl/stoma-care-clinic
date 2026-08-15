@@ -399,8 +399,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
 .rem-btn.setdue{background:#7c3aed;color:white;}
 .rem-btn.setdue:hover{background:#5b21b6;}
-.rem-btn.contact{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
-.rem-btn.contact:hover{background:#ffedd5;}
 .rem-empty{padding:18px;text-align:center;color:var(--muted);font-size:12px;}
 .rem-more-btn{width:100%;margin-top:2px;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:white;color:var(--navy);font-size:11.5px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s,background .15s;}
 .rem-more-btn:hover{border-color:var(--teal);color:var(--teal);background:#f0fdfa;}
@@ -2555,13 +2553,22 @@ function monthLoadText(load,context){
   const total=Number(load?.total||0);
   const cancelled=Number(load?.cancelled||0);
   const clinicDays=Number(load?.clinicDays||0);
+  const openDays=Number(load?.openDays||0);
   const label=context?.label ? `${context.label}: ` : '';
   const level=availabilityLevel(data);
   const totalNote=(total>booked)?` · Clinic total: ${total}`:'';
   const cancelNote=cancelled?` · ${cancelled} cancelled slot${cancelled!==1?'s':''} freed`:'';
-  if(capacity>0)return `${label}${free} free of ${capacity} slots over ${clinicDays} clinic day${clinicDays!==1?'s':''}${totalNote}${cancelNote} — ${level.text}`;
-  if(clinicDays>0)return `${label}${clinicDays} clinic day${clinicDays!==1?'s':''} but no nurse rostered — ${booked} booking${booked!==1?'s':''}`;
+  if(capacity>0)return `${label}${free} free of ${capacity} slots over ${clinicDayCountText(clinicDays,openDays)}${totalNote}${cancelNote} — ${level.text}`;
+  if(openDays>0)return `${label}${openDays} clinic day${openDays!==1?'s':''} but not working any of them — ${booked} booking${booked!==1?'s':''}`;
   return `${label}no clinic days this month`;
+}
+/* "33 slots over 3 of 5 clinic days" — the second figure tells the nurse how
+   many of the month's clinic days they are actually on, which is why the slot
+   count is lower than the month might suggest. */
+function clinicDayCountText(clinicDays,openDays){
+  const d=Number(clinicDays)||0,o=Number(openDays)||0;
+  const base=`${d} clinic day${d!==1?'s':''}`;
+  return (o>d)?`${d} of ${o} clinic days`:base;
 }
 function availabilityOptionText(month,load,context){
   return `${followupMonthName(month)} — ${monthLoadText(load,context)}`;
@@ -2655,6 +2662,7 @@ function availabilityPreviewHTML(load,context,month){
   const free=Math.max(0,capacity-booked);
   const cancelled=Number(load?.cancelled||0);
   const clinicDays=Number(load?.clinicDays||0);
+  const openDays=Number(load?.openDays||0);
   const ratio=availabilityFreeRatio(data);
   // The coloured arc is the FREE portion, so a full green ring means the month is wide open.
   const freeDeg=ratio===null?0:Math.round(ratio*360);
@@ -2662,8 +2670,8 @@ function availabilityPreviewHTML(load,context,month){
   const label=context?.label||'Clinic';
   const monthLabel=followupMonthName(month)||'Selected month';
   const slotText=capacity>0
-    ?`${free} free · ${booked} booked · ${capacity} slots over ${clinicDays} clinic day${clinicDays!==1?'s':''}`
-    :(clinicDays>0?`${clinicDays} clinic day${clinicDays!==1?'s':''} · no nurse rostered yet`:'No Sunday or public holiday clinic this month');
+    ?`${free} free · ${booked} booked · ${capacity} slots over ${clinicDayCountText(clinicDays,openDays)}`
+    :(openDays>0?`${openDays} clinic day${openDays!==1?'s':''} · not working any of them`:'No clinic day this month');
   const cancelText=cancelled?`<div class="availability-cancelled">↩ ${cancelled} cancelled appointment${cancelled!==1?'s':''} gave their slot${cancelled!==1?'s':''} back</div>`:'';
   return `<div class="availability-preview">
     <div class="availability-donut" style="--free:${freeDeg}deg;--avail-color:${color};" aria-label="${htmlSafe(level.text)}" role="img">
@@ -2899,7 +2907,7 @@ function countClinicNursesForDate(dateStr,index){
 }
 async function getMonthlyClinicAvailability(year,context){
   const y=String(year||new Date().getFullYear());
-  const load={};for(let m=1;m<=12;m++)load[m]={booked:0,capacity:0,cancelled:0,total:0,clinicDays:0};
+  const load={};for(let m=1;m<=12;m++)load[m]={booked:0,capacity:0,cancelled:0,total:0,clinicDays:0,openDays:0};
   const start=`${y}-01-01`,end=`${y}-12-31`;
   const owner=context?.kind==='owner'?normaliseFollowupOwner(context.id):'Common';
   const ownerFilter=context?.kind==='owner'?owner:context?.kind==='common'?'Common':null;
@@ -2926,11 +2934,16 @@ async function getMonthlyClinicAvailability(year,context){
     // Common runs Monday to Saturday; a named nurse runs the Sunday / public
     // holiday clinic. Each list is measured against its own days.
     bookableDaysInMonth(y,m,owner).forEach(ds=>{
-      load[m].clinicDays++;
-      if(owner==='Common'){
-        load[m].capacity+=countClinicNursesForDate(ds,index)*SLOTS.length;
-      }else if(isNurseWorkingClinicDay(targetStaff,ds,index)){
-        load[m].capacity+=SLOTS.length;
+      // openDays = every day the list could run. clinicDays = the days that
+      // actually carry slots for this owner, so "N slots over D days" always
+      // divides cleanly instead of quoting days that contribute nothing.
+      load[m].openDays++;
+      const daySlots=owner==='Common'
+        ? countClinicNursesForDate(ds,index)*SLOTS.length
+        : (isNurseWorkingClinicDay(targetStaff,ds,index)?SLOTS.length:0);
+      if(daySlots>0){
+        load[m].clinicDays++;
+        load[m].capacity+=daySlots;
       }
     });
   }
@@ -4011,7 +4024,6 @@ function reminderRowHTML(p){
     </div>
     <div class="rem-row-actions">
       ${primary}
-      <button class="rem-btn contact" onclick="openReminderContactModal('${p.id}')" title="Record a contact attempt or pause this patient">Contact</button>
       <button class="rem-btn hist" onclick="openReminderHistory('${p.id}')">History</button>
     </div>
   </div>`;
@@ -4211,38 +4223,6 @@ async function saveSetDueMonth(patientId){
   if(error){alert('Could not save the due month: '+error.message);return;}
   closeModal();
   invalidateAvailabilityCaches();
-  refreshReminders();
-  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
-}
-/* Triage without booking. Overdue only ever grows if the sole way to clear a
-   patient is to book them — a nurse who cannot reach someone needs to be able
-   to record that and move on. Both options use follow-up statuses that already
-   exist, and both take the patient out of the active reminder list. */
-async function openReminderContactModal(patientId){
-  const{data:pat,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
-    .eq('id',patientId).maybeSingle();
-  if(error||!pat){alert('Could not open this patient.');return;}
-  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
-  const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2>Record Contact Attempt</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ☎ ${htmlSafe(pat.phone_number||'No phone')}<br/>
-      Use this when the patient could not be booked today. They leave the reminder list until the status is set back to Active.</div>
-    <div class="fg"><label>What happened?</label><select id="rc-status">
-      <option value="awaiting_feedback">Contacted — awaiting the patient's reply</option>
-      <option value="paused">Pause follow-up for now</option>
-      <option value="active">Still active — keep reminding me</option>
-    </select></div>
-    <div class="registry-lookup-note" style="margin-bottom:10px;">Awaiting Feedback and Paused patients stay on the Follow-up Planning page and in the Appointment Outcomes filters, so nothing is lost.</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveReminderContact('${patientId}')">Save</button></div>`;
-  openMo();
-}
-async function saveReminderContact(patientId){
-  const status=document.getElementById('rc-status')?.value||'active';
-  const{error}=await SB.from('patients').update({followup_status:status}).eq('id',patientId);
-  if(error){alert('Could not update this patient: '+error.message);return;}
-  closeModal();
   refreshReminders();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
