@@ -2856,6 +2856,14 @@ function appointmentOwnerFallback(a){
 function reportAllocatedOwner(a){
   return normaliseFollowupOwner(a?.patients?.followup_owner||appointmentNurseLabel(a)||'Common');
 }
+/* Which nurse's column an appointment actually sits in — by direct assignment,
+   or by an OT / bank row that maps onto that core nurse by name. */
+function appointmentOccupiesNurse(a,staff){
+  if(!staff?.id||!a)return false;
+  if(String(a.assigned_to||'')===String(staff.id))return true;
+  const core=findCoreStaffByName(a.bank_staff?.full_name);
+  return !!(core&&String(core.id)===String(staff.id));
+}
 function ownerStaffForCapacity(owner){
   const o=normaliseFollowupOwner(owner);
   if(o==='Common')return null;
@@ -2930,13 +2938,23 @@ async function getMonthlyClinicAvailability(year,context){
   const owner=context?.kind==='owner'?normaliseFollowupOwner(context.id):'Common';
   const ownerFilter=context?.kind==='owner'?owner:context?.kind==='common'?'Common':null;
 
+  const targetStaff=owner==='Common'?null:ownerStaffForCapacity(owner);
+
+  /* An appointment consumes the slot of the nurse whose column it sits in,
+     whoever owns the patient's follow-up. Counting it against the patient's
+     owner instead meant a Common-owned patient booked into Jason's column took
+     one of Jason's slots without ever showing on his figures.
+     Capacity and consumption are both measured over the same day set, so the
+     weekday Common list and the Sunday nurse clinic never borrow each other's
+     bookings. */
   const{data,error}=await SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end);
   if(!error){
     const rows=await enrichAppointments(data||[]);
     rows.forEach(a=>{
       const m=Number(String(a.appt_date||'').slice(5,7));
       if(!load[m])return;
-      const mine=!ownerFilter||reportAllocatedOwner(a)===ownerFilter;
+      const onOurDays=isBookableDayForOwner(a.appt_date,owner);
+      const mine=owner==='Common'?onOurDays:(onOurDays&&appointmentOccupiesNurse(a,targetStaff));
       // A cancelled appointment gives its slot back — it is counted as freed, never as booked.
       if(String(a.status||'')==='cancelled'){if(mine)load[m].cancelled++;return;}
       load[m].total++;
@@ -2996,7 +3014,6 @@ async function getMonthlyClinicAvailability(year,context){
   }
   for(let m=1;m<=12;m++)load[m].booked=load[m].appts+load[m].due+load[m].overdue;
 
-  const targetStaff=owner==='Common'?null:ownerStaffForCapacity(owner);
   const index=await loadClinicStaffingIndex(start,end);
   for(let m=1;m<=12;m++){
     // Common runs Monday to Saturday; a named nurse runs the Sunday / public
