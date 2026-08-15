@@ -404,6 +404,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-btn.book:hover{background:var(--navy);}
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
 .rem-empty{padding:18px;text-align:center;color:var(--muted);font-size:12px;}
+.rem-more-btn{width:100%;margin-top:2px;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:white;color:var(--navy);font-size:11.5px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s,background .15s;}
+.rem-more-btn:hover{border-color:var(--teal);color:var(--teal);background:#f0fdfa;}
+.rem-bucket.overdue .rem-more-btn:hover{border-color:#b91c1c;color:#b91c1c;background:#fef2f2;}
 
 .rem-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px;}
 .rem-summary-card{border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:white;box-shadow:0 2px 8px rgba(0,0,0,.04);}
@@ -419,7 +422,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-plan-head strong{font-size:14px;color:var(--navy);display:block;}
 .rem-plan-sub{font-size:11px;color:var(--muted);display:block;margin-top:3px;max-width:560px;}
 .rem-plan-head select{padding:9px 12px;border:1.5px solid var(--teal);border-radius:9px;font-size:12px;font-weight:700;color:var(--navy);font-family:'Inter',sans-serif;background:white;cursor:pointer;min-width:250px;}
-.rem-daily-note{border-left:4px solid var(--teal);background:#f0fdfa;border-radius:8px;padding:11px 14px;font-size:12px;color:var(--navy);margin-bottom:16px;line-height:1.5;}
 .rem-popup-scroll{max-height:min(52vh,430px);overflow-y:auto;margin:10px 0 4px;padding-right:4px;}
 @media(max-width:640px){
   .bell-wrap{margin-right:8px;}
@@ -832,7 +834,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="page" id="page-reminders">
       <div class="phdr"><div><h2>🔔 Booking Reminders</h2><p>Patients due for a follow-up appointment, grouped by nurse — book straight from here</p></div>
         <button class="centre-refresh" onclick="loadRemindersPage()">↻ Refresh</button></div>
-      <div class="rem-daily-note" id="rem-daily-note"></div>
       <div class="rem-summary-grid" id="rem-summary"></div>
       <div class="rem-plan-card">
         <div class="rem-plan-head">
@@ -3870,20 +3871,50 @@ function reminderRowHTML(p){
     </div>
   </div>`;
 }
+/* Long buckets — an overdue backlog especially — are trimmed to the first few
+   names per nurse and expanded with a button, so the page stays readable
+   without ever putting a patient out of reach. */
+const expandedReminderBuckets=new Set();
+const REMINDER_ROW_LIMIT={panel:4,page:8};
 function reminderBucketHTML(bucket,rows,months,compact){
   if(!rows.length)return '';
+  const scope=compact?'panel':'page';
+  const stateKey=`${scope}:${bucket.key}`;
+  const limit=REMINDER_ROW_LIMIT[scope];
+  const expanded=expandedReminderBuckets.has(stateKey);
   const monthNote=bucket.key==='next'?` · ${months.next.label}`
     :bucket.key==='current'?` · ${months.cur.label}`:'';
   const groups=groupRemindersByOwner(rows);
-  const body=groups.map(g=>`<div class="rem-nurse">
+  const hidden=groups.reduce((n,g)=>n+Math.max(0,g.rows.length-limit),0);
+  const body=groups.map(g=>{
+    const shown=expanded?g.rows:g.rows.slice(0,limit);
+    const rest=g.rows.length-shown.length;
+    return `<div class="rem-nurse">
       <div class="rem-nurse-hdr"><span>${htmlSafe(g.owner)}</span><span class="rem-nurse-count">${g.rows.length}</span></div>
-      ${g.rows.slice(0,compact?4:g.rows.length).map(reminderRowHTML).join('')}
-      ${compact&&g.rows.length>4?`<div class="rem-row"><div class="rem-meta">+ ${g.rows.length-4} more on the reminders page</div></div>`:''}
-    </div>`).join('');
+      ${shown.map(reminderRowHTML).join('')}
+      ${rest>0?`<div class="rem-row"><div class="rem-meta">+ ${rest} more not shown</div></div>`:''}
+    </div>`;
+  }).join('');
+  const label=bucket.key==='overdue'?'overdue':'due';
+  const toggle=(hidden>0||expanded)
+    ?`<button class="rem-more-btn" onclick="toggleReminderBucket('${stateKey}')">${
+        expanded?'▴ Show fewer':`▾ Show all ${rows.length} ${htmlSafe(label)} — ${hidden} more`}</button>`
+    :'';
   return `<div class="rem-bucket ${bucket.cls}">
     <div class="rem-bucket-hdr"><span class="rem-pill">${rows.length}</span><span>${htmlSafe(bucket.title+monthNote)}</span></div>
-    ${body}
+    ${body}${toggle}
   </div>`;
+}
+function toggleReminderBucket(stateKey){
+  if(expandedReminderBuckets.has(stateKey))expandedReminderBuckets.delete(stateKey);
+  else expandedReminderBuckets.add(stateKey);
+  // Re-render whichever view the button lives in.
+  if(String(stateKey).startsWith('panel:')){
+    const body=document.getElementById('bell-panel-body');
+    if(body&&reminderData)body.innerHTML=renderReminderBuckets(reminderData,true);
+  }else{
+    renderRemindersPage();
+  }
 }
 function renderReminderBuckets(data,compact){
   const parts=REMINDER_BUCKETS
@@ -3985,7 +4016,6 @@ function renderPlanMonthSection(){
 function renderRemindersPage(){
   const body=document.getElementById('rem-page-body');
   const summary=document.getElementById('rem-summary');
-  const note=document.getElementById('rem-daily-note');
   if(!body)return;
   if(!reminderData){body.innerHTML='<div class="rem-empty">Loading reminders…</div>';return;}
   if(reminderData.error){
@@ -3993,12 +4023,6 @@ function renderRemindersPage(){
     return;
   }
   const{buckets,months}=reminderData;
-  if(note){
-    note.innerHTML=`<strong>Today is ${htmlSafe(fmtLabel(TODAY))}.</strong> These are the patients each nurse still has to book.
-      Reminders stop at <strong>${htmlSafe(months.next.label)}</strong> — they repeat every day until the patient has an
-      appointment, and move on to the following month by themselves. Use <strong>Plan a month</strong> below to look further ahead.
-      Common patients are booked Monday to Saturday; a named nurse books into the Sunday and public holiday clinic.`;
-  }
   if(summary){
     summary.innerHTML=REMINDER_BUCKETS.map(b=>{
       const n=(buckets[b.key]||[]).length;
