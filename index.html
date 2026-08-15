@@ -2930,9 +2930,6 @@ async function getMonthlyClinicAvailability(year,context){
   const owner=context?.kind==='owner'?normaliseFollowupOwner(context.id):'Common';
   const ownerFilter=context?.kind==='owner'?owner:context?.kind==='common'?'Common':null;
 
-  // Patients already holding an appointment in a given month, so demand from the
-  // due-month list below is not counted twice for the same person.
-  const bookedInMonth={};for(let m=1;m<=12;m++)bookedInMonth[m]=new Set();
   const{data,error}=await SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end);
   if(!error){
     const rows=await enrichAppointments(data||[]);
@@ -2943,7 +2940,6 @@ async function getMonthlyClinicAvailability(year,context){
       // A cancelled appointment gives its slot back — it is counted as freed, never as booked.
       if(String(a.status||'')==='cancelled'){if(mine)load[m].cancelled++;return;}
       load[m].total++;
-      if(a.patient_id)bookedInMonth[m].add(String(a.patient_id));
       if(mine)load[m].appts++;
     });
   }else{
@@ -2966,12 +2962,14 @@ async function getMonthlyClinicAvailability(year,context){
   const curKey=curYear*100+curMonth;
   const thisYear=Number(y)===curYear;
 
-  let futureBooked=new Set();
-  if(thisYear){
-    const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
-      .select('patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
-    (fut||[]).forEach(r=>futureBooked.add(String(r.patient_id)));
-  }
+  /* Any future appointment settles the patient's outstanding follow-up,
+     whichever month it lands in. Booking a November-due patient into October
+     has to deduct them from November, or one person would be holding a slot in
+     both months. Cancelling puts them back, because the appointment is gone. */
+  const futureBooked=new Set();
+  const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
+    .select('patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
+  (fut||[]).forEach(r=>futureBooked.add(String(r.patient_id)));
 
   const{rows:pats,error:patErr}=await fetchAllRows(()=>SB.from('patients')
     .select('id,followup_owner,followup_due_month,followup_year,followup_status'));
@@ -2991,7 +2989,8 @@ async function getMonthlyClinicAvailability(year,context){
       }
       if(py!==Number(y))return;
       if(!load[m])return;
-      if(bookedInMonth[m].has(String(p.id)))return; // already has an appointment that month
+      // Booked anywhere ahead — the booking already carries them, in its own month.
+      if(futureBooked.has(String(p.id)))return;
       load[m].due++;
     });
   }
