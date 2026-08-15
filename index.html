@@ -389,6 +389,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-bucket.current .rem-pill{background:#d97706;}
 .rem-bucket.next .rem-bucket-hdr{color:#1d4ed8;border-bottom-color:#bfdbfe;}
 .rem-bucket.next .rem-pill{background:#2563eb;}
+.rem-bucket.nodue .rem-bucket-hdr{color:#6b21a8;border-bottom-color:#e9d5ff;}
+.rem-bucket.nodue .rem-pill{background:#7c3aed;}
+.rem-bucket.misbooked .rem-bucket-hdr{color:#9a3412;border-bottom-color:#fed7aa;}
+.rem-bucket.misbooked .rem-pill{background:#ea580c;}
+
+.rem-flag{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:800;}
+.rem-flag.overdue{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}
+.rem-flag.late{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
+.rem-flag.nodue{background:#faf5ff;color:#6b21a8;border:1px solid #e9d5ff;}
+.rem-dntu-note{margin-top:12px;padding:10px 14px;border-radius:9px;background:#f8fafc;border:1px dashed var(--border);font-size:11.5px;color:var(--muted);}
+.rem-summary-card.nodue .rem-sc-value{color:#7c3aed;}
+.rem-summary-card.misbooked .rem-sc-value{color:#ea580c;}
 
 .rem-nurse{margin-bottom:9px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:white;}
 .rem-nurse-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 11px;background:#f1f5f9;font-size:12px;font-weight:800;color:var(--navy);}
@@ -403,6 +415,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-btn.book{background:var(--teal);color:white;}
 .rem-btn.book:hover{background:var(--navy);}
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
+.rem-btn.setdue{background:#7c3aed;color:white;}
+.rem-btn.setdue:hover{background:#5b21b6;}
+.rem-btn.contact{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
+.rem-btn.contact:hover{background:#ffedd5;}
 .rem-empty{padding:18px;text-align:center;color:var(--muted);font-size:12px;}
 .rem-more-btn{width:100%;margin-top:2px;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:white;color:var(--navy);font-size:11.5px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s,background .15s;}
 .rem-more-btn:hover{border-color:var(--teal);color:var(--teal);background:#f0fdfa;}
@@ -1183,7 +1199,10 @@ const SB=supabase.createClient(
 
 let holidays={},staffList=[],rCache={};
 let curMonth=new Date();curMonth.setDate(1);
-const TODAY=(()=>{const d=new Date();return fmt(d);})();
+/* Ward machines are left signed in overnight. TODAY is refreshed when the date
+   actually rolls over so the reminder buckets and the "no past days" rule in
+   the booking picker do not silently drift a day behind. */
+let TODAY=(()=>{const d=new Date();return fmt(d);})();
 let selCode='working';
 let snapCurrentDate=TODAY;
 let selectedJumpDate=null;
@@ -1619,6 +1638,20 @@ async function startApp(){
   // Reminders load last so the roster is already on screen, then the daily prompt appears.
   await refreshReminders();
   openDailyReminderModal(false);
+  startDateRolloverWatch();
+}
+let dateRolloverTimer=null;
+function startDateRolloverWatch(){
+  if(dateRolloverTimer)clearInterval(dateRolloverTimer);
+  dateRolloverTimer=setInterval(()=>{
+    const now=fmt(new Date());
+    if(now===TODAY)return;
+    TODAY=now;
+    const dateEl=document.getElementById('tb-date');
+    if(dateEl)dateEl.textContent=' — '+new Date().toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    invalidateAvailabilityCaches();
+    refreshReminders().then(()=>openDailyReminderModal(false));
+  },60000);
 }
 
 function switchTab(name,el){
@@ -3712,6 +3745,41 @@ function setFollowupOwner(owner){
   selectedFollowupOwner=owner;
   loadStaffAudit();
 }
+/* Supabase caps an unbounded select at 1000 rows and returns no error, so a
+   growing clinic would silently start losing patients from the recall lists.
+   Everything that must see the whole table pages through it explicitly. */
+const SUPABASE_PAGE_SIZE=1000;
+async function fetchAllRows(buildQuery){
+  const out=[];
+  for(let page=0;page<50;page++){
+    const from=page*SUPABASE_PAGE_SIZE;
+    const{data,error}=await buildQuery().range(from,from+SUPABASE_PAGE_SIZE-1);
+    if(error)return {rows:out,error};
+    const batch=data||[];
+    out.push(...batch);
+    if(batch.length<SUPABASE_PAGE_SIZE)break;
+  }
+  return {rows:out,error:null};
+}
+/* Lean history for the recall logic: only the columns the DNTU streak and the
+   "last appointment" line actually use. The enriched loader below joins
+   patients, staff and bank staff, which is three extra queries of pure waste
+   when all that is needed is a date and a status. */
+async function getAppointmentHistoryLite(patientIds){
+  const ids=[...new Set((patientIds||[]).map(String))];
+  const byPatient={};
+  if(!ids.length)return byPatient;
+  for(let i=0;i<ids.length;i+=200){
+    const chunk=ids.slice(i,i+200);
+    const{rows}=await fetchAllRows(()=>SB.from('appointments')
+      .select('id,patient_id,appt_date,appt_slot,status')
+      .in('patient_id',chunk)
+      .order('appt_date',{ascending:false})
+      .order('appt_slot',{ascending:false}));
+    rows.forEach(a=>{(byPatient[a.patient_id]||(byPatient[a.patient_id]=[])).push(a);});
+  }
+  return byPatient;
+}
 async function getAppointmentRowsForPatients(patientIds,year,month){
   if(!patientIds.length)return [];
   let q=SB.from('appointments').select('*').in('patient_id',patientIds).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
@@ -3790,9 +3858,11 @@ const PLAN_MONTHS_AHEAD=12;
    actively planning. Anything further out is reviewed on demand from the
    "Plan a month" picker rather than nagged about here. */
 const REMINDER_BUCKETS=[
-  {key:'overdue',cls:'overdue',title:'Overdue — should already be booked'},
-  {key:'current',cls:'current',title:'Due this month'},
-  {key:'next',   cls:'next',   title:'Due next month — plan now'}
+  {key:'nodue',    cls:'nodue',    title:'No due month set — nobody is tracking these'},
+  {key:'misbooked',cls:'misbooked',title:'Booked well after the due month — check the date'},
+  {key:'overdue',  cls:'overdue',  title:'Overdue — should already be booked'},
+  {key:'current',  cls:'current',  title:'Due this month'},
+  {key:'next',     cls:'next',     title:'Due next month — plan now'}
 ];
 function monthKeyOffset(offset){
   const now=new Date();
@@ -3800,53 +3870,108 @@ function monthKeyOffset(offset){
   return {key:d.getFullYear()*100+(d.getMonth()+1),year:d.getFullYear(),month:d.getMonth()+1,
     label:`${followupMonthName(d.getMonth()+1)} ${d.getFullYear()}`};
 }
+/* How far past the due month a booking may sit before it is treated as a
+   mistake rather than normal slippage. One month of overrun is routine; a
+   patient due September sitting on a June appointment the following year is
+   a mis-keyed date, and used to vanish from the recall list entirely. */
+const LATE_BOOKING_GRACE_MONTHS=1;
+function monthKeyToEndDate(key){
+  const y=Math.floor(key/100),m=key%100;
+  return `${y}-${String(m).padStart(2,'0')}-${String(dim(y,m-1)).padStart(2,'0')}`;
+}
+function addMonthsToKey(key,n){
+  const y=Math.floor(key/100),m=key%100;
+  const d=new Date(y,m-1+n,1);
+  return d.getFullYear()*100+(d.getMonth()+1);
+}
+function monthsBetweenKeys(a,b){
+  return (Math.floor(b/100)-Math.floor(a/100))*12+((b%100)-(a%100));
+}
+function overdueLabel(dueKey,curKey){
+  const n=monthsBetweenKeys(dueKey,curKey);
+  if(n<=0)return '';
+  return n===1?'1 month overdue':`${n} months overdue`;
+}
 async function getReminderData(){
   const cur=monthKeyOffset(0),next=monthKeyOffset(1);
   // Data is gathered a year ahead so any month can be reviewed from the planning
   // picker, while the bell badge counts overdue, this month and next month only.
   const horizon=monthKeyOffset(PLAN_MONTHS_AHEAD);
-  const empty={overdue:[],current:[],next:[]};
+  const empty={overdue:[],current:[],next:[],nodue:[],misbooked:[]};
   const months={cur,next,horizon};
-  const{data:pats,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type');
-  if(error)return {buckets:empty,all:[],total:0,error,months};
+  const blank={buckets:empty,all:[],total:0,error:null,months,dntuExcluded:0};
+  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type'));
+  if(error)return {...blank,error};
 
-  const candidates=(pats||[]).filter(p=>{
-    if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
+  const active=(pats||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='active');
+  const hasDueDate=p=>{
     const m=Number(p.followup_due_month),y=Number(p.followup_year);
-    return m>=1&&m<=12&&y>2000&&(y*100+m)<=horizon.key;
+    return m>=1&&m<=12&&y>2000;
+  };
+  // Active patients with no due month are tracked by nobody — they never appear
+  // in any month, so they are surfaced as their own group rather than dropped.
+  const missingDue=active.filter(p=>!hasDueDate(p));
+  const candidates=active.filter(p=>hasDueDate(p)&&(Number(p.followup_year)*100+Number(p.followup_due_month))<=horizon.key);
+  if(!candidates.length&&!missingDue.length)return blank;
+
+  // Earliest future appointment per patient — a booking only counts as handled
+  // if it actually lands on or before the due month (plus the grace period).
+  const{rows:future}=await fetchAllRows(()=>SB.from('appointments')
+    .select('patient_id,appt_date').gte('appt_date',TODAY).neq('status','cancelled'));
+  const earliestFuture={};
+  (future||[]).forEach(r=>{
+    const k=String(r.patient_id);
+    if(!earliestFuture[k]||r.appt_date<earliestFuture[k])earliestFuture[k]=r.appt_date;
   });
-  if(!candidates.length)return {buckets:empty,all:[],total:0,error:null,months};
 
-  // A patient with any future appointment already booked is not a reminder.
-  const{data:future}=await SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled');
-  const booked=new Set((future||[]).map(r=>String(r.patient_id)));
-  const pending=candidates.filter(p=>!booked.has(String(p.id)));
-  if(!pending.length)return {buckets:empty,all:[],total:0,error:null,months};
-
-  // Patients already on the 3-strike DNTU pathway are handled by the DNTU policy page.
-  const history=await getAppointmentRowsForPatients(pending.map(p=>p.id),'','');
-  const byPatient={};
-  history.forEach(a=>{(byPatient[a.patient_id]||(byPatient[a.patient_id]=[])).push(a);});
-
-  const buckets={overdue:[],current:[],next:[]};
-  const all=[];
-  pending.forEach(p=>{
-    const rows=byPatient[p.id]||[];
-    if(calculateCurrentDntuStreak(rows)>=3)return;
+  const pending=[],misbooked=[];
+  candidates.forEach(p=>{
     const dueKey=Number(p.followup_year)*100+Number(p.followup_due_month);
-    const entry={...p,dueKey,latest:rows[0],owner:normaliseFollowupOwner(p.followup_owner||'Common')};
+    const booked=earliestFuture[String(p.id)];
+    if(!booked){pending.push({p,dueKey,booked:null});return;}
+    if(booked<=monthKeyToEndDate(addMonthsToKey(dueKey,LATE_BOOKING_GRACE_MONTHS)))return; // properly booked
+    misbooked.push({p,dueKey,booked});
+  });
+
+  const allIds=[...pending,...misbooked].map(x=>x.p.id).concat(missingDue.map(p=>p.id));
+  const byPatient=await getAppointmentHistoryLite(allIds);
+  const entryFor=(p,dueKey,extra)=>{
+    const rows=byPatient[p.id]||[];
+    return {...p,dueKey,latest:rows[0],owner:normaliseFollowupOwner(p.followup_owner||'Common'),...extra};
+  };
+
+  const buckets={overdue:[],current:[],next:[],nodue:[],misbooked:[]};
+  const all=[];
+  let dntuExcluded=0;
+  pending.forEach(({p,dueKey})=>{
+    // Patients on the 3-strike DNTU pathway are handled by the DNTU policy page,
+    // but the count is reported so they are not silently missing.
+    if(calculateCurrentDntuStreak(byPatient[p.id]||[])>=3){dntuExcluded++;return;}
+    const entry=entryFor(p,dueKey,{overdueBy:overdueLabel(dueKey,cur.key)});
     all.push(entry);
     if(dueKey<cur.key)buckets.overdue.push(entry);
     else if(dueKey===cur.key)buckets.current.push(entry);
     else if(dueKey===next.key)buckets.next.push(entry);
     // Months beyond next month are deliberately not bucketed — see REMINDER_BUCKETS.
   });
+  misbooked.forEach(({p,dueKey,booked})=>{
+    if(calculateCurrentDntuStreak(byPatient[p.id]||[])>=3){dntuExcluded++;return;}
+    buckets.misbooked.push(entryFor(p,dueKey,{bookedFor:booked,
+      lateBy:monthsBetweenKeys(dueKey,Number(String(booked).slice(0,4))*100+Number(String(booked).slice(5,7)))}));
+  });
+  missingDue.forEach(p=>{
+    if(calculateCurrentDntuStreak(byPatient[p.id]||[])>=3){dntuExcluded++;return;}
+    buckets.nodue.push(entryFor(p,0,{}));
+  });
+
   const bySurname=(a,b)=>a.dueKey-b.dueKey||String(a.surname||'').localeCompare(String(b.surname||''));
   Object.values(buckets).forEach(list=>list.sort(bySurname));
+  buckets.misbooked.sort((a,b)=>b.lateBy-a.lateBy||bySurname(a,b));
+  buckets.nodue.sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
   all.sort(bySurname);
-  const total=Object.values(buckets).reduce((n,l)=>n+l.length,0);
-  return {buckets,all,total,error:null,months};
+  const total=REMINDER_BUCKETS.reduce((n,b)=>n+(buckets[b.key]||[]).length,0);
+  return {buckets,all,total,error:null,months,dntuExcluded};
 }
 function groupRemindersByOwner(rows){
   const groups={};
@@ -3857,16 +3982,27 @@ function groupRemindersByOwner(rows){
 }
 function reminderRowHTML(p){
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-  const due=`${followupMonthName(p.followup_due_month)} ${p.followup_year||''}`.trim();
   const latest=p.latest?`Last: ${p.latest.appt_date} · ${statusLabel(p.latest.status)}`:'No appointment history';
+  const hasDue=Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000;
+  const due=hasDue?`Due ${followupMonthName(p.followup_due_month)} ${p.followup_year}`:'No due month set';
+  const overdue=p.overdueBy?`<span class="rem-flag overdue">${htmlSafe(p.overdueBy)}</span>`:'';
+  const late=p.bookedFor
+    ?`<span class="rem-flag late">Booked ${htmlSafe(p.bookedFor)} — ${p.lateBy} month${p.lateBy!==1?'s':''} after the due month</span>`
+    :'';
+  const nodue=hasDue?'':'<span class="rem-flag nodue">Set a due month so this patient is tracked</span>';
+  const primary=hasDue
+    ?`<button class="rem-btn book" onclick="bookFromReminder('${p.id}')">Book</button>`
+    :`<button class="rem-btn setdue" onclick="openSetDueMonthModal('${p.id}')">Set due month</button>`;
   return `<div class="rem-row">
     <div class="rem-row-main">
       <div class="rem-name">${htmlSafe(nm)}</div>
       <div class="rem-meta">${htmlSafe(p.id_card||'No ID')} · ☎ ${htmlSafe(p.phone_number||'No phone')}</div>
-      <div class="rem-meta">Due ${htmlSafe(due)} · ${htmlSafe(latest)}</div>
+      <div class="rem-meta">${htmlSafe(due)} · ${htmlSafe(latest)}</div>
+      ${overdue}${late}${nodue}
     </div>
     <div class="rem-row-actions">
-      <button class="rem-btn book" onclick="bookFromReminder('${p.id}')">Book</button>
+      ${primary}
+      <button class="rem-btn contact" onclick="openReminderContactModal('${p.id}')" title="Record a contact attempt or pause this patient">Contact</button>
       <button class="rem-btn hist" onclick="openReminderHistory('${p.id}')">History</button>
     </div>
   </div>`;
@@ -3932,16 +4068,29 @@ function updateReminderBadges(total){
   if(bell){bell.classList.toggle('has-alerts',total>0);bell.title=total?`${total} patient${total!==1?'s':''} waiting to be booked`:'No booking reminders';}
   if(tabBadge){tabBadge.textContent=text;tabBadge.classList.toggle('show',total>0);}
 }
+// A failed reminder load must never leave the page sitting on "Loading…" —
+// a silent failure here looks identical to "nothing to book".
+function showReminderLoadError(message){
+  updateReminderBadges(0);
+  const html=`<div class="rem-empty" style="color:#b91c1c;font-weight:700;">⚠ Could not load reminders: ${htmlSafe(message)}<br/>
+    <span style="font-weight:400;color:var(--muted);">This list is not empty — it failed to load. Press Refresh, and report this message if it keeps happening.</span></div>`;
+  const panel=document.getElementById('bell-panel-body');
+  if(panel)panel.innerHTML=html;
+  const page=document.getElementById('rem-page-body');
+  if(page)page.innerHTML=html;
+}
 async function refreshReminders(){
   try{
     reminderData=await getReminderData();
   }catch(e){
     console.error('Reminder load failed:',e);
+    reminderData=null;
+    showReminderLoadError((e&&e.message)||String(e));
     return;
   }
   if(reminderData.error){
     console.warn('Reminder query error:',reminderData.error.message);
-    updateReminderBadges(0);
+    showReminderLoadError(reminderData.error.message);
     return;
   }
   updateReminderBadges(reminderData.total);
@@ -4013,6 +4162,76 @@ function renderPlanMonthSection(){
       ${g.rows.map(reminderRowHTML).join('')}
     </div>`).join('');
 }
+/* Setting a due month straight from the reminder — without this, an active
+   patient with no due month can only be fixed by hunting them down on the
+   follow-up planning page. */
+async function openSetDueMonthModal(patientId){
+  const{data:pat,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
+    .eq('id',patientId).maybeSingle();
+  if(error||!pat){alert('Could not open this patient.');return;}
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const now=new Date();
+  const year=Number(pat.followup_year)||now.getFullYear();
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Set Follow-up Due Month</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>
+      This patient is active but has no due month, so no reminder can ever find them.</div>
+    <div class="fg"><label>Follow-up allocation / owner</label><select id="sd-owner">${followupOwnerOptions(pat.followup_owner||'Common')}</select></div>
+    <div class="fg"><label>Follow-up due year</label><select id="sd-year">${outcomeYearOptions(year)}</select></div>
+    <div class="fg"><label>Follow-up due month</label><select id="sd-month">${
+      Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${m===(Number(pat.followup_due_month)||now.getMonth()+1)?'selected':''}>${followupMonthName(m)}</option>`).join('')
+    }</select></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveSetDueMonth('${patientId}')">Save Due Month</button></div>`;
+  openMo();
+}
+async function saveSetDueMonth(patientId){
+  const owner=document.getElementById('sd-owner')?.value||'Common';
+  const year=Number(document.getElementById('sd-year')?.value)||0;
+  const month=Number(document.getElementById('sd-month')?.value)||0;
+  if(!year||!month){alert('Please choose a due month and year.');return;}
+  const{error}=await SB.from('patients')
+    .update({followup_owner:owner,followup_year:year,followup_due_month:month,followup_status:'active'})
+    .eq('id',patientId);
+  if(error){alert('Could not save the due month: '+error.message);return;}
+  closeModal();
+  invalidateAvailabilityCaches();
+  refreshReminders();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+}
+/* Triage without booking. Overdue only ever grows if the sole way to clear a
+   patient is to book them — a nurse who cannot reach someone needs to be able
+   to record that and move on. Both options use follow-up statuses that already
+   exist, and both take the patient out of the active reminder list. */
+async function openReminderContactModal(patientId){
+  const{data:pat,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
+    .eq('id',patientId).maybeSingle();
+  if(error||!pat){alert('Could not open this patient.');return;}
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Record Contact Attempt</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ☎ ${htmlSafe(pat.phone_number||'No phone')}<br/>
+      Use this when the patient could not be booked today. They leave the reminder list until the status is set back to Active.</div>
+    <div class="fg"><label>What happened?</label><select id="rc-status">
+      <option value="awaiting_feedback">Contacted — awaiting the patient's reply</option>
+      <option value="paused">Pause follow-up for now</option>
+      <option value="active">Still active — keep reminding me</option>
+    </select></div>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">Awaiting Feedback and Paused patients stay on the Follow-up Planning page and in the Appointment Outcomes filters, so nothing is lost.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveReminderContact('${patientId}')">Save</button></div>`;
+  openMo();
+}
+async function saveReminderContact(patientId){
+  const status=document.getElementById('rc-status')?.value||'active';
+  const{error}=await SB.from('patients').update({followup_status:status}).eq('id',patientId);
+  if(error){alert('Could not update this patient: '+error.message);return;}
+  closeModal();
+  refreshReminders();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+}
 function renderRemindersPage(){
   const body=document.getElementById('rem-page-body');
   const summary=document.getElementById('rem-summary');
@@ -4024,19 +4243,32 @@ function renderRemindersPage(){
   }
   const{buckets,months}=reminderData;
   if(summary){
+    const subFor={
+      nodue:'Invisible to every month',
+      misbooked:'Appointment date looks wrong',
+      overdue:'Past their due month',
+      current:months.cur.label,
+      next:months.next.label
+    };
     summary.innerHTML=REMINDER_BUCKETS.map(b=>{
       const n=(buckets[b.key]||[]).length;
-      const sub=b.key==='overdue'?'Past their due month'
-        :b.key==='current'?months.cur.label:months.next.label;
       return `<div class="rem-summary-card ${b.cls}">
         <div class="rem-sc-label">${htmlSafe(b.title.split('—')[0].trim())}</div>
         <div class="rem-sc-value">${n}</div>
-        <div class="rem-sc-sub">${htmlSafe(sub)}</div>
+        <div class="rem-sc-sub">${htmlSafe(subFor[b.key]||'')}</div>
       </div>`;
     }).join('');
   }
   renderPlanMonthSection();
-  body.innerHTML=renderReminderBuckets(reminderData,false);
+  body.innerHTML=renderReminderBuckets(reminderData,false)+dntuExclusionNoteHTML(reminderData);
+}
+// Patients held back by the 3-strike DNTU rule are counted rather than dropped
+// without trace, so nobody wonders why a patient is missing from the list.
+function dntuExclusionNoteHTML(data){
+  const n=Number(data?.dntuExcluded)||0;
+  if(!n)return '';
+  return `<div class="rem-dntu-note">${n} patient${n!==1?'s':''} hidden here because they are on the 3-strike DNTU pathway —
+    they are managed on the <strong>DNTU</strong> page, not by these reminders.</div>`;
 }
 async function loadRemindersPage(){
   const body=document.getElementById('rem-page-body');
@@ -4046,16 +4278,25 @@ async function loadRemindersPage(){
 }
 /* Daily prompt — opens once per calendar day so the team sees the coming month's
    list without having to remember to look, and can be dismissed until tomorrow. */
-const REMINDER_SEEN_KEY='stoma-reminder-last-shown';
-function reminderSeenToday(){
-  try{return localStorage.getItem(REMINDER_SEEN_KEY)===TODAY;}catch(e){return false;}
+/* Keyed to the signed-in user, not the browser: on a shared ward machine the
+   first nurse to dismiss the prompt must not hide it from everyone else. */
+let reminderSeenKeyUser='';
+async function reminderSeenKey(){
+  if(!reminderSeenKeyUser){
+    const user=await getCurrentUserForAudit();
+    reminderSeenKeyUser=user.email||'unknown-user';
+  }
+  return `stoma-reminder-last-shown:${reminderSeenKeyUser}`;
 }
-function markReminderSeenToday(){
-  try{localStorage.setItem(REMINDER_SEEN_KEY,TODAY);}catch(e){/* private mode — just show it again */}
+async function reminderSeenToday(){
+  try{return localStorage.getItem(await reminderSeenKey())===TODAY;}catch(e){return false;}
 }
-function openDailyReminderModal(force){
+async function markReminderSeenToday(){
+  try{localStorage.setItem(await reminderSeenKey(),TODAY);}catch(e){/* private mode — just show it again */}
+}
+async function openDailyReminderModal(force){
   if(!reminderData||reminderData.error)return;
-  if(!force&&(reminderSeenToday()||!reminderData.total))return;
+  if(!force&&(!reminderData.total||await reminderSeenToday()))return;
   const{months}=reminderData;
   const mb=document.getElementById('mb');
   if(!mb)return;
