@@ -399,8 +399,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
 .rem-btn.setdue{background:#7c3aed;color:white;}
 .rem-btn.setdue:hover{background:#5b21b6;}
-.rem-btn.contact{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;}
-.rem-btn.contact:hover{background:#ffedd5;}
 .rem-empty{padding:18px;text-align:center;color:var(--muted);font-size:12px;}
 .rem-more-btn{width:100%;margin-top:2px;padding:9px;border:1.5px dashed var(--border);border-radius:9px;background:white;color:var(--navy);font-size:11.5px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s,background .15s;}
 .rem-more-btn:hover{border-color:var(--teal);color:var(--teal);background:#f0fdfa;}
@@ -4011,7 +4009,6 @@ function reminderRowHTML(p){
     </div>
     <div class="rem-row-actions">
       ${primary}
-      <button class="rem-btn contact" onclick="openReminderContactModal('${p.id}')" title="Record a contact attempt or pause this patient">Contact</button>
       <button class="rem-btn hist" onclick="openReminderHistory('${p.id}')">History</button>
     </div>
   </div>`;
@@ -4211,38 +4208,6 @@ async function saveSetDueMonth(patientId){
   if(error){alert('Could not save the due month: '+error.message);return;}
   closeModal();
   invalidateAvailabilityCaches();
-  refreshReminders();
-  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
-}
-/* Triage without booking. Overdue only ever grows if the sole way to clear a
-   patient is to book them — a nurse who cannot reach someone needs to be able
-   to record that and move on. Both options use follow-up statuses that already
-   exist, and both take the patient out of the active reminder list. */
-async function openReminderContactModal(patientId){
-  const{data:pat,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status')
-    .eq('id',patientId).maybeSingle();
-  if(error||!pat){alert('Could not open this patient.');return;}
-  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
-  const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2>Record Contact Attempt</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ☎ ${htmlSafe(pat.phone_number||'No phone')}<br/>
-      Use this when the patient could not be booked today. They leave the reminder list until the status is set back to Active.</div>
-    <div class="fg"><label>What happened?</label><select id="rc-status">
-      <option value="awaiting_feedback">Contacted — awaiting the patient's reply</option>
-      <option value="paused">Pause follow-up for now</option>
-      <option value="active">Still active — keep reminding me</option>
-    </select></div>
-    <div class="registry-lookup-note" style="margin-bottom:10px;">Awaiting Feedback and Paused patients stay on the Follow-up Planning page and in the Appointment Outcomes filters, so nothing is lost.</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveReminderContact('${patientId}')">Save</button></div>`;
-  openMo();
-}
-async function saveReminderContact(patientId){
-  const status=document.getElementById('rc-status')?.value||'active';
-  const{error}=await SB.from('patients').update({followup_status:status}).eq('id',patientId);
-  if(error){alert('Could not update this patient: '+error.message);return;}
-  closeModal();
   refreshReminders();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
