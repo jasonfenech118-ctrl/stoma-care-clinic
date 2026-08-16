@@ -50,9 +50,10 @@ ORDER BY i.relname;
 -- STEP 2 — Check for existing clashes that would stop the new rule being
 --          created. This should return NO ROWS.
 --
---          If it does return rows, those are real double-bookings: the same
---          nurse column holding two active patients at the same time. Fix them
---          in the app first (cancel or move one), then continue.
+--          If it returns rows, those are real double-bookings: the same nurse
+--          column holding two active patients at the same time. Step 4 cannot
+--          run until they are resolved — it will fail with
+--          "ERROR: 23505 ... is duplicated". Work through 2a to 2c below.
 -- -----------------------------------------------------------------------------
 SELECT appt_date,
        appt_slot,
@@ -63,6 +64,110 @@ WHERE status IS DISTINCT FROM 'cancelled'
 GROUP BY 1, 2, 3
 HAVING COUNT(*) > 1
 ORDER BY 1, 2;
+
+
+-- -----------------------------------------------------------------------------
+-- STEP 2a — See who the clashing appointments actually are, before changing
+--           anything. Read-only.
+--
+--           Read the "same_patient" column: TRUE means the row is a duplicate
+--           entry for one patient, FALSE means two different patients are
+--           genuinely booked into the same nurse column at the same time.
+-- -----------------------------------------------------------------------------
+WITH clashes AS (
+  SELECT appt_date,
+         appt_slot,
+         COALESCE(assigned_to::text, bank_staff_id::text, 'common') AS column_key
+  FROM public.appointments
+  WHERE status IS DISTINCT FROM 'cancelled'
+  GROUP BY 1, 2, 3
+  HAVING COUNT(*) > 1
+)
+SELECT a.appt_date,
+       a.appt_slot,
+       COALESCE(s.full_name, bs.full_name, 'Common')                AS nurse_column,
+       COALESCE(p.first_name || ' ' || p.surname, '(no patient)')   AS patient,
+       p.id_card,
+       a.status,
+       COUNT(*) OVER (PARTITION BY a.appt_date, a.appt_slot, c.column_key, a.patient_id) > 1
+                                                                    AS same_patient,
+       a.id AS appointment_id
+FROM public.appointments a
+JOIN clashes c
+  ON c.appt_date = a.appt_date
+ AND c.appt_slot = a.appt_slot
+ AND c.column_key = COALESCE(a.assigned_to::text, a.bank_staff_id::text, 'common')
+LEFT JOIN public.patients   p  ON p.id  = a.patient_id
+LEFT JOIN public.staff      s  ON s.id  = a.assigned_to
+LEFT JOIN public.bank_staff bs ON bs.id = a.bank_staff_id
+WHERE a.status IS DISTINCT FROM 'cancelled'
+ORDER BY a.appt_date, a.appt_slot, nurse_column, patient;
+
+
+-- -----------------------------------------------------------------------------
+-- STEP 2b — Remove exact duplicate entries: the SAME patient recorded twice in
+--           the same column at the same time. Only these rows are deleted, and
+--           the most meaningful one is kept (an attended record beats a DNTU,
+--           which beats a plain booking).
+--
+--           Nothing is lost clinically here — the surviving row is the visit.
+-- -----------------------------------------------------------------------------
+WITH ranked AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY appt_date,
+                        appt_slot,
+                        COALESCE(assigned_to::text, bank_staff_id::text, 'common'),
+                        patient_id
+           ORDER BY CASE status
+                      WHEN 'attended'       THEN 0
+                      WHEN 'did_not_attend' THEN 1
+                      ELSE 2
+                    END,
+                    id
+         ) AS rn
+  FROM public.appointments
+  WHERE status IS DISTINCT FROM 'cancelled'
+    AND patient_id IS NOT NULL
+)
+DELETE FROM public.appointments a
+USING ranked r
+WHERE a.id = r.id
+  AND r.rn > 1;
+
+
+-- -----------------------------------------------------------------------------
+-- STEP 2c — Anything still clashing is two DIFFERENT patients in one column at
+--           one time. One of them has to move.
+--
+--           This marks the extra ones cancelled rather than deleting them, so
+--           they stay in the app as cancelled history on that slot, with their
+--           Edit and Rebook buttons — the displaced patient can be rebooked
+--           properly. The kept row is again the most meaningful one.
+--
+--           Re-run STEP 2 afterwards: it should return no rows.
+-- -----------------------------------------------------------------------------
+WITH ranked AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY appt_date,
+                        appt_slot,
+                        COALESCE(assigned_to::text, bank_staff_id::text, 'common')
+           ORDER BY CASE status
+                      WHEN 'attended'       THEN 0
+                      WHEN 'did_not_attend' THEN 1
+                      ELSE 2
+                    END,
+                    id
+         ) AS rn
+  FROM public.appointments
+  WHERE status IS DISTINCT FROM 'cancelled'
+)
+UPDATE public.appointments a
+SET status = 'cancelled'
+FROM ranked r
+WHERE a.id = r.id
+  AND r.rn > 1;
 
 
 -- -----------------------------------------------------------------------------
