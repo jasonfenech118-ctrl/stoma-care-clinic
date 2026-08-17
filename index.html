@@ -5535,19 +5535,12 @@ async function loadPatientDirectory(){
     patientDatesAvailable=true;
   }
   if(error){if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
-  // Next future appointment per patient, so the list shows who still needs booking.
-  const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
-    .select('patient_id,appt_date,appt_slot').gte('appt_date',TODAY).neq('status','cancelled')
-    .order('appt_date',{ascending:true}));
-  const nextAppt={};
-  (fut||[]).forEach(a=>{const k=String(a.patient_id);if(!nextAppt[k])nextAppt[k]=a;});
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
     status:normaliseFollowupStatus(p.followup_status||'active'),
     surgery_date:p.surgery_date||null,
     reversal_date:p.reversal_date||null,
-    deceased_date:p.deceased_date||null,
-    next:nextAppt[String(p.id)]||null}));
+    deceased_date:p.deceased_date||null}));
 
   const ownerSel=document.getElementById('pd-owner');
   if(ownerSel){
@@ -5564,13 +5557,13 @@ function renderPatientDirectorySummary(){
   if(!el)return;
   const rows=patientDirectoryRows;
   const active=rows.filter(p=>p.status==='active').length;
-  const noBooking=rows.filter(p=>p.status==='active'&&!p.next).length;
-  const noDue=rows.filter(p=>p.status==='active'&&!(Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000)).length;
+  const reversed=rows.filter(p=>p.status==='reversed').length;
+  const deceased=rows.filter(p=>p.status==='deceased').length;
   el.innerHTML=`
     ${annualKpi('Total Patients',rows.length,'registered')}
-    ${annualKpi('Active Follow-ups',active,'status active')}
-    ${annualKpi('No Future Appointment',noBooking,'active & unbooked','#eda100')}
-    ${annualKpi('No Due Month Set',noDue,'active, untracked','#7c3aed')}`;
+    ${annualKpi('Active',active,'active follow-up','#1baf7a')}
+    ${annualKpi('Reversed',reversed,'stoma reversed','#7c3aed')}
+    ${annualKpi('Deceased',deceased,'RIP','#1a1a1a')}`;
 }
 function patientDirectoryStatusBadge(status){
   return followupStatusBadge(status,true);
