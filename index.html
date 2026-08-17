@@ -518,7 +518,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 /* IMPORT card */
 .imp-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:10px 0;}
 .imp-map-row{display:flex;align-items:center;gap:8px;}
-.imp-map-label{font-size:11px;font-weight:800;color:var(--navy);min-width:96px;}
+.imp-map-label{font-size:11px;font-weight:800;color:var(--navy);min-width:96px;max-width:120px;}
+.imp-map-label em{display:block;font-style:normal;font-weight:600;font-size:10px;color:var(--muted);margin-top:2px;line-height:1.3;}
 .imp-map-row select{flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:11px;font-family:'Inter',sans-serif;}
 .imp-counts{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px;}
 .imp-count{border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:12px;color:var(--navy);}
@@ -1677,7 +1678,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.17-23';
+const APP_BUILD='2026.08.17-24';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5698,18 +5699,28 @@ async function savePatientDates(patientId){
    by ID card are updated, unmatched ones are added. Only the fields present in
    the file are touched; a blank cell never wipes an existing value. Nothing is
    ever deleted, and a preview is shown before anything is written. */
+let importSheetRows=[];   // the whole sheet as an array of arrays, headings included
+let importHeaderRow=0;    // which of those rows holds the headings
 let importParsedRows=[];
 let importHeaders=[];
 // The registry fields the file can fill, with the header words each is guessed from.
+// Order matters: the first field to claim a column keeps it.
+// Each match list runs most specific first, because the first word that hits
+// wins: "Surgery Date" has to be tried before the bare word "surgery", or a
+// column called "Surgery Days till RIP" could take the slot.
 const IMPORT_FIELDS=[
-  {key:'id_card',       label:'ID Card *',       required:true,  match:['id card','idcard','id_card','id no','identity','card no','id number','id']},
-  {key:'first_name',    label:'First name',      required:false, match:['first name','firstname','first','name','given']},
-  {key:'surname',       label:'Surname',         required:false, match:['surname','last name','lastname','family name']},
-  {key:'phone_number',  label:'Phone',           required:false, match:['phone','mobile','tel','contact','number']},
-  {key:'date_of_birth', label:'Date of birth',   required:false, match:['date of birth','dob','birth','d.o.b','born']},
-  {key:'surgery_date',  label:'Surgery date',    required:false, match:['surgery','operation','op date','stoma date','stoma formation']},
-  {key:'reversal_date', label:'Reversal date',   required:false, match:['reversal','reversed','closure']},
-  {key:'deceased_date', label:'Date of RIP',     required:false, match:['rip','death','deceased','died','date of death']}
+  {key:'id_card',       label:'ID Card *',       match:['id card','idcard','hospital number','hospitalnumber','hospital no','id number','id no','identity','card no','id']},
+  {key:'first_name',    label:'First name',      match:['first name','firstname','given name','first','given']},
+  {key:'surname',       label:'Surname',         match:['surname','last name','lastname','family name']},
+  {key:'full_name',     label:'Full name',       match:['full name','patient name','name'],
+   hint:'Use this when one column holds the whole name.'},
+  {key:'phone_number',  label:'Phone',           match:['phone number','contact number','mobile number','tel no','telephone','phone','mobile','tel','contact','number']},
+  {key:'date_of_birth', label:'Date of birth',   match:['date of birth','dob','birth date','birth','born']},
+  {key:'surgery_date',  label:'Surgery date',    match:['surgery date','operation date','stoma date','stoma formation','surgery','operation','op date']},
+  {key:'reversal_date', label:'Reversal date',   match:['reversal date','date of reversal','reversal','reversed','closure']},
+  {key:'deceased_date', label:'Date of RIP',     match:['date of rip','rip date','date of death','deceased date','rip','death','deceased','died']},
+  {key:'followup_status',label:'Status',         match:['patient status','followup status','status'],
+   hint:'Active, Paused, Reversed or Deceased.'}
 ];
 // Load SheetJS on demand — only when the import card is opened, so the rest of
 // the app never pays for it.
@@ -5723,33 +5734,106 @@ function ensureXLSX(){
     document.head.appendChild(s);
   });
 }
+// A date only counts if it lands in a range a patient record can plausibly hold.
+// Old lists carry typos like "30/09/204" and "10/106/2014"; those are dropped
+// rather than guessed at, so a bad cell never writes a wrong clinical date.
+function importDateOK(y,mo,d){
+  return y>=1900&&y<=new Date().getFullYear()+2&&mo>=1&&mo<=12&&d>=1&&d<=31
+    ?`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`:'';
+}
 // Normalise a spreadsheet cell into a YYYY-MM-DD string, or '' if not a date.
 // Handles Excel serial numbers, JS dates, and dd/mm/yyyy or yyyy-mm-dd text.
 function importParseDate(v){
   if(v===null||v===undefined||v==='')return '';
-  if(v instanceof Date&&!Number.isNaN(v.getTime()))return fmt(v);
+  if(v instanceof Date&&!Number.isNaN(v.getTime()))
+    return importDateOK(v.getFullYear(),v.getMonth()+1,v.getDate());
   if(typeof v==='number'&&window.XLSX?.SSF){
     const d=window.XLSX.SSF.parse_date_code(v);
-    if(d&&d.y)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    if(d&&d.y)return importDateOK(d.y,d.m,d.d);
+    return '';
   }
   const s=String(v).trim();
   let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);           // yyyy-mm-dd
-  if(m)return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  if(m)return importDateOK(+m[1],+m[2],+m[3]);
   m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);             // dd/mm/yyyy (Malta)
   if(m){
-    let[_,d,mo,y]=m; if(y.length===2)y='20'+y;
-    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    let[,d,mo,y]=m;
+    // A 2-digit year is read as this century unless that lands in the future.
+    if(y.length===2)y=importDateOK(2000+ +y,+mo,+d)?String(2000+ +y):String(1900+ +y);
+    return importDateOK(+y,+mo,+d);
   }
-  const parsed=new Date(s);
-  return Number.isNaN(parsed.getTime())?'':fmt(parsed);
-}
-function guessImportColumn(field){
-  const norm=h=>String(h||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
-  const headers=importHeaders.map(norm);
-  // Exact-ish first, then contains.
-  for(const cand of field.match){const i=headers.indexOf(cand);if(i>=0)return importHeaders[i];}
-  for(let i=0;i<headers.length;i++){if(field.match.some(c=>headers[i].includes(c)))return importHeaders[i];}
   return '';
+}
+// Old lists put a month name or a blank line where the ID card should be, as a
+// section separator. A real Malta ID card always carries digits.
+function importUsableIdCard(v){
+  const s=normaliseIdCard(v).replace(/[^A-Z0-9]/g,'');
+  const m=s.match(/^(\d{1,8})([A-Z])/);   // digits then one letter — drop anything typed after it
+  if(m)return m[1]+m[2];
+  return /\d/.test(s)&&s.length>=4?s:'';
+}
+// Split one "Busuttil Carmelo" cell into surname and first names. Maltese lists
+// are written surname first, but the order is a control on the card either way.
+function importSplitName(value,surnameFirst){
+  const parts=String(value||'').trim().replace(/\s+/g,' ').split(' ').filter(Boolean);
+  if(!parts.length)return{first_name:'',surname:''};
+  if(parts.length===1)return{first_name:'',surname:parts[0]};
+  return surnameFirst
+    ?{surname:parts[0],first_name:parts.slice(1).join(' ')}
+    :{first_name:parts.slice(0,-1).join(' '),surname:parts[parts.length-1]};
+}
+const IMPORT_HDR_NORM=h=>String(h||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+// Match a field to a heading. Exact heading first, then the word appearing whole,
+// then anywhere — so "Contact Number" goes to Phone and not to Hospital Number.
+// `used` holds the headings already claimed by an earlier field.
+function guessImportColumn(field,used){
+  const headers=importHeaders.map(IMPORT_HDR_NORM);
+  let best='',bestScore=null;
+  field.match.map(IMPORT_HDR_NORM).forEach((cand,rank)=>{
+    const word=new RegExp(`(^| )${cand.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}( |$)`);
+    headers.forEach((h,i)=>{
+      if(used&&used.has(importHeaders[i]))return;
+      const quality=h===cand?3:word.test(h)?2:h.includes(cand)?1:0;
+      if(!quality)return;
+      // Rank by how little of the heading is left over once the word is taken
+      // out, then by how tight the match was, then by the order of the list.
+      // That is what makes "ReversalDate" beat "Proposed_Reversal_Date" and
+      // "RIPDate" beat "SurgeryDays till RIP".
+      const score=[h.length-cand.length,-quality,rank];
+      if(!bestScore||importScoreBeats(score,bestScore)){
+        bestScore=score;best=importHeaders[i];
+      }
+    });
+  });
+  return best;
+}
+// Compare two [leftover, -quality, rank] scores — lower wins, left to right.
+function importScoreBeats(a,b){
+  for(let i=0;i<a.length;i++){ if(a[i]!==b[i])return a[i]<b[i]; }
+  return false;
+}
+// Score a candidate heading row: real headings are short words, mostly filled,
+// and tend to be recognisable field names.
+function importHeaderScore(row){
+  const cells=(row||[]).map(c=>String(c??'').trim()).filter(Boolean);
+  if(cells.length<2)return -1;
+  const known=new Set(IMPORT_FIELDS.flatMap(f=>f.match.map(IMPORT_HDR_NORM)));
+  const hits=cells.filter(c=>known.has(IMPORT_HDR_NORM(c))).length;
+  const shortish=cells.filter(c=>c.length<=28&&!/^\d+$/.test(c)).length;
+  return hits*3+shortish+cells.length*0.1;
+}
+// Rebuild the row objects from the sheet using the chosen heading row.
+function importApplyHeaderRow(index){
+  importHeaderRow=index;
+  const raw=(importSheetRows[index]||[]).map(h=>String(h??'').trim());
+  const headers=[];
+  raw.forEach((h,i)=>{headers[i]=h||`Column ${i+1}`;});
+  // Two columns with the same heading would collide in the row object.
+  const seen={};
+  importHeaders=headers.map(h=>{seen[h]=(seen[h]||0)+1;return seen[h]>1?`${h} (${seen[h]})`:h;});
+  importParsedRows=importSheetRows.slice(index+1)
+    .map(r=>{const o={};importHeaders.forEach((h,i)=>{o[h]=r?.[i]===undefined?'':r[i];});return o;})
+    .filter(o=>Object.values(o).some(v=>String(v).trim()!==''));
 }
 async function openPatientImportModal(){
   const mb=document.getElementById('mb');
@@ -5757,7 +5841,7 @@ async function openPatientImportModal(){
   mb.innerHTML=`<h2>⬆ Import Patients from a File</h2>
     <div class="msub">Excel (.xlsx) or CSV. Patients are matched by <strong>ID card</strong>: existing ones are updated, new ones are added. Nothing is deleted, and a blank cell never overwrites a value already on file. You will see a preview before anything is saved.</div>
     <div class="fg"><label>Choose file</label><input type="file" id="imp-file" accept=".xlsx,.xls,.csv" onchange="handleImportFile()"/></div>
-    <div id="imp-body"><div class="registry-lookup-note">The first row of the sheet must be the column headings (e.g. ID Card, Date of Birth, Surgery Date).</div></div>
+    <div id="imp-body"><div class="registry-lookup-note">Old lists usually work as they are — a title line above the headings, one combined name column, or month names used as separators are all handled.</div></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button></div>`;
   openMo();
 }
@@ -5772,36 +5856,110 @@ async function handleImportFile(){
     const buf=await file.arrayBuffer();
     const wb=XLSX.read(buf,{type:'array',cellDates:true});
     const sheet=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
-    if(!rows.length){body.innerHTML='<div class="registry-lookup-note error">That sheet has no data rows under the headings.</div>';return;}
-    importParsedRows=rows;
-    importHeaders=Object.keys(rows[0]);
+    // Read as plain rows, so a title line above the headings can be stepped over.
+    importSheetRows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true,blankrows:false});
+    if(importSheetRows.length<2){body.innerHTML='<div class="registry-lookup-note error">That sheet has no data rows under the headings.</div>';return;}
+    let best=0,bestScore=-Infinity;
+    importSheetRows.slice(0,Math.min(6,importSheetRows.length-1)).forEach((r,i)=>{
+      const s=importHeaderScore(r); if(s>bestScore){bestScore=s;best=i;}
+    });
+    importApplyHeaderRow(best);
+    if(!importParsedRows.length){body.innerHTML='<div class="registry-lookup-note error">That sheet has no data rows under the headings.</div>';return;}
     renderImportMapping();
   }catch(e){
     console.error('Import parse failed:',e);
     body.innerHTML=`<div class="registry-lookup-note error">Could not read that file: ${htmlSafe(e.message||String(e))}</div>`;
   }
 }
+function setImportHeaderRow(sel){
+  importApplyHeaderRow(Number(sel.value)||0);
+  renderImportMapping();
+}
 function renderImportMapping(){
   const body=document.getElementById('imp-body');
   const opts=sel=>['<option value="">— not in file —</option>',...importHeaders.map(h=>`<option value="${htmlSafe(h)}" ${h===sel?'selected':''}>${htmlSafe(h)}</option>`)].join('');
+  // Guess in field order, so an earlier field keeps the column it claimed.
+  const used=new Set();
   const rowsHtml=IMPORT_FIELDS.map(f=>{
-    const guess=guessImportColumn(f);
+    const guess=guessImportColumn(f,used); if(guess)used.add(guess);
     return `<div class="imp-map-row">
-      <span class="imp-map-label">${htmlSafe(f.label)}</span>
+      <span class="imp-map-label">${htmlSafe(f.label)}${f.hint?`<em>${htmlSafe(f.hint)}</em>`:''}</span>
       <select data-field="${f.key}" onchange="renderImportPreview()">${opts(guess)}</select>
     </div>`;
   }).join('');
+  const hdrOpts=importSheetRows.slice(0,Math.min(6,importSheetRows.length)).map((r,i)=>{
+    const label=r.map(c=>String(c??'').trim()).filter(Boolean).slice(0,4).join(' · ')||'(blank row)';
+    return `<option value="${i}" ${i===importHeaderRow?'selected':''}>Row ${i+1} — ${htmlSafe(label.slice(0,60))}</option>`;
+  }).join('');
   body.innerHTML=`
-    <div class="registry-lookup-note found">${importParsedRows.length} row${importParsedRows.length!==1?'s':''} read. Check the column mapping below — I have guessed it from your headings.</div>
-    <div class="imp-map">${rowsHtml}</div>
+    <div class="registry-lookup-note found">${importParsedRows.length} row${importParsedRows.length!==1?'s':''} read. Check the mapping below — it is guessed from your headings.</div>
+    <div class="imp-map">
+      <div class="imp-map-row"><span class="imp-map-label">Headings are on<em>Pick the row that holds the column names.</em></span>
+        <select id="imp-hdr-row" onchange="setImportHeaderRow(this)">${hdrOpts}</select></div>
+      ${rowsHtml}
+      <div class="imp-map-row"><span class="imp-map-label">Name order<em>Only used for a combined Full name column.</em></span>
+        <select id="imp-name-order" onchange="renderImportPreview()">
+          <option value="surname">Surname first — “Busuttil Carmelo”</option>
+          <option value="first">First name first — “Carmelo Busuttil”</option></select></div>
+      <div class="imp-map-row"><span class="imp-map-label">Set every row to<em>For a list that is all one kind, with no status column.</em></span>
+        <select id="imp-blanket-status" onchange="renderImportPreview()">
+          <option value="">— leave the status alone —</option>
+          <option value="active">Active — in recall</option>
+          <option value="paused">Paused — kept on file, not in recall</option>
+          <option value="reversed">Reversed</option>
+          <option value="deceased">Deceased</option></select></div>
+      <div class="imp-map-row"><span class="imp-map-label">Existing patients<em>A blank cell never overwrites either way.</em></span>
+        <select id="imp-overwrite" onchange="renderImportPreview()">
+          <option value="">Only fill in what is blank</option>
+          <option value="1">Overwrite what is already on file</option></select></div>
+    </div>
     <div id="imp-preview"></div>`;
   renderImportPreview();
 }
 function currentImportMapping(){
   const map={};
-  document.querySelectorAll('#imp-body .imp-map select').forEach(s=>{if(s.value)map[s.dataset.field]=s.value;});
+  document.querySelectorAll('#imp-body .imp-map select[data-field]').forEach(s=>{if(s.value)map[s.dataset.field]=s.value;});
   return map;
+}
+function currentImportOptions(){
+  return{
+    surnameFirst:(document.getElementById('imp-name-order')?.value||'surname')==='surname',
+    blanket:document.getElementById('imp-blanket-status')?.value||'',
+    overwrite:!!document.getElementById('imp-overwrite')?.value
+  };
+}
+// Turn one sheet row into the patient fields it wants to write.
+function importRowToPatient(r,map,opt){
+  const card=importUsableIdCard(r[map.id_card]);
+  if(!card)return null;
+  const cell=k=>map[k]?String(r[map[k]]??'').trim():'';
+  const out={id_card:card};
+  let first=cell('first_name'),surname=cell('surname');
+  if(map.full_name&&(!first||!surname)){
+    const split=importSplitName(r[map.full_name],opt.surnameFirst);
+    first=first||split.first_name; surname=surname||split.surname;
+  }
+  if(first)out.first_name=first;
+  if(surname)out.surname=surname;
+  const phone=cell('phone_number');
+  if(phone&&/\d/.test(phone))out.phone_number=phone;
+  ['date_of_birth','surgery_date','reversal_date','deceased_date'].forEach(k=>{
+    if(!map[k])return; const v=importParseDate(r[map[k]]); if(v)out[k]=v;
+  });
+  // Status: the file's own column wins, then a blanket choice, then the dates.
+  let status='';
+  if(map.followup_status){
+    const raw=cell('followup_status').toLowerCase();
+    if(raw==='relocated overseas'||raw==='discharged to gozo'||raw==='discharged')status='paused';
+    else if(raw)status=normaliseFollowupStatus(raw);
+  }
+  if(!status)status=opt.blanket;
+  if(!status){
+    if(out.deceased_date)status='deceased';
+    else if(out.reversal_date)status='reversed';
+  }
+  if(status)out.followup_status=status;
+  return out;
 }
 async function renderImportPreview(){
   const wrap=document.getElementById('imp-preview');
@@ -5812,101 +5970,112 @@ async function renderImportPreview(){
     return;
   }
   wrap.innerHTML='<div class="registry-lookup-note">Checking against the registry…</div>';
+  const opt=currentImportOptions();
   // Existing ID cards, normalised, so we can tell update from insert.
   const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select('id,id_card'));
   if(error){wrap.innerHTML='<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(error.message)+'</div>';return;}
-  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p.id;});
+  const existingCards=new Set();(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)existingCards.add(k);});
 
-  let toUpdate=0,toAdd=0,skipped=0;const sample=[];
+  let toUpdate=0,toAdd=0,skipped=0,dupes=0,statusChanges=0;
+  const seen=new Set();const sample=[];
   importParsedRows.forEach(r=>{
-    const card=normaliseIdCard(r[map.id_card]);
-    if(!card){skipped++;return;}
-    const existing=!!byCard[card];
+    const row=importRowToPatient(r,map,opt);
+    if(!row){skipped++;return;}
+    if(seen.has(row.id_card)){dupes++;return;} seen.add(row.id_card);
+    const existing=existingCards.has(row.id_card);
     if(existing)toUpdate++;else toAdd++;
-    if(sample.length<6){
-      sample.push({card,existing,
-        dob:map.date_of_birth?importParseDate(r[map.date_of_birth]):'',
-        surgery:map.surgery_date?importParseDate(r[map.surgery_date]):'',
-        reversal:map.reversal_date?importParseDate(r[map.reversal_date]):'',
-        rip:map.deceased_date?importParseDate(r[map.deceased_date]):''});
-    }
+    if(row.followup_status)statusChanges++;
+    if(sample.length<8)sample.push({row,existing});
   });
-  const dateCols=['date_of_birth','surgery_date','reversal_date','deceased_date'].filter(k=>map[k]);
-  const willSetStatus=!!(map.reversal_date||map.deceased_date);
-  const sampleRows=sample.map(s=>`<tr>
-    <td style="font-family:monospace;">${htmlSafe(s.card)}</td>
-    <td><span class="imp-tag ${s.existing?'upd':'add'}">${s.existing?'update':'add'}</span></td>
-    <td>${htmlSafe(s.dob||'—')}</td><td>${htmlSafe(s.surgery||'—')}</td>
-    <td>${htmlSafe(s.reversal||'—')}</td><td>${htmlSafe(s.rip||'—')}</td></tr>`).join('');
+  const writes=IMPORT_FIELDS.map(f=>f.key).filter(k=>k!=='id_card'&&k!=='full_name'&&map[k]);
+  const nothingToWrite=!writes.length&&!opt.blanket&&!toAdd;
+  const sampleRows=sample.map(({row,existing})=>`<tr>
+    <td style="font-family:monospace;">${htmlSafe(row.id_card)}</td>
+    <td><span class="imp-tag ${existing?'upd':'add'}">${existing?'update':'add'}</span></td>
+    <td>${htmlSafe([row.surname,row.first_name].filter(Boolean).join(', ')||'—')}</td>
+    <td>${htmlSafe(row.phone_number||'—')}</td>
+    <td>${htmlSafe(row.date_of_birth||'—')}</td><td>${htmlSafe(row.surgery_date||'—')}</td>
+    <td>${htmlSafe(row.reversal_date||'—')}</td><td>${htmlSafe(row.deceased_date||'—')}</td>
+    <td>${row.followup_status?followupStatusText(row.followup_status):'—'}</td></tr>`).join('');
   wrap.innerHTML=`
     <div class="imp-counts">
       <div class="imp-count upd"><b>${toUpdate}</b> existing to update</div>
       <div class="imp-count add"><b>${toAdd}</b> new to add</div>
-      ${skipped?`<div class="imp-count skip"><b>${skipped}</b> skipped (no ID card)</div>`:''}
+      ${skipped?`<div class="imp-count skip"><b>${skipped}</b> skipped (no usable ID card)</div>`:''}
+      ${dupes?`<div class="imp-count skip"><b>${dupes}</b> repeated ID cards in the file</div>`:''}
     </div>
-    ${dateCols.length?'':'<div class="registry-lookup-note error">No date column is mapped — there is nothing to fill. Map at least one of the date fields.</div>'}
-    ${willSetStatus?'<div class="registry-lookup-note">A reversal date sets the patient to <strong>Reversed</strong>; a RIP date sets <strong>Deceased</strong> — matching the single-patient Dates card.</div>':''}
-    <div style="overflow-x:auto;"><table class="dt" style="margin-top:8px;"><thead><tr><th>ID Card</th><th>Action</th><th>DOB</th><th>Surgery</th><th>Reversal</th><th>RIP</th></tr></thead><tbody>${sampleRows||'<tr><td colspan="6" class="empty">No usable rows.</td></tr>'}</tbody></table></div>
+    ${nothingToWrite?'<div class="registry-lookup-note error">Nothing would be written — map at least one field beyond the ID card, or choose a status to set.</div>':''}
+    ${statusChanges?`<div class="registry-lookup-note"><strong>${statusChanges}</strong> row${statusChanges!==1?'s':''} carry a status. A patient set to <strong>Reversed</strong>, <strong>Deceased</strong> or <strong>Paused</strong> leaves the recall list — they stay in the Registry.</div>`:''}
+    ${opt.overwrite?'<div class="registry-lookup-note">Overwrite is on: a value in the file replaces what is already on file.</div>':''}
+    <div style="overflow-x:auto;"><table class="dt" style="margin-top:8px;"><thead><tr><th>ID Card</th><th>Action</th><th>Name</th><th>Phone</th><th>DOB</th><th>Surgery</th><th>Reversal</th><th>RIP</th><th>Status</th></tr></thead><tbody>${sampleRows||'<tr><td colspan="9" class="empty">No usable rows.</td></tr>'}</tbody></table></div>
     <div style="font-size:11px;color:var(--muted);margin:4px 0 10px;">${sample.length<importParsedRows.length?`Showing the first ${sample.length} of ${importParsedRows.length} rows.`:''}</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" ${(toUpdate+toAdd&&dateCols.length)?'':'disabled'} onclick="runPatientImport()">Import ${toUpdate+toAdd} patient${toUpdate+toAdd!==1?'s':''}</button></div>`;
+      <button class="btn-save" ${(toUpdate+toAdd&&!nothingToWrite)?'':'disabled'} onclick="runPatientImport()">Import ${toUpdate+toAdd} patient${toUpdate+toAdd!==1?'s':''}</button></div>`;
 }
 async function runPatientImport(){
   const map=currentImportMapping();
   if(!map.id_card)return;
+  const opt=currentImportOptions();
   const wrap=document.getElementById('imp-preview');
   wrap.innerHTML='<div class="registry-lookup-note">Importing… please keep this open.</div>';
-  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select('id,id_card'));
-  if(error){wrap.innerHTML='<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(error.message)+'</div>';return;}
-  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p.id;});
+  // Pull the current values too, so "only fill in what is blank" can be honoured.
+  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients')
+    .select('id,id_card,first_name,surname,phone_number,followup_status,'+PATIENT_DATE_COLS));
+  if(error){
+    const msg=String(error.message||'');
+    wrap.innerHTML=msg.toLowerCase().includes('column')
+      ?'<div class="registry-lookup-note error">The clinical-date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> in Supabase once, then import again. Nothing was changed.</div>'
+      :'<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(msg)+'</div>';
+    return;
+  }
+  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p;});
 
-  const dateKeys=['date_of_birth','surgery_date','reversal_date','deceased_date'];
-  const strCell=(r,k)=>map[k]?String(r[map[k]]??'').trim():'';
-
-  // Build the write list. Only set a date when the cell has a value.
+  // Build the write list. A blank cell is never sent, so it cannot wipe a value.
   const updates=[],inserts=[];const seen=new Set();
   importParsedRows.forEach(r=>{
-    const card=normaliseIdCard(r[map.id_card]);
-    if(!card||seen.has(card))return; seen.add(card);
-    const dates={};
-    dateKeys.forEach(k=>{if(map[k]){const v=importParseDate(r[map[k]]);if(v)dates[k]=v;}});
-    if(dates.deceased_date)dates.followup_status='deceased';
-    else if(dates.reversal_date)dates.followup_status='reversed';
-    if(byCard[card]){
-      if(Object.keys(dates).length)updates.push({id:byCard[card],patch:dates});
-    }else{
-      const ins={id_card:card,...dates};
-      const fn=strCell(r,'first_name'),sn=strCell(r,'surname'),ph=strCell(r,'phone_number');
-      if(fn)ins.first_name=fn; if(sn)ins.surname=sn; if(ph)ins.phone_number=ph;
-      inserts.push(ins);
-    }
+    const row=importRowToPatient(r,map,opt);
+    if(!row||seen.has(row.id_card))return; seen.add(row.id_card);
+    const current=byCard[row.id_card];
+    if(!current){inserts.push(row);return;}
+    const patch={};
+    Object.keys(row).forEach(k=>{
+      if(k==='id_card')return;
+      // Status is a decision, not a blank-fill: only send it when it differs.
+      if(k==='followup_status'){
+        if(normaliseFollowupStatus(current.followup_status)!==row[k]&&(opt.overwrite||!isClosedFollowupStatus(current.followup_status)))patch[k]=row[k];
+        return;
+      }
+      if(opt.overwrite||!String(current[k]??'').trim())patch[k]=row[k];
+    });
+    if(Object.keys(patch).length)updates.push({id:current.id,patch});
   });
 
   let done=0,failed=0;const errors=[];
   const total=updates.length+inserts.length;
-  const tick=()=>{done++;if(done%10===0||done===total)wrap.innerHTML=`<div class="registry-lookup-note">Importing… ${done} of ${total}</div>`;};
-  // Inserts can go in one batch; a column error here means the migration is missing.
-  if(inserts.length){
-    const{error:insErr}=await SB.from('patients').insert(inserts);
+  const say=()=>{wrap.innerHTML=`<div class="registry-lookup-note">Importing… ${done} of ${total}</div>`;};
+  // Inserts in batches — a few thousand rows will not go in one request.
+  for(let i=0;i<inserts.length;i+=200){
+    const batch=inserts.slice(i,i+200);
+    const{error:insErr}=await SB.from('patients').insert(batch);
     if(insErr){
-      if(String(insErr.message||'').toLowerCase().includes('column')){
+      if(i===0&&String(insErr.message||'').toLowerCase().includes('column')){
         wrap.innerHTML='<div class="registry-lookup-note error">The clinical-date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> in Supabase once, then import again. Nothing was changed.</div>';
         return;
       }
-      failed+=inserts.length;errors.push(insErr.message);
-    }else{done+=inserts.length;}
+      failed+=batch.length;if(errors.length<3)errors.push(insErr.message);
+    }else{done+=batch.length;}
+    say();
   }
   // Updates one at a time, in small parallel chunks.
   for(let i=0;i<updates.length;i+=8){
     const chunk=updates.slice(i,i+8);
     await Promise.all(chunk.map(async u=>{
       const{error:uErr}=await SB.from('patients').update(u.patch).eq('id',u.id);
-      if(uErr){failed++;if(errors.length<3)errors.push(uErr.message);}
-      tick();
+      if(uErr){failed++;if(errors.length<3)errors.push(uErr.message);}else done++;
     }));
+    say();
   }
-  const ok=total-failed;
-  wrap.innerHTML=`<div class="registry-lookup-note found" style="font-size:13px;">✅ Imported <strong>${ok}</strong> of ${total} patient${total!==1?'s':''}${failed?` · ${failed} failed`:''}.</div>
+  wrap.innerHTML=`<div class="registry-lookup-note found" style="font-size:13px;">✅ Imported <strong>${done}</strong> of ${total} patient${total!==1?'s':''}${failed?` · ${failed} failed`:''}.</div>
     ${failed?`<div class="registry-lookup-note error">${htmlSafe(errors[0]||'Some rows could not be saved.')}</div>`:''}
     <div class="mact"><button class="btn-save" onclick="closeModal();loadPatientDirectory();refreshReminders();">Done</button></div>`;
 }
