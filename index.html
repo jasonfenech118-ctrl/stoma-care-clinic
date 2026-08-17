@@ -514,6 +514,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pd-toolbar input:focus,.pd-toolbar select:focus{border-color:var(--teal);}
 .pd-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto;}
 .pd-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.pd-quickfilters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+.pd-qf{padding:8px 16px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+.pd-qf:hover{border-color:var(--teal);color:var(--navy);}
+.pd-qf.active{background:var(--navy);color:white;border-color:var(--navy);}
+.pd-qf.qf-reversed.active{background:#7c3aed;border-color:#7c3aed;}
+.pd-qf.qf-deceased.active{background:#1a1a1a;border-color:#1a1a1a;}
 .pd-dash{color:var(--muted);}
 /* Reversed patients read violet across the whole row; deceased read black with
    white text. Both keep their action buttons legible. */
@@ -1199,16 +1205,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <!-- PATIENT DIRECTORY -->
     <div class="page" id="page-patients">
       <div class="phdr">
-        <div><h2>👥 Patient Directory</h2><p>Every registered patient — search, review history, and book without re-entering details</p></div>
+        <div><h2>👥 Patient Registry</h2><p>Every registered patient — search, review history, and manage clinical dates</p></div>
         <button class="btn-add" onclick="loadPatientDirectory()">Refresh</button>
       </div>
       <div class="pd-summary" id="pd-summary"></div>
+      <div class="pd-quickfilters">
+        <button class="pd-qf active" data-qf="all" onclick="setPatientQuickFilter('all')">All Patients</button>
+        <button class="pd-qf" data-qf="active" onclick="setPatientQuickFilter('active')">Active</button>
+        <button class="pd-qf qf-reversed" data-qf="reversed" onclick="setPatientQuickFilter('reversed')">Reversal</button>
+        <button class="pd-qf qf-deceased" data-qf="deceased" onclick="setPatientQuickFilter('deceased')">RIP</button>
+      </div>
       <div class="pd-toolbar">
         <input type="text" id="pd-search" placeholder="Search by name, surname, ID card or phone…" oninput="renderPatientDirectory()"/>
         <label>Owner:</label>
         <select id="pd-owner" onchange="renderPatientDirectory()"><option value="all">All owners</option></select>
         <label>Status:</label>
-        <select id="pd-status" onchange="renderPatientDirectory()">
+        <select id="pd-status" onchange="onPatientStatusSelect()">
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="awaiting_feedback">Awaiting Feedback</option>
@@ -1725,9 +1737,9 @@ const TAB_GROUPS=[
      {tab:'reports',label:'Reports & Charts',icon:'R',color:'#1a2e4a'},
      {tab:'annual-report',label:'Annual Report',icon:'📄',color:'#0369a1'}
    ]},
-  {key:'patients',label:'Patients',icon:'👥',color:'#0891b2',
+  {key:'patients',label:'Registry',icon:'👥',color:'#0891b2',
    pages:[
-     {tab:'patients',label:'Patient Directory',icon:'👥',color:'#0891b2'}
+     {tab:'patients',label:'Patient Registry',icon:'👥',color:'#0891b2'}
    ]}
 ];
 const TAB_LABELS={};
@@ -5600,7 +5612,6 @@ function renderPatientDirectory(){
       <td>${dcell(p.deceased_date)}</td>
       <td><div class="pd-actions">
         ${datesBtn}
-        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientRebookModal('${p.id}')">Rebook</button>
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${hasDue?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
       </div></td>
@@ -5611,6 +5622,24 @@ function fmtShortDate(v){
   const d=new Date(String(v)+'T12:00:00');
   if(Number.isNaN(d.getTime()))return String(v||'');
   return d.toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric'});
+}
+/* The Reversal / RIP pills are a shortcut over the Status dropdown, so the two
+   stay in sync: clicking a pill sets the dropdown, and changing the dropdown
+   updates the pills. "All Patients" clears the status filter. */
+function highlightPatientQuickFilter(value){
+  document.querySelectorAll('.pd-qf').forEach(b=>b.classList.toggle('active',b.dataset.qf===value));
+}
+function setPatientQuickFilter(value){
+  const sel=document.getElementById('pd-status');
+  if(sel)sel.value=value;
+  highlightPatientQuickFilter(value);
+  renderPatientDirectory();
+}
+function onPatientStatusSelect(){
+  const value=document.getElementById('pd-status')?.value||'all';
+  // Only the four pill values light a pill; other statuses clear them.
+  highlightPatientQuickFilter(['all','active','reversed','deceased'].includes(value)?value:'');
+  renderPatientDirectory();
 }
 /* Editor for the three clinical dates. Setting a reversal or RIP date also
    moves the follow-up status to match, so the coloured row and the register
