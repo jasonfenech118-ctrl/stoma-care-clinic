@@ -1220,8 +1220,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div id="pd-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
-        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Owner</th><th>Status</th><th>Surgery Date</th><th>Reversal Date</th><th>Date of RIP</th><th>Actions</th></tr></thead>
-        <tbody id="pd-tbody"><tr><td colspan="9" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Status</th><th>Surgery Date</th><th>Reversal Date</th><th>Date of RIP</th><th>Actions</th></tr></thead>
+        <tbody id="pd-tbody"><tr><td colspan="8" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
     </div>
 
@@ -5512,7 +5512,7 @@ const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_own
 const PATIENT_DATE_COLS='surgery_date,reversal_date,deceased_date';
 async function loadPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="9" class="empty">Loading patients…</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Loading patients…</td></tr>';
   // Try with the clinical-date columns; if the migration has not been run yet
   // the column-missing error is caught and the page loads without them.
   let{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`));
@@ -5522,7 +5522,7 @@ async function loadPatientDirectory(){
   }else{
     patientDatesAvailable=true;
   }
-  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="9" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
+  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   // Next future appointment per patient, so the list shows who still needs booking.
   const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
     .select('patient_id,appt_date,appt_slot').gte('appt_date',TODAY).neq('status','cancelled')
@@ -5582,7 +5582,7 @@ function renderPatientDirectory(){
   if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
   const note=document.getElementById('pd-setup-note');
   if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The Surgery / Reversal / RIP date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patients match these filters.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No patients match these filters.</td></tr>';return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
   tbody.innerHTML=rows.slice(0,500).map(p=>{
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
@@ -5594,7 +5594,6 @@ function renderPatientDirectory(){
       <td><strong>${htmlSafe(nm)}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
-      <td>${htmlSafe(p.owner)}</td>
       <td>${patientDirectoryStatusBadge(p.status)}</td>
       <td>${dcell(p.surgery_date)}</td>
       <td>${dcell(p.reversal_date)}</td>
@@ -5606,7 +5605,7 @@ function renderPatientDirectory(){
         ${hasDue?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
       </div></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="9" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('')+(rows.length>500?`<tr><td colspan="8" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
 }
 function fmtShortDate(v){
   const d=new Date(String(v)+'T12:00:00');
