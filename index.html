@@ -514,6 +514,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pd-toolbar input:focus,.pd-toolbar select:focus{border-color:var(--teal);}
 .pd-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto;}
 .pd-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.pd-dash{color:var(--muted);}
+/* Reversed patients read violet across the whole row; deceased read black with
+   white text. Both keep their action buttons legible. */
+#pd-table tr.pd-row-reversed td{background:#f3e8ff;color:#6b21a8;}
+#pd-table tr.pd-row-reversed:hover td{background:#ebd9ff;}
+#pd-table tr.pd-row-reversed td strong{color:#581c87;}
+#pd-table tr.pd-row-reversed .pd-dash{color:#a78bca;}
+#pd-table tr.pd-row-deceased td{background:#1a1a1a;color:#f3f4f6;}
+#pd-table tr.pd-row-deceased:hover td{background:#2a2a2a;}
+#pd-table tr.pd-row-deceased td strong{color:#ffffff;}
+#pd-table tr.pd-row-deceased .pd-dash{color:#9ca3af;}
+#pd-table tr.pd-row-deceased .status-badge{filter:brightness(1.25);}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
 .kpi{background:white;border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05);}
 .kpi .k-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
@@ -1206,9 +1218,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
         </select>
         <span class="pd-count" id="pd-count"></span>
       </div>
+      <div id="pd-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
-        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Owner</th><th>Due</th><th>Status</th><th>Next Appointment</th><th>Actions</th></tr></thead>
-        <tbody id="pd-tbody"><tr><td colspan="8" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Owner</th><th>Due</th><th>Status</th><th>Surgery Date</th><th>Reversal Date</th><th>Date of RIP</th><th>Next Appointment</th><th>Actions</th></tr></thead>
+        <tbody id="pd-tbody"><tr><td colspan="11" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
     </div>
 
@@ -5494,12 +5507,22 @@ function printAnnualReport(){
    acted on without going through a booking first. Reuses the existing history,
    rebook and set-due-month cards. */
 let patientDirectoryRows=[];
+let patientDatesAvailable=true;
+const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
+const PATIENT_DATE_COLS='surgery_date,reversal_date,deceased_date';
 async function loadPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Loading patients…</td></tr>';
-  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type'));
-  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
+  if(tbody)tbody.innerHTML='<tr><td colspan="11" class="empty">Loading patients…</td></tr>';
+  // Try with the clinical-date columns; if the migration has not been run yet
+  // the column-missing error is caught and the page loads without them.
+  let{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`));
+  if(error&&String(error.message||'').toLowerCase().includes('column')){
+    patientDatesAvailable=false;
+    ({rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS)));
+  }else{
+    patientDatesAvailable=true;
+  }
+  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="11" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   // Next future appointment per patient, so the list shows who still needs booking.
   const{rows:fut}=await fetchAllRows(()=>SB.from('appointments')
     .select('patient_id,appt_date,appt_slot').gte('appt_date',TODAY).neq('status','cancelled')
@@ -5509,6 +5532,9 @@ async function loadPatientDirectory(){
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
     status:normaliseFollowupStatus(p.followup_status||'active'),
+    surgery_date:p.surgery_date||null,
+    reversal_date:p.reversal_date||null,
+    deceased_date:p.deceased_date||null,
     next:nextAppt[String(p.id)]||null}));
 
   const ownerSel=document.getElementById('pd-owner');
@@ -5554,27 +5580,81 @@ function renderPatientDirectory(){
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
   if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No patients match these filters.</td></tr>';return;}
+  const note=document.getElementById('pd-setup-note');
+  if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The Surgery / Reversal / RIP date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="11" class="empty">No patients match these filters.</td></tr>';return;}
+  const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
   tbody.innerHTML=rows.slice(0,500).map(p=>{
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
     const hasDue=Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000;
     const due=hasDue?`${followupMonthName(p.followup_due_month)} ${p.followup_year}`:'<span style="color:#7c3aed;font-weight:700;">Not set</span>';
     const next=p.next?`${p.next.appt_date} · ${String(p.next.appt_slot||'').slice(0,5)}`:'<span style="color:#b45309;font-weight:700;">None booked</span>';
-    return `<tr>
+    // Reversed patients read violet, deceased read black with white text.
+    const rowCls=p.status==='deceased'?'pd-row-deceased':(p.status==='reversed'?'pd-row-reversed':'');
+    const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Dates</button>`:'';
+    return `<tr class="${rowCls}">
       <td><strong>${htmlSafe(nm)}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(p.owner)}</td>
       <td>${due}</td>
       <td>${patientDirectoryStatusBadge(p.status)}</td>
+      <td>${dcell(p.surgery_date)}</td>
+      <td>${dcell(p.reversal_date)}</td>
+      <td>${dcell(p.deceased_date)}</td>
       <td>${next}</td>
       <td><div class="pd-actions">
+        ${datesBtn}
         <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientRebookModal('${p.id}')">Rebook</button>
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${hasDue?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
       </div></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="8" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('')+(rows.length>500?`<tr><td colspan="11" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+}
+function fmtShortDate(v){
+  const d=new Date(String(v)+'T12:00:00');
+  if(Number.isNaN(d.getTime()))return String(v||'');
+  return d.toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric'});
+}
+/* Editor for the three clinical dates. Setting a reversal or RIP date also
+   moves the follow-up status to match, so the coloured row and the register
+   stay consistent with the date that was entered. */
+async function openPatientDatesModal(patientId){
+  const{data:pat,error}=await SB.from('patients')
+    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
+  if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-patient-clinical-dates.sql in Supabase.');return;}
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Clinical Dates</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')}<br/>Leave a field blank if it does not apply.</div>
+    <div class="fg"><label>Surgery date</label><input type="date" id="pcd-surgery" value="${htmlSafe(pat.surgery_date||'')}"/></div>
+    <div class="fg"><label>Reversal date</label><input type="date" id="pcd-reversal" value="${htmlSafe(pat.reversal_date||'')}"/></div>
+    <div class="fg"><label>Date of RIP (death)</label><input type="date" id="pcd-rip" value="${htmlSafe(pat.deceased_date||'')}"/></div>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">Entering a reversal or RIP date also sets the follow-up status to Reversed or Deceased, so the patient shows correctly and leaves the active reminder list.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientDates('${patientId}')">Save Dates</button></div>`;
+  openMo();
+}
+async function savePatientDates(patientId){
+  const surgery=document.getElementById('pcd-surgery')?.value||null;
+  const reversal=document.getElementById('pcd-reversal')?.value||null;
+  const rip=document.getElementById('pcd-rip')?.value||null;
+  const payload={surgery_date:surgery,reversal_date:reversal,deceased_date:rip};
+  // The RIP date is the strongest signal, then reversal; either overrides status.
+  if(rip)payload.followup_status='deceased';
+  else if(reversal)payload.followup_status='reversed';
+  const{error}=await SB.from('patients').update(payload).eq('id',patientId);
+  if(error){
+    if(String(error.message||'').toLowerCase().includes('column')){
+      alert('The clinical-date columns are not in the database yet.\n\nRun sql/add-patient-clinical-dates.sql once in the Supabase SQL Editor, then try again.');
+    }else{alert('Could not save the dates: '+error.message);}
+    return;
+  }
+  closeModal();
+  refreshReminders();
+  loadPatientDirectory();
+  if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
 
 function syncReportPatientColumnFilter(rows){
