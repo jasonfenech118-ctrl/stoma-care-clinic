@@ -2,7 +2,8 @@
 -- Add clinical date columns to the patient record
 -- =============================================================================
 --
--- Adds three optional dates shown on the Patient Directory:
+-- Adds optional patient dates shown on the Patient Registry:
+--   date_of_birth  - the patient's date of birth
 --   surgery_date   - date of the stoma surgery
 --   reversal_date  - date the stoma was reversed
 --   deceased_date  - date of death (RIP)
@@ -16,6 +17,7 @@
 --   Safe to re-run: IF NOT EXISTS guards every column.
 -- =============================================================================
 
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS date_of_birth date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS surgery_date  date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date date;
@@ -25,5 +27,5 @@ SELECT column_name, data_type, is_nullable
 FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name = 'patients'
-  AND column_name IN ('surgery_date', 'reversal_date', 'deceased_date')
+  AND column_name IN ('date_of_birth', 'surgery_date', 'reversal_date', 'deceased_date')
 ORDER BY column_name;
