@@ -515,6 +515,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pd-toolbar input:focus,.pd-toolbar select:focus{border-color:var(--teal);}
 .pd-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto;}
 .pd-actions{display:flex;gap:6px;flex-wrap:wrap;}
+/* IMPORT card */
+.imp-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:10px 0;}
+.imp-map-row{display:flex;align-items:center;gap:8px;}
+.imp-map-label{font-size:11px;font-weight:800;color:var(--navy);min-width:96px;}
+.imp-map-row select{flex:1;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:11px;font-family:'Inter',sans-serif;}
+.imp-counts{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px;}
+.imp-count{border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:12px;color:var(--navy);}
+.imp-count b{font-size:18px;font-weight:900;display:block;}
+.imp-count.upd b{color:#2563eb;} .imp-count.add b{color:#1baf7a;} .imp-count.skip b{color:#9a3412;}
+.imp-tag{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:800;color:white;}
+.imp-tag.upd{background:#2563eb;} .imp-tag.add{background:#1baf7a;}
 .pd-quickfilters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
 .pd-qf{padding:8px 16px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
 .pd-qf:hover{border-color:var(--teal);color:var(--navy);}
@@ -1208,7 +1219,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="page" id="page-patients">
       <div class="phdr">
         <div><h2>👥 Patient Registry</h2><p>Every registered patient — search, review history, and manage clinical dates</p></div>
-        <button class="btn-add" onclick="loadPatientDirectory()">Refresh</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-add" onclick="openPatientImportModal()" style="background:#0369a1;">⬆ Import from file</button>
+          <button class="btn-add" onclick="loadPatientDirectory()">Refresh</button>
+        </div>
       </div>
       <div class="pd-summary" id="pd-summary"></div>
       <div class="pd-quickfilters">
@@ -1663,7 +1677,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.17-22';
+const APP_BUILD='2026.08.17-23';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5677,6 +5691,224 @@ async function savePatientDates(patientId){
   refreshReminders();
   loadPatientDirectory();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+}
+
+/* ── BULK IMPORT FROM AN EXCEL / CSV FILE ─────────────────────────────────
+   Reads a spreadsheet of patients and updates the registry: patients matched
+   by ID card are updated, unmatched ones are added. Only the fields present in
+   the file are touched; a blank cell never wipes an existing value. Nothing is
+   ever deleted, and a preview is shown before anything is written. */
+let importParsedRows=[];
+let importHeaders=[];
+// The registry fields the file can fill, with the header words each is guessed from.
+const IMPORT_FIELDS=[
+  {key:'id_card',       label:'ID Card *',       required:true,  match:['id card','idcard','id_card','id no','identity','card no','id number','id']},
+  {key:'first_name',    label:'First name',      required:false, match:['first name','firstname','first','name','given']},
+  {key:'surname',       label:'Surname',         required:false, match:['surname','last name','lastname','family name']},
+  {key:'phone_number',  label:'Phone',           required:false, match:['phone','mobile','tel','contact','number']},
+  {key:'date_of_birth', label:'Date of birth',   required:false, match:['date of birth','dob','birth','d.o.b','born']},
+  {key:'surgery_date',  label:'Surgery date',    required:false, match:['surgery','operation','op date','stoma date','stoma formation']},
+  {key:'reversal_date', label:'Reversal date',   required:false, match:['reversal','reversed','closure']},
+  {key:'deceased_date', label:'Date of RIP',     required:false, match:['rip','death','deceased','died','date of death']}
+];
+// Load SheetJS on demand — only when the import card is opened, so the rest of
+// the app never pays for it.
+function ensureXLSX(){
+  if(window.XLSX)return Promise.resolve(window.XLSX);
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=()=>window.XLSX?resolve(window.XLSX):reject(new Error('Spreadsheet reader failed to load.'));
+    s.onerror=()=>reject(new Error('Could not load the spreadsheet reader — check the connection and try again.'));
+    document.head.appendChild(s);
+  });
+}
+// Normalise a spreadsheet cell into a YYYY-MM-DD string, or '' if not a date.
+// Handles Excel serial numbers, JS dates, and dd/mm/yyyy or yyyy-mm-dd text.
+function importParseDate(v){
+  if(v===null||v===undefined||v==='')return '';
+  if(v instanceof Date&&!Number.isNaN(v.getTime()))return fmt(v);
+  if(typeof v==='number'&&window.XLSX?.SSF){
+    const d=window.XLSX.SSF.parse_date_code(v);
+    if(d&&d.y)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);           // yyyy-mm-dd
+  if(m)return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);             // dd/mm/yyyy (Malta)
+  if(m){
+    let[_,d,mo,y]=m; if(y.length===2)y='20'+y;
+    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  const parsed=new Date(s);
+  return Number.isNaN(parsed.getTime())?'':fmt(parsed);
+}
+function guessImportColumn(field){
+  const norm=h=>String(h||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  const headers=importHeaders.map(norm);
+  // Exact-ish first, then contains.
+  for(const cand of field.match){const i=headers.indexOf(cand);if(i>=0)return importHeaders[i];}
+  for(let i=0;i<headers.length;i++){if(field.match.some(c=>headers[i].includes(c)))return importHeaders[i];}
+  return '';
+}
+async function openPatientImportModal(){
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>⬆ Import Patients from a File</h2>
+    <div class="msub">Excel (.xlsx) or CSV. Patients are matched by <strong>ID card</strong>: existing ones are updated, new ones are added. Nothing is deleted, and a blank cell never overwrites a value already on file. You will see a preview before anything is saved.</div>
+    <div class="fg"><label>Choose file</label><input type="file" id="imp-file" accept=".xlsx,.xls,.csv" onchange="handleImportFile()"/></div>
+    <div id="imp-body"><div class="registry-lookup-note">The first row of the sheet must be the column headings (e.g. ID Card, Date of Birth, Surgery Date).</div></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button></div>`;
+  openMo();
+}
+async function handleImportFile(){
+  const body=document.getElementById('imp-body');
+  const file=document.getElementById('imp-file')?.files?.[0];
+  if(!file)return;
+  body.innerHTML='<div class="registry-lookup-note">Reading the file…</div>';
+  let XLSX;
+  try{XLSX=await ensureXLSX();}catch(e){body.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(e.message)}</div>`;return;}
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const sheet=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
+    if(!rows.length){body.innerHTML='<div class="registry-lookup-note error">That sheet has no data rows under the headings.</div>';return;}
+    importParsedRows=rows;
+    importHeaders=Object.keys(rows[0]);
+    renderImportMapping();
+  }catch(e){
+    console.error('Import parse failed:',e);
+    body.innerHTML=`<div class="registry-lookup-note error">Could not read that file: ${htmlSafe(e.message||String(e))}</div>`;
+  }
+}
+function renderImportMapping(){
+  const body=document.getElementById('imp-body');
+  const opts=sel=>['<option value="">— not in file —</option>',...importHeaders.map(h=>`<option value="${htmlSafe(h)}" ${h===sel?'selected':''}>${htmlSafe(h)}</option>`)].join('');
+  const rowsHtml=IMPORT_FIELDS.map(f=>{
+    const guess=guessImportColumn(f);
+    return `<div class="imp-map-row">
+      <span class="imp-map-label">${htmlSafe(f.label)}</span>
+      <select data-field="${f.key}" onchange="renderImportPreview()">${opts(guess)}</select>
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div class="registry-lookup-note found">${importParsedRows.length} row${importParsedRows.length!==1?'s':''} read. Check the column mapping below — I have guessed it from your headings.</div>
+    <div class="imp-map">${rowsHtml}</div>
+    <div id="imp-preview"></div>`;
+  renderImportPreview();
+}
+function currentImportMapping(){
+  const map={};
+  document.querySelectorAll('#imp-body .imp-map select').forEach(s=>{if(s.value)map[s.dataset.field]=s.value;});
+  return map;
+}
+async function renderImportPreview(){
+  const wrap=document.getElementById('imp-preview');
+  if(!wrap)return;
+  const map=currentImportMapping();
+  if(!map.id_card){
+    wrap.innerHTML='<div class="registry-lookup-note error">Map the <strong>ID Card</strong> column — it is how patients are matched. Nothing can be imported without it.</div>';
+    return;
+  }
+  wrap.innerHTML='<div class="registry-lookup-note">Checking against the registry…</div>';
+  // Existing ID cards, normalised, so we can tell update from insert.
+  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select('id,id_card'));
+  if(error){wrap.innerHTML='<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(error.message)+'</div>';return;}
+  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p.id;});
+
+  let toUpdate=0,toAdd=0,skipped=0;const sample=[];
+  importParsedRows.forEach(r=>{
+    const card=normaliseIdCard(r[map.id_card]);
+    if(!card){skipped++;return;}
+    const existing=!!byCard[card];
+    if(existing)toUpdate++;else toAdd++;
+    if(sample.length<6){
+      sample.push({card,existing,
+        dob:map.date_of_birth?importParseDate(r[map.date_of_birth]):'',
+        surgery:map.surgery_date?importParseDate(r[map.surgery_date]):'',
+        reversal:map.reversal_date?importParseDate(r[map.reversal_date]):'',
+        rip:map.deceased_date?importParseDate(r[map.deceased_date]):''});
+    }
+  });
+  const dateCols=['date_of_birth','surgery_date','reversal_date','deceased_date'].filter(k=>map[k]);
+  const willSetStatus=!!(map.reversal_date||map.deceased_date);
+  const sampleRows=sample.map(s=>`<tr>
+    <td style="font-family:monospace;">${htmlSafe(s.card)}</td>
+    <td><span class="imp-tag ${s.existing?'upd':'add'}">${s.existing?'update':'add'}</span></td>
+    <td>${htmlSafe(s.dob||'—')}</td><td>${htmlSafe(s.surgery||'—')}</td>
+    <td>${htmlSafe(s.reversal||'—')}</td><td>${htmlSafe(s.rip||'—')}</td></tr>`).join('');
+  wrap.innerHTML=`
+    <div class="imp-counts">
+      <div class="imp-count upd"><b>${toUpdate}</b> existing to update</div>
+      <div class="imp-count add"><b>${toAdd}</b> new to add</div>
+      ${skipped?`<div class="imp-count skip"><b>${skipped}</b> skipped (no ID card)</div>`:''}
+    </div>
+    ${dateCols.length?'':'<div class="registry-lookup-note error">No date column is mapped — there is nothing to fill. Map at least one of the date fields.</div>'}
+    ${willSetStatus?'<div class="registry-lookup-note">A reversal date sets the patient to <strong>Reversed</strong>; a RIP date sets <strong>Deceased</strong> — matching the single-patient Dates card.</div>':''}
+    <div style="overflow-x:auto;"><table class="dt" style="margin-top:8px;"><thead><tr><th>ID Card</th><th>Action</th><th>DOB</th><th>Surgery</th><th>Reversal</th><th>RIP</th></tr></thead><tbody>${sampleRows||'<tr><td colspan="6" class="empty">No usable rows.</td></tr>'}</tbody></table></div>
+    <div style="font-size:11px;color:var(--muted);margin:4px 0 10px;">${sample.length<importParsedRows.length?`Showing the first ${sample.length} of ${importParsedRows.length} rows.`:''}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" ${(toUpdate+toAdd&&dateCols.length)?'':'disabled'} onclick="runPatientImport()">Import ${toUpdate+toAdd} patient${toUpdate+toAdd!==1?'s':''}</button></div>`;
+}
+async function runPatientImport(){
+  const map=currentImportMapping();
+  if(!map.id_card)return;
+  const wrap=document.getElementById('imp-preview');
+  wrap.innerHTML='<div class="registry-lookup-note">Importing… please keep this open.</div>';
+  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select('id,id_card'));
+  if(error){wrap.innerHTML='<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(error.message)+'</div>';return;}
+  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p.id;});
+
+  const dateKeys=['date_of_birth','surgery_date','reversal_date','deceased_date'];
+  const strCell=(r,k)=>map[k]?String(r[map[k]]??'').trim():'';
+
+  // Build the write list. Only set a date when the cell has a value.
+  const updates=[],inserts=[];const seen=new Set();
+  importParsedRows.forEach(r=>{
+    const card=normaliseIdCard(r[map.id_card]);
+    if(!card||seen.has(card))return; seen.add(card);
+    const dates={};
+    dateKeys.forEach(k=>{if(map[k]){const v=importParseDate(r[map[k]]);if(v)dates[k]=v;}});
+    if(dates.deceased_date)dates.followup_status='deceased';
+    else if(dates.reversal_date)dates.followup_status='reversed';
+    if(byCard[card]){
+      if(Object.keys(dates).length)updates.push({id:byCard[card],patch:dates});
+    }else{
+      const ins={id_card:card,...dates};
+      const fn=strCell(r,'first_name'),sn=strCell(r,'surname'),ph=strCell(r,'phone_number');
+      if(fn)ins.first_name=fn; if(sn)ins.surname=sn; if(ph)ins.phone_number=ph;
+      inserts.push(ins);
+    }
+  });
+
+  let done=0,failed=0;const errors=[];
+  const total=updates.length+inserts.length;
+  const tick=()=>{done++;if(done%10===0||done===total)wrap.innerHTML=`<div class="registry-lookup-note">Importing… ${done} of ${total}</div>`;};
+  // Inserts can go in one batch; a column error here means the migration is missing.
+  if(inserts.length){
+    const{error:insErr}=await SB.from('patients').insert(inserts);
+    if(insErr){
+      if(String(insErr.message||'').toLowerCase().includes('column')){
+        wrap.innerHTML='<div class="registry-lookup-note error">The clinical-date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> in Supabase once, then import again. Nothing was changed.</div>';
+        return;
+      }
+      failed+=inserts.length;errors.push(insErr.message);
+    }else{done+=inserts.length;}
+  }
+  // Updates one at a time, in small parallel chunks.
+  for(let i=0;i<updates.length;i+=8){
+    const chunk=updates.slice(i,i+8);
+    await Promise.all(chunk.map(async u=>{
+      const{error:uErr}=await SB.from('patients').update(u.patch).eq('id',u.id);
+      if(uErr){failed++;if(errors.length<3)errors.push(uErr.message);}
+      tick();
+    }));
+  }
+  const ok=total-failed;
+  wrap.innerHTML=`<div class="registry-lookup-note found" style="font-size:13px;">✅ Imported <strong>${ok}</strong> of ${total} patient${total!==1?'s':''}${failed?` · ${failed} failed`:''}.</div>
+    ${failed?`<div class="registry-lookup-note error">${htmlSafe(errors[0]||'Some rows could not be saved.')}</div>`:''}
+    <div class="mact"><button class="btn-save" onclick="closeModal();loadPatientDirectory();refreshReminders();">Done</button></div>`;
 }
 
 function syncReportPatientColumnFilter(rows){
