@@ -1233,8 +1233,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div id="pd-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
-        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Status</th><th>Surgery Date</th><th>Stoma Days → Reversal</th><th>Stoma Days → RIP</th><th>Actions</th></tr></thead>
-        <tbody id="pd-tbody"><tr><td colspan="9" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Days → Reversal</th><th>Actions</th></tr></thead>
+        <tbody id="pd-tbody"><tr><td colspan="7" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
     </div>
 
@@ -5525,7 +5525,7 @@ const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_own
 const PATIENT_DATE_COLS='date_of_birth,surgery_date,reversal_date,deceased_date';
 async function loadPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="9" class="empty">Loading patients…</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Loading patients…</td></tr>';
   // Try with the clinical-date columns; if the migration has not been run yet
   // the column-missing error is caught and the page loads without them.
   let{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`));
@@ -5535,7 +5535,7 @@ async function loadPatientDirectory(){
   }else{
     patientDatesAvailable=true;
   }
-  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="9" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
+  if(error){if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
     status:normaliseFollowupStatus(p.followup_status||'active'),
@@ -5567,9 +5567,6 @@ function renderPatientDirectorySummary(){
     ${annualKpi('Reversed',reversed,'stoma reversed','#7c3aed')}
     ${annualKpi('Deceased',deceased,'RIP','#1a1a1a')}`;
 }
-function patientDirectoryStatusBadge(status){
-  return followupStatusBadge(status,true);
-}
 function renderPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   const countEl=document.getElementById('pd-count');
@@ -5589,7 +5586,7 @@ function renderPatientDirectory(){
   if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
   const note=document.getElementById('pd-setup-note');
   if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The Surgery / Reversal / RIP date columns are not in the database yet. Run <strong>sql/add-patient-clinical-dates.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patients match these filters.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No patients match these filters.</td></tr>';return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
   tbody.innerHTML=rows.slice(0,500).map(p=>{
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
@@ -5602,17 +5599,15 @@ function renderPatientDirectory(){
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${dcell(p.date_of_birth)}</td>
-      <td>${patientDirectoryStatusBadge(p.status)}</td>
       <td>${dcell(p.surgery_date)}</td>
       <td>${stomaDaysCell(p.surgery_date,p.reversal_date)}</td>
-      <td>${stomaDaysCell(p.surgery_date,p.deceased_date)}</td>
       <td><div class="pd-actions">
         ${datesBtn}
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${hasDue?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
       </div></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="9" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('')+(rows.length>500?`<tr><td colspan="7" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
 }
 function fmtShortDate(v){
   const d=new Date(String(v)+'T12:00:00');
