@@ -511,6 +511,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .da-pick-row:hover{border-color:var(--teal);}
 .da-pick-row input{width:15px;height:15px;cursor:pointer;}
 .da-pick-actions{display:flex;gap:7px;margin-top:6px;}
+.dup-group{background:white;border:1px solid var(--border);border-left:4px solid #94a3b8;border-radius:10px;padding:12px 14px;margin-bottom:12px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
+.dup-group.strong{border-left-color:#d97706;}
+.dup-group-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.dup-name{font-weight:800;color:var(--navy);font-size:14px;}
+.dup-reason{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 9px;border-radius:20px;background:#e2e8f0;color:#475569;}
+.dup-reason.strong{background:#ffedd5;color:#9a3412;}
+.dup-count{margin-left:auto;font-size:11px;color:var(--muted);font-weight:700;}
+.dup-toggle{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:12px;cursor:pointer;}
+.dup-toggle input{width:15px;height:15px;cursor:pointer;}
 .ap-card{background:white;border:1px solid var(--border);border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(0,0,0,.05);max-width:900px;}
 .pf-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--teal);margin:14px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
 .pf-head:first-child{margin-top:0;}
@@ -1360,6 +1369,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div id="da-body"><div class="report-note">Loading the registry…</div></div>
     </div>
 
+    <!-- NEEDS CHECKING -->
+    <div class="page" id="page-duplicates">
+      <div class="phdr">
+        <div><h2>🔍 Needs Checking</h2><p>Patients that look like they might be the same person entered twice — check each and merge or correct by hand</p></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-add" onclick="printDuplicates()" style="background:#0369a1;">🖨 Print / PDF</button>
+          <button class="btn-add" onclick="loadDuplicates()">Refresh</button>
+        </div>
+      </div>
+      <div id="dup-body"><div class="report-note">Loading the registry…</div></div>
+    </div>
+
   </div>
 </div>
 
@@ -1784,7 +1805,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-29';
+const APP_BUILD='2026.08.18-30';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -1870,7 +1891,8 @@ const TAB_GROUPS=[
      {tab:'patients',label:'Patient Registry',icon:'👥',color:'#0891b2'},
      {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
      {tab:'clinical-record',label:'Clinical Record',icon:'🩺',color:'#c0392b'},
-     {tab:'data-analysis',label:'Data Analysis',icon:'📊',color:'#7c3aed'}
+     {tab:'data-analysis',label:'Data Analysis',icon:'📊',color:'#7c3aed'},
+     {tab:'duplicates',label:'Needs Checking',icon:'🔍',color:'#d97706'}
    ]}
 ];
 const TAB_LABELS={};
@@ -1949,6 +1971,7 @@ function switchTab(name){
   if(name==='patients')loadPatientDirectory();
   if(name==='add-patient')renderAddPatientForm();
   if(name==='clinical-record')loadClinicalRecord();
+  if(name==='duplicates')loadDuplicates();
   if(name==='data-analysis')loadDataAnalysis();
   if(name==='appointments')loadAppts();
   if(name==='roster')renderRoster();
@@ -5939,6 +5962,7 @@ async function savePatientDates(patientId){
   refreshReminders();
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-clinical-record')?.classList.contains('active'))loadClinicalRecord();
+  if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
@@ -6091,6 +6115,135 @@ function printClinicalRecord(){
     <p class="sub">${htmlSafe(scope)} · ${htmlSafe(document.getElementById('cr-count')?.textContent||'')} · printed ${htmlSafe(printed)}</p>
     ${copy.outerHTML}
   </body></html>`);
+  w.document.close();
+  setTimeout(()=>{w.focus();w.print();},350);
+}
+
+
+/* ── NEEDS CHECKING (possible duplicates) ─────────────────────────────────
+   Scans the whole registry for patients who look like one person entered
+   twice. Two signals: the same name under different ID cards, and ID cards
+   that are near-identical (a leading zero, one extra digit, or the same
+   number with a different letter). Nothing is merged automatically — each
+   group is shown side by side with an Edit button, so a nurse decides. */
+let duplicateRows=[];
+let dupShowNameOnly=false;
+// Compare two ID cards. Returns a short reason if they look like the same
+// card mistyped, or '' if they are genuinely different.
+function duplicateIdReason(a,b){
+  const dig=s=>String(s||'').replace(/\D/g,''), let_=s=>String(s||'').replace(/[^A-Z]/gi,'').toUpperCase();
+  const da=dig(a),db=dig(b);
+  if(!da||!db)return '';
+  if(da===db&&let_(a)!==let_(b))return 'same number, different letter';
+  if(Number(da)===Number(db))return 'leading zero';           // 0140389M vs 140389M
+  if(Math.abs(da.length-db.length)===1&&(da.includes(db)||db.includes(da)))return 'one extra digit';
+  return '';
+}
+async function loadDuplicates(){
+  const body=document.getElementById('dup-body');
+  if(!body)return;
+  body.innerHTML='<div class="report-note">Scanning the registry…</div>';
+  let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
+  if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
+    patientDatesAvailable=false;
+    res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
+  }else if(!res.error)patientDatesAvailable=true;
+  if(res.error){
+    body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
+    return;
+  }
+  duplicateRows=res.rows||[];
+  renderDuplicates();
+}
+// Build the groups once, so render and print share the same work.
+function computeDuplicateGroups(){
+  const byName={};
+  duplicateRows.forEach(p=>{const k=importNameKey(p);if(k)(byName[k]=byName[k]||[]).push(p);});
+  const groups=[];
+  Object.values(byName).forEach(members=>{
+    const ids=[...new Set(members.map(m=>normaliseIdCard(m.id_card)).filter(Boolean))];
+    if(ids.length<2)return;   // one person, one card — nothing to check
+    // Strongest ID reason across any pair in the group.
+    let reason='';
+    for(let i=0;i<ids.length&&!reason;i++)for(let j=i+1;j<ids.length;j++){
+      const r=duplicateIdReason(ids[i],ids[j]); if(r){reason=r;break;}
+    }
+    groups.push({members,reason,strong:!!reason,
+      name:`${members[0].surname||''}, ${members[0].first_name||''}`.replace(/^, |, $/,'').trim()||'(no name)'});
+  });
+  // Strong matches first, then alphabetical.
+  groups.sort((a,b)=>(b.strong-a.strong)||a.name.localeCompare(b.name));
+  return groups;
+}
+function renderDuplicates(){
+  const body=document.getElementById('dup-body');
+  if(!body)return;
+  const all=computeDuplicateGroups();
+  const strong=all.filter(g=>g.strong);
+  const nameOnly=all.filter(g=>!g.strong);
+  const shown=dupShowNameOnly?all:strong;
+
+  const groupHTML=g=>{
+    const rows=g.members.slice().sort((a,b)=>String(a.id_card||'').localeCompare(String(b.id_card||''))).map(p=>{
+      const[text,cls]=patientOutcome(p);
+      return `<tr>
+        <td style="font-family:monospace;font-weight:700;">${htmlSafe(p.id_card||'—')}</td>
+        <td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim()||'—')}</td>
+        <td>${htmlSafe(p.locality||'')||'<span class="pd-dash">—</span>'}</td>
+        <td>${p.date_of_birth?htmlSafe(fmtShortDate(p.date_of_birth)):'<span class="pd-dash">—</span>'}</td>
+        <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
+        <td>${p.phone_number?htmlSafe(p.phone_number):'<span class="pd-dash">—</span>'}</td>
+        <td><span class="cr-out ${cls}">${htmlSafe(text)}</span></td>
+        <td><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button></td>
+      </tr>`;
+    }).join('');
+    return `<div class="dup-group ${g.strong?'strong':''}">
+      <div class="dup-group-head">
+        <span class="dup-name">${htmlSafe(g.name)}</span>
+        <span class="dup-reason ${g.strong?'strong':''}">${g.strong?htmlSafe(g.reason):'same name, different ID card'}</span>
+        <span class="dup-count">${g.members.length} records</span>
+      </div>
+      <div class="da-tw"><table class="dt"><thead><tr><th>ID Card</th><th>Name</th><th>Locality</th><th>DOB</th><th>Surgery</th><th>Phone</th><th>Outcome</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
+  };
+
+  body.innerHTML=`
+    <div class="annual-kpis">
+      ${annualKpi('Likely duplicates',strong.length,'near-identical ID card','#d97706')}
+      ${annualKpi('Same name only',nameOnly.length,'different ID card — often just a namesake','#0891b2')}
+      ${annualKpi('Registry',duplicateRows.length,'patients scanned')}
+    </div>
+    <div class="registry-lookup-note" style="margin-bottom:12px;">
+      <strong>Likely duplicates</strong> are the ones to check first — the ID cards differ only by a leading zero, one digit, or the letter, so they are probably the same patient typed twice. Open the extra record, confirm it, and move any missing detail onto the one you keep. Nothing here is deleted for you.
+    </div>
+    ${nameOnly.length?`<label class="dup-toggle"><input type="checkbox" ${dupShowNameOnly?'checked':''} onchange="toggleDupNameOnly(this)"/> Also show the ${nameOnly.length} same-name group${nameOnly.length!==1?'s':''} (many will just be different people with the same name)</label>`:''}
+    ${shown.length?shown.map(groupHTML).join(''):'<div class="report-note" style="padding:20px;text-align:center;">🎉 No likely duplicates in the registry.</div>'}`;
+}
+function toggleDupNameOnly(el){dupShowNameOnly=!!el.checked;renderDuplicates();}
+function printDuplicates(){
+  const all=computeDuplicateGroups();
+  const groups=dupShowNameOnly?all:all.filter(g=>g.strong);
+  if(!groups.length){alert('Nothing to print — no duplicates in the current view.');return;}
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to print this list.');return;}
+  const printed=new Date().toLocaleDateString('en-MT',{day:'numeric',month:'long',year:'numeric'});
+  const body=groups.map(g=>`
+    <h3>${htmlSafe(g.name)} <span class="r">${g.strong?htmlSafe(g.reason):'same name, different ID'}</span></h3>
+    <table><thead><tr><th>ID Card</th><th>Name</th><th>Locality</th><th>DOB</th><th>Surgery</th><th>Phone</th><th>Outcome</th></tr></thead><tbody>
+    ${g.members.map(p=>{const[t]=patientOutcome(p);return `<tr><td>${htmlSafe(p.id_card||'')}</td><td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim())}</td><td>${htmlSafe(p.locality||'')}</td><td>${p.date_of_birth?htmlSafe(fmtShortDate(p.date_of_birth)):''}</td><td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):''}</td><td>${htmlSafe(p.phone_number||'')}</td><td>${htmlSafe(t)}</td></tr>`;}).join('')}
+    </tbody></table>`).join('');
+  w.document.write(`<html><head><title>Stoma Care — Patients to check</title><style>
+    body{font-family:Arial,sans-serif;color:#1a2e2d;margin:14px;font-size:10.5px;}
+    h1{font-size:17px;color:#1a2e4a;margin:0 0 2px;} p.sub{color:#7a8fa6;font-size:10px;margin:0 0 12px;}
+    h3{font-size:12px;color:#1a2e4a;margin:12px 0 3px;page-break-after:avoid;} h3 .r{color:#b45309;font-weight:normal;font-size:10px;}
+    table{width:100%;border-collapse:collapse;margin-bottom:6px;page-break-inside:avoid;}
+    th,td{border:1px solid #cfd8e3;padding:3px 6px;text-align:left;} th{background:#eef2f7;font-size:8.5px;text-transform:uppercase;}
+    @page{size:A4 landscape;margin:10mm;}
+  </style></head><body>
+    <h1>MDH Stoma Care Clinic — Patients to check</h1>
+    <p class="sub">${groups.length} group${groups.length!==1?'s':''} · printed ${htmlSafe(printed)}</p>
+    ${body}</body></html>`);
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
 }
