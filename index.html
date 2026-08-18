@@ -511,6 +511,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .da-pick-row:hover{border-color:var(--teal);}
 .da-pick-row input{width:15px;height:15px;cursor:pointer;}
 .da-pick-actions{display:flex;gap:7px;margin-top:6px;}
+.ap-card{background:white;border:1px solid var(--border);border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(0,0,0,.05);max-width:900px;}
+.pf-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--teal);margin:14px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+.pf-head:first-child{margin-top:0;}
+.pf-outcome{padding-top:6px;}
+.ap-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+.ap-actions button{padding:9px 20px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
 #page-data-analysis .report-card.wide{grid-column:1 / -1;}
 .annual-kpi{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:#fbfdff;}
 .annual-kpi .ak-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);}
@@ -1302,6 +1308,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </table></div>
     </div>
 
+    <!-- ADD PATIENT -->
+    <div class="page" id="page-add-patient">
+      <div class="phdr">
+        <div><h2>➕ Add Patient</h2><p>Register a new patient and record the outcome — reversed, deceased, discharged — whenever it changes</p></div>
+        <button class="btn-add" onclick="switchTab('patients')">Go to Registry</button>
+      </div>
+      <div id="ap-body"></div>
+    </div>
+
     <!-- CLINICAL RECORD -->
     <div class="page" id="page-clinical-record">
       <div class="phdr">
@@ -1328,8 +1343,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div id="cr-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="cr-table">
-        <thead><tr><th>Name</th><th>Surname</th><th>ID Card</th><th>Locality</th><th>Date of Surgery</th><th>Findings</th><th>Outcome</th></tr></thead>
-        <tbody id="cr-tbody"><tr><td colspan="7" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Surname</th><th>ID Card</th><th>Locality</th><th>Date of Surgery</th><th>Findings</th><th>Outcome</th><th></th></tr></thead>
+        <tbody id="cr-tbody"><tr><td colspan="8" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
     </div>
 
@@ -1769,7 +1784,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-27';
+const APP_BUILD='2026.08.18-29';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -1853,6 +1868,7 @@ const TAB_GROUPS=[
   {key:'patients',label:'Registry',icon:'👥',color:'#0891b2',
    pages:[
      {tab:'patients',label:'Patient Registry',icon:'👥',color:'#0891b2'},
+     {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
      {tab:'clinical-record',label:'Clinical Record',icon:'🩺',color:'#c0392b'},
      {tab:'data-analysis',label:'Data Analysis',icon:'📊',color:'#7c3aed'}
    ]}
@@ -1931,6 +1947,7 @@ function switchTab(name){
   if(name==='reports')loadReports();
   if(name==='annual-report')loadAnnualReport();
   if(name==='patients')loadPatientDirectory();
+  if(name==='add-patient')renderAddPatientForm();
   if(name==='clinical-record')loadClinicalRecord();
   if(name==='data-analysis')loadDataAnalysis();
   if(name==='appointments')loadAppts();
@@ -5734,7 +5751,7 @@ function renderPatientDirectory(){
     // Reversed reads violet, deceased black, Gozo deep blue, overseas yellow.
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
-    const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Dates</button>`:'';
+    const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
     return `<tr class="${rowCls}">
       <td><strong>${htmlSafe(nm)}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
@@ -5771,46 +5788,211 @@ function onPatientStatusSelect(){
   highlightPatientQuickFilter(['all','active','reversed','deceased','discharged_gozo','relocated_overseas'].includes(value)?value:'');
   renderPatientDirectory();
 }
-/* Editor for the three clinical dates. Setting a reversal or RIP date also
-   moves the follow-up status to match, so the coloured row and the register
-   stay consistent with the date that was entered. */
+/* ── PATIENT DETAILS FORM ─────────────────────────────────────────────────
+   One set of fields serves both jobs: adding a patient on the Add Patient
+   tab, and editing one from the Registry or the Clinical Record. The outcome
+   is a real control here — pick Deceased or Reversed and fill in the date it
+   happened — rather than something inferred behind the nurse's back. */
+const PF_MONTHS=['January','February','March','April','May','June',
+                 'July','August','September','October','November','December'];
+function patientFormHTML(p,prefix){
+  const v=k=>htmlSafe(p?.[k]||'');
+  const year=Number(p?.followup_year)||new Date().getFullYear();
+  const years=[];for(let y=year-2;y<=new Date().getFullYear()+3;y++)years.push(y);
+  return `
+  <h3 class="pf-head">Patient</h3>
+  <div class="edit-seen-grid">
+    <div class="fg"><label>First name</label><input type="text" id="${prefix}-first" value="${v('first_name')}" placeholder="Given name"/></div>
+    <div class="fg"><label>Surname</label><input type="text" id="${prefix}-surname" value="${v('surname')}" placeholder="Family name"/></div>
+    <div class="fg"><label>ID card *</label><input type="text" id="${prefix}-idcard" value="${v('id_card')}" placeholder="e.g. 404261M"/></div>
+    <div class="fg"><label>Phone</label><input type="text" id="${prefix}-phone" value="${v('phone_number')}" placeholder="e.g. 79001122"/></div>
+    <div class="fg"><label>Sex</label><select id="${prefix}-sex">
+      <option value="">— not recorded —</option>
+      <option value="Female" ${p?.sex==='Female'?'selected':''}>Female</option>
+      <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
+    <div class="fg"><label>Locality</label><input type="text" id="${prefix}-locality" value="${v('locality')}" placeholder="Town or village"/></div>
+    <div class="fg"><label>Date of birth</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
+    <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
+    <div class="fg"><label>Stoma type</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
+    <div class="fg"><label>Procedure</label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Hartmann's"/></div>
+    <div class="fg" style="grid-column:1 / -1;"><label>Findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. CA - Rectum"/></div>
+  </div>
+
+  <h3 class="pf-head">Follow-up</h3>
+  <div class="edit-seen-grid">
+    <div class="fg"><label>Owner</label><select id="${prefix}-owner">${followupOwnerOptions(p?.followup_owner||'Common')}</select></div>
+    <div class="fg"><label>Type</label><select id="${prefix}-type">
+      <option value="follow_up" ${normaliseFollowupType(p?.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
+      <option value="new_case" ${normaliseFollowupType(p?.followup_type)==='new_case'?'selected':''}>New case</option></select></div>
+    <div class="fg"><label>Due month</label><select id="${prefix}-month">
+      <option value="">— none planned —</option>
+      ${PF_MONTHS.map((m,i)=>`<option value="${i+1}" ${Number(p?.followup_due_month)===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div class="fg"><label>Due year</label><select id="${prefix}-year">
+      ${years.map(y=>`<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select></div>
+  </div>
+
+  <h3 class="pf-head">Outcome</h3>
+  <div class="edit-seen-grid">
+    <div class="fg"><label>Status</label><select id="${prefix}-status" onchange="onPatientFormOutcome('${prefix}')">
+      ${followupStatusOptionsHTML(p?.followup_status||'active')}</select></div>
+    <div class="fg"><label>Date of reversal</label>
+      <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
+    <div class="fg"><label>Date of RIP (death)</label>
+      <input type="date" id="${prefix}-rip" value="${v('deceased_date')}" onchange="onPatientFormDate('${prefix}','deceased')"/></div>
+    <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
+      <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
+  </div>
+  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back.</div>`;
+}
+// Entering a date moves the status to the outcome it describes, visibly, so
+// nothing is decided silently at save time.
+function onPatientFormDate(prefix,status){
+  const el=document.getElementById(`${prefix}-${status==='deceased'?'rip':'reversal'}`);
+  const sel=document.getElementById(`${prefix}-status`);
+  if(el?.value&&sel&&normaliseFollowupStatus(sel.value)!==status)sel.value=status;
+  onPatientFormOutcome(prefix);
+}
+function onPatientFormOutcome(prefix){
+  const note=document.getElementById(`${prefix}-outcome-note`);
+  if(!note)return;
+  const st=normaliseFollowupStatus(document.getElementById(`${prefix}-status`)?.value||'active');
+  const p={followup_status:st,
+    reversal_date:document.getElementById(`${prefix}-reversal`)?.value||'',
+    deceased_date:document.getElementById(`${prefix}-rip`)?.value||''};
+  const[text,cls]=patientOutcome(p);
+  note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`;
+}
+// Read the form into a row ready for the database.
+function readPatientForm(prefix){
+  const val=k=>String(document.getElementById(`${prefix}-${k}`)?.value||'').trim();
+  const month=Number(val('month'))||null;
+  return{
+    id_card:normaliseIdCard(val('idcard')),
+    first_name:val('first')||null,
+    surname:val('surname')||null,
+    phone_number:val('phone')||null,
+    sex:val('sex')||null,
+    locality:val('locality')||null,
+    date_of_birth:val('dob')||null,
+    surgery_date:val('surgery')||null,
+    stoma_type:val('stoma')||null,
+    procedure_performed:val('procedure')||null,
+    findings:val('findings')||null,
+    followup_owner:val('owner')||'Common',
+    followup_type:normaliseFollowupType(val('type')),
+    followup_due_month:month,
+    followup_year:month?Number(val('year'))||null:null,
+    followup_status:normaliseFollowupStatus(val('status')),
+    reversal_date:val('reversal')||null,
+    deceased_date:val('rip')||null
+  };
+}
+// Turn a save failure into something a nurse can act on.
+function patientSaveError(error){
+  const msg=String(error?.message||'');
+  if(msg.toLowerCase().includes('column'))
+    return 'The extra registry columns are not in the database yet. Run sql/add-registry-columns.sql once in the Supabase SQL Editor, then try again.';
+  if(msg.toLowerCase().includes('duplicate')||msg.includes('23505'))
+    return 'That ID card is already on another patient.';
+  if(msg.toLowerCase().includes('violates check constraint')&&msg.includes('followup_status'))
+    return 'The database does not allow that status yet. Run sql/add-registry-columns.sql once in Supabase.';
+  return 'Could not save: '+msg;
+}
+
+/* ---- edit an existing patient ---- */
 async function openPatientDatesModal(patientId){
   const{data:pat,error}=await SB.from('patients')
     .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2>Clinical Dates</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')}<br/>Leave a field blank if it does not apply.</div>
-    <div class="fg"><label>Date of birth</label><input type="date" id="pcd-dob" value="${htmlSafe(pat.date_of_birth||'')}"/></div>
-    <div class="fg"><label>Surgery date</label><input type="date" id="pcd-surgery" value="${htmlSafe(pat.surgery_date||'')}"/></div>
-    <div class="fg"><label>Reversal date</label><input type="date" id="pcd-reversal" value="${htmlSafe(pat.reversal_date||'')}"/></div>
-    <div class="fg"><label>Date of RIP (death)</label><input type="date" id="pcd-rip" value="${htmlSafe(pat.deceased_date||'')}"/></div>
-    <div class="registry-lookup-note" style="margin-bottom:10px;">Entering a reversal or RIP date also sets the follow-up status to Reversed or Deceased, so the patient shows correctly and leaves the active reminder list.</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientDates('${patientId}')">Save Dates</button></div>`;
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>Patient Details</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} — every field can be changed, including the date of birth. Leave anything that does not apply blank.</div>
+    ${patientFormHTML(pat,'pcd')}
+    <div id="pcd-error"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="savePatientDates('${patientId}')">Save Patient</button></div>`;
   openMo();
+  onPatientFormOutcome('pcd');
 }
 async function savePatientDates(patientId){
-  const dob=document.getElementById('pcd-dob')?.value||null;
-  const surgery=document.getElementById('pcd-surgery')?.value||null;
-  const reversal=document.getElementById('pcd-reversal')?.value||null;
-  const rip=document.getElementById('pcd-rip')?.value||null;
-  const payload={date_of_birth:dob,surgery_date:surgery,reversal_date:reversal,deceased_date:rip};
-  // The RIP date is the strongest signal, then reversal; either overrides status.
-  if(rip)payload.followup_status='deceased';
-  else if(reversal)payload.followup_status='reversed';
+  const payload=readPatientForm('pcd');
+  const err=document.getElementById('pcd-error');
+  if(!payload.id_card){
+    if(err)err.innerHTML='<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>';
+    return;
+  }
+  // A second patient must not end up on the same ID card.
+  const{data:clash}=await SB.from('patients').select('id').eq('id_card',payload.id_card).neq('id',patientId).maybeSingle();
+  if(clash){
+    if(err)err.innerHTML='<div class="registry-lookup-note error">Another patient already has that ID card.</div>';
+    return;
+  }
   const{error}=await SB.from('patients').update(payload).eq('id',patientId);
   if(error){
-    if(String(error.message||'').toLowerCase().includes('column')){
-      alert('The clinical-date columns are not in the database yet.\n\nRun sql/add-registry-columns.sql once in the Supabase SQL Editor, then try again.');
-    }else{alert('Could not save the dates: '+error.message);}
+    if(err)err.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`;
+    else alert(patientSaveError(error));
     return;
   }
   closeModal();
   refreshReminders();
-  loadPatientDirectory();
+  if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
+  if(document.getElementById('page-clinical-record')?.classList.contains('active'))loadClinicalRecord();
+  if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+}
+
+/* ---- add a new patient ---- */
+function renderAddPatientForm(){
+  const body=document.getElementById('ap-body');
+  if(!body)return;
+  body.innerHTML=`
+    <div class="ap-card">
+      ${patientFormHTML(null,'ap')}
+      <div id="ap-error"></div>
+      <div class="ap-actions">
+        <button class="btn-cancel" onclick="renderAddPatientForm()">Clear form</button>
+        <button class="btn-save" onclick="saveNewPatient()">Add Patient</button>
+      </div>
+    </div>`;
+  onPatientFormOutcome('ap');
+}
+async function saveNewPatient(){
+  const err=document.getElementById('ap-error');
+  const say=html=>{if(err)err.innerHTML=html;};
+  const payload=readPatientForm('ap');
+  if(!payload.id_card){say('<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>');return;}
+  if(!payload.surname&&!payload.first_name){say('<div class="registry-lookup-note error">Give at least a first name or a surname.</div>');return;}
+  say('<div class="registry-lookup-note">Checking the registry…</div>');
+
+  const{data:existing,error:lookErr}=await SB.from('patients')
+    .select('id,first_name,surname,id_card').eq('id_card',payload.id_card).maybeSingle();
+  if(lookErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(lookErr))}</div>`);return;}
+  if(existing){
+    const nm=`${existing.first_name||''} ${existing.surname||''}`.trim()||'a patient';
+    say(`<div class="registry-lookup-note error">${htmlSafe(payload.id_card)} is already on file as <strong>${htmlSafe(nm)}</strong>.
+      <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${existing.id}')">Open that patient</button></div>`);
+    return;
+  }
+  // Same name under a different ID card is the duplicate nothing else catches.
+  const{rows:all}=await fetchAllRows(()=>SB.from('patients').select('id,id_card,first_name,surname'));
+  const key=importNameKey(payload);
+  const sameName=key?(all||[]).filter(p=>importNameKey(p)===key):[];
+
+  const{data:made,error}=await SB.from('patients').insert(payload).select('id').single();
+  if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
+
+  const nm=`${payload.first_name||''} ${payload.surname||''}`.trim();
+  say(`<div class="registry-lookup-note found" style="font-size:13px;">✅ <strong>${htmlSafe(nm)}</strong> added · ${htmlSafe(payload.id_card)}
+      <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${made.id}')">Edit</button></div>
+    ${sameName.length?`<div class="registry-lookup-note error" style="margin-top:8px;">Note: ${sameName.length} other patient${sameName.length!==1?'s share':' shares'} this name under a different ID card —
+      ${sameName.slice(0,4).map(p=>htmlSafe(p.id_card||'(no ID)')).join(', ')}. Worth checking it is not the same person typed twice.</div>`:''}`);
+  refreshReminders();
+  // Leave the message on screen and give a clean form underneath it.
+  const keep=err?.innerHTML||'';
+  renderAddPatientForm();
+  const fresh=document.getElementById('ap-error'); if(fresh)fresh.innerHTML=keep;
 }
 
 /* ── CLINICAL RECORD ──────────────────────────────────────────────────────
@@ -5833,14 +6015,14 @@ function patientOutcome(p){
 }
 async function loadClinicalRecord(){
   const tbody=document.getElementById('cr-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Loading patients…</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Loading patients…</td></tr>';
   let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
   if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
     patientDatesAvailable=false;
     res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
   }else if(!res.error)patientDatesAvailable=true;
   if(res.error){
-    if(tbody)tbody.innerHTML='<tr><td colspan="7" class="empty">Could not load the registry: '+htmlSafe(res.error.message)+'</td></tr>';
+    if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Could not load the registry: '+htmlSafe(res.error.message)+'</td></tr>';
     return;
   }
   clinicalRecordRows=res.rows||[];
@@ -5864,7 +6046,7 @@ function renderClinicalRecord(){
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))
               ||String(a.first_name||'').localeCompare(String(b.first_name||'')));
   if(countEl)countEl.textContent=`${rows.length} of ${clinicalRecordRows.length} patient${clinicalRecordRows.length!==1?'s':''}`;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No patients match this search.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No patients match this search.</td></tr>';return;}
   tbody.innerHTML=rows.slice(0,500).map(p=>{
     const[text,cls]=patientOutcome(p);
     // Findings can run long; show the start and keep the whole of it on hover.
@@ -5877,8 +6059,9 @@ function renderClinicalRecord(){
       <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
       <td>${findings?`<span class="pd-text" title="${htmlSafe(findings)}">${htmlSafe(findings.length>52?findings.slice(0,50)+'…':findings)}</span>`:'<span class="pd-dash">—</span>'}</td>
       <td><span class="cr-out ${cls}">${htmlSafe(text)}</span></td>
+      <td><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="7" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('')+(rows.length>500?`<tr><td colspan="8" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
 }
 function printClinicalRecord(){
   const table=document.getElementById('cr-table');
@@ -5891,6 +6074,8 @@ function printClinicalRecord(){
   // Print what is on screen, so the search and the outcome filter carry over.
   const copy=table.cloneNode(true);
   copy.querySelectorAll('.pd-text').forEach(el=>{el.textContent=el.getAttribute('title')||el.textContent;});
+  // The Edit column is the last one and means nothing on paper.
+  copy.querySelectorAll('tr').forEach(r=>{if(r.cells.length)r.deleteCell(-1);});
   w.document.write(`<html><head><title>Stoma Care Clinical Record</title><style>
     body{font-family:Arial,sans-serif;color:#1a2e2d;margin:12px;font-size:10px;}
     h1{font-size:17px;color:#1a2e4a;margin:0 0 2px;}
