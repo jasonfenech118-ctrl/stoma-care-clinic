@@ -573,6 +573,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pd-qf.qf-overseas.active{background:#a16207;border-color:#a16207;}
 .pd-dash{color:var(--muted);}
 .pd-text{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+.pager{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0 4px;flex-wrap:wrap;}
+.pager:empty{display:none;}
+.pager-btn{padding:8px 16px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:13px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
+.pager-btn:hover:not(:disabled){border-color:var(--teal);}
+.pager-btn:disabled{opacity:.4;cursor:default;}
+.pager-info{font-size:12px;font-weight:700;color:var(--muted);}
 .cr-out{display:inline-block;padding:2px 9px;border-radius:12px;font-size:10.5px;font-weight:800;white-space:nowrap;}
 .cr-out-active{background:#dcfce7;color:#166534;}
 .cr-out-reversed{background:#f3e8ff;color:#6b21a8;}
@@ -1312,9 +1318,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div id="pd-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
-        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Actions</th></tr></thead>
-        <tbody id="pd-tbody"><tr><td colspan="6" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th></tr></thead>
+        <tbody id="pd-tbody"><tr><td colspan="7" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
+      <div id="pd-pager" class="pager"></div>
     </div>
 
     <!-- ADD PATIENT -->
@@ -1352,9 +1359,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       </div>
       <div id="cr-setup-note"></div>
       <div style="overflow-x:auto;"><table class="dt" id="cr-table">
-        <thead><tr><th>Name</th><th>Surname</th><th>ID Card</th><th>Locality</th><th>Date of Surgery</th><th>Findings</th><th>Outcome</th><th></th></tr></thead>
-        <tbody id="cr-tbody"><tr><td colspan="8" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Surname</th><th>ID Card</th><th>Locality</th><th>Date of Surgery</th><th>Stoma Type</th><th>Findings</th><th>Outcome</th><th></th></tr></thead>
+        <tbody id="cr-tbody"><tr><td colspan="9" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
+      <div id="cr-pager" class="pager"></div>
     </div>
 
     <!-- DATA ANALYSIS -->
@@ -1805,7 +1813,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-31';
+const APP_BUILD='2026.08.18-32';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5747,6 +5755,27 @@ function renderPatientDirectorySummary(){
     ${annualKpi('Discharged to Gozo',n('discharged_gozo'),'followed up in Gozo','#1e3a8a')}
     ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}`;
 }
+let pdPage=0,pdLastKey='',crPage=0,crLastKey='';
+const PD_PAGE_SIZE=100;
+// Clamp a page index and return that slice of rows.
+function pageSlice(rows,page,size){
+  const pages=Math.max(1,Math.ceil(rows.length/size));
+  const p=Math.min(Math.max(0,page),pages-1);
+  return{page:p,pages,rows:rows.slice(p*size,p*size+size)};
+}
+// Render a Prev / "N–M of T" / Next bar into `id`; onGo(delta) moves the page.
+function renderPager(id,total,size,page,onGo){
+  const el=document.getElementById(id); if(!el)return;
+  window[id+'__go']=onGo;
+  if(total<=size){el.innerHTML='';return;}
+  const pages=Math.ceil(total/size);
+  const p=Math.min(Math.max(0,page),pages-1);
+  const from=p*size+1, to=Math.min(total,(p+1)*size);
+  el.innerHTML=`
+    <button class="pager-btn" ${p<=0?'disabled':''} onclick="window['${id}__go'](-1)">‹ Prev</button>
+    <span class="pager-info">${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} · page ${p+1} of ${pages}</span>
+    <button class="pager-btn" ${p>=pages-1?'disabled':''} onclick="window['${id}__go'](1)">Next ›</button>`;
+}
 function renderPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   const countEl=document.getElementById('pd-count');
@@ -5754,6 +5783,8 @@ function renderPatientDirectory(){
   const q=(document.getElementById('pd-search')?.value||'').trim().toLowerCase();
   const owner=document.getElementById('pd-owner')?.value||'all';
   const status=document.getElementById('pd-status')?.value||'all';
+  const pdKey=q+'|'+owner+'|'+status;
+  if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
   let rows=patientDirectoryRows.filter(p=>{
     if(owner!=='all'&&p.owner!==owner)return false;
     if(status!=='all'&&p.status!==status)return false;
@@ -5766,9 +5797,12 @@ function renderPatientDirectory(){
   if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
   const note=document.getElementById('pd-setup-note');
   if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No patients match these filters.</td></tr>';return;}
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No patients match these filters.</td></tr>';renderPager('pd-pager',0,0,pdPage,()=>{});return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
-  tbody.innerHTML=rows.slice(0,500).map(p=>{
+  const tcell=v=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>28?t.slice(0,26)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
+  // Page the filtered list so every patient is reachable without a giant table.
+  const page=pageSlice(rows,pdPage,PD_PAGE_SIZE); pdPage=page.page;
+  tbody.innerHTML=page.rows.map(p=>{
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
     const hasDue=Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000;
     // Reversed reads violet, deceased black, Gozo deep blue, overseas yellow.
@@ -5780,13 +5814,16 @@ function renderPatientDirectory(){
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${dcell(p.date_of_birth)}</td>
+      <td>${dcell(p.surgery_date)}</td>
+      <td>${tcell(p.stoma_type)}</td>
       <td><div class="pd-actions">
         ${datesBtn}
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${hasDue?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
       </div></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="6" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('');
+  renderPager('pd-pager',rows.length,PD_PAGE_SIZE,pdPage,d=>{pdPage+=d;renderPatientDirectory();});
 }
 function fmtShortDate(v){
   const d=new Date(String(v)+'T12:00:00');
@@ -6069,23 +6106,27 @@ function renderClinicalRecord(){
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))
               ||String(a.first_name||'').localeCompare(String(b.first_name||'')));
+  const key=q+'|'+status;
+  if(key!==crLastKey){crPage=0;crLastKey=key;}
   if(countEl)countEl.textContent=`${rows.length} of ${clinicalRecordRows.length} patient${clinicalRecordRows.length!==1?'s':''}`;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No patients match this search.</td></tr>';return;}
-  tbody.innerHTML=rows.slice(0,500).map(p=>{
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patients match this search.</td></tr>';renderPager('cr-pager',0,0,crPage,()=>{});return;}
+  const clip=(v,n)=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>n?t.slice(0,n-2)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
+  const page=pageSlice(rows,crPage,PD_PAGE_SIZE); crPage=page.page;
+  tbody.innerHTML=page.rows.map(p=>{
     const[text,cls]=patientOutcome(p);
-    // Findings can run long; show the start and keep the whole of it on hover.
-    const findings=String(p.findings||'').trim();
     return `<tr>
       <td>${htmlSafe(p.first_name||'')||'<span class="pd-dash">—</span>'}</td>
       <td><strong>${htmlSafe(p.surname||'')||'—'}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.locality||'')||'<span class="pd-dash">—</span>'}</td>
       <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
-      <td>${findings?`<span class="pd-text" title="${htmlSafe(findings)}">${htmlSafe(findings.length>52?findings.slice(0,50)+'…':findings)}</span>`:'<span class="pd-dash">—</span>'}</td>
+      <td>${clip(p.stoma_type,26)}</td>
+      <td>${clip(p.findings,52)}</td>
       <td><span class="cr-out ${cls}">${htmlSafe(text)}</span></td>
       <td><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button></td>
     </tr>`;
-  }).join('')+(rows.length>500?`<tr><td colspan="8" class="empty">Showing the first 500 of ${rows.length}. Narrow the search to see more.</td></tr>`:'');
+  }).join('');
+  renderPager('cr-pager',rows.length,PD_PAGE_SIZE,crPage,d=>{crPage+=d;renderClinicalRecord();});
 }
 function printClinicalRecord(){
   const table=document.getElementById('cr-table');
