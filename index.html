@@ -1805,7 +1805,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-30';
+const APP_BUILD='2026.08.18-31';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7026,23 +7026,46 @@ async function renderImportPreview(){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" ${(toUpdate+toAdd&&!nothingToWrite)?'':'disabled'} onclick="runPatientImport()">Import ${toUpdate+toAdd} patient${toUpdate+toAdd!==1?'s':''}</button></div>`;
 }
+// Small await-able pause.
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+// Does this Supabase/PostgREST error mean a column is not in the API's view yet?
+function importIsMissingColumnError(err){
+  const m=String(err&&err.message||'').toLowerCase();
+  const c=String(err&&err.code||'');
+  return c==='PGRST204'||c==='42703'||m.includes('schema cache')
+    ||(m.includes('column')&&(m.includes('does not exist')||m.includes('could not find')));
+}
+// Pull the offending column name out of the error — but only trust it when it
+// is one of our OPTIONAL columns, so a required field is never dropped.
+function importMissingColumnName(err){
+  const m=String(err&&err.message||'');
+  // Column names are [a-z_]; the quote around them may be ' " or `.
+  const hit=m.match(/find the .?([a-z_]+).? column/i)||m.match(/column .?([a-z_]+).? of/i);
+  const known=new Set(PATIENT_DATE_COLS.split(','));
+  return hit&&known.has(hit[1])?hit[1]:'';
+}
 async function runPatientImport(){
   const map=currentImportMapping();
   if(!map.id_card)return;
   const opt=currentImportOptions();
   const wrap=document.getElementById('imp-preview');
   wrap.innerHTML='<div class="registry-lookup-note">Importing… please keep this open.</div>';
-  // Pull the current values too, so "only fill in what is blank" can be honoured.
-  const{rows:pats,error}=await fetchAllRows(()=>SB.from('patients')
+
+  // Read the current values so "only fill in what is blank" can be honoured.
+  // Supabase's API keeps a cached column list that can lag a fresh migration,
+  // so if it rejects the newer columns here, fall back to the base columns
+  // rather than blocking the whole import at the reading stage.
+  let readRes=await fetchAllRows(()=>SB.from('patients')
     .select('id,id_card,first_name,surname,phone_number,followup_status,'+PATIENT_DATE_COLS));
-  if(error){
-    const msg=String(error.message||'');
-    wrap.innerHTML=msg.toLowerCase().includes('column')
-      ?'<div class="registry-lookup-note error">The clinical-date columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> in Supabase once, then import again. Nothing was changed.</div>'
-      :'<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(msg)+'</div>';
+  if(readRes.error&&importIsMissingColumnError(readRes.error)){
+    readRes=await fetchAllRows(()=>SB.from('patients')
+      .select('id,id_card,first_name,surname,phone_number,followup_status'));
+  }
+  if(readRes.error){
+    wrap.innerHTML='<div class="registry-lookup-note error">Could not read the registry: '+htmlSafe(readRes.error.message)+'</div>';
     return;
   }
-  const byCard={};(pats||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p;});
+  const byCard={};(readRes.rows||[]).forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)byCard[k]=p;});
 
   // Build the write list. A blank cell is never sent, so it cannot wipe a value.
   const updates=[],inserts=[];const seen=new Set();
@@ -7064,33 +7087,59 @@ async function runPatientImport(){
     if(Object.keys(patch).length)updates.push({id:current.id,patch});
   });
 
-  let done=0,failed=0;const errors=[];
   const total=updates.length+inserts.length;
-  const say=()=>{wrap.innerHTML=`<div class="registry-lookup-note">Importing… ${done} of ${total}</div>`;};
-  // Inserts in batches — a few thousand rows will not go in one request.
+  const skippedCols=new Set();     // optional columns the API would not accept
+  let done=0,failed=0;const errors=[];
+  const say=()=>{wrap.innerHTML=`<div class="registry-lookup-note">Importing… ${done} of ${total}${skippedCols.size?' · skipping '+htmlSafe([...skippedCols].join(', ')):''}</div>`;};
+
+  // Insert one batch, healing around a stale schema cache: wait and retry a
+  // couple of times (the cache reloads on its own); only if a known optional
+  // column still will not take, drop just that column and carry on, so the
+  // patients are still created. Required columns are never dropped.
+  const insertBatch=async batch=>{
+    let rows=batch, waits=0;
+    for(;;){
+      const{error}=await SB.from('patients').insert(rows);
+      if(!error)return true;
+      if(importIsMissingColumnError(error)){
+        if(waits<2){waits++;await sleep(1500);continue;}
+        const col=importMissingColumnName(error);
+        if(col){skippedCols.add(col);rows=rows.map(r=>{const c={...r};delete c[col];return c;});waits=0;continue;}
+      }
+      if(errors.length<3)errors.push(error.message);
+      return false;
+    }
+  };
   for(let i=0;i<inserts.length;i+=200){
     const batch=inserts.slice(i,i+200);
-    const{error:insErr}=await SB.from('patients').insert(batch);
-    if(insErr){
-      if(i===0&&String(insErr.message||'').toLowerCase().includes('column')){
-        wrap.innerHTML='<div class="registry-lookup-note error">The clinical-date columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> in Supabase once, then import again. Nothing was changed.</div>';
-        return;
-      }
-      failed+=batch.length;if(errors.length<3)errors.push(insErr.message);
-    }else{done+=batch.length;}
+    if(await insertBatch(batch))done+=batch.length; else failed+=batch.length;
     say();
   }
-  // Updates one at a time, in small parallel chunks.
+
+  // Updates run after the inserts, by which point the cache has had time to
+  // reload, so a lingering column error just drops that one column and retries.
+  const applyPatch=async u=>{
+    let patch={...u.patch};
+    for(;;){
+      if(!Object.keys(patch).length){done++;return;}
+      const{error}=await SB.from('patients').update(patch).eq('id',u.id);
+      if(!error){done++;return;}
+      const col=importMissingColumnName(error);
+      if(col){skippedCols.add(col);delete patch[col];continue;}
+      failed++;if(errors.length<3)errors.push(error.message);return;
+    }
+  };
   for(let i=0;i<updates.length;i+=8){
-    const chunk=updates.slice(i,i+8);
-    await Promise.all(chunk.map(async u=>{
-      const{error:uErr}=await SB.from('patients').update(u.patch).eq('id',u.id);
-      if(uErr){failed++;if(errors.length<3)errors.push(uErr.message);}else done++;
-    }));
+    await Promise.all(updates.slice(i,i+8).map(applyPatch));
     say();
   }
+
+  const skipNote=skippedCols.size
+    ? `<div class="registry-lookup-note error">The patients are saved, but these fields could not be written and were left blank: <strong>${htmlSafe([...skippedCols].join(', '))}</strong>. The database has not caught up with the new columns yet — run <strong>NOTIFY pgrst, 'reload schema';</strong> once in the Supabase SQL Editor (or wait a minute), then import the very same file again to fill them in. Nothing is duplicated by re-importing.</div>`
+    : '';
   wrap.innerHTML=`<div class="registry-lookup-note found" style="font-size:13px;">✅ Imported <strong>${done}</strong> of ${total} patient${total!==1?'s':''}${failed?` · ${failed} failed`:''}.</div>
-    ${failed?`<div class="registry-lookup-note error">${htmlSafe(errors[0]||'Some rows could not be saved.')}</div>`:''}
+    ${skipNote}
+    ${failed&&!skippedCols.size?`<div class="registry-lookup-note error">${htmlSafe(errors[0]||'Some rows could not be saved.')}</div>`:''}
     <div class="mact"><button class="btn-save" onclick="closeModal();loadPatientDirectory();refreshReminders();">Done</button></div>`;
 }
 
