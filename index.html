@@ -1813,7 +1813,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-32';
+const APP_BUILD='2026.08.18-33';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5789,7 +5789,7 @@ function renderPatientDirectory(){
     if(owner!=='all'&&p.owner!==owner)return false;
     if(status!=='all'&&p.status!==status)return false;
     if(q){
-      const hay=`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''}`.toLowerCase();
+      const hay=`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''} ${p.locality||''} ${p.stoma_type||''} ${p.procedure_performed||''} ${p.findings||''}`.toLowerCase();
       if(!hay.includes(q))return false;
     }
     return true;
@@ -5797,9 +5797,18 @@ function renderPatientDirectory(){
   if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
   const note=document.getElementById('pd-setup-note');
   if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No patients match these filters.</td></tr>';renderPager('pd-pager',0,0,pdPage,()=>{});return;}
+  // For patients no longer in active recall — reversed, deceased, moved away —
+  // a phone number is not what the nurse needs. Those views swap the Phone
+  // column for the clinical Operation Performed and Findings instead.
+  const outcomeView=['reversed','deceased','discharged_gozo','relocated_overseas'].includes(status);
+  const thead=document.querySelector('#pd-table thead tr');
+  if(thead)thead.innerHTML=outcomeView
+    ? '<th>Patient</th><th>ID Card</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Operation Performed</th><th>Findings</th><th>Actions</th>'
+    : '<th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th>';
+  const cols=outcomeView?8:7;
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="${cols}" class="empty">No patients match these filters.</td></tr>`;renderPager('pd-pager',0,0,pdPage,()=>{});return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
-  const tcell=v=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>28?t.slice(0,26)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
+  const tcell=(v,n=28)=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>n?t.slice(0,n-2)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
   // Page the filtered list so every patient is reachable without a giant table.
   const page=pageSlice(rows,pdPage,PD_PAGE_SIZE); pdPage=page.page;
   tbody.innerHTML=page.rows.map(p=>{
@@ -5809,13 +5818,13 @@ function renderPatientDirectory(){
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
     const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
+    const middle=outcomeView
+      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
+      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
     return `<tr class="${rowCls}">
       <td><strong>${htmlSafe(nm)}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
-      <td>${htmlSafe(p.phone_number||'—')}</td>
-      <td>${dcell(p.date_of_birth)}</td>
-      <td>${dcell(p.surgery_date)}</td>
-      <td>${tcell(p.stoma_type)}</td>
+      ${middle}
       <td><div class="pd-actions">
         ${datesBtn}
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
