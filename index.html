@@ -551,6 +551,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pd-toolbar input:focus,.pd-toolbar select:focus{border-color:var(--teal);}
 .pd-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:auto;}
 .pd-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.pd-name-link{color:var(--navy);text-decoration:none;cursor:pointer;}.pd-name-link:hover{color:var(--teal);text-decoration:underline;}
+.pr-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-bottom:16px;}
+.pr-field{display:flex;flex-direction:column;gap:2px;}.pr-label{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.3px;}.pr-value{font-size:13.5px;color:var(--navy);font-weight:500;}
+.pr-field.wide{grid-column:1 / -1;}
+.pr-section{font-size:13px;font-weight:700;color:var(--navy);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+.pr-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+@media(max-width:600px){.pr-grid{grid-template-columns:1fr;}}
 /* IMPORT card */
 .imp-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:10px 0;}
 .imp-map-row{display:flex;align-items:center;gap:8px;}
@@ -1813,7 +1820,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.18-34';
+const APP_BUILD='2026.08.19-35';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5822,7 +5829,7 @@ function renderPatientDirectory(){
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
     return `<tr class="${rowCls}">
-      <td><strong>${htmlSafe(nm)}</strong></td>
+      <td><a href="#" class="pd-name-link" onclick="openPatientRecord('${p.id}');return false;"><strong>${htmlSafe(nm)}</strong></a></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
       <td><div class="pd-actions">
@@ -5862,12 +5869,8 @@ function onPatientStatusSelect(){
    tab, and editing one from the Registry or the Clinical Record. The outcome
    is a real control here — pick Deceased or Reversed and fill in the date it
    happened — rather than something inferred behind the nurse's back. */
-const PF_MONTHS=['January','February','March','April','May','June',
-                 'July','August','September','October','November','December'];
 function patientFormHTML(p,prefix){
   const v=k=>htmlSafe(p?.[k]||'');
-  const year=Number(p?.followup_year)||new Date().getFullYear();
-  const years=[];for(let y=year-2;y<=new Date().getFullYear()+3;y++)years.push(y);
   return `
   <h3 class="pf-head">Patient</h3>
   <div class="edit-seen-grid">
@@ -5885,19 +5888,6 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Stoma type</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
     <div class="fg"><label>Procedure</label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Hartmann's"/></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. CA - Rectum"/></div>
-  </div>
-
-  <h3 class="pf-head">Follow-up</h3>
-  <div class="edit-seen-grid">
-    <div class="fg"><label>Owner</label><select id="${prefix}-owner">${followupOwnerOptions(p?.followup_owner||'Common')}</select></div>
-    <div class="fg"><label>Type</label><select id="${prefix}-type">
-      <option value="follow_up" ${normaliseFollowupType(p?.followup_type)==='follow_up'?'selected':''}>Follow-up</option>
-      <option value="new_case" ${normaliseFollowupType(p?.followup_type)==='new_case'?'selected':''}>New case</option></select></div>
-    <div class="fg"><label>Due month</label><select id="${prefix}-month">
-      <option value="">— none planned —</option>
-      ${PF_MONTHS.map((m,i)=>`<option value="${i+1}" ${Number(p?.followup_due_month)===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
-    <div class="fg"><label>Due year</label><select id="${prefix}-year">
-      ${years.map(y=>`<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}</select></div>
   </div>
 
   <h3 class="pf-head">Outcome</h3>
@@ -5934,7 +5924,6 @@ function onPatientFormOutcome(prefix){
 // Read the form into a row ready for the database.
 function readPatientForm(prefix){
   const val=k=>String(document.getElementById(`${prefix}-${k}`)?.value||'').trim();
-  const month=Number(val('month'))||null;
   return{
     id_card:normaliseIdCard(val('idcard')),
     first_name:val('first')||null,
@@ -5947,10 +5936,6 @@ function readPatientForm(prefix){
     stoma_type:val('stoma')||null,
     procedure_performed:val('procedure')||null,
     findings:val('findings')||null,
-    followup_owner:val('owner')||'Common',
-    followup_type:normaliseFollowupType(val('type')),
-    followup_due_month:month,
-    followup_year:month?Number(val('year'))||null:null,
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6013,6 +5998,70 @@ async function savePatientDates(patientId){
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
 
+/* ---- patient clinical record modal ---- */
+async function openPatientRecord(patientId){
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML='<div class="report-note">Loading patient record…</div>';
+  openMo();
+  const{data:pat,error}=await SB.from('patients')
+    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
+  if(error||!pat){mb.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  const{data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+  const appts=await enrichAppointments(rawAppts||[]);
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const[outText,outCls]=patientOutcome(pat);
+  const f=(label,val)=>val?`<div class="pr-field"><span class="pr-label">${label}</span><span class="pr-value">${htmlSafe(val)}</span></div>`:'';
+  const fd=(label,val)=>val?`<div class="pr-field"><span class="pr-label">${label}</span><span class="pr-value">${htmlSafe(fmtShortDate(val))}</span></div>`:'';
+  const apptRows=appts.length?appts.map(a=>`<tr>
+    <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
+    <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span></td>
+  </tr>`).join(''):'<tr><td colspan="4" class="empty">No appointment history</td></tr>';
+  mb.innerHTML=`<h2>${htmlSafe(nm)}</h2>
+    <div class="msub">${htmlSafe(pat.id_card||'No ID')} · <span class="cr-out ${outCls}">${htmlSafe(outText)}</span></div>
+    <div class="pr-section">Clinical Details</div>
+    <div class="pr-grid">
+      ${f('First Name',pat.first_name)}${f('Surname',pat.surname)}
+      ${f('ID Card',pat.id_card)}${f('Phone',pat.phone_number)}
+      ${f('Sex',pat.sex)}${f('Locality',pat.locality)}
+      ${fd('Date of Birth',pat.date_of_birth)}${fd('Surgery Date',pat.surgery_date)}
+      ${f('Stoma Type',pat.stoma_type)}${f('Procedure',pat.procedure_performed)}
+      <div class="pr-field wide">${pat.findings?`<span class="pr-label">Findings</span><span class="pr-value">${htmlSafe(pat.findings)}</span>`:`<span class="pr-label">Findings</span><span class="pr-value" style="color:var(--muted);">—</span>`}</div>
+      ${fd('Reversal Date',pat.reversal_date)}${fd('Date of RIP',pat.deceased_date)}
+    </div>
+    <div class="pr-section">Appointment History</div>
+    <div class="da-tw"><table class="dt"><thead><tr><th>Date</th><th>Time</th><th>Seen By</th><th>Outcome</th></tr></thead><tbody>${apptRows}</tbody></table></div>
+    <div class="mact" style="justify-content:space-between;">
+      <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">Delete Patient</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-cancel" onclick="closeModal()">Close</button>
+        <button class="btn-save" onclick="openPatientDatesModal('${patientId}')">Edit</button>
+      </div>
+    </div>`;
+}
+
+/* ---- delete patient with confirmation ---- */
+function confirmDeletePatient(patientId,name){
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2 style="color:#b91c1c;">Delete Patient</h2>
+    <div class="msub">You are about to permanently delete <strong>${name}</strong> and all their appointment history. This cannot be undone.</div>
+    <div class="mact"><button class="btn-cancel" onclick="openPatientRecord('${patientId}')">Cancel</button>
+      <button class="btn-save" style="background:#b91c1c;" onclick="executeDeletePatient('${patientId}')">Yes, delete permanently</button></div>`;
+}
+async function executeDeletePatient(patientId){
+  await SB.from('appointments').delete().eq('patient_id',patientId);
+  const{error}=await SB.from('patients').delete().eq('id',patientId);
+  if(error){alert('Could not delete: '+error.message);return;}
+  closeModal();
+  refreshReminders();
+  if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
+  if(document.getElementById('page-clinical-record')?.classList.contains('active'))loadClinicalRecord();
+  if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
+  if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
+}
+
 /* ---- add a new patient ---- */
 function renderAddPatientForm(){
   const body=document.getElementById('ap-body');
@@ -6032,6 +6081,8 @@ async function saveNewPatient(){
   const err=document.getElementById('ap-error');
   const say=html=>{if(err)err.innerHTML=html;};
   const payload=readPatientForm('ap');
+  payload.followup_owner='Common';
+  payload.followup_type=normaliseFollowupType('new_case');
   if(!payload.id_card){say('<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>');return;}
   if(!payload.surname&&!payload.first_name){say('<div class="registry-lookup-note error">Give at least a first name or a surname.</div>');return;}
   say('<div class="registry-lookup-note">Checking the registry…</div>');
@@ -6124,8 +6175,8 @@ function renderClinicalRecord(){
   tbody.innerHTML=page.rows.map(p=>{
     const[text,cls]=patientOutcome(p);
     return `<tr>
-      <td>${htmlSafe(p.first_name||'')||'<span class="pd-dash">—</span>'}</td>
-      <td><strong>${htmlSafe(p.surname||'')||'—'}</strong></td>
+      <td><a href="#" class="pd-name-link" onclick="openPatientRecord('${p.id}');return false;">${htmlSafe(p.first_name||'')||'<span class="pd-dash">—</span>'}</a></td>
+      <td><a href="#" class="pd-name-link" onclick="openPatientRecord('${p.id}');return false;"><strong>${htmlSafe(p.surname||'')||'—'}</strong></a></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.locality||'')||'<span class="pd-dash">—</span>'}</td>
       <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
