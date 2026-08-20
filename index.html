@@ -1873,7 +1873,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.20-40';
+const APP_BUILD='2026.08.20-41';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6020,10 +6020,22 @@ function patientSaveError(error){
   return 'Could not save: '+msg;
 }
 
+/* Load one patient with the clinical columns, but survive a database that has
+   not had the newer columns added yet: on a "column does not exist" error it
+   retries with the base columns, exactly like the Registry does, so opening or
+   editing a patient never hard-fails just because a migration is pending. */
+async function fetchPatientById(patientId){
+  let{data,error}=await SB.from('patients')
+    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
+  if(error&&String(error.message||'').toLowerCase().includes('column')){
+    patientDatesAvailable=false;
+    ({data,error}=await SB.from('patients').select(PATIENT_BASE_COLS).eq('id',patientId).maybeSingle());
+  }else if(!error)patientDatesAvailable=true;
+  return{data,error};
+}
 /* ---- edit an existing patient ---- */
 async function openPatientDatesModal(patientId){
-  const{data:pat,error}=await SB.from('patients')
-    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
+  const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const mb=document.getElementById('mb');
@@ -6090,8 +6102,7 @@ async function openPatientRecord(patientId){
   mb.className='mb mb-wide';
   mb.innerHTML='<div class="report-note">Loading patient record…</div>';
   openMo();
-  const{data:pat,error}=await SB.from('patients')
-    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
+  const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){mb.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
   const{data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
   const appts=await enrichAppointments(rawAppts||[]);
@@ -6113,7 +6124,7 @@ async function openPatientRecord(patientId){
   const nextCopy=next
     ? `<div class="psm-next-copy"><span class="lbl">Next review</span><span class="big">${htmlSafe(fmtShortDate(next.appt_date))} · ${String(next.appt_slot||'').slice(0,5)}</span><span class="sub">${staffName(next)==='—'?'Not yet assigned':'With '+staffName(next)}</span></div>`
     : `<div class="psm-next-copy"><span class="lbl">Next action</span><span class="big">No future review booked</span><span class="sub">${htmlSafe(outText)}</span></div>`;
-  const missing=patientMissingFields(pat);
+  const missing=patientDatesAvailable?patientMissingFields(pat):[];
   const missingBlock=missing.length?`<div class="psm-missing">${psmIc('clipboard')}<div>⚠ <strong>Still to complete:</strong> ${htmlSafe(missing.join(', '))}. Press <strong>Edit patient</strong> to fill these in.</div></div>`:'';
   const histItems=past.length
     ? past.map(a=>`<div class="psm-appt"><div class="psm-appt-meta"><span>${htmlSafe(fmtShortDate(a.appt_date))} · ${String(a.appt_slot||'').slice(0,5)}</span>${badge(a)}</div><span class="psm-appt-by">${staffName(a)==='—'?'Unassigned':'Seen by '+staffName(a)}</span></div>`).join('')
