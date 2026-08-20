@@ -1565,7 +1565,31 @@ function dim(y,m){return new Date(y,m+1,0).getDate();}
 function fmtLabel(dateStr){const d=new Date(dateStr+'T12:00:00');return d.toLocaleDateString('en-MT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
 
 function jsSafe(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
-function htmlSafe(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+/* Repair "mojibake" — Maltese text that was saved as UTF-8 but read back as
+   Windows-1252 somewhere upstream, so "Żejtun" arrives as "Å»ejtun" and
+   "Għaxaq" as "GÄ§axaq". Each original byte became a Latin-1/cp1252 character;
+   we turn those characters back into bytes and decode them as UTF-8 again.
+   It only fires on strings that still carry the tell-tale lead byte, and it
+   keeps the result only when the bytes decode cleanly — so already-correct
+   text (which contains real letters above U+00FF) is returned untouched. */
+const CP1252_REV={0x20AC:0x80,0x201A:0x82,0x0192:0x83,0x201E:0x84,0x2026:0x85,0x2020:0x86,0x2021:0x87,0x02C6:0x88,0x2030:0x89,0x0160:0x8A,0x2039:0x8B,0x0152:0x8C,0x017D:0x8E,0x2018:0x91,0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2022:0x95,0x2013:0x96,0x2014:0x97,0x02DC:0x98,0x2122:0x99,0x0161:0x9A,0x203A:0x9B,0x0153:0x9C,0x017E:0x9E,0x0178:0x9F};
+const _utf8Strict=(typeof TextDecoder!=='undefined')?new TextDecoder('utf-8',{fatal:true}):null;
+function fixText(v){
+  const s=String(v??'');
+  // No UTF-8 lead byte (rendered as À–ÿ) means nothing to repair.
+  if(!_utf8Strict||!/[Â-ÿ]/.test(s))return s;
+  const bytes=[];
+  for(const ch of s){
+    const c=ch.codePointAt(0);
+    if(c<=0xFF)bytes.push(c);
+    else if(CP1252_REV[c]!=null)bytes.push(CP1252_REV[c]);
+    else return s;   // a real extended letter — text is already correct
+  }
+  try{return _utf8Strict.decode(Uint8Array.from(bytes));}
+  catch(e){return s;}  // not valid UTF-8 — leave it as it is
+}
+function htmlSafe(v){return String(fixText(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 
 function normStaffName(v){
@@ -1821,7 +1845,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.20-36';
+const APP_BUILD='2026.08.20-37';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5797,7 +5821,7 @@ function renderPatientDirectory(){
     if(owner!=='all'&&p.owner!==owner)return false;
     if(status!=='all'&&p.status!==status)return false;
     if(q){
-      const hay=`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''} ${p.locality||''} ${p.stoma_type||''} ${p.procedure_performed||''} ${p.findings||''}`.toLowerCase();
+      const hay=fixText(`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''} ${p.locality||''} ${p.stoma_type||''} ${p.procedure_performed||''} ${p.findings||''}`).toLowerCase();
       if(!hay.includes(q))return false;
     }
     return true;
@@ -6161,7 +6185,7 @@ function renderClinicalRecord(){
   const rows=clinicalRecordRows.filter(p=>{
     if(status!=='all'&&normaliseFollowupStatus(p.followup_status)!==status)return false;
     if(q){
-      const hay=`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.locality||''} ${p.findings||''} ${p.procedure_performed||''}`.toLowerCase();
+      const hay=fixText(`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.locality||''} ${p.findings||''} ${p.procedure_performed||''}`).toLowerCase();
       if(!hay.includes(q))return false;
     }
     return true;
