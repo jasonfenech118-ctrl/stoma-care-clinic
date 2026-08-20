@@ -614,6 +614,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 #pd-table tr.pd-row-overseas:hover td{background:#fde047;}
 #pd-table tr.pd-row-overseas td strong{color:#422006;}
 #pd-table tr.pd-row-overseas .pd-dash{color:#a68b3a;}
+/* An amber left stripe marks a record that is missing one or more clinical
+   fields. The stripe rides on top of any outcome colour; plain rows also get a
+   faint warm tint so a page of incomplete actives stands out at a glance. */
+#pd-table tr.pd-row-incomplete td:first-child{box-shadow:inset 4px 0 0 #f59e0b;}
+#pd-table tr.pd-row-incomplete:not(.pd-row-deceased):not(.pd-row-reversed):not(.pd-row-gozo):not(.pd-row-overseas) td{background:#fffbeb;}
+#pd-table tr.pd-row-incomplete:not(.pd-row-deceased):not(.pd-row-reversed):not(.pd-row-gozo):not(.pd-row-overseas):hover td{background:#fef3c7;}
+.pr-missing{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 11px;font-size:12.5px;margin:2px 0 14px;}
+.pr-missing strong{color:#78350f;}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
 .kpi{background:white;border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05);}
 .kpi .k-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
@@ -1813,7 +1821,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.20-38';
+const APP_BUILD='2026.08.20-39';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5708,7 +5716,17 @@ let patientDatesAvailable=true;
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality';
+/* A record counts as complete only when every clinical field is filled. Rows
+   missing any of these get an amber stripe in the Registry, and the patient
+   record modal spells out exactly which ones are blank. Labels are kept here so
+   the row colour and the "missing" list can never disagree. */
+const PATIENT_REQUIRED_FIELDS=[
+  ['sex','Sex'],['locality','Locality'],['date_of_birth','Date of birth'],
+  ['surgery_date','Surgery date'],['discharge_date','Discharge date'],
+  ['stoma_type','Stoma type'],['procedure_performed','Procedure'],['findings','Findings']];
+function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!String(p?.[k]??'').trim()).map(([,label])=>label);}
+function patientIsIncomplete(p){return PATIENT_REQUIRED_FIELDS.some(([k])=>!String(p?.[k]??'').trim());}
 async function loadPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading patients…</td></tr>';
@@ -5792,9 +5810,12 @@ function renderPatientDirectory(){
     }
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
-  if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`;
+  const incompleteCount=rows.filter(patientIsIncomplete).length;
+  if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`+(incompleteCount?` · ${incompleteCount} incomplete`:'');
   const note=document.getElementById('pd-setup-note');
-  if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>';
+  if(note)note.innerHTML=!patientDatesAvailable
+    ? '<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>'
+    : incompleteCount?'<div class="report-note" style="color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 12px;">Rows with an <strong>amber left stripe</strong> are missing one or more clinical fields (including the new post-op discharge date). Open a patient to see exactly what is still to fill in.</div>':'';
   // For patients no longer in active recall — reversed, deceased, moved away —
   // a phone number is not what the nurse needs. Those views swap the Phone
   // column for the clinical Operation Performed and Findings instead.
@@ -5815,11 +5836,12 @@ function renderPatientDirectory(){
     // Reversed reads violet, deceased black, Gozo deep blue, overseas yellow.
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
+    const incompleteCls=patientIsIncomplete(p)?' pd-row-incomplete':'';
     const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
     const middle=outcomeView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
-    return `<tr class="pd-click-row ${rowCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient record">
+    return `<tr class="pd-click-row ${rowCls}${incompleteCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient record">
       <td><strong>${htmlSafe(nm)}</strong></td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
@@ -5876,6 +5898,7 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Locality</label><input type="text" id="${prefix}-locality" value="${v('locality')}" placeholder="Town or village"/></div>
     <div class="fg"><label>Date of birth</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
     <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
+    <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
     <div class="fg"><label>Stoma type</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
     <div class="fg"><label>Procedure</label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Hartmann's"/></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. CA - Rectum"/></div>
@@ -5924,6 +5947,7 @@ function readPatientForm(prefix){
     locality:val('locality')||null,
     date_of_birth:val('dob')||null,
     surgery_date:val('surgery')||null,
+    discharge_date:val('discharge')||null,
     stoma_type:val('stoma')||null,
     procedure_performed:val('procedure')||null,
     findings:val('findings')||null,
@@ -6008,15 +6032,19 @@ async function openPatientRecord(patientId){
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
     <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span></td>
   </tr>`).join(''):'<tr><td colspan="4" class="empty">No appointment history</td></tr>';
+  const missing=patientMissingFields(pat);
+  const missingNote=missing.length?`<div class="pr-missing">⚠ <strong>Still to complete:</strong> ${htmlSafe(missing.join(', '))}. Press <strong>Edit</strong> to fill them in.</div>`:'';
   mb.innerHTML=`<h2>${htmlSafe(nm)}</h2>
     <div class="msub">${htmlSafe(pat.id_card||'No ID')} · <span class="cr-out ${outCls}">${htmlSafe(outText)}</span></div>
+    ${missingNote}
     <div class="pr-section">Clinical Details</div>
     <div class="pr-grid">
       ${f('First Name',pat.first_name)}${f('Surname',pat.surname)}
       ${f('ID Card',pat.id_card)}${f('Phone',pat.phone_number)}
       ${f('Sex',pat.sex)}${f('Locality',pat.locality)}
       ${fd('Date of Birth',pat.date_of_birth)}${fd('Surgery Date',pat.surgery_date)}
-      ${f('Stoma Type',pat.stoma_type)}${f('Procedure',pat.procedure_performed)}
+      ${fd('Discharge Date',pat.discharge_date)}${f('Stoma Type',pat.stoma_type)}
+      ${f('Procedure',pat.procedure_performed)}
       <div class="pr-field wide">${pat.findings?`<span class="pr-label">Findings</span><span class="pr-value">${htmlSafe(pat.findings)}</span>`:`<span class="pr-label">Findings</span><span class="pr-value" style="color:var(--muted);">—</span>`}</div>
       ${fd('Reversal Date',pat.reversal_date)}${fd('Date of RIP',pat.deceased_date)}
     </div>
@@ -6648,6 +6676,7 @@ const IMPORT_FIELDS=[
   {key:'phone_number',  label:'Phone',           match:['contactnumber','contact number','phonenumber','phone number','mobilenumber','tel no','telephone','phone','mobile','contact','tel','number']},
   {key:'date_of_birth', label:'Date of birth',   match:['dob','date of birth','birthdate','birth date','birth','born']},
   {key:'surgery_date',  label:'Surgery date',    match:['surgerydate','surgery date','operationdate','operation date','stomadate','stoma date','stoma formation','surgery','operation','op date']},
+  {key:'discharge_date',label:'Discharge date',  match:['dischargedate','discharge date','date of discharge','postopdischarge','post op discharge','post-op discharge','discharged on','discharge']},
   {key:'reversal_date', label:'Reversal date',   match:['reversaldate','reversal date','date of reversal','reversal','reversed','closure']},
   {key:'deceased_date', label:'Date of RIP',     match:['ripdate','rip date','date of rip','deceaseddate','deceased date','date of death','rip','death','deceased','died']},
   {key:'stoma_type',    label:'Stoma type',      match:['stomatypesummary','stoma type summary','stomatype','stoma type','type of stoma','stoma','operation performed']},
@@ -6939,7 +6968,7 @@ function importRowToPatient(r,map,opt){
     const v=map[k]?importCleanText(r[map[k]]):'';
     if(v)out[k]=v;
   });
-  ['date_of_birth','surgery_date','reversal_date','deceased_date'].forEach(k=>{
+  ['date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date'].forEach(k=>{
     if(!map[k])return; const v=importParseDate(r[map[k]]); if(v)out[k]=v;
   });
   // Status: the file's own column wins, then a blanket choice, then the dates.

@@ -9,6 +9,7 @@
 -- WHAT IT ADDS
 --   date_of_birth  - the patient's date of birth
 --   surgery_date   - date of the stoma surgery
+--   discharge_date - date the patient was discharged after the operation
 --   reversal_date  - date the stoma was reversed
 --   deceased_date  - date of death (RIP)
 --   stoma_type     - free text, e.g. "End Colostomy", "Urostomy", "Ileostomy"
@@ -39,6 +40,7 @@
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS date_of_birth date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS surgery_date  date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharge_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_type    text;
@@ -122,6 +124,6 @@ SELECT column_name, data_type, is_nullable
 FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name = 'patients'
-  AND column_name IN ('date_of_birth','surgery_date','reversal_date','deceased_date',
+  AND column_name IN ('date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date',
                       'stoma_type','sex','procedure_performed','findings','locality')
 ORDER BY column_name;
