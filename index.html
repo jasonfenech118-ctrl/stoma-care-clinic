@@ -1341,38 +1341,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div id="ap-body"></div>
     </div>
 
-    <!-- CLINICAL RECORD -->
-    <div class="page" id="page-clinical-record">
-      <div class="phdr">
-        <div><h2>🩺 Clinical Record</h2><p>One line per patient: where they live, when the stoma was formed, what was found, and how it ended</p></div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="btn-add" onclick="printClinicalRecord()" style="background:#0369a1;">🖨 Print / PDF</button>
-          <button class="btn-add" onclick="loadClinicalRecord()">Refresh</button>
-        </div>
-      </div>
-      <div class="pd-toolbar">
-        <input type="text" id="cr-search" placeholder="Search by name, surname, ID card, locality or findings…" oninput="renderClinicalRecord()"/>
-        <label>Outcome:</label>
-        <select id="cr-status" onchange="renderClinicalRecord()">
-          <option value="all">All outcomes</option>
-          <option value="active">Still in follow-up</option>
-          <option value="reversed">Reversed</option>
-          <option value="deceased">Deceased</option>
-          <option value="discharged_gozo">Discharged to Gozo</option>
-          <option value="relocated_overseas">Relocated Overseas</option>
-          <option value="paused">Paused</option>
-          <option value="awaiting_feedback">Awaiting Feedback</option>
-        </select>
-        <span class="pd-count" id="cr-count"></span>
-      </div>
-      <div id="cr-setup-note"></div>
-      <div style="overflow-x:auto;"><table class="dt" id="cr-table">
-        <thead><tr><th>Name</th><th>Surname</th><th>ID Card</th><th>Locality</th><th>Date of Surgery</th><th>Stoma Type</th><th>Findings</th><th>Outcome</th><th></th></tr></thead>
-        <tbody id="cr-tbody"><tr><td colspan="9" class="empty">Loading patients…</td></tr></tbody>
-      </table></div>
-      <div id="cr-pager" class="pager"></div>
-    </div>
-
     <!-- DATA ANALYSIS -->
     <div class="page" id="page-data-analysis">
       <div class="phdr">
@@ -1845,7 +1813,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.20-37';
+const APP_BUILD='2026.08.20-38';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -1930,7 +1898,6 @@ const TAB_GROUPS=[
    pages:[
      {tab:'patients',label:'Patient Registry',icon:'👥',color:'#0891b2'},
      {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
-     {tab:'clinical-record',label:'Clinical Record',icon:'🩺',color:'#c0392b'},
      {tab:'data-analysis',label:'Data Analysis',icon:'📊',color:'#7c3aed'},
      {tab:'duplicates',label:'Needs Checking',icon:'🔍',color:'#d97706'}
    ]}
@@ -2010,7 +1977,6 @@ function switchTab(name){
   if(name==='annual-report')loadAnnualReport();
   if(name==='patients')loadPatientDirectory();
   if(name==='add-patient')renderAddPatientForm();
-  if(name==='clinical-record')loadClinicalRecord();
   if(name==='duplicates')loadDuplicates();
   if(name==='data-analysis')loadDataAnalysis();
   if(name==='appointments')loadAppts();
@@ -5787,7 +5753,7 @@ function renderPatientDirectorySummary(){
     ${annualKpi('Discharged to Gozo',n('discharged_gozo'),'followed up in Gozo','#1e3a8a')}
     ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}`;
 }
-let pdPage=0,pdLastKey='',crPage=0,crLastKey='';
+let pdPage=0,pdLastKey='';
 const PD_PAGE_SIZE=100;
 // Clamp a page index and return that slice of rows.
 function pageSlice(rows,page,size){
@@ -5891,7 +5857,7 @@ function onPatientStatusSelect(){
 }
 /* ── PATIENT DETAILS FORM ─────────────────────────────────────────────────
    One set of fields serves both jobs: adding a patient on the Add Patient
-   tab, and editing one from the Registry or the Clinical Record. The outcome
+   tab, and editing one from the Registry. The outcome
    is a real control here — pick Deceased or Reversed and fill in the date it
    happened — rather than something inferred behind the nurse's back. */
 function patientFormHTML(p,prefix){
@@ -6017,7 +5983,6 @@ async function savePatientDates(patientId){
   closeModal();
   refreshReminders();
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
-  if(document.getElementById('page-clinical-record')?.classList.contains('active'))loadClinicalRecord();
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
@@ -6082,7 +6047,6 @@ async function executeDeletePatient(patientId){
   closeModal();
   refreshReminders();
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
-  if(document.getElementById('page-clinical-record')?.classList.contains('active'))loadClinicalRecord();
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
 }
@@ -6141,13 +6105,11 @@ async function saveNewPatient(){
   const fresh=document.getElementById('ap-error'); if(fresh)fresh.innerHTML=keep;
 }
 
-/* ── CLINICAL RECORD ──────────────────────────────────────────────────────
-   The registry read as a clinical list rather than a contact list. The
-   Outcome column is worked out from the status and the date that goes with
-   it — "Reversed on 20 Mar 2021", "Deceased on 11 Dec 2025" — so it can never
-   drift out of step with the dates on the patient. */
-let clinicalRecordRows=[];
-// [text, css class] for one patient's outcome.
+/* patientOutcome — [text, css class] for one patient's outcome. Worked out
+   from the status and the date that goes with it — "Reversed on 20 Mar 2021",
+   "Deceased on 11 Dec 2025" — so it can never drift out of step with the dates
+   on the patient. Used by the Registry, the patient record modal and Needs
+   Checking. */
 function patientOutcome(p){
   const st=normaliseFollowupStatus(p.followup_status);
   const on=d=>d?' on '+fmtShortDate(d):'';
@@ -6159,92 +6121,6 @@ function patientOutcome(p){
   if(st==='awaiting_feedback') return['Awaiting feedback','cr-out-paused'];
   return['Still in follow-up','cr-out-active'];
 }
-async function loadClinicalRecord(){
-  const tbody=document.getElementById('cr-tbody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Loading patients…</td></tr>';
-  let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
-  if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
-  }else if(!res.error)patientDatesAvailable=true;
-  if(res.error){
-    if(tbody)tbody.innerHTML='<tr><td colspan="8" class="empty">Could not load the registry: '+htmlSafe(res.error.message)+'</td></tr>';
-    return;
-  }
-  clinicalRecordRows=res.rows||[];
-  renderClinicalRecord();
-}
-function renderClinicalRecord(){
-  const tbody=document.getElementById('cr-tbody');
-  const countEl=document.getElementById('cr-count');
-  if(!tbody)return;
-  const note=document.getElementById('cr-setup-note');
-  if(note)note.innerHTML=patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The locality, surgery date and findings columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>';
-  const q=(document.getElementById('cr-search')?.value||'').trim().toLowerCase();
-  const status=document.getElementById('cr-status')?.value||'all';
-  const rows=clinicalRecordRows.filter(p=>{
-    if(status!=='all'&&normaliseFollowupStatus(p.followup_status)!==status)return false;
-    if(q){
-      const hay=fixText(`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.locality||''} ${p.findings||''} ${p.procedure_performed||''}`).toLowerCase();
-      if(!hay.includes(q))return false;
-    }
-    return true;
-  }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))
-              ||String(a.first_name||'').localeCompare(String(b.first_name||'')));
-  const key=q+'|'+status;
-  if(key!==crLastKey){crPage=0;crLastKey=key;}
-  if(countEl)countEl.textContent=`${rows.length} of ${clinicalRecordRows.length} patient${clinicalRecordRows.length!==1?'s':''}`;
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="9" class="empty">No patients match this search.</td></tr>';renderPager('cr-pager',0,0,crPage,()=>{});return;}
-  const clip=(v,n)=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>n?t.slice(0,n-2)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
-  const page=pageSlice(rows,crPage,PD_PAGE_SIZE); crPage=page.page;
-  tbody.innerHTML=page.rows.map(p=>{
-    const[text,cls]=patientOutcome(p);
-    return `<tr class="pd-click-row" onclick="openPatientRecord('${p.id}')" title="Click to open patient record">
-      <td>${htmlSafe(p.first_name||'')||'<span class="pd-dash">—</span>'}</td>
-      <td><strong>${htmlSafe(p.surname||'')||'—'}</strong></td>
-      <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
-      <td>${htmlSafe(p.locality||'')||'<span class="pd-dash">—</span>'}</td>
-      <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
-      <td>${clip(p.stoma_type,26)}</td>
-      <td>${clip(p.findings,52)}</td>
-      <td><span class="cr-out ${cls}">${htmlSafe(text)}</span></td>
-      <td onclick="event.stopPropagation();"><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button></td>
-    </tr>`;
-  }).join('');
-  renderPager('cr-pager',rows.length,PD_PAGE_SIZE,crPage,d=>{crPage+=d;renderClinicalRecord();});
-}
-function printClinicalRecord(){
-  const table=document.getElementById('cr-table');
-  if(!table||!clinicalRecordRows.length){alert('The clinical record is still loading.');return;}
-  const w=window.open('','_blank');
-  if(!w){alert('Please allow pop-ups to print the clinical record.');return;}
-  const filter=document.getElementById('cr-status');
-  const scope=filter&&filter.value!=='all'?filter.selectedOptions[0].textContent:'All outcomes';
-  const printed=new Date().toLocaleDateString('en-MT',{day:'numeric',month:'long',year:'numeric'});
-  // Print what is on screen, so the search and the outcome filter carry over.
-  const copy=table.cloneNode(true);
-  copy.querySelectorAll('.pd-text').forEach(el=>{el.textContent=el.getAttribute('title')||el.textContent;});
-  // The Edit column is the last one and means nothing on paper.
-  copy.querySelectorAll('tr').forEach(r=>{if(r.cells.length)r.deleteCell(-1);});
-  w.document.write(`<html><head><title>Stoma Care Clinical Record</title><style>
-    body{font-family:Arial,sans-serif;color:#1a2e2d;margin:12px;font-size:10px;}
-    h1{font-size:17px;color:#1a2e4a;margin:0 0 2px;}
-    p.sub{color:#7a8fa6;font-size:9.5px;margin:0 0 10px;}
-    table{width:100%;border-collapse:collapse;}
-    th,td{border:1px solid #cfd8e3;padding:3px 5px;text-align:left;vertical-align:top;}
-    th{background:#eef2f7;color:#1a2e4a;font-size:8px;text-transform:uppercase;}
-    tr{page-break-inside:avoid;} thead{display:table-header-group;}
-    .cr-out{font-weight:bold;} .empty{display:none;}
-    @page{size:A4 landscape;margin:9mm;}
-  </style></head><body>
-    <h1>MDH Stoma Care Clinic — Clinical Record</h1>
-    <p class="sub">${htmlSafe(scope)} · ${htmlSafe(document.getElementById('cr-count')?.textContent||'')} · printed ${htmlSafe(printed)}</p>
-    ${copy.outerHTML}
-  </body></html>`);
-  w.document.close();
-  setTimeout(()=>{w.focus();w.print();},350);
-}
-
 
 /* ── NEEDS CHECKING (possible duplicates) ─────────────────────────────────
    Scans the whole registry for patients who look like one person entered
