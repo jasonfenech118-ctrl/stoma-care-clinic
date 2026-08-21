@@ -610,6 +610,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .psm-foot-right{display:flex;gap:8px;}
 .psm-missing{display:flex;gap:8px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:12px;padding:10px 12px;font-size:12.5px;}
 .psm-missing strong{color:#78350f;}
+/* The patient modal is tinted by sex — a warm yellow wash for male, pink for
+   female — so the reader can tell at a glance. Applied to both the record
+   summary and the edit form. */
+.mb.sex-male{background:#fffdf2;}
+.mb.sex-female{background:#fff6fb;}
+.sex-male .psm-avatar{background:#fef3c7;color:#a16207;}
+.sex-female .psm-avatar{background:#fce7f3;color:#be185d;}
+.sex-male .psm-card{border-color:#fbe6a2;background:#fffdf6;}
+.sex-female .psm-card{border-color:#f7d4e6;background:#fffafc;}
 @media(max-width:480px){.psm-dgrid{grid-template-columns:1fr;}.psm-next{flex-direction:column;align-items:stretch;}.psm-next .psm-btn{width:100%;}}
 /* IMPORT card */
 .imp-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:10px 0;}
@@ -669,9 +678,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 /* An amber left stripe marks a record that is missing one or more clinical
    fields. The stripe rides on top of any outcome colour; plain rows also get a
    faint warm tint so a page of incomplete actives stands out at a glance. */
-#pd-table tr.pd-row-incomplete td:first-child{box-shadow:inset 4px 0 0 #f59e0b;}
-#pd-table tr.pd-row-incomplete:not(.pd-row-deceased):not(.pd-row-reversed):not(.pd-row-gozo):not(.pd-row-overseas) td{background:#fffbeb;}
-#pd-table tr.pd-row-incomplete:not(.pd-row-deceased):not(.pd-row-reversed):not(.pd-row-gozo):not(.pd-row-overseas):hover td{background:#fef3c7;}
+/* An amber wash + left stripe marks a record still needing a full input. The
+   wash is a translucent overlay (box-shadow), so it reads on white active rows
+   AND on the coloured outcome rows — deceased, reversed, Gozo, overseas — where
+   a plain background swap would be hidden by the outcome colour. */
+#pd-table tr.pd-row-incomplete td{box-shadow:inset 0 0 0 999px rgba(245,158,11,.16);}
+#pd-table tr.pd-row-incomplete td:first-child{box-shadow:inset 5px 0 0 #f59e0b,inset 0 0 0 999px rgba(245,158,11,.16);}
+#pd-table tr.pd-row-incomplete:hover td{box-shadow:inset 0 0 0 999px rgba(245,158,11,.26);}
+#pd-table tr.pd-row-incomplete:hover td:first-child{box-shadow:inset 5px 0 0 #f59e0b,inset 0 0 0 999px rgba(245,158,11,.26);}
+/* On the dark deceased row the amber wash needs a touch more strength to show. */
+#pd-table tr.pd-row-incomplete.pd-row-deceased td{box-shadow:inset 0 0 0 999px rgba(245,158,11,.28);}
+#pd-table tr.pd-row-incomplete.pd-row-deceased td:first-child{box-shadow:inset 5px 0 0 #f59e0b,inset 0 0 0 999px rgba(245,158,11,.28);}
 .pr-missing{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 11px;font-size:12.5px;margin:2px 0 14px;}
 .pr-missing strong{color:#78350f;}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
@@ -1873,7 +1890,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.20-41';
+const APP_BUILD='2026.08.20-42';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6033,13 +6050,15 @@ async function fetchPatientById(patientId){
   }else if(!error)patientDatesAvailable=true;
   return{data,error};
 }
+// Tints the patient modal by sex: warm yellow for male, pink for female.
+function sexModalClass(pat){return pat?.sex==='Male'?' sex-male':pat?.sex==='Female'?' sex-female':'';}
 /* ---- edit an existing patient ---- */
 async function openPatientDatesModal(patientId){
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const mb=document.getElementById('mb');
-  mb.className='mb mb-wide';
+  mb.className='mb mb-wide'+sexModalClass(pat);
   mb.innerHTML=`<h2>Patient Details</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} — every field can be changed, including the date of birth. Leave anything that does not apply blank.</div>
     ${patientFormHTML(pat,'pcd')}
@@ -6107,6 +6126,7 @@ async function openPatientRecord(patientId){
   const{data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
   const appts=await enrichAppointments(rawAppts||[]);
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  mb.className='mb mb-wide'+sexModalClass(pat);
   const[outText,outCls]=patientOutcome(pat);
   const age=psmAge(pat.date_of_birth);
   const demo=[htmlSafe(pat.id_card||'No ID'),age!=null?age+' years':null,htmlSafe(pat.sex||'')].filter(Boolean).join(' · ');
