@@ -561,6 +561,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 @media(max-width:600px){.pr-grid{grid-template-columns:1fr;}}
 /* ── PATIENT SUMMARY (record modal, redesigned) ─────────────────────────── */
 .psm{display:grid;gap:14px;max-width:560px;margin:0 auto;}
+.psm-page{max-width:600px;margin:0 auto;padding:2px 0 28px;}
+.psm-page-bar{max-width:560px;margin:0 auto 12px;}
+.psm-back{display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--navy);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.psm-back:hover{background:#f2f5f8;}
+.psm-page.sex-male{background:#fffdf4;border-radius:16px;padding-top:14px;}
+.psm-page.sex-female{background:#fff7fb;border-radius:16px;padding-top:14px;}
 .psm svg{display:block;width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;}
 .psm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
 .psm-head-main{display:flex;align-items:flex-start;gap:12px;min-width:0;}
@@ -1484,6 +1490,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
       <div id="dup-body"><div class="report-note">Loading the registry…</div></div>
     </div>
 
+    <!-- PATIENT RECORD (opened full-page from the Registry) -->
+    <div class="page" id="page-patient-record"></div>
+
   </div>
 </div>
 
@@ -1932,7 +1941,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.21-44';
+const APP_BUILD='2026.08.21-45';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6133,13 +6142,16 @@ async function savePatientDates(patientId){
   }
   closeModal();
   refreshReminders();
+  // If the record page is open, rebuild it so the edits show; otherwise refresh
+  // whichever registry-style page is active.
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
 }
 
-/* ---- patient clinical record modal (card summary + appointments tab) ---- */
+/* ---- patient clinical record page (card summary + appointments tab) ---- */
 // A small inline icon set, so the summary has no dependency on an icon font.
 const PSM_ICONS={
   user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
@@ -6155,7 +6167,8 @@ const PSM_ICONS={
   stoma:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/>',
   pouch:'<path d="M8 3h8l-1 4a6 6 0 0 1 3 5v4a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5v-4a6 6 0 0 1 3-5Z"/><path d="M9 3h6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
-  chevron:'<path d="M9 6l6 6-6 6"/>'
+  chevron:'<path d="M9 6l6 6-6 6"/>',
+  chevleft:'<path d="M15 6l-6 6 6 6"/>'
 };
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
@@ -6314,20 +6327,23 @@ async function deleteClinicalRecord(recordId){
   await loadClinicalRecords(clrState.patientId);
   renderClinicalPanel();
 }
+// Return from the patient record page back to the Registry.
+function goRegistry(){switchTab('patients');}
 async function openPatientRecord(patientId){
-  const mb=document.getElementById('mb');
-  mb.className='mb mb-wide';
-  mb.innerHTML='<div class="report-note">Loading patient record…</div>';
-  openMo();
+  const host=document.getElementById('page-patient-record');
+  const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Registry</button></div>';
+  host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient record…</div></div>';
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  host.classList.add('active');
+  window.scrollTo(0,0);
   const{data:pat,error}=await fetchPatientById(patientId);
-  if(error||!pat){mb.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  if(error||!pat){host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div></div>';return;}
   const{data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
   const appts=await enrichAppointments(rawAppts||[]);
   clrState.expanded={};
   await loadClinicalRecords(patientId);
   const clrCount=clrState.available?clrState.rows.length:0;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
-  mb.className='mb mb-wide'+sexModalClass(pat);
   const[outText,outCls]=patientOutcome(pat);
   const age=psmAge(pat.date_of_birth);
   const demo=[htmlSafe(pat.id_card||'No ID'),age!=null?age+' years':null,htmlSafe(pat.sex||'')].filter(Boolean).join(' · ');
@@ -6350,7 +6366,7 @@ async function openPatientRecord(patientId){
   const histItems=past.length
     ? past.map(a=>`<div class="psm-appt"><div class="psm-appt-meta"><span>${htmlSafe(fmtShortDate(a.appt_date))} · ${String(a.appt_slot||'').slice(0,5)}</span>${badge(a)}</div><span class="psm-appt-by">${staffName(a)==='—'?'Unassigned':'Seen by '+staffName(a)}</span></div>`).join('')
     : '<div style="color:var(--muted);font-size:12.5px;">No appointment history yet.</div>';
-  mb.innerHTML=`<div class="psm">
+  host.innerHTML=`<div class="psm-page${sexModalClass(pat)}">${backBar}<div class="psm">
     <header class="psm-head">
       <div class="psm-head-main">
         <div class="psm-avatar">${psmIc('user')}</div>
@@ -6360,7 +6376,7 @@ async function openPatientRecord(patientId){
           <span class="psm-status"><span class="cr-out ${outCls}">${htmlSafe(outText)}</span>${pat.locality?`<span class="psm-loc">${htmlSafe(pat.locality)}</span>`:''}</span>
         </div>
       </div>
-      <button class="psm-close" onclick="closeModal()" aria-label="Close">${psmIc('x')}</button>
+      <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
     </header>
 
     <nav class="psm-tabs">
@@ -6413,11 +6429,11 @@ async function openPatientRecord(patientId){
     <footer class="psm-foot">
       <button class="psm-btn psm-btn-danger" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">${psmIc('trash')} Delete</button>
       <div class="psm-foot-right">
-        <button class="psm-btn" onclick="closeModal()">Close</button>
+        <button class="psm-btn" onclick="goRegistry()">Close</button>
         <button class="psm-btn psm-btn-primary" onclick="openPatientDatesModal('${patientId}')">${psmIc('pencil')} Edit patient</button>
       </div>
     </footer>
-  </div>`;
+  </div></div>`;
   renderClinicalPanel();
 }
 
@@ -6427,8 +6443,9 @@ function confirmDeletePatient(patientId,name){
   mb.className='mb';
   mb.innerHTML=`<h2 style="color:#b91c1c;">Delete Patient</h2>
     <div class="msub">You are about to permanently delete <strong>${name}</strong> and all their appointment history. This cannot be undone.</div>
-    <div class="mact"><button class="btn-cancel" onclick="openPatientRecord('${patientId}')">Cancel</button>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" style="background:#b91c1c;" onclick="executeDeletePatient('${patientId}')">Yes, delete permanently</button></div>`;
+  openMo();
 }
 async function executeDeletePatient(patientId){
   await SB.from('appointments').delete().eq('patient_id',patientId);
@@ -6436,6 +6453,8 @@ async function executeDeletePatient(patientId){
   if(error){alert('Could not delete: '+error.message);return;}
   closeModal();
   refreshReminders();
+  // The record was open as its own page — go back to the Registry after delete.
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))switchTab('patients');
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
