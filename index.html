@@ -1950,7 +1950,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-57';
+const APP_BUILD='2026.08.25-58';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5849,7 +5849,7 @@ let patientDatesAvailable=true;
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -6049,6 +6049,18 @@ function newStomaRowHTML(d){
 function patientStomaRows(p){return parseStomas(p).map(newStomaRowHTML).join('');}
 function addStomaRow(prefix){document.getElementById(`${prefix}-stomalist`)?.insertAdjacentHTML('beforeend',newStomaRowHTML());}
 function toggleStomaClosure(sel){const wrap=sel.closest('.stoma-row')?.querySelector('.st-closurewrap');if(wrap)wrap.hidden=(sel.value!=='yes');}
+// Additional outputs formed at the SAME first operation — a second stoma, a
+// mucus fistula, etc. Held as a JSON array (initial_stomas), each {type,location}.
+function parseInitialStomas(p){let a=p?.initial_stomas;if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}return Array.isArray(a)?a:[];}
+function initialStomaRowHTML(d){
+  d=d||{};
+  return `<div class="stoma-row"><div class="edit-seen-grid">
+      <div class="fg"><label>Type</label><input type="text" class="ist-type" value="${htmlSafe(d.type||'')}" placeholder="e.g. Mucus fistula, End colostomy"/></div>
+      <div class="fg"><label>Stoma location</label><select class="ist-loc">${stomaLocOptions(d.location)}</select></div>
+    </div>
+    <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove</button></div>`;
+}
+function addInitialStomaRow(prefix){document.getElementById(`${prefix}-iststomalist`)?.insertAdjacentHTML('beforeend',initialStomaRowHTML());}
 function patientFormHTML(p,prefix){
   const v=k=>htmlSafe(p?.[k]||'');
   const hasRefash=!!(p?.refashion_closure_date||p?.refashion_formed_date||p?.refashion_findings);
@@ -6070,6 +6082,10 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
     <div class="fg"><label>Stoma type</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
     <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc">${stomaLocOptions(p?.stoma_location)}</select></div>
+    <div class="fg" style="grid-column:1 / -1;">
+      <div id="${prefix}-iststomalist">${parseInitialStomas(p).map(initialStomaRowHTML).join('')}</div>
+      <button type="button" class="pf-add-btn" onclick="addInitialStomaRow('${prefix}')">＋ Add another stoma / mucus fistula (same operation)</button>
+    </div>
     <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
@@ -6155,6 +6171,9 @@ function readPatientForm(prefix){
     discharge_date:val('discharge')||null,
     stoma_type:val('stoma')||null,
     stoma_location:val('stomaloc')||null,
+    initial_stomas:[...document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`)].map(r=>({
+      type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:r.querySelector('.ist-loc')?.value||null
+    })).filter(s=>s.type||s.location),
     findings:val('findings')||null,
     refashion_closure_date:val('refclosure')||null,
     refashion_formed_date:val('refformed')||null,
@@ -6501,6 +6520,7 @@ async function openPatientRecord(patientId){
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
           ${dItem('Stoma type',pat.stoma_type)}
           ${dItem('Stoma location',pat.stoma_location)}
+          ${parseInitialStomas(pat).map(s=>dItem('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}`)).join('')}
           ${dDate('Surgery date',pat.surgery_date)}
           ${dDate('Discharge date',pat.discharge_date)}
           ${dItem('Operation and findings',pat.findings,true)}

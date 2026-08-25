@@ -45,6 +45,7 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_type    text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_location text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS initial_stomas jsonb DEFAULT '[]'::jsonb;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex           text;
 -- "procedure" is a keyword in some tools, so the column spells itself out.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
