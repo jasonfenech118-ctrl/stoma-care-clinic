@@ -49,6 +49,10 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex           text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS findings      text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS locality      text;
+-- Stoma refashioning: old stoma closed and a new one formed.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_closure_date date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_formed_date  date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_findings     text;
 
 
 -- -----------------------------------------------------------------------------
