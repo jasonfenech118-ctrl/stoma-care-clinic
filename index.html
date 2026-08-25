@@ -649,6 +649,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .clr-rec:last-child{border-bottom:0;}
 .clr-rec-copy{display:grid;gap:2px;min-width:0;}
 .clr-rec-title{font-size:13px;font-weight:700;color:var(--navy);}
+.clr-code{font-family:monospace;font-size:10.5px;font-weight:800;color:var(--teal);background:#e8f5f4;padding:1px 6px;border-radius:6px;margin-left:7px;letter-spacing:.3px;vertical-align:middle;}
+.clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
+.clr-idline[hidden]{display:none;}
+.pf-add-btn{display:inline-flex;align-items:center;gap:6px;margin:2px 0 12px;padding:9px 14px;border:1.5px dashed var(--border);border-radius:10px;background:#f7f9fb;color:var(--teal);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.pf-add-btn:hover{border-color:var(--teal);background:#eef7f6;}
+.pf-add-btn[hidden]{display:none;}
 .clr-rec-meta{font-size:11.5px;color:var(--muted);}
 .clr-rec-actions{display:flex;gap:6px;flex:0 0 auto;}
 .clr-mini{padding:4px 9px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--navy);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -1941,7 +1947,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-48';
+const APP_BUILD='2026.08.25-50';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6006,6 +6012,7 @@ function onPatientStatusSelect(){
    happened — rather than something inferred behind the nurse's back. */
 function patientFormHTML(p,prefix){
   const v=k=>htmlSafe(p?.[k]||'');
+  const hasRefash=!!(p?.refashion_closure_date||p?.refashion_formed_date||p?.refashion_findings);
   return `
   <h3 class="pf-head">Patient</h3>
   <div class="edit-seen-grid">
@@ -6025,13 +6032,16 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
-  <h3 class="pf-head">Stoma refashioning</h3>
-  <div class="edit-seen-grid">
-    <div class="fg"><label>Date of stoma closure</label><input type="date" id="${prefix}-refclosure" value="${v('refashion_closure_date')}"/></div>
-    <div class="fg"><label>New stoma formed date</label><input type="date" id="${prefix}-refformed" value="${v('refashion_formed_date')}"/></div>
-    <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-reffindings" value="${v('refashion_findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
+  <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showRefashion('${prefix}')" ${hasRefash?'hidden':''}>＋ Add stoma refashioning</button>
+  <div id="${prefix}-refwrap" ${hasRefash?'':'hidden'}>
+    <h3 class="pf-head">Stoma refashioning</h3>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Date of stoma closure</label><input type="date" id="${prefix}-refclosure" value="${v('refashion_closure_date')}"/></div>
+      <div class="fg"><label>New stoma formed date</label><input type="date" id="${prefix}-refformed" value="${v('refashion_formed_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-reffindings" value="${v('refashion_findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
+    </div>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">Use this only when a stoma is refashioned — the old one is closed and a new one formed at the same operation.</div>
   </div>
-  <div class="registry-lookup-note" style="margin-bottom:10px;">Use this only when a stoma is refashioned — the old one is closed and a new one formed at the same operation. Leave blank otherwise.</div>
 
   <h3 class="pf-head">Outcome</h3>
   <div class="edit-seen-grid">
@@ -6045,6 +6055,11 @@ function patientFormHTML(p,prefix){
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
   </div>
   <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back.</div>`;
+}
+// Reveal the stoma refashioning fields when the nurse chooses to add them.
+function showRefashion(prefix){
+  const wrap=document.getElementById(`${prefix}-refwrap`);const btn=document.getElementById(`${prefix}-refbtn`);
+  if(wrap)wrap.hidden=false; if(btn)btn.hidden=true;
 }
 // Entering a date moves the status to the outcome it describes, visibly, so
 // nothing is decided silently at save time.
@@ -6202,6 +6217,9 @@ const CLR_KINDS=[
   {kind:'stoma',    label:'Stomas',    icon:'stoma', title:'Stoma',    titleLabel:'Stoma type',   titlePh:'e.g. End colostomy',        detailLabel:'Site',     detailPh:'e.g. Left lower quadrant', statusPh:'e.g. Active',            cur:'Active stoma',     none:'No stoma recorded'},
   {kind:'appliance',label:'Appliances',icon:'pouch', title:'Appliance',titleLabel:'Appliance',    titlePh:'e.g. One-piece closed pouch',detailLabel:'Detail',  detailPh:'e.g. 40mm cut-to-fit',    statusPh:'e.g. Current',           cur:'Current appliance',none:'No appliance recorded'}];
 const clrMeta=k=>CLR_KINDS.find(c=>c.kind===k)||CLR_KINDS[0];
+// Each stoma carries a unique, automatic ID derived from its database id —
+// e.g. STO-7F3K9A2C. It needs no coordination and never changes for a record.
+function stomaCode(rec){return (rec&&rec.kind==='stoma'&&rec.id)?'STO-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase():'';}
 let clrState={patientId:null,rows:[],available:true,expanded:{}};
 async function loadClinicalRecords(patientId){
   clrState.patientId=patientId;
@@ -6231,10 +6249,11 @@ function renderClinicalPanel(){
     const recs=clrState.rows.filter(r=>r.kind===meta.kind);
     const cur=recs.find(r=>r.is_current)||recs[0];
     const open=!!clrState.expanded[meta.kind];
-    const line=cur?`${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
+    const curCode=stomaCode(cur);
+    const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
     const listRows=recs.length?recs.map(r=>`<div class="clr-rec">
         <div class="clr-rec-copy">
-          <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}</span>
+          <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}${stomaCode(r)?`<span class="clr-code">${stomaCode(r)}</span>`:''}</span>
           <span class="clr-rec-meta">${[r.detail?htmlSafe(r.detail):'',r.record_date?htmlSafe(fmtShortDate(r.record_date)):'',r.status?htmlSafe(r.status):''].filter(Boolean).join(' • ')||'—'}${r.notes?'<br>'+htmlSafe(r.notes):''}</span>
         </div>
         <div class="clr-rec-actions">
@@ -6273,6 +6292,7 @@ function openClinicalRecordForm(kind,recordId){
     <form class="clr-form" id="clr-form" onsubmit="return false;">
       <label>Kind
         <select id="clr-kind" onchange="clrKindHint()" ${rec?'disabled':''}>${CLR_KINDS.map(c=>opt(c.kind)).join('')}</select></label>
+      <div id="clr-stoma-id" class="clr-idline"${k==='stoma'?'':' hidden'}>${rec&&rec.kind==='stoma'?('Stoma ID&nbsp;&nbsp;'+stomaCode(rec)):'Stoma ID — assigned automatically on save'}</div>
       <label id="clr-title-l">${meta.titleLabel}
         <input type="text" id="clr-title" value="${v(rec?.title)}" placeholder="${meta.titlePh}"/></label>
       <div class="row2">
@@ -6303,6 +6323,8 @@ function clrKindHint(){
   if(ti)ti.placeholder=meta.titlePh;
   if(di)di.placeholder=meta.detailPh;
   if(si)si.placeholder=meta.statusPh;
+  const idl=document.getElementById('clr-stoma-id');
+  if(idl)idl.hidden=(k!=='stoma');   // the auto Stoma ID line only applies to stomas
 }
 async function saveClinicalRecord(recordId){
   const val=id=>String(document.getElementById(id)?.value||'').trim();
