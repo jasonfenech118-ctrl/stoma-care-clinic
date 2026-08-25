@@ -23,6 +23,8 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_formed_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_findings    text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_location    text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_closure_date date;
+-- Multiple new stoma formations, stored as a JSON array.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_stomas jsonb DEFAULT '[]'::jsonb;
 
 -- Confirm they landed.
 SELECT column_name, data_type

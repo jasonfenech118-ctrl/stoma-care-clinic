@@ -44,6 +44,7 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharge_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_type    text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_location text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex           text;
 -- "procedure" is a keyword in some tools, so the column spells itself out.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
@@ -59,6 +60,8 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_formed_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_findings    text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_location    text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_closure_date date;
+-- Multiple new stoma formations, stored as a JSON array.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_stomas jsonb DEFAULT '[]'::jsonb;
 
 
 -- -----------------------------------------------------------------------------
