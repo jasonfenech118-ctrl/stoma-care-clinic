@@ -655,6 +655,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pf-add-btn{display:inline-flex;align-items:center;gap:6px;margin:2px 0 12px;padding:9px 14px;border:1.5px dashed var(--border);border-radius:10px;background:#f7f9fb;color:var(--teal);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
 .pf-add-btn:hover{border-color:var(--teal);background:#eef7f6;}
 .pf-add-btn[hidden]{display:none;}
+.pf-add-row{display:flex;gap:8px;flex-wrap:wrap;}
 .clr-rec-meta{font-size:11.5px;color:var(--muted);}
 .clr-rec-actions{display:flex;gap:6px;flex:0 0 auto;}
 .clr-mini{padding:4px 9px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--navy);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -1947,7 +1948,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-51';
+const APP_BUILD='2026.08.25-52';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5842,7 +5843,7 @@ let patientDatesAvailable=true;
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_findings';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_findings,newstoma_formed_date,newstoma_findings';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -6013,6 +6014,7 @@ function onPatientStatusSelect(){
 function patientFormHTML(p,prefix){
   const v=k=>htmlSafe(p?.[k]||'');
   const hasRefash=!!(p?.refashion_closure_date||p?.refashion_formed_date||p?.refashion_findings);
+  const hasNewstoma=!!(p?.newstoma_formed_date||p?.newstoma_findings);
   return `
   <h3 class="pf-head">Patient</h3>
   <div class="edit-seen-grid">
@@ -6032,7 +6034,10 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
-  <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showRefashion('${prefix}')" ${hasRefash?'hidden':''}>＋ Add stoma refashioning</button>
+  <div class="pf-add-row">
+    <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showPfSection('${prefix}','ref')" ${hasRefash?'hidden':''}>＋ Add stoma refashioning</button>
+    <button type="button" class="pf-add-btn" id="${prefix}-newbtn" onclick="showPfSection('${prefix}','new')" ${hasNewstoma?'hidden':''}>＋ Add new stoma formation</button>
+  </div>
   <div id="${prefix}-refwrap" ${hasRefash?'':'hidden'}>
     <h3 class="pf-head">Stoma refashioning</h3>
     <div class="edit-seen-grid">
@@ -6040,7 +6045,15 @@ function patientFormHTML(p,prefix){
       <div class="fg"><label>Date of stoma closure <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" id="${prefix}-refclosure" value="${v('refashion_closure_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-reffindings" value="${v('refashion_findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
-    <div class="registry-lookup-note" style="margin-bottom:10px;">Record a new stoma formed after the first. Fill the <strong>closure date</strong> only if the previous stoma was closed — leave it blank if the previous stoma is still present, in which case the patient has two stomas.</div>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">The previous stoma is closed and a new one formed. Fill the <strong>closure date</strong> if the old stoma was closed; leave it blank if it is still present (the patient then has two stomas).</div>
+  </div>
+  <div id="${prefix}-newwrap" ${hasNewstoma?'':'hidden'}>
+    <h3 class="pf-head">New stoma formation</h3>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>New stoma formed date</label><input type="date" id="${prefix}-newformed" value="${v('newstoma_formed_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-newfindings" value="${v('newstoma_findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
+    </div>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">A new stoma formed while the previous one is still present — the patient has two stomas.</div>
   </div>
 
   <h3 class="pf-head">Outcome</h3>
@@ -6056,9 +6069,9 @@ function patientFormHTML(p,prefix){
   </div>
   <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back.</div>`;
 }
-// Reveal the stoma refashioning fields when the nurse chooses to add them.
-function showRefashion(prefix){
-  const wrap=document.getElementById(`${prefix}-refwrap`);const btn=document.getElementById(`${prefix}-refbtn`);
+// Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
+function showPfSection(prefix,key){
+  const wrap=document.getElementById(`${prefix}-${key}wrap`);const btn=document.getElementById(`${prefix}-${key}btn`);
   if(wrap)wrap.hidden=false; if(btn)btn.hidden=true;
 }
 // Entering a date moves the status to the outcome it describes, visibly, so
@@ -6097,6 +6110,8 @@ function readPatientForm(prefix){
     refashion_closure_date:val('refclosure')||null,
     refashion_formed_date:val('refformed')||null,
     refashion_findings:val('reffindings')||null,
+    newstoma_formed_date:val('newformed')||null,
+    newstoma_findings:val('newfindings')||null,
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6446,6 +6461,13 @@ async function openPatientRecord(patientId){
           ${dDate('Stoma closure date',pat.refashion_closure_date)}
           ${dItem('Operation and findings',pat.refashion_findings,true)}
         </dl>${(pat.refashion_formed_date&&!pat.refashion_closure_date)?`<div class="psm-audit">${psmIc('stoma')} No closure date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
+      </div>`:''}
+      ${(pat.newstoma_formed_date||pat.newstoma_findings)?`<div>
+        <div class="psm-sec-head"><h3>New stoma formation</h3><span class="clr-badge">Two stomas present</span></div>
+        <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+          ${dDate('New stoma formed',pat.newstoma_formed_date)}
+          ${dItem('Operation and findings',pat.newstoma_findings,true)}
+        </dl><div class="psm-audit">${psmIc('stoma')} A new stoma was formed with the previous one still present — this patient has two stomas.</div></div>
       </div>`:''}
       <div>
         <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
@@ -7111,6 +7133,8 @@ const IMPORT_FIELDS=[
   {key:'refashion_closure_date',label:'Stoma closure date', match:['closuredate','closure date','date of closure','stoma closure','refashion closure']},
   {key:'refashion_formed_date', label:'New stoma formed date', match:['newstomadate','new stoma date','new stoma formed','refashion date','refashioning date']},
   {key:'refashion_findings',    label:'Refashioning findings', match:['refashioning findings','refashion findings','refashioning']},
+  {key:'newstoma_formed_date',  label:'New stoma formation date', match:['new stoma formation','new stoma formation date','second stoma date','additional stoma date']},
+  {key:'newstoma_findings',     label:'New stoma formation findings', match:['new stoma formation findings','second stoma findings','additional stoma findings']},
   {key:'followup_status',label:'Status',         match:['patientstatus','patient status','followupstatus','followup status','status'],
    hint:'Active, Paused, Reversed, Deceased, Relocated Overseas or Discharged to Gozo.'}
 ];
@@ -7391,11 +7415,11 @@ function importRowToPatient(r,map,opt){
   if(stoma)out.stoma_type=stoma;
   const sex=map.sex?importCleanSex(r[map.sex]):'';
   if(sex)out.sex=sex;
-  ['locality','procedure_performed','findings','refashion_findings'].forEach(k=>{
+  ['locality','procedure_performed','findings','refashion_findings','newstoma_findings'].forEach(k=>{
     const v=map[k]?importCleanText(r[map[k]]):'';
     if(v)out[k]=v;
   });
-  ['date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date','refashion_closure_date','refashion_formed_date'].forEach(k=>{
+  ['date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date','refashion_closure_date','refashion_formed_date','newstoma_formed_date'].forEach(k=>{
     if(!map[k])return; const v=importParseDate(r[map[k]]); if(v)out[k]=v;
   });
   // Status: the file's own column wins, then a blanket choice, then the dates.
