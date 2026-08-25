@@ -1941,7 +1941,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-47';
+const APP_BUILD='2026.08.25-48';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5836,7 +5836,7 @@ let patientDatesAvailable=true;
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_findings';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -6025,6 +6025,14 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
+  <h3 class="pf-head">Stoma refashioning</h3>
+  <div class="edit-seen-grid">
+    <div class="fg"><label>Date of stoma closure</label><input type="date" id="${prefix}-refclosure" value="${v('refashion_closure_date')}"/></div>
+    <div class="fg"><label>New stoma formed date</label><input type="date" id="${prefix}-refformed" value="${v('refashion_formed_date')}"/></div>
+    <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-reffindings" value="${v('refashion_findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
+  </div>
+  <div class="registry-lookup-note" style="margin-bottom:10px;">Use this only when a stoma is refashioned — the old one is closed and a new one formed at the same operation. Leave blank otherwise.</div>
+
   <h3 class="pf-head">Outcome</h3>
   <div class="edit-seen-grid">
     <div class="fg"><label>Status</label><select id="${prefix}-status" onchange="onPatientFormOutcome('${prefix}')">
@@ -6071,6 +6079,9 @@ function readPatientForm(prefix){
     discharge_date:val('discharge')||null,
     stoma_type:val('stoma')||null,
     findings:val('findings')||null,
+    refashion_closure_date:val('refclosure')||null,
+    refashion_formed_date:val('refformed')||null,
+    refashion_findings:val('reffindings')||null,
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6406,6 +6417,14 @@ async function openPatientRecord(patientId){
           ${pat.deceased_date?dDate('Date of RIP',pat.deceased_date):''}
         </dl></div>
       </div>
+      ${(pat.refashion_closure_date||pat.refashion_formed_date||pat.refashion_findings)?`<div>
+        <div class="psm-sec-head"><h3>Stoma refashioning</h3></div>
+        <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+          ${dDate('Stoma closure date',pat.refashion_closure_date)}
+          ${dDate('New stoma formed',pat.refashion_formed_date)}
+          ${dItem('Operation and findings',pat.refashion_findings,true)}
+        </dl></div>
+      </div>`:''}
       <div>
         <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
@@ -7066,7 +7085,10 @@ const IMPORT_FIELDS=[
   {key:'sex',           label:'Sex',             match:['sex','gender']},
   {key:'locality',      label:'Locality',        match:['locality','town','village','address','district']},
   {key:'procedure_performed',label:'Procedure',  match:['operation performed','procedure performed','operationperformed','procedure','operation']},
-  {key:'findings',      label:'Findings',        match:['findings','diagnosis','indication','complications','comments','patientnotes','patient notes','notes']},
+  {key:'findings',      label:'Operation and findings', match:['findings','diagnosis','indication','complications','comments','patientnotes','patient notes','notes','operation and findings']},
+  {key:'refashion_closure_date',label:'Stoma closure date', match:['closuredate','closure date','date of closure','stoma closure','refashion closure']},
+  {key:'refashion_formed_date', label:'New stoma formed date', match:['newstomadate','new stoma date','new stoma formed','refashion date','refashioning date']},
+  {key:'refashion_findings',    label:'Refashioning findings', match:['refashioning findings','refashion findings','refashioning']},
   {key:'followup_status',label:'Status',         match:['patientstatus','patient status','followupstatus','followup status','status'],
    hint:'Active, Paused, Reversed, Deceased, Relocated Overseas or Discharged to Gozo.'}
 ];
@@ -7347,11 +7369,11 @@ function importRowToPatient(r,map,opt){
   if(stoma)out.stoma_type=stoma;
   const sex=map.sex?importCleanSex(r[map.sex]):'';
   if(sex)out.sex=sex;
-  ['locality','procedure_performed','findings'].forEach(k=>{
+  ['locality','procedure_performed','findings','refashion_findings'].forEach(k=>{
     const v=map[k]?importCleanText(r[map[k]]):'';
     if(v)out[k]=v;
   });
-  ['date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date'].forEach(k=>{
+  ['date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date','refashion_closure_date','refashion_formed_date'].forEach(k=>{
     if(!map[k])return; const v=importParseDate(r[map[k]]); if(v)out[k]=v;
   });
   // Status: the file's own column wins, then a blanket choice, then the dates.
