@@ -1941,7 +1941,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.21-45';
+const APP_BUILD='2026.08.21-46';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6023,7 +6023,7 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
     <div class="fg"><label>Stoma type</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
     <div class="fg"><label>Procedure</label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Hartmann's"/></div>
-    <div class="fg" style="grid-column:1 / -1;"><label>Findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. CA - Rectum"/></div>
+    <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
   <h3 class="pf-head">Outcome</h3>
@@ -6355,6 +6355,10 @@ async function openPatientRecord(patientId){
   const past=appts.filter(a=>!(String(a.appt_date)>=today&&a.status==='booked'));   // query is already newest-first
   const next=upcoming[0]||null;
   const lastSeen=past.find(a=>a.status==='attended');
+  // Deceased and reversed patients are not booked for review, so no Schedule button.
+  const st=normaliseFollowupStatus(pat.followup_status);
+  const canSchedule=!(st==='deceased'||st==='reversed');
+  const scheduleBtn=canSchedule?`<button class="psm-btn psm-btn-primary" onclick="openPatientRebookModal('${patientId}')">${psmIc('calplus')} Schedule</button>`:'';
   // A detail cell: shows the value, or an italic "Not recorded" when it is blank.
   const dItem=(label,val,wide)=>`<div class="psm-ditem${wide?' wide':''}"><dt>${htmlSafe(label)}</dt>${val?`<dd>${htmlSafe(val)}</dd>`:'<dd class="na">Not recorded</dd>'}</div>`;
   const dDate=(label,val,wide)=>dItem(label,val?fmtShortDate(val):'',wide);
@@ -6387,7 +6391,7 @@ async function openPatientRecord(patientId){
 
     <section class="psm-panel" id="psm-summary">
       <div class="psm-card"><div class="psm-next">${nextCopy}
-        <button class="psm-btn psm-btn-primary" onclick="openPatientRebookModal('${patientId}')">${psmIc('calplus')} Schedule</button></div></div>
+        ${scheduleBtn}</div></div>
       ${missingBlock}
       <div>
         <div class="psm-sec-head"><h3>Clinical snapshot</h3><span class="psm-badge">Stoma clinic</span></div>
@@ -6396,7 +6400,7 @@ async function openPatientRecord(patientId){
           ${dDate('Surgery date',pat.surgery_date)}
           ${dDate('Discharge date',pat.discharge_date)}
           ${dItem('Procedure',pat.procedure_performed)}
-          ${dItem('Findings',pat.findings,true)}
+          ${dItem('Operation and findings',pat.findings,true)}
           ${pat.reversal_date?dDate('Reversal date',pat.reversal_date):''}
           ${pat.deceased_date?dDate('Date of RIP',pat.deceased_date):''}
         </dl></div>
@@ -6419,7 +6423,7 @@ async function openPatientRecord(patientId){
         ${next
           ? `<div class="psm-next-copy"><span class="lbl">Upcoming appointment</span><span class="big">${htmlSafe(fmtShortDate(next.appt_date))} · ${String(next.appt_slot||'').slice(0,5)}</span><span class="sub">${staffName(next)==='—'?'Not yet assigned':'With '+staffName(next)}</span></div>`
           : `<div class="psm-next-copy"><span class="lbl">Upcoming appointment</span><span class="big">Nothing scheduled</span><span class="sub">${htmlSafe(outText)}</span></div>`}
-        <button class="psm-btn psm-btn-primary" onclick="openPatientRebookModal('${patientId}')">${psmIc('calplus')} Schedule</button></div></div>
+        ${scheduleBtn}</div></div>
       <div>
         <div class="psm-sec-head"><h3>Recent history</h3><span class="psm-badge">${past.length} visit${past.length!==1?'s':''}</span></div>
         <div class="psm-card"><div class="psm-appts">${histItems}</div></div>
