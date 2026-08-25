@@ -17,6 +17,9 @@
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_closure_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_formed_date  date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_findings     text;
+-- New stoma formation: an additional stoma formed, the previous one still present.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_formed_date date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_findings    text;
 
 -- Confirm they landed.
 SELECT column_name, data_type
