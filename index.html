@@ -650,6 +650,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .clr-rec-copy{display:grid;gap:2px;min-width:0;}
 .clr-rec-title{font-size:13px;font-weight:700;color:var(--navy);}
 .clr-code{font-family:monospace;font-size:10.5px;font-weight:800;color:var(--teal);background:#e8f5f4;padding:1px 6px;border-radius:6px;margin-left:7px;letter-spacing:.3px;vertical-align:middle;}
+.clr-rec-tag{font-size:10.5px;font-weight:700;color:#64748b;background:#f1f5f9;border:1px solid var(--border);border-radius:999px;padding:3px 9px;white-space:nowrap;}
 .clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
 .clr-idline[hidden]{display:none;}
 .pf-add-btn{display:inline-flex;align-items:center;gap:6px;margin:2px 0 12px;padding:9px 14px;border:1.5px dashed var(--border);border-radius:10px;background:#f7f9fb;color:var(--teal);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -1893,6 +1894,9 @@ function isCommonDay(dateStr){
   return dow>=1&&dow<=6&&!holidays[dateStr];
 }
 function isBookableDayForOwner(dateStr,owner){
+  // A public holiday is a working clinic day, so either list can book on it —
+  // the Common weekday list and the nurse-led clinic both run.
+  if(holidays[dateStr])return true;
   return normaliseFollowupOwner(owner)==='Common'?isCommonDay(dateStr):isClinicDay(dateStr);
 }
 function bookableDayReason(dateStr,owner){
@@ -1920,7 +1924,9 @@ function daysInMonthMatching(year,month,predicate){
 function clinicDaysInMonth(year,month){return daysInMonthMatching(year,month,isClinicDay);}
 function commonDaysInMonth(year,month){return daysInMonthMatching(year,month,isCommonDay);}
 function bookableDaysInMonth(year,month,owner){
-  return normaliseFollowupOwner(owner)==='Common'?commonDaysInMonth(year,month):clinicDaysInMonth(year,month);
+  // Offer every day this list may book, public holidays included, so a holiday
+  // clinic day is picked straight from the dropdown instead of "Other date".
+  return daysInMonthMatching(year,month,ds=>isBookableDayForOwner(ds,owner));
 }
 // Upcoming Sundays — used by the Change of Duty pickers.
 function getSundays(count=60){
@@ -1950,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-58';
+const APP_BUILD='2026.08.27-60';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6034,6 +6040,7 @@ function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');const closed=!!d.closure_date;
   return `<div class="stoma-row">
     <div class="edit-seen-grid">
+      <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Old stoma closed?</label><select class="st-closed" onchange="toggleStomaClosure(this)">
@@ -6181,9 +6188,9 @@ function readPatientForm(prefix){
     refashion_findings:val('reffindings')||null,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
       const g=c=>r.querySelector(c);const closed=g('.st-closed')?.value==='yes';
-      return{formed_date:g('.st-formed')?.value||null,location:g('.st-loc')?.value||null,
+      return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:g('.st-loc')?.value||null,
         closure_date:closed?(g('.st-closuredate')?.value||null):null,discharge_date:g('.st-discharge')?.value||null,findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.formed_date||s.location||s.findings||s.closure_date||s.discharge_date),
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.closure_date||s.discharge_date),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6307,7 +6314,34 @@ const clrMeta=k=>CLR_KINDS.find(c=>c.kind===k)||CLR_KINDS[0];
 // Each stoma carries a unique, automatic ID derived from its database id —
 // e.g. STO-7F3K9A2C. It needs no coordination and never changes for a record.
 function stomaCode(rec){return (rec&&rec.kind==='stoma'&&rec.id)?'STO-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase():'';}
-let clrState={patientId:null,rows:[],available:true,expanded:{}};
+let clrState={patientId:null,patient:null,rows:[],available:true,expanded:{}};
+// The Stomas section also shows the stoma(s) already on the patient's own record
+// (the surgery stoma, any same-operation stomas, refashioning and later new
+// stomas) so a recorded stoma is never missing here. These are read-only —
+// they are edited through Edit patient, not the clinical_records table.
+function derivedStomaRecords(pat){
+  if(!pat)return [];
+  const out=[];let n=0;
+  const reversed=!!pat.reversal_date;
+  const add=(o)=>{if(!o.title&&!o.detail&&!o.record_date&&!o.notes)return;
+    out.push({kind:'stoma',id:`d${n}-${pat.id||''}`,derived:true,is_current:o.is_current!==false,
+      title:o.title||'Stoma',detail:o.detail||'',record_date:o.record_date||null,status:o.status||'',notes:o.notes||''});n++;};
+  // The stoma formed at surgery.
+  if(pat.stoma_type||pat.stoma_location)
+    add({title:pat.stoma_type,detail:pat.stoma_location,record_date:pat.surgery_date,
+      is_current:!reversed,status:reversed?'Reversed':'Active'});
+  // Extra stomas / mucus fistulas formed at the same first operation.
+  parseInitialStomas(pat).forEach(s=>add({title:s.type,detail:s.location,record_date:pat.surgery_date,
+    is_current:!reversed,status:reversed?'Reversed':'Active'}));
+  // A refashioning — old stoma closed and a new one formed.
+  if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location)
+    add({title:'Refashioned stoma',detail:pat.refashion_location,record_date:pat.refashion_formed_date,
+      status:pat.refashion_closure_date?'Previous stoma closed':'Two stomas present',notes:pat.refashion_findings});
+  // Later new stoma formations.
+  parseStomas(pat).forEach(s=>add({title:s.type||'New stoma',detail:s.location,record_date:s.formed_date,
+    status:s.closure_date?'Previous stoma closed':'Two stomas present',notes:s.findings}));
+  return out;
+}
 async function loadClinicalRecords(patientId){
   clrState.patientId=patientId;
   const{data,error}=await SB.from('clinical_records').select('*').eq('patient_id',patientId)
@@ -6333,7 +6367,8 @@ function renderClinicalPanel(){
   }
   const newest=clrState.rows[0];
   const cats=CLR_KINDS.map(meta=>{
-    const recs=clrState.rows.filter(r=>r.kind===meta.kind);
+    let recs=clrState.rows.filter(r=>r.kind===meta.kind);
+    if(meta.kind==='stoma')recs=derivedStomaRecords(clrState.patient).concat(recs);
     const cur=recs.find(r=>r.is_current)||recs[0];
     const open=!!clrState.expanded[meta.kind];
     const curCode=stomaCode(cur);
@@ -6344,8 +6379,10 @@ function renderClinicalPanel(){
           <span class="clr-rec-meta">${[r.detail?htmlSafe(r.detail):'',r.record_date?htmlSafe(fmtShortDate(r.record_date)):'',r.status?htmlSafe(r.status):''].filter(Boolean).join(' • ')||'—'}${r.notes?'<br>'+htmlSafe(r.notes):''}</span>
         </div>
         <div class="clr-rec-actions">
-          <button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
-          <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>
+          ${r.derived
+            ?'<span class="clr-rec-tag">From patient record</span>'
+            :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
+          <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
         </div></div>`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
     return `<div class="clr-cat">
       <button class="clr-cat-head" onclick="toggleClinicalCategory('${meta.kind}')">
@@ -6464,7 +6501,8 @@ async function openPatientRecord(patientId){
   const appts=await enrichAppointments(rawAppts||[]);
   clrState.expanded={};
   await loadClinicalRecords(patientId);
-  const clrCount=clrState.available?clrState.rows.length:0;
+  clrState.patient=pat;
+  const clrCount=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(pat).length;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const[outText,outCls]=patientOutcome(pat);
   const age=psmAge(pat.date_of_birth);
@@ -6540,6 +6578,7 @@ async function openPatientRecord(patientId){
       ${(function(){const arr=parseStomas(pat);return arr.map((s,i)=>`<div>
         <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${s.closure_date?'past':''}">${s.closure_date?'Previous stoma closed':'Two stomas present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+          ${dItem('Stoma type',s.type)}
           ${dDate('New stoma formed',s.formed_date)}
           ${dItem('Stoma location',s.location)}
           ${s.closure_date?dDate('Old stoma closed',s.closure_date):''}
