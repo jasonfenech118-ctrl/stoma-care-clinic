@@ -1893,6 +1893,9 @@ function isCommonDay(dateStr){
   return dow>=1&&dow<=6&&!holidays[dateStr];
 }
 function isBookableDayForOwner(dateStr,owner){
+  // A public holiday is a working clinic day, so either list can book on it —
+  // the Common weekday list and the nurse-led clinic both run.
+  if(holidays[dateStr])return true;
   return normaliseFollowupOwner(owner)==='Common'?isCommonDay(dateStr):isClinicDay(dateStr);
 }
 function bookableDayReason(dateStr,owner){
@@ -1920,7 +1923,9 @@ function daysInMonthMatching(year,month,predicate){
 function clinicDaysInMonth(year,month){return daysInMonthMatching(year,month,isClinicDay);}
 function commonDaysInMonth(year,month){return daysInMonthMatching(year,month,isCommonDay);}
 function bookableDaysInMonth(year,month,owner){
-  return normaliseFollowupOwner(owner)==='Common'?commonDaysInMonth(year,month):clinicDaysInMonth(year,month);
+  // Offer every day this list may book, public holidays included, so a holiday
+  // clinic day is picked straight from the dropdown instead of "Other date".
+  return daysInMonthMatching(year,month,ds=>isBookableDayForOwner(ds,owner));
 }
 // Upcoming Sundays — used by the Change of Duty pickers.
 function getSundays(count=60){
@@ -1950,7 +1955,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.25-58';
+const APP_BUILD='2026.08.27-59';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6034,6 +6039,7 @@ function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');const closed=!!d.closure_date;
   return `<div class="stoma-row">
     <div class="edit-seen-grid">
+      <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Old stoma closed?</label><select class="st-closed" onchange="toggleStomaClosure(this)">
@@ -6181,9 +6187,9 @@ function readPatientForm(prefix){
     refashion_findings:val('reffindings')||null,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
       const g=c=>r.querySelector(c);const closed=g('.st-closed')?.value==='yes';
-      return{formed_date:g('.st-formed')?.value||null,location:g('.st-loc')?.value||null,
+      return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:g('.st-loc')?.value||null,
         closure_date:closed?(g('.st-closuredate')?.value||null):null,discharge_date:g('.st-discharge')?.value||null,findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.formed_date||s.location||s.findings||s.closure_date||s.discharge_date),
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.closure_date||s.discharge_date),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6540,6 +6546,7 @@ async function openPatientRecord(patientId){
       ${(function(){const arr=parseStomas(pat);return arr.map((s,i)=>`<div>
         <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${s.closure_date?'past':''}">${s.closure_date?'Previous stoma closed':'Two stomas present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+          ${dItem('Stoma type',s.type)}
           ${dDate('New stoma formed',s.formed_date)}
           ${dItem('Stoma location',s.location)}
           ${s.closure_date?dDate('Old stoma closed',s.closure_date):''}
