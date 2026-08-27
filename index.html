@@ -1956,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.27-62';
+const APP_BUILD='2026.08.27-63';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6035,11 +6035,11 @@ function stomaLocOptions(cur){
     +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
     +'<option value="__add__">＋ Add location…</option>';
 }
-// Picking "Add location…" prompts for a new value, adds it to this dropdown and
-// selects it — so any location can be entered, not only the standard set.
-function stomaLocAdd(sel){
+// Picking "Add…" prompts for a new value, adds it to this dropdown and selects
+// it — so any value can be entered, not only the standard set.
+function optionAdd(sel,promptText){
   if(!sel||sel.value!=='__add__')return;
-  const v=(prompt('Enter the stoma location')||'').trim();
+  const v=(prompt(promptText)||'').trim();
   if(!v){sel.value='';return;}
   if(![...sel.options].some(o=>o.value===v||o.text===v)){
     const opt=document.createElement('option');opt.text=v;opt.value=v;
@@ -6047,6 +6047,19 @@ function stomaLocAdd(sel){
   }
   sel.value=v;
 }
+function stomaLocAdd(sel){optionAdd(sel,'Enter the stoma location');}
+// The patient's town or village. Standard Maltese localities, and an
+// "Add locality…" choice for anything not listed.
+const LOCALITIES=['Attard','Balzan','Birgu (Vittoriosa)','Birkirkara','Birżebbuġa','Bormla (Cospicua)','Dingli','Fgura','Floriana','Fontana','Għajnsielem','Għarb','Għargħur','Għasri','Għaxaq','Gudja','Gżira','Ħamrun','Iklin','Isla (Senglea)','Kalkara','Kerċem','Kirkop','Lija','Luqa','Marsa','Marsaskala','Marsaxlokk','Mdina','Mellieħa','Mġarr','Mosta','Mqabba','Msida','Mtarfa','Munxar','Nadur','Naxxar','Paola','Pembroke','Pietà','Qala','Qormi','Qrendi','Rabat','Safi',"San Ġiljan (St Julian's)",'San Ġwann','San Lawrenz',"San Pawl il-Baħar (St Paul's Bay)",'Sannat','Santa Luċija','Santa Venera','Siġġiewi','Sliema','Swieqi','Tarxien',"Ta' Xbiex",'Valletta','Victoria (Rabat, Gozo)','Xagħra','Xewkija','Xgħajra','Żabbar','Żebbuġ (Malta)','Żebbuġ (Gozo)','Żejtun','Żurrieq'];
+function localityOptions(cur){
+  const c=(cur==null?'':String(cur)).trim();
+  const opts=LOCALITIES.slice();
+  if(c&&!opts.includes(c))opts.push(c);   // keep an existing value not in the list
+  return '<option value="">— locality —</option>'
+    +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
+    +'<option value="__add__">＋ Add locality…</option>';
+}
+function localityAdd(sel){optionAdd(sel,'Enter the locality');}
 // A patient can have several new stoma formations — held as a JSON array in
 // extra_stomas. Parse it, falling back to the older single-column fields.
 function parseStomas(p){
@@ -6104,7 +6117,7 @@ function patientFormHTML(p,prefix){
       <option value="">— not recorded —</option>
       <option value="Female" ${p?.sex==='Female'?'selected':''}>Female</option>
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
-    <div class="fg"><label>Locality</label><input type="text" id="${prefix}-locality" value="${v('locality')}" placeholder="Town or village"/></div>
+    <div class="fg"><label>Locality</label><select id="${prefix}-locality" onchange="localityAdd(this)">${localityOptions(p?.locality)}</select></div>
     <div class="fg"><label>Date of birth</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
     <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
     <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
@@ -6194,7 +6207,7 @@ function readPatientForm(prefix){
     surname:val('surname')||null,
     phone_number:val('phone')||null,
     sex:val('sex')||null,
-    locality:val('locality')||null,
+    locality:loc(val('locality')),
     date_of_birth:val('dob')||null,
     surgery_date:val('surgery')||null,
     discharge_date:val('discharge')||null,
