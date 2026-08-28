@@ -1956,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.27-69';
+const APP_BUILD='2026.08.27-70';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5868,6 +5868,11 @@ const PATIENT_REQUIRED_FIELDS=[
   ['stoma_type','Stoma type'],['findings','Operation and findings']];
 function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!String(p?.[k]??'').trim()).map(([,label])=>label);}
 function patientIsIncomplete(p){return PATIENT_REQUIRED_FIELDS.some(([k])=>!String(p?.[k]??'').trim());}
+// Each stoma refashioning that has been started must carry its required fields.
+function refashioningError(payload){
+  return (payload?.extra_refashionings||[]).some(r=>!r.formed_date||!r.findings)
+    ?'Each stoma refashioning needs a refashioned-on date and operation and findings.':'';
+}
 async function loadPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading patients…</td></tr>';
@@ -6105,10 +6110,10 @@ function refashionRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row">
     <div class="edit-seen-grid">
-      <div class="fg"><label>Stoma refashioned on</label><input type="date" class="rf-formed" value="${v('formed_date')}"/></div>
+      <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Date of stoma closure <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
     <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove this refashioning</button>
   </div>`;
@@ -6316,6 +6321,11 @@ async function savePatientDates(patientId){
   const miss=patientMissingFields(payload);
   if(miss.length){
     if(err)err.innerHTML=`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`;
+    return;
+  }
+  const refErr=refashioningError(payload);
+  if(refErr){
+    if(err)err.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`;
     return;
   }
   // A second patient must not end up on the same ID card.
@@ -6737,6 +6747,8 @@ async function saveNewPatient(){
   if(!payload.id_card){say('<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>');return;}
   const miss=patientMissingFields(payload);
   if(miss.length){say(`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`);return;}
+  const refErr=refashioningError(payload);
+  if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
   say('<div class="registry-lookup-note">Checking the registry…</div>');
 
   const{data:existing,error:lookErr}=await SB.from('patients')
