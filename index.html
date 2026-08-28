@@ -1956,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.27-70';
+const APP_BUILD='2026.08.28-71';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6076,6 +6076,12 @@ function parseStomas(p){
     arr=[{formed_date:p.newstoma_formed_date||null,location:p.newstoma_location||null,closure_date:p.newstoma_closure_date||null,findings:p.newstoma_findings||null}];
   return arr;
 }
+// A new stoma formed on or after the reversal date means the first stoma was
+// reversed but the patient has a stoma again — so they are not "reversed" now.
+function hasStomaAfterReversal(p){
+  if(!p||!p.reversal_date)return false;
+  return parseStomas(p).some(s=>s.formed_date&&String(s.formed_date)>=String(p.reversal_date));
+}
 function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');const closed=!!d.closure_date;
   return `<div class="stoma-row">
@@ -6187,7 +6193,7 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
   </div>
-  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back.</div>`;
+  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back. If a <strong>new stoma was formed after the reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>`;
 }
 // Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
 function showPfSection(prefix,key){
@@ -6211,7 +6217,17 @@ function toggleNewClosure(prefix){
 function onPatientFormDate(prefix,status){
   const el=document.getElementById(`${prefix}-${status==='deceased'?'rip':'reversal'}`);
   const sel=document.getElementById(`${prefix}-status`);
-  if(el?.value&&sel&&normaliseFollowupStatus(sel.value)!==status)sel.value=status;
+  if(el?.value&&sel&&normaliseFollowupStatus(sel.value)!==status){
+    let flip=true;
+    // A reversal followed by a later new stoma leaves the patient with a stoma,
+    // so don't flip them to "reversed".
+    if(status==='reversed'){
+      const rev=el.value;
+      flip=![...document.querySelectorAll(`#${prefix}-stomalist .stoma-row .st-formed`)]
+        .some(inp=>inp.value&&inp.value>=rev);
+    }
+    if(flip)sel.value=status;
+  }
   onPatientFormOutcome(prefix);
 }
 function onPatientFormOutcome(prefix){
@@ -6220,7 +6236,8 @@ function onPatientFormOutcome(prefix){
   const st=normaliseFollowupStatus(document.getElementById(`${prefix}-status`)?.value||'active');
   const p={followup_status:st,
     reversal_date:document.getElementById(`${prefix}-reversal`)?.value||'',
-    deceased_date:document.getElementById(`${prefix}-rip`)?.value||''};
+    deceased_date:document.getElementById(`${prefix}-rip`)?.value||'',
+    extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({formed_date:r.querySelector('.st-formed')?.value||null}))};
   const[text,cls]=patientOutcome(p);
   note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`;
 }
@@ -6782,7 +6799,11 @@ function patientOutcome(p){
   const st=normaliseFollowupStatus(p.followup_status);
   const on=d=>d?' on '+fmtShortDate(d):'';
   if(st==='deceased')          return['Deceased'+on(p.deceased_date),'cr-out-deceased'];
-  if(st==='reversed')          return['Reversed'+on(p.reversal_date),'cr-out-reversed'];
+  if(st==='reversed'){
+    // A new stoma formed after the reversal means the patient has a stoma again.
+    if(hasStomaAfterReversal(p))return['Still in follow-up','cr-out-active'];
+    return['Reversed'+on(p.reversal_date),'cr-out-reversed'];
+  }
   if(st==='discharged_gozo')   return['Discharged to Gozo','cr-out-gozo'];
   if(st==='relocated_overseas')return['Relocated overseas','cr-out-overseas'];
   if(st==='paused')            return['Paused — not in recall','cr-out-paused'];
