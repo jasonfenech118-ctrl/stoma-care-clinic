@@ -1956,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.27-67';
+const APP_BUILD='2026.08.27-68';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6563,6 +6563,9 @@ async function openPatientRecord(patientId){
   // A detail cell: shows the value, or an italic "Not recorded" when it is blank.
   const dItem=(label,val,wide)=>`<div class="psm-ditem${wide?' wide':''}"><dt>${htmlSafe(label)}</dt>${val?`<dd>${htmlSafe(val)}</dd>`:'<dd class="na">Not recorded</dd>'}</div>`;
   const dDate=(label,val,wide)=>dItem(label,val?fmtShortDate(val):'',wide);
+  // A discharge date: blank + deceased means the patient died as an inpatient.
+  const deceased=st==='deceased'||!!pat.deceased_date;
+  const dDischarge=(label,val)=>dItem(label,val?fmtShortDate(val):(deceased?'Deceased — died as inpatient':''));
   const nextCopy=next
     ? `<div class="psm-next-copy"><span class="lbl">Next review</span><span class="big">${htmlSafe(fmtShortDate(next.appt_date))} · ${String(next.appt_slot||'').slice(0,5)}</span><span class="sub">${staffName(next)==='—'?'Not yet assigned':'With '+staffName(next)}</span></div>`
     : `<div class="psm-next-copy"><span class="lbl">Next action</span><span class="big">No future review booked</span><span class="sub">${htmlSafe(outText)}</span></div>`;
@@ -6601,7 +6604,7 @@ async function openPatientRecord(patientId){
           ${dItem('Stoma location',pat.stoma_location)}
           ${parseInitialStomas(pat).map(s=>dItem('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}`)).join('')}
           ${dDate('Surgery date',pat.surgery_date)}
-          ${dItem('Discharge date',pat.discharge_date?fmtShortDate(pat.discharge_date):((st==='deceased'||pat.deceased_date)?'Deceased — died as inpatient':''))}
+          ${dDischarge('Discharge date',pat.discharge_date)}
           ${dItem('Operation and findings',pat.findings,true)}
           ${dDate('Reversal date',pat.reversal_date)}
           ${pat.deceased_date?dDate('Date of RIP',pat.deceased_date):''}
@@ -6612,7 +6615,7 @@ async function openPatientRecord(patientId){
         <div class="psm-card">${pat.refashion_formed_date?`<div class="psm-audit" style="margin-bottom:8px;font-weight:700;color:var(--navy);">${psmIc('stoma')} Stoma refashioned on ${htmlSafe(fmtShortDate(pat.refashion_formed_date))}</div>`:''}<dl class="psm-dgrid" style="margin:0;">
           ${dDate('Stoma refashioned on',pat.refashion_formed_date)}
           ${dDate('Stoma closure date',pat.refashion_closure_date)}
-          ${dDate('Date of discharge',pat.refashion_discharge_date)}
+          ${dDischarge('Date of discharge',pat.refashion_discharge_date)}
           ${dItem('Operation and findings',pat.refashion_findings,true)}
         </dl>${(pat.refashion_formed_date&&!pat.refashion_closure_date)?`<div class="psm-audit">${psmIc('stoma')} No closure date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
       </div>`:''}
@@ -6623,7 +6626,7 @@ async function openPatientRecord(patientId){
           ${dDate('New stoma formed',s.formed_date)}
           ${dItem('Stoma location',s.location)}
           ${s.closure_date?dDate('Old stoma closed',s.closure_date):''}
-          ${dDate('Date of discharge',s.discharge_date)}
+          ${dDischarge('Date of discharge',s.discharge_date)}
           ${dItem('Operation and findings',s.findings,true)}
         </dl><div class="psm-audit">${psmIc('stoma')} ${s.closure_date?('Previous stoma closed on '+htmlSafe(fmtShortDate(s.closure_date))+'.'):'A new stoma was formed with the previous one still present — this patient has two stomas.'}</div></div>
       </div>`).join('');})()}
