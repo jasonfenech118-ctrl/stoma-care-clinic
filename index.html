@@ -511,6 +511,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .da-pick-row:hover{border-color:var(--teal);}
 .da-pick-row input{width:15px;height:15px;cursor:pointer;}
 .da-pick-actions{display:flex;gap:7px;margin-top:6px;}
+.da-subtabs{display:flex;gap:8px;margin-bottom:14px;}
+.da-subtab{padding:8px 16px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+.da-subtab:hover{border-color:var(--teal);color:var(--navy);}
+.da-subtab.on{background:var(--navy);color:white;border-color:var(--navy);}
+.da-year-select{padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:12px;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;}
 .dup-group{background:white;border:1px solid var(--border);border-left:4px solid #94a3b8;border-radius:10px;padding:12px 14px;margin-bottom:12px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
 .dup-group.strong{border-left-color:#d97706;}
 .dup-group-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
@@ -1956,7 +1961,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.28-72';
+const APP_BUILD='2026.08.28-73';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6977,6 +6982,8 @@ function printDuplicates(){
    breakdowns (stoma type, sex, age, status) describe the cohort whose stoma
    was formed inside the range. */
 let dataAnalysisRows=[];
+let daView='overview';         // 'overview' | 'registry'
+let daRegFrom=null,daRegTo=null,daRegYear=null;   // Registry-view year controls
 let daYearsBack='5';            // '3' | '4' | '5' | '10' | 'all'
 let daSeries={new_cases:true,reversals:true,deaths:true};
 let daChartType='bar';
@@ -7021,6 +7028,10 @@ async function loadDataAnalysis(){
 }
 function setDaYears(v){daYearsBack=v;renderDataAnalysis();}
 function setDaChartType(v){daChartType=v;renderDataAnalysis();}
+function setDaView(v){daView=v;renderDataAnalysis();}
+function setDaRegFrom(v){daRegFrom=Number(v)||null;if(daRegFrom&&daRegTo&&daRegFrom>daRegTo)daRegTo=daRegFrom;renderDataAnalysis();}
+function setDaRegTo(v){daRegTo=Number(v)||null;if(daRegFrom&&daRegTo&&daRegTo<daRegFrom)daRegFrom=daRegTo;renderDataAnalysis();}
+function setDaRegYear(v){daRegYear=Number(v)||null;renderDataAnalysis();}
 function toggleDaSeries(key){
   // At least one series has to stay on, or the comparison chart is blank.
   const on=Object.keys(daSeries).filter(k=>daSeries[k]);
@@ -7104,11 +7115,18 @@ function daCountTable(head,list,total){
       <td><strong>${r.n}</strong></td><td>${Math.round(r.n/sum*100)}%</td></tr>`).join('')}</tbody></table></div>`;
 }
 
+function daSubTabs(){
+  return `<div class="da-subtabs">
+    <button class="da-subtab ${daView==='overview'?'on':''}" onclick="setDaView('overview')">📊 Overview</button>
+    <button class="da-subtab ${daView==='registry'?'on':''}" onclick="setDaView('registry')">🗂 Registry</button>
+  </div>`;
+}
 function renderDataAnalysis(){
   const body=document.getElementById('da-body');
   if(!body)return;
   const rows=dataAnalysisRows;
-  if(!rows.length){body.innerHTML='<div class="report-note">No patients in the registry yet.</div>';return;}
+  if(!rows.length){body.innerHTML=daSubTabs()+'<div class="report-note">No patients in the registry yet.</div>';return;}
+  if(daView==='registry'){renderDataAnalysisRegistry();return;}
   const{from,to}=daYearRange();
   const years=[];for(let y=from;y<=to;y++)years.push(y);
   const inRange=y=>y!==null&&y>=from&&y<=to;
@@ -7171,7 +7189,7 @@ function renderDataAnalysis(){
     <span class="da-swatch" style="background:${s.color}"></span>${htmlSafe(s.label)} <b>${totals[s.key]}</b></button>`;
   const typeBtn=(v,label)=>`<button class="da-chip ${daChartType===v?'on':''}" onclick="setDaChartType('${v}')">${label}</button>`;
 
-  body.innerHTML=`
+  body.innerHTML=daSubTabs()+`
     <div class="da-controls">
       <div class="da-control-row"><span class="da-control-label">Years</span>
         ${yearBtn('3','Last 3')}${yearBtn('4','Last 4')}${yearBtn('5','Last 5')}${yearBtn('10','Last 10')}${yearBtn('all','All time')}
@@ -7228,6 +7246,83 @@ function renderDataAnalysis(){
   daPie('da-stoma',stomaGroups.filter(g=>g.n));
   daPie('da-sex',sexRows.filter(r=>r.n));
   daBarChart('da-age-surgery',ageAtSurgery,'#0891b2');
+}
+/* ── DATA ANALYSIS · REGISTRY ─────────────────────────────────────────────
+   Completeness of the registry: how many patient records are missing a
+   required field, split by pie, by year, and by month for a chosen year.
+   "Incomplete" uses the same required-field set as the amber Registry row. */
+function renderDataAnalysisRegistry(){
+  const body=document.getElementById('da-body');
+  if(!body)return;
+  const rows=dataAnalysisRows;
+  const incomplete=rows.filter(patientIsIncomplete);
+  const complete=rows.length-incomplete.length;
+  const pctInc=rows.length?Math.round(incomplete.length/rows.length*100):0;
+
+  // Year span from surgery dates, used for the pickers and the yearly bar.
+  const allYears=rows.map(p=>daYear(p.surgery_date)).filter(Boolean);
+  const nowY=new Date().getFullYear();
+  const minY=allYears.length?Math.min(...allYears):nowY;
+  const maxY=allYears.length?Math.max(...allYears):nowY;
+  if(!daRegFrom||daRegFrom<minY||daRegFrom>maxY)daRegFrom=minY;
+  if(!daRegTo||daRegTo<minY||daRegTo>maxY)daRegTo=maxY;
+  if(daRegFrom>daRegTo)daRegFrom=daRegTo;
+  if(!daRegYear||daRegYear<minY||daRegYear>maxY)daRegYear=maxY;
+
+  const years=[];for(let y=daRegFrom;y<=daRegTo;y++)years.push(y);
+  // Incomplete records per year (by surgery year), plus an Unknown bucket for
+  // incomplete records that have no surgery date at all.
+  const incByYear=years.map(y=>incomplete.filter(p=>daYear(p.surgery_date)===y).length);
+  const unknownInc=incomplete.filter(p=>!daYear(p.surgery_date)).length;
+  const yearLabels=years.map(String).concat(unknownInc?['Unknown']:[]);
+  const yearData=incByYear.concat(unknownInc?[unknownInc]:[]);
+
+  // Incomplete records per month for the chosen year.
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const incByMonth=MONTHS.map((_,i)=>incomplete.filter(p=>{
+    if(daYear(p.surgery_date)!==daRegYear)return false;
+    const m=Number(String(p.surgery_date).slice(5,7));
+    return m===i+1;
+  }).length);
+
+  const yearOpts=(sel)=>{let o='';for(let y=minY;y<=maxY;y++)o+=`<option value="${y}" ${y===sel?'selected':''}>${y}</option>`;return o;};
+
+  body.innerHTML=daSubTabs()+`
+    ${patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical columns are not in the database yet, so every record counts as incomplete. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>'}
+    <div class="annual-kpis">
+      ${annualKpi('Total Patients',rows.length,'in the registry')}
+      ${annualKpi('Complete',complete,'all required fields filled','#1baf7a')}
+      ${annualKpi('Incomplete',incomplete.length,`${pctInc}% of the registry`,'#e6a817')}
+    </div>
+    <div class="report-grid">
+      ${daCard('reg-pie','Complete vs incomplete records',
+        `Required fields: ${PATIENT_REQUIRED_FIELDS.map(f=>f[1]).join(', ')}.`,
+        '<div style="height:250px;"><canvas id="da-reg-pie"></canvas></div>')}
+      ${daCard('reg-year','Incomplete records by year',
+        'Counted by the year of the surgery date.',
+        `<div class="da-controls" style="margin:0 0 8px;"><div class="da-control-row">
+           <span class="da-control-label">From</span><select class="da-year-select" onchange="setDaRegFrom(this.value)">${yearOpts(daRegFrom)}</select>
+           <span class="da-control-label">to</span><select class="da-year-select" onchange="setDaRegTo(this.value)">${yearOpts(daRegTo)}</select>
+         </div></div>
+         <div style="height:260px;"><canvas id="da-reg-year"></canvas></div>`,true)}
+      ${daCard('reg-month',`Incomplete records by month`,
+        'Months of the chosen year, by surgery date.',
+        `<div class="da-controls" style="margin:0 0 8px;"><div class="da-control-row">
+           <span class="da-control-label">Year</span><select class="da-year-select" onchange="setDaRegYear(this.value)">${yearOpts(daRegYear)}</select>
+         </div></div>
+         <div style="height:260px;"><canvas id="da-reg-month"></canvas></div>`,true)}
+    </div>`;
+
+  if(typeof Chart==='undefined')return;
+  makeMultiChart('da-reg-pie','doughnut',['Complete','Incomplete'],
+    [{data:[complete,incomplete.length],backgroundColor:['#1baf7a','#e6a817'],borderWidth:2}],
+    {scales:{},plugins:{legend:{position:'right'}}});
+  makeMultiChart('da-reg-year','bar',yearLabels,
+    [{label:'Incomplete',data:yearData,backgroundColor:'#e6a817',borderWidth:0}],
+    {plugins:{legend:{display:false}}});
+  makeMultiChart('da-reg-month','bar',MONTHS,
+    [{label:'Incomplete',data:incByMonth,backgroundColor:'#e6a817',borderWidth:0}],
+    {plugins:{legend:{display:false}}});
 }
 function daPie(id,list){
   if(!list.length)return;
