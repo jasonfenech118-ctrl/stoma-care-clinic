@@ -1956,7 +1956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.28-71';
+const APP_BUILD='2026.08.28-72';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6178,6 +6178,15 @@ function patientFormHTML(p,prefix){
   </div>
   <div id="${prefix}-newwrap" ${hasNewstoma?'':'hidden'}>
     <h3 class="pf-head">New stoma formation</h3>
+    <div class="edit-seen-grid" style="margin-bottom:6px;">
+      <div class="fg"><label>Was the previous stoma reversed?</label>
+        <select id="${prefix}-prevrev" onchange="togglePrevReversal('${prefix}')">
+          <option value="no" ${p?.reversal_date?'':'selected'}>No — the previous stoma was not reversed</option>
+          <option value="yes" ${p?.reversal_date?'selected':''}>Yes — reversed before this new stoma</option>
+        </select></div>
+      <div class="fg" id="${prefix}-prevrevwrap" ${p?.reversal_date?'':'hidden'}><label>Date of reversal</label>
+        <input type="date" id="${prefix}-prevrevdate" value="${v('reversal_date')}" onchange="syncPrevReversal('${prefix}')"/></div>
+    </div>
     <div id="${prefix}-stomalist">${patientStomaRows(p)}</div>
     <button type="button" class="pf-add-btn" onclick="addStomaRow('${prefix}')">＋ Add another stoma</button>
   </div>
@@ -6205,6 +6214,21 @@ function showPfSection(prefix,key){
   // Opening a section with an empty list drops in a first blank row.
   if(key==='new'){const list=document.getElementById(`${prefix}-stomalist`);if(list&&!list.querySelector('.stoma-row'))addStomaRow(prefix);}
   if(key==='ref'){const list=document.getElementById(`${prefix}-reflist`);if(list&&!list.querySelector('.stoma-row'))addRefashionRow(prefix);}
+}
+// "Was the previous stoma reversed?" in the new-stoma section. Shows the date on
+// Yes, and mirrors it into the canonical reversal date so the outcome logic (a
+// reversal with a later new stoma stays in follow-up) still applies.
+function togglePrevReversal(prefix){
+  const yes=document.getElementById(`${prefix}-prevrev`)?.value==='yes';
+  const wrap=document.getElementById(`${prefix}-prevrevwrap`);
+  if(wrap)wrap.hidden=!yes;
+  if(!yes){const d=document.getElementById(`${prefix}-prevrevdate`);if(d)d.value='';}
+  syncPrevReversal(prefix);
+}
+function syncPrevReversal(prefix){
+  const d=document.getElementById(`${prefix}-prevrevdate`)?.value||'';
+  const rev=document.getElementById(`${prefix}-reversal`);
+  if(rev){rev.value=d;onPatientFormDate(prefix,'reversed');}
 }
 // Show the closure-date field on a new stoma formation only when the old stoma was closed.
 function toggleNewClosure(prefix){
@@ -6250,7 +6274,7 @@ function readPatientForm(prefix){
     return{formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
   }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings);
-  return{
+  const out={
     id_card:normaliseIdCard(val('idcard')),
     first_name:val('first')||null,
     surname:val('surname')||null,
@@ -6280,6 +6304,10 @@ function readPatientForm(prefix){
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
   };
+  // A reversal with a later new stoma means the patient has a stoma again, so
+  // never save them as "reversed".
+  if(out.followup_status==='reversed'&&hasStomaAfterReversal(out))out.followup_status='active';
+  return out;
 }
 // Turn a save failure into something a nurse can act on.
 function patientSaveError(error){
