@@ -524,6 +524,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 #rmap-svg{width:100%;height:auto;max-height:74vh;display:block;}
 .rmap-area{stroke:#fff;stroke-width:1.6;cursor:pointer;transition:fill .15s,stroke .15s;}
 .rmap-area:hover,.rmap-area:focus{stroke:#0d7377;stroke-width:3;outline:none;}
+#rmap-callout{pointer-events:none;}
 .rmap-label{font-size:11px;font-weight:800;fill:#14304f;text-anchor:middle;pointer-events:none;
   paint-order:stroke fill;stroke:#fff;stroke-width:2.8px;stroke-linejoin:round;}
 .rmap-legend{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 2px;}
@@ -733,6 +734,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .cr-out-gozo{background:#1e3a8a;color:#e8eeff;}
 .cr-out-overseas{background:#fef08a;color:#713f12;}
 .cr-out-paused{background:#fff7ed;color:#9a3412;}
+.pf-xstatus{display:flex;flex-wrap:wrap;gap:8px 16px;padding:4px 0;}
+.pf-xchk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;}
+.pf-xchk input{width:15px;height:15px;cursor:pointer;}
+.pf-xchk.is-off{opacity:.4;}
 /* Reversed patients read violet across the whole row; deceased read black with
    white text. Both keep their action buttons legible. */
 #pd-table tr.pd-row-reversed td{background:#6d28d9;color:#ede9fe;}
@@ -1994,7 +1999,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.29-79';
+const APP_BUILD='2026.08.29-81';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5061,6 +5066,29 @@ function followupStatusOptionsHTML(selected){
   return FOLLOWUP_STATUSES.filter(st=>!hidden.includes(st)||st===sel).map(st=>
     `<option value="${st}" ${sel===st?'selected':''}>${followupStatusText(st)}</option>`).join('');
 }
+// Secondary statuses a patient also carries, beyond the main followup_status —
+// e.g. discharged to Gozo and later deceased. Held as a JSON array. The main
+// status still drives recall and the row colour; these are shown alongside.
+const SECONDARY_STATUSES=['discharged_gozo','relocated_overseas','reversed','deceased'];
+function crOutClass(status){
+  const st=normaliseFollowupStatus(status);
+  return {deceased:'cr-out-deceased',reversed:'cr-out-reversed',discharged_gozo:'cr-out-gozo',
+    relocated_overseas:'cr-out-overseas',paused:'cr-out-paused',awaiting_feedback:'cr-out-paused'}[st]||'cr-out-active';
+}
+function parseExtraStatuses(p){
+  let a=p&&p.extra_statuses;
+  if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}
+  if(!Array.isArray(a))a=[];
+  const prim=normaliseFollowupStatus(p&&p.followup_status);
+  const seen=new Set([prim]),out=[];
+  a.forEach(s=>{const n=normaliseFollowupStatus(s);
+    if(!seen.has(n)&&SECONDARY_STATUSES.includes(n)){seen.add(n);out.push(n);}});
+  return out;
+}
+// Small chips for the extra statuses, to sit after the main status badge.
+function extraStatusChipsHTML(p){
+  return parseExtraStatuses(p).map(st=>`<span class="cr-out ${crOutClass(st)}" style="margin-left:4px;">${htmlSafe(followupStatusText(st))}</span>`).join('');
+}
 function followupStatusBadge(status,showActive=false){
   const st=normaliseFollowupStatus(status);
   if(st==='active'&&!showActive)return '';
@@ -5896,7 +5924,7 @@ let patientDatesAvailable=true;
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -6030,7 +6058,7 @@ function renderPatientDirectory(){
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
     return `<tr class="pd-click-row ${rowCls}${incompleteCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient record">
-      <td><strong>${htmlSafe(nm)}</strong></td>
+      <td><strong>${htmlSafe(nm)}</strong>${extraStatusChipsHTML(p)}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
       <td onclick="event.stopPropagation();"><div class="pd-actions">
@@ -6253,6 +6281,7 @@ function addInitialStomaRow(prefix){document.getElementById(`${prefix}-iststomal
 function patientFormHTML(p,prefix){
   const v=k=>htmlSafe(p?.[k]||'');
   const hasRefash=parseRefashionings(p).length>0;
+  const xstat=parseExtraStatuses(p);
   const hasNewstoma=parseStomas(p).length>0;
   return `
   <h3 class="pf-head">Patient</h3>
@@ -6311,6 +6340,8 @@ function patientFormHTML(p,prefix){
       <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
     <div class="fg"><label>Date of RIP (death)</label>
       <input type="date" id="${prefix}-rip" value="${v('deceased_date')}" onchange="onPatientFormDate('${prefix}','deceased')"/></div>
+    <div class="fg" style="grid-column:1 / -1;"><label>Other statuses that also apply</label>
+      <div class="pf-xstatus">${SECONDARY_STATUSES.map(st=>`<label class="pf-xchk"><input type="checkbox" id="${prefix}-xs-${st}" value="${st}" ${xstat.includes(st)?'checked':''} onchange="onPatientFormOutcome('${prefix}')"/> ${htmlSafe(followupStatusText(st))}</label>`).join('')}</div></div>
     <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
   </div>
@@ -6370,12 +6401,17 @@ function onPatientFormOutcome(prefix){
   const note=document.getElementById(`${prefix}-outcome-note`);
   if(!note)return;
   const st=normaliseFollowupStatus(document.getElementById(`${prefix}-status`)?.value||'active');
+  // The extra-status checkbox that matches the main status is meaningless.
+  SECONDARY_STATUSES.forEach(k=>{const cb=document.getElementById(`${prefix}-xs-${k}`);
+    if(cb){if(k===st){cb.checked=false;cb.disabled=true;}else cb.disabled=false;
+      const lbl=cb.closest('.pf-xchk');if(lbl)lbl.classList.toggle('is-off',k===st);}});
+  const extra=SECONDARY_STATUSES.filter(k=>document.getElementById(`${prefix}-xs-${k}`)?.checked);
   const p={followup_status:st,
     reversal_date:document.getElementById(`${prefix}-reversal`)?.value||'',
-    deceased_date:document.getElementById(`${prefix}-rip`)?.value||'',
+    deceased_date:document.getElementById(`${prefix}-rip`)?.value||'',extra_statuses:extra,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({formed_date:r.querySelector('.st-formed')?.value||null}))};
   const[text,cls]=patientOutcome(p);
-  note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`;
+  note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`+extraStatusChipsHTML(p);
 }
 // Read the form into a row ready for the database.
 function readPatientForm(prefix){
@@ -6414,7 +6450,8 @@ function readPatientForm(prefix){
     }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
-    deceased_date:val('rip')||null
+    deceased_date:val('rip')||null,
+    extra_statuses:SECONDARY_STATUSES.filter(k=>document.getElementById(`${prefix}-xs-${k}`)?.checked&&normaliseFollowupStatus(val('status'))!==k)
   };
   // A reversal with a later new stoma means the patient has a stoma again, so
   // never save them as "reversed".
@@ -6775,7 +6812,7 @@ async function openPatientRecord(patientId){
         <div class="psm-head-copy">
           <span class="psm-name">${htmlSafe(nm)}</span>
           <span class="psm-sub">${demo}</span>
-          <span class="psm-status"><span class="cr-out ${outCls}">${htmlSafe(outText)}</span>${pat.locality?`<span class="psm-loc">${htmlSafe(pat.locality)}</span>`:''}</span>
+          <span class="psm-status"><span class="cr-out ${outCls}">${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${pat.locality?`<span class="psm-loc">${htmlSafe(pat.locality)}</span>`:''}</span>
         </div>
       </div>
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
@@ -8504,7 +8541,9 @@ const MAP_ALIAS_EXTRA={
    Ħamrun can never be mistaken for "Mrun". */
 const MAP_PREFIXES=['ilbelt','hal','haz','has','had','tal','tas','taz','tad','tar','ta','ix','iz','ic','is','it','in','ir','il','l'];
 function mapKey(v){
-  let s=String(v==null?'':v).trim().toLowerCase();
+  // Repair mojibake first — the registry stores some names double-encoded, and
+  // the tables show them repaired, so matching has to see the same text.
+  let s=fixText(String(v==null?'':v)).trim().toLowerCase();
   s=s.replace(/\s*[-–,]\s*(malta|gozo|ghawdex|għawdex)\s*$/,'');   // "MOSTA - MALTA"
   s=s.normalize('NFD').replace(/[̀-ͯ]/g,'');              // ġ ċ ż -> g c z
   s=s.replace(/ħ/g,'h').replace(/đ/g,'d');                         // ħ has no decomposition
@@ -8523,9 +8562,18 @@ const MAP_LOOKUP=(function(){
 })();
 // Which council a recorded locality belongs to, or null when it cannot be placed.
 function mapAreaFor(locality){
-  const k=mapKey(locality);
+  const raw=fixText(String(locality==null?'':locality));
+  const k=mapKey(raw);
   if(!k)return null;
   if(MAP_LOOKUP[k])return MAP_LOOKUP[k];
+  // "St Paul's Bay (San Pawl il-Baħar)" — try each half on its own.
+  const m=raw.match(/^([^()]+)\(([^()]+)\)\s*$/);
+  if(m){
+    for(const part of [m[2],m[1]]){
+      const a=mapAreaFor(part);
+      if(a)return a;
+    }
+  }
   for(let i=0;i<MAP_PREFIXES.length;i++){
     const p=MAP_PREFIXES[i];
     if(k.length>p.length+2&&k.indexOf(p)===0){
@@ -8557,7 +8605,7 @@ const MAP_METRICS=[
   {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null},
   {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date)}
 ];
-let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapLabels=true;
+let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapLabels=false;
 // Councils smaller than this are left unlabelled — the harbour towns are far
 // too small to carry their name, and they are still hoverable and clickable.
 const MAP_LABEL_MIN_AREA=1200;
@@ -8627,10 +8675,33 @@ function mapT(v,sc){
 }
 function mapHover(name,v){
   const el=document.getElementById('rmap-hover');
-  if(!el)return;
+  if(el){
+    const m=mapMetricDef();
+    el.innerHTML=name?`<strong>${htmlSafe(name)}</strong> · ${v===null?'no data':htmlSafe(v+' '+m.unit)}`
+      :'Hover a locality for its name and number, click it for the full summary.';
+  }
+  mapCallout(name,v);
+}
+/* The hovered council gets a pinned label on a leader line, so a name only
+   appears where it is wanted and never crowds the map. */
+function mapCallout(name,v){
+  const g=document.getElementById('rmap-callout');
+  if(!g)return;
+  const a=name?MALTA_MAP.areas.find(x=>x.n===name):null;
+  if(!a){g.innerHTML='';return;}
   const m=mapMetricDef();
-  el.innerHTML=name?`<strong>${htmlSafe(name)}</strong> · ${v===null?'no data':htmlSafe(v+' '+m.unit)}`
-    :'Hover a locality to see its number, click it for the full summary.';
+  const label=`${mapShortName(a.n)} — ${v===null?'no data':v+' '+m.unit}`;
+  const fs=15, w=label.length*fs*0.56+18, hh=fs+13;
+  const right=a.cx<MALTA_MAP.w*0.62;                 // put the box on the roomier side
+  let bx=right?a.cx+58:a.cx-58-w;
+  let by=a.cy-58;
+  bx=Math.max(4,Math.min(bx,MALTA_MAP.w-w-4));
+  if(by<4)by=a.cy+42;
+  const join=right?bx:bx+w;                          // line meets the near edge
+  g.innerHTML=`<line x1="${a.cx}" y1="${a.cy}" x2="${join}" y2="${by+hh/2}" stroke="#14304f" stroke-width="1.8"/>
+    <circle cx="${a.cx}" cy="${a.cy}" r="4.5" fill="#14304f" stroke="#fff" stroke-width="1.5"/>
+    <rect x="${bx}" y="${by}" width="${w}" height="${hh}" rx="7" fill="#14304f"/>
+    <text x="${bx+w/2}" y="${by+hh/2+fs*0.36}" fill="#fff" font-size="${fs}" font-weight="800" text-anchor="middle">${htmlSafe(label)}</text>`;
 }
 function setMapLabels(v){mapLabels=!!v;renderRegistryMap();}
 // "Birgu (Vittoriosa)" reads as Birgu on the map, but the two Żebbuġ councils
@@ -8687,7 +8758,7 @@ function renderRegistryMap(){
       <div class="da-control-row"><span class="da-control-label">Names</span>
         <button class="rmap-chip ${mapLabels?'on':''}" style="--c:#1a2e4a" onclick="setMapLabels(true)">Show</button>
         <button class="rmap-chip ${mapLabels?'':'on'}" style="--c:#1a2e4a" onclick="setMapLabels(false)">Hide</button>
-        <span class="da-range">Small harbour councils are unlabelled — hover or click them.</span></div>
+        <span class="da-range">Names are off by default — hover a council and its name appears on a pointer.</span></div>
     </div>
     ${patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical columns are not in the database yet, so the map has nothing to shade. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>'}
     <div class="annual-kpis">
@@ -8700,8 +8771,8 @@ function renderRegistryMap(){
       <h3>${htmlSafe(m.label)} by locality</h3>
       <div class="report-note">Pale is the lowest number, dark the highest. Grey-blue means no patient recorded in that council.</div>
       <div class="rmap-legend"><span>${sc.has?(m.kind==='count'?'0':sc.lo):'0'}</span>${steps}<span>${sc.has?sc.hi:0} ${htmlSafe(m.unit)}</span></div>
-      <div id="rmap-hover" class="rmap-hover">Hover a locality to see its number, click it for the full summary.</div>
-      <div class="rmap-wrap"><svg id="rmap-svg" viewBox="0 0 ${MALTA_MAP.w} ${MALTA_MAP.h}" preserveAspectRatio="xMidYMid meet">${paths}${labels}</svg></div>
+      <div id="rmap-hover" class="rmap-hover">Hover a locality for its name and number, click it for the full summary.</div>
+      <div class="rmap-wrap"><svg id="rmap-svg" viewBox="0 0 ${MALTA_MAP.w} ${MALTA_MAP.h}" preserveAspectRatio="xMidYMid meet">${paths}${labels}<g id="rmap-callout"></g></svg></div>
     </div>
     ${mapUnplaced.length?`<div class="report-card wide"><h3>Localities that could not be placed</h3>
       <div class="report-note">These records are not on the map. Fix the spelling on the patient, or add the town under <strong>Add Patient → Manage localities</strong>.</div>
@@ -8748,6 +8819,9 @@ function printRegistryMap(){
   const m=mapMetricDef(), sc=mapScale();
   const svg=document.getElementById('rmap-svg');
   if(!svg){alert('The map is still loading.');return;}
+  // A printed map needs its names even when they are switched off on screen.
+  const svgHTML=svg.outerHTML.replace('<g id="rmap-callout"></g>','')
+    .replace('</svg>',(mapLabels?'':MALTA_MAP.areas.filter(a=>a.a>=MAP_LABEL_MIN_AREA).map(mapLabelSVG).join(''))+'</svg>');
   const rowsHtml=MALTA_MAP.areas.map(a=>({a,v:mapValueFor(a.n),n:(mapByArea[a.n]||[]).length}))
     .filter(r=>r.n)
     .sort((x,y)=>(y.v===null?-1:y.v)-(x.v===null?-1:x.v))
@@ -8774,7 +8848,7 @@ function printRegistryMap(){
     <div class="lg"><span>${sc.has?(m.kind==='count'?0:sc.lo):0}</span>
       ${[0,.25,.5,.75,1].map(t=>`<i style="background:${mapShade(m.color,0.12+0.88*t)}"></i>`).join('')}
       <span>${sc.has?sc.hi:0} ${htmlSafe(m.unit)}</span></div>
-    ${svg.outerHTML}
+    ${svgHTML}
     <table><thead><tr><th>Locality</th><th>${htmlSafe(m.label)} (${htmlSafe(m.unit)})</th><th>Patients</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
     </body></html>`);
