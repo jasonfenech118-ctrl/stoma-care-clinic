@@ -516,6 +516,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .da-subtab:hover{border-color:var(--teal);color:var(--navy);}
 .da-subtab.on{background:var(--navy);color:white;border-color:var(--navy);}
 .da-year-select{padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:12px;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;}
+.loc-list{max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;margin:10px 0;}
+.loc-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);}
+.loc-row:last-child{border-bottom:0;}
+.loc-name{font-size:13px;font-weight:700;color:var(--navy);}
+.loc-acts{display:flex;gap:6px;flex-shrink:0;}
 .dup-group{background:white;border:1px solid var(--border);border-left:4px solid #94a3b8;border-radius:10px;padding:12px 14px;margin-bottom:12px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
 .dup-group.strong{border-left-color:#d97706;}
 .dup-group-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
@@ -1476,7 +1481,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <div class="page" id="page-add-patient">
       <div class="phdr">
         <div><h2>➕ Add Patient</h2><p>Register a new patient and record the outcome — reversed, deceased, discharged — whenever it changes</p></div>
-        <button class="btn-add" onclick="switchTab('patients')">Go to Registry</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-add" style="background:#6d28d9;" onclick="openLocalitiesModal()">🏘 Manage localities</button>
+          <button class="btn-add" onclick="switchTab('patients')">Go to Registry</button>
+        </div>
       </div>
       <div id="ap-body"></div>
     </div>
@@ -1961,7 +1969,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.28-73';
+const APP_BUILD='2026.08.28-74';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -1988,6 +1996,7 @@ async function startApp(){
   selectedJumpDate=TODAY;
   await loadHolidays();
   await loadStaff();
+  await loadLocalities();
   renderRoster();
   loadTodaySnapshot();
   initAppts();
@@ -6059,18 +6068,93 @@ function optionAdd(sel,promptText){
   sel.value=v;
 }
 function stomaLocAdd(sel){optionAdd(sel,'Enter the stoma location');}
-// The patient's town or village. Standard Maltese localities, and an
-// "Add locality…" choice for anything not listed.
-const LOCALITIES=['Attard','Balzan','Birgu (Vittoriosa)','Birkirkara','Birżebbuġa','Bormla (Cospicua)','Dingli','Fgura','Floriana','Fontana','Għajnsielem','Għarb','Għargħur','Għasri','Għaxaq','Gudja','Gżira','Ħamrun','Iklin','Isla (Senglea)','Kalkara','Kerċem','Kirkop','Lija','Luqa','Marsa','Marsaskala','Marsaxlokk','Mdina','Mellieħa','Mġarr','Mosta','Mqabba','Msida','Mtarfa','Munxar','Nadur','Naxxar','Paola','Pembroke','Pietà','Qala','Qormi','Qrendi','Rabat','Safi',"San Ġiljan (St Julian's)",'San Ġwann','San Lawrenz',"San Pawl il-Baħar (St Paul's Bay)",'Sannat','Santa Luċija','Santa Venera','Siġġiewi','Sliema','Swieqi','Tarxien',"Ta' Xbiex",'Valletta','Victoria (Rabat, Gozo)','Xagħra','Xewkija','Xgħajra','Żabbar','Żebbuġ (Malta)','Żebbuġ (Gozo)','Żejtun','Żurrieq'];
+// The patient's town or village. The list lives in the localities table so it
+// can be managed in-app; this is the fallback used before it loads or when the
+// table is missing. Standard Maltese localities, plus an "Add locality…" choice.
+const LOCALITIES_DEFAULT=['Attard','Balzan','Birgu (Vittoriosa)','Birkirkara','Birżebbuġa','Bormla (Cospicua)','Dingli','Fgura','Floriana','Fontana','Għajnsielem','Għarb','Għargħur','Għasri','Għaxaq','Gudja','Gżira','Ħamrun','Iklin','Isla (Senglea)','Kalkara','Kerċem','Kirkop','Lija','Luqa','Marsa','Marsaskala','Marsaxlokk','Mdina','Mellieħa','Mġarr','Mosta','Mqabba','Msida','Mtarfa','Munxar','Nadur','Naxxar','Paola','Pembroke','Pietà','Qala','Qormi','Qrendi','Rabat','Safi',"San Ġiljan (St Julian's)",'San Ġwann','San Lawrenz',"San Pawl il-Baħar (St Paul's Bay)",'Sannat','Santa Luċija','Santa Venera','Siġġiewi','Sliema','Swieqi','Tarxien',"Ta' Xbiex",'Valletta','Victoria (Rabat, Gozo)','Xagħra','Xewkija','Xgħajra','Żabbar','Żebbuġ (Malta)','Żebbuġ (Gozo)','Żejtun','Żurrieq'];
+let localityList=LOCALITIES_DEFAULT.slice();
+let localitiesAvailable=false;   // true once the DB table has been read
+// Load the managed locality list. Falls back to the built-in list if the table
+// has not been created yet.
+async function loadLocalities(){
+  try{
+    const{data,error}=await SB.from('localities').select('name').order('name');
+    if(error||!Array.isArray(data)){localitiesAvailable=false;return;}
+    localitiesAvailable=true;
+    if(data.length)localityList=data.map(r=>r.name).filter(Boolean);
+  }catch(e){localitiesAvailable=false;}
+}
 function localityOptions(cur){
   const c=(cur==null?'':String(cur)).trim();
-  const opts=LOCALITIES.slice();
+  const opts=localityList.slice();
   if(c&&!opts.includes(c))opts.push(c);   // keep an existing value not in the list
   return '<option value="">— locality —</option>'
     +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
     +'<option value="__add__">＋ Add locality…</option>';
 }
 function localityAdd(sel){optionAdd(sel,'Enter the locality');}
+/* ── MANAGE LOCALITIES ─────────────────────────────────────────────────────
+   A small admin screen to add, rename and remove the localities offered in the
+   patient Locality dropdown. Backed by the localities table. */
+async function openLocalitiesModal(){
+  await loadLocalities();
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  if(!localitiesAvailable){
+    mb.innerHTML=`<h2>🏘 Manage localities</h2>
+      <div class="registry-lookup-note error" style="margin-bottom:12px;">The <strong>localities</strong> table is not in the database yet. Run <strong>sql/add-localities.sql</strong> once in the Supabase SQL Editor, then reopen this.</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    openMo();return;
+  }
+  renderLocalitiesModal();
+  openMo();
+}
+function renderLocalitiesModal(){
+  const mb=document.getElementById('mb');
+  const rows=localityList.slice().sort((a,b)=>a.localeCompare(b));
+  mb.innerHTML=`<h2>🏘 Manage localities</h2>
+    <div class="msub">Add, rename or remove the towns and villages offered in the patient <strong>Locality</strong> dropdown. Patients already saved keep their locality even if it is removed here.</div>
+    <div class="fg" style="display:flex;gap:8px;align-items:flex-end;">
+      <div style="flex:1;"><label>New locality</label><input type="text" id="loc-new" placeholder="e.g. Kappara" onkeydown="if(event.key==='Enter'){event.preventDefault();addLocality()}"/></div>
+      <button class="btn-save" onclick="addLocality()">Add</button>
+    </div>
+    <div id="loc-msg"></div>
+    <div class="loc-list">${rows.length?rows.map(n=>`
+      <div class="loc-row" data-name="${htmlSafe(n)}">
+        <span class="loc-name">${htmlSafe(n)}</span>
+        <span class="loc-acts">
+          <button class="clr-mini" onclick="renameLocality('${jsSafe(n)}')">Rename</button>
+          <button class="clr-mini danger" onclick="deleteLocality('${jsSafe(n)}')">Delete</button>
+        </span>
+      </div>`).join(''):'<div class="report-note">No localities yet — add the first one above.</div>'}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+}
+function locMsg(html){const el=document.getElementById('loc-msg');if(el)el.innerHTML=html?`<div class="registry-lookup-note ${html.err?'error':'found'}" style="margin:6px 0;">${htmlSafe(html.text)}</div>`:'';}
+async function addLocality(){
+  const inp=document.getElementById('loc-new');const name=(inp?.value||'').trim();
+  if(!name){locMsg({err:true,text:'Type a locality name first.'});return;}
+  if(localityList.some(l=>l.toLowerCase()===name.toLowerCase())){locMsg({err:true,text:`${name} is already on the list.`});return;}
+  const{error}=await SB.from('localities').insert({name});
+  if(error){locMsg({err:true,text:'Could not add: '+error.message});return;}
+  await loadLocalities();renderLocalitiesModal();locMsg({text:`Added ${name}.`});
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
+async function renameLocality(oldName){
+  const name=(prompt('Rename locality',oldName)||'').trim();
+  if(!name||name===oldName)return;
+  if(localityList.some(l=>l.toLowerCase()===name.toLowerCase()&&l.toLowerCase()!==oldName.toLowerCase())){alert(`${name} is already on the list.`);return;}
+  const{error}=await SB.from('localities').update({name}).eq('name',oldName);
+  if(error){alert('Could not rename: '+error.message);return;}
+  await loadLocalities();renderLocalitiesModal();
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
+async function deleteLocality(name){
+  if(!confirm(`Remove "${name}" from the locality list?\n\nPatients already recorded in ${name} keep it.`))return;
+  const{error}=await SB.from('localities').delete().eq('name',name);
+  if(error){alert('Could not delete: '+error.message);return;}
+  await loadLocalities();renderLocalitiesModal();
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
 // A patient can have several new stoma formations — held as a JSON array in
 // extra_stomas. Parse it, falling back to the older single-column fields.
 function parseStomas(p){
