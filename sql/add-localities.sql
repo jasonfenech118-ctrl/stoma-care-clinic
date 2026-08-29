@@ -42,5 +42,15 @@ INSERT INTO public.localities (name) VALUES
   ('Żebbuġ (Gozo)'),('Żejtun'),('Żurrieq')
 ON CONFLICT DO NOTHING;
 
+-- Let the app read and manage the list. It signs in with the anon key and a
+-- normal user session, so both roles need access. This mirrors how the rest of
+-- the registry is reached and is what makes Add / Rename / Delete work.
+GRANT ALL ON public.localities TO anon, authenticated;
+ALTER TABLE public.localities ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS localities_all ON public.localities;
+CREATE POLICY localities_all ON public.localities
+  FOR ALL TO anon, authenticated
+  USING (true) WITH CHECK (true);
+
 -- Confirm it landed.
 SELECT count(*) AS localities FROM public.localities;

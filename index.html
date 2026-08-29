@@ -1969,7 +1969,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.28-75';
+const APP_BUILD='2026.08.28-76';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6074,15 +6074,16 @@ function stomaLocAdd(sel){optionAdd(sel,'Enter the stoma location');}
 const LOCALITIES_DEFAULT=['Attard','Balzan','Birgu (Vittoriosa)','Birkirkara','Birżebbuġa','Bormla (Cospicua)','Dingli','Fgura','Floriana','Fontana','Għajnsielem','Għarb','Għargħur','Għasri','Għaxaq','Gudja','Gżira','Ħamrun','Iklin','Isla (Senglea)','Kalkara','Kerċem','Kirkop','Lija','Luqa','Marsa','Marsaskala','Marsaxlokk','Mdina','Mellieħa','Mġarr','Mosta','Mqabba','Msida','Mtarfa','Munxar','Nadur','Naxxar','Paola','Pembroke','Pietà','Qala','Qormi','Qrendi','Rabat','Safi',"San Ġiljan (St Julian's)",'San Ġwann','San Lawrenz',"San Pawl il-Baħar (St Paul's Bay)",'Sannat','Santa Luċija','Santa Venera','Siġġiewi','Sliema','Swieqi','Tarxien',"Ta' Xbiex",'Valletta','Victoria (Rabat, Gozo)','Xagħra','Xewkija','Xgħajra','Żabbar','Żebbuġ (Malta)','Żebbuġ (Gozo)','Żejtun','Żurrieq'];
 let localityList=LOCALITIES_DEFAULT.slice();
 let localitiesAvailable=false;   // true once the DB table has been read
+let localitiesError='';          // last load error, shown in the manager
 // Load the managed locality list. Falls back to the built-in list if the table
 // has not been created yet.
 async function loadLocalities(){
   try{
     const{data,error}=await SB.from('localities').select('name').order('name');
-    if(error||!Array.isArray(data)){localitiesAvailable=false;return;}
-    localitiesAvailable=true;
+    if(error||!Array.isArray(data)){localitiesAvailable=false;localitiesError=error?.message||'';return;}
+    localitiesAvailable=true;localitiesError='';
     if(data.length)localityList=data.map(r=>r.name).filter(Boolean);
-  }catch(e){localitiesAvailable=false;}
+  }catch(e){localitiesAvailable=false;localitiesError=String(e&&e.message||e);}
 }
 function localityOptions(cur){
   const c=(cur==null?'':String(cur)).trim();
@@ -6102,7 +6103,7 @@ async function openLocalitiesModal(){
   mb.className='mb mb-wide';
   if(!localitiesAvailable){
     mb.innerHTML=`<h2>🏘 Manage localities</h2>
-      <div class="registry-lookup-note error" style="margin-bottom:12px;">The <strong>localities</strong> table is not in the database yet. Run <strong>sql/add-localities.sql</strong> once in the Supabase SQL Editor, then reopen this.</div>
+      <div class="registry-lookup-note error" style="margin-bottom:12px;">The <strong>localities</strong> list could not be opened. Run <strong>sql/add-localities.sql</strong> once in the Supabase SQL Editor (it creates the table and grants access), then reopen this.${localitiesError?`<br><br><span style="font-weight:400;">Database said: ${htmlSafe(localitiesError)}</span>`:''}</div>
       <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
     openMo();return;
   }
