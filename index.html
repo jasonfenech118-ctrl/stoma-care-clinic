@@ -1969,7 +1969,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.28-74';
+const APP_BUILD='2026.08.28-75';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6172,16 +6172,12 @@ function hasStomaAfterReversal(p){
   return parseStomas(p).some(s=>s.formed_date&&String(s.formed_date)>=String(p.reversal_date));
 }
 function newStomaRowHTML(d){
-  d=d||{};const v=x=>htmlSafe(d[x]||'');const closed=!!d.closure_date;
+  d=d||{};const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row">
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
-      <div class="fg"><label>Old stoma closed?</label><select class="st-closed" onchange="toggleStomaClosure(this)">
-        <option value="no" ${closed?'':'selected'}>No — still present (two stomas)</option>
-        <option value="yes" ${closed?'selected':''}>Yes — old stoma closed</option></select></div>
-      <div class="fg st-closurewrap" ${closed?'':'hidden'}><label>Date of stoma closure</label><input type="date" class="st-closuredate" value="${v('closure_date')}"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
@@ -6190,7 +6186,6 @@ function newStomaRowHTML(d){
 }
 function patientStomaRows(p){return parseStomas(p).map(newStomaRowHTML).join('');}
 function addStomaRow(prefix){document.getElementById(`${prefix}-stomalist`)?.insertAdjacentHTML('beforeend',newStomaRowHTML());}
-function toggleStomaClosure(sel){const wrap=sel.closest('.stoma-row')?.querySelector('.st-closurewrap');if(wrap)wrap.hidden=(sel.value!=='yes');}
 // A patient can have several stoma refashionings — held as a JSON array in
 // extra_refashionings. Parse it, falling back to the older single-column fields.
 function parseRefashionings(p){
@@ -6385,10 +6380,10 @@ function readPatientForm(prefix){
     refashion_findings:refRows[0]?.findings||null,
     extra_refashionings:refRows,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
-      const g=c=>r.querySelector(c);const closed=g('.st-closed')?.value==='yes';
+      const g=c=>r.querySelector(c);
       return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
-        closure_date:closed?(g('.st-closuredate')?.value||null):null,discharge_date:g('.st-discharge')?.value||null,findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.closure_date||s.discharge_date),
+        discharge_date:g('.st-discharge')?.value||null,findings:(g('.st-findings')?.value||'').trim()||null};
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null
@@ -6551,7 +6546,7 @@ function derivedStomaRecords(pat){
       status:pat.refashion_closure_date?'Previous stoma closed':'Two stomas present',notes:pat.refashion_findings});
   // Later new stoma formations.
   parseStomas(pat).forEach(s=>add({title:s.type||'New stoma',detail:s.location,record_date:s.formed_date,
-    status:s.closure_date?'Previous stoma closed':'Two stomas present',notes:s.findings}));
+    status:pat.reversal_date?'Previous stoma reversed':'Two stomas present',notes:s.findings}));
   return out;
 }
 async function loadClinicalRecords(patientId){
@@ -6790,16 +6785,15 @@ async function openPatientRecord(patientId){
           ${dItem('Operation and findings',r.findings,true)}
         </dl>${(r.formed_date&&!r.closure_date)?`<div class="psm-audit">${psmIc('stoma')} No closure date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
       </div>`).join('');})()}
-      ${(function(){const arr=parseStomas(pat);return arr.map((s,i)=>`<div>
-        <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${s.closure_date?'past':''}">${s.closure_date?'Previous stoma closed':'Two stomas present'}</span></div>
+      ${(function(){const arr=parseStomas(pat);const prevReversed=!!pat.reversal_date;return arr.map((s,i)=>`<div>
+        <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${prevReversed?'past':''}">${prevReversed?'Previous stoma reversed':'Two stomas present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
           ${dItem('Stoma type',s.type)}
           ${dDate('New stoma formed',s.formed_date)}
           ${dItem('Stoma location',s.location)}
-          ${s.closure_date?dDate('Old stoma closed',s.closure_date):''}
           ${dDischarge('Date of discharge',s.discharge_date)}
           ${dItem('Operation and findings',s.findings,true)}
-        </dl><div class="psm-audit">${psmIc('stoma')} ${s.closure_date?('Previous stoma closed on '+htmlSafe(fmtShortDate(s.closure_date))+'.'):'A new stoma was formed with the previous one still present — this patient has two stomas.'}</div></div>
+        </dl><div class="psm-audit">${psmIc('stoma')} ${prevReversed?('Previous stoma reversed on '+htmlSafe(fmtShortDate(pat.reversal_date))+'.'):'A new stoma was formed with the previous one still present — this patient has two stomas.'}</div></div>
       </div>`).join('');})()}
       <div>
         <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
