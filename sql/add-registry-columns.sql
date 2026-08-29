@@ -59,6 +59,9 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_location   text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_discharge_date date;
 -- Multiple stoma refashionings, stored as a JSON array.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_refashionings jsonb DEFAULT '[]'::jsonb;
+-- Other statuses a patient also carries, beyond followup_status — e.g.
+-- discharged to Gozo and later deceased. Stored as a JSON array.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses jsonb DEFAULT '[]'::jsonb;
 -- New stoma formation: an additional stoma formed, the previous one still present.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_formed_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS newstoma_findings    text;
