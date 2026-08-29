@@ -2002,7 +2002,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.29-82';
+const APP_BUILD='2026.08.29-83';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5924,6 +5924,46 @@ function printAnnualReport(){
    rebook and set-due-month cards. */
 let patientDirectoryRows=[];
 let patientDatesAvailable=true;
+/* Optional columns are added by migrations that an install may not have run
+   yet. Dropping every clinical column because one of them is missing blanks
+   the Registry, Data Analysis and the Map, so instead the offending column is
+   removed from the select and the read is retried. The working list is kept
+   for the rest of the session. */
+let patientColsPruned=null;
+function patientSelectCols(){return patientColsPruned||(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS);}
+function dropMissingPatientCol(error){
+  const msg=String(error&&error.message||'');
+  const m=msg.match(/column\s+(?:[\w."]*?\.)?"?([a-z_]+)"?\s+does not exist/i)
+        ||msg.match(/"?([a-z_]+)"?\s+column .*does not exist/i);
+  if(!m)return false;
+  const bad=m[1];
+  const cols=patientSelectCols().split(',');
+  if(!cols.includes(bad)||PATIENT_BASE_COLS.split(',').includes(bad))return false;
+  patientColsPruned=cols.filter(c=>c!==bad).join(',');
+  return true;
+}
+// True while the clinical columns are still in the select — the pages use it to
+// decide whether to show the "run the migration" note.
+function refreshPatientDatesAvailable(){
+  patientDatesAvailable=patientSelectCols().includes('stoma_type');
+}
+// One patient read that survives missing optional columns.
+async function fetchPatientsSelect(build){
+  for(let i=0;i<10;i++){
+    const res=await build(patientSelectCols());
+    if(!res.error){refreshPatientDatesAvailable();return res;}
+    if(!dropMissingPatientCol(res.error)){
+      // Not a missing column — fall back to the base columns as before.
+      if(String(res.error.message||'').toLowerCase().includes('column')){
+        patientColsPruned=PATIENT_BASE_COLS;refreshPatientDatesAvailable();
+        return await build(patientSelectCols());
+      }
+      return res;
+    }
+  }
+  refreshPatientDatesAvailable();
+  return await build(patientSelectCols());
+}
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
@@ -5950,13 +5990,7 @@ async function loadPatientDirectory(){
   if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading patients…</td></tr>';
   // Try with the clinical-date columns; if the migration has not been run yet
   // the column-missing error is caught and the page loads without them.
-  let{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`));
-  if(error&&String(error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    ({rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS)));
-  }else{
-    patientDatesAvailable=true;
-  }
+  let{rows:pats,error}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(error){if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
@@ -6478,12 +6512,7 @@ function patientSaveError(error){
    retries with the base columns, exactly like the Registry does, so opening or
    editing a patient never hard-fails just because a migration is pending. */
 async function fetchPatientById(patientId){
-  let{data,error}=await SB.from('patients')
-    .select(`${PATIENT_BASE_COLS},${PATIENT_DATE_COLS}`).eq('id',patientId).maybeSingle();
-  if(error&&String(error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    ({data,error}=await SB.from('patients').select(PATIENT_BASE_COLS).eq('id',patientId).maybeSingle());
-  }else if(!error)patientDatesAvailable=true;
+  const{data,error}=await fetchPatientsSelect(cols=>SB.from('patients').select(cols).eq('id',patientId).maybeSingle());
   return{data,error};
 }
 // Tints the patient modal by sex: warm yellow for male, pink for female.
@@ -7013,11 +7042,7 @@ async function loadDuplicates(){
   const body=document.getElementById('dup-body');
   if(!body)return;
   body.innerHTML='<div class="report-note">Scanning the registry…</div>';
-  let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
-  if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
-  }else if(!res.error)patientDatesAvailable=true;
+  const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(res.error){
     body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
     return;
@@ -7160,11 +7185,7 @@ async function loadDataAnalysis(){
   const body=document.getElementById('da-body');
   if(!body)return;
   body.innerHTML='<div class="report-note">Loading the registry…</div>';
-  let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
-  if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
-  }else if(!res.error)patientDatesAvailable=true;
+  const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(res.error){
     body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
     return;
@@ -8618,11 +8639,7 @@ async function loadRegistryMap(){
   const body=document.getElementById('rmap-body');
   if(!body)return;
   body.innerHTML='<div class="report-note">Loading the registry…</div>';
-  let res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS+','+PATIENT_DATE_COLS));
-  if(res.error&&String(res.error.message||'').toLowerCase().includes('column')){
-    patientDatesAvailable=false;
-    res=await fetchAllRows(()=>SB.from('patients').select(PATIENT_BASE_COLS));
-  }else if(!res.error)patientDatesAvailable=true;
+  const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(res.error){body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';return;}
   mapRows=(res.rows||[]).map(p=>({...p,st:normaliseFollowupStatus(p.followup_status)}));
   // Place every patient once, and keep what could not be placed so the list
