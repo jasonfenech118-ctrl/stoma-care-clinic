@@ -525,6 +525,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rmap-area{stroke:#fff;stroke-width:1.6;cursor:pointer;transition:fill .15s,stroke .15s;}
 .rmap-area:hover,.rmap-area:focus{stroke:#0d7377;stroke-width:3;outline:none;}
 #rmap-callout{pointer-events:none;}
+.rmap-num{font-weight:800;fill:#14304f;text-anchor:middle;pointer-events:none;
+  paint-order:stroke fill;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round;}
+.rmap-num.on-dark{fill:#fff;stroke:rgba(15,35,60,.55);}
 .rmap-label{font-size:11px;font-weight:800;fill:#14304f;text-anchor:middle;pointer-events:none;
   paint-order:stroke fill;stroke:#fff;stroke-width:2.8px;stroke-linejoin:round;}
 .rmap-legend{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 2px;}
@@ -1999,7 +2002,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.29-81';
+const APP_BUILD='2026.08.29-82';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8605,7 +8608,7 @@ const MAP_METRICS=[
   {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null},
   {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date)}
 ];
-let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapLabels=false;
+let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapDisplay='numbers';   // 'numbers' | 'names' | 'none'
 // Councils smaller than this are left unlabelled — the harbour towns are far
 // too small to carry their name, and they are still hoverable and clickable.
 const MAP_LABEL_MIN_AREA=1200;
@@ -8703,10 +8706,18 @@ function mapCallout(name,v){
     <rect x="${bx}" y="${by}" width="${w}" height="${hh}" rx="7" fill="#14304f"/>
     <text x="${bx+w/2}" y="${by+hh/2+fs*0.36}" fill="#fff" font-size="${fs}" font-weight="800" text-anchor="middle">${htmlSafe(label)}</text>`;
 }
-function setMapLabels(v){mapLabels=!!v;renderRegistryMap();}
+function setMapDisplay(v){mapDisplay=v;renderRegistryMap();}
 // "Birgu (Vittoriosa)" reads as Birgu on the map, but the two Żebbuġ councils
 // keep their island so they can be told apart.
 function mapShortName(n){return String(n).replace(/\s*\((?!Gozo|Malta)[^)]*\)/,'');}
+// The number sits in the council it belongs to, in white on the darker shades
+// and navy on the pale ones so it stays readable either way.
+function mapNumberSVG(a,v,t){
+  if(v===null)return '';
+  const fs=a.a>=5000?15:a.a>=2200?13:11;
+  const dark=t!==null&&t>0.55;
+  return `<text class="rmap-num ${dark?'on-dark':''}" x="${a.cx}" y="${a.cy+fs*0.36}" font-size="${fs}">${htmlSafe(String(v))}</text>`;
+}
 function mapLabelSVG(a){
   const t=mapShortName(a.n);
   let lines=[t];
@@ -8749,16 +8760,21 @@ function renderRegistryMap(){
       onclick="openMapLocalityModal('${jsSafe(a.n)}')"><title>${htmlSafe(a.n)} — ${v===null?'no data':htmlSafe(v+' '+m.unit)}</title></path>`;
   }).join('');
 
-  const labels=mapLabels?MALTA_MAP.areas.filter(a=>a.a>=MAP_LABEL_MIN_AREA).map(mapLabelSVG).join(''):'';
+  const labels=mapDisplay==='names'
+    ? MALTA_MAP.areas.filter(a=>a.a>=MAP_LABEL_MIN_AREA).map(mapLabelSVG).join('')
+    : mapDisplay==='numbers'
+      ? MALTA_MAP.areas.map(a=>{const v=mapValueFor(a.n);return mapNumberSVG(a,v,mapT(v,sc));}).join('')
+      : '';
   const steps=[0,.25,.5,.75,1].map(t=>`<span class="rmap-step" style="background:${mapShade(m.color,0.12+0.88*t)}"></span>`).join('');
 
   body.innerHTML=`
     <div class="da-controls">
       <div class="da-control-row"><span class="da-control-label">Measure</span>${chips}</div>
-      <div class="da-control-row"><span class="da-control-label">Names</span>
-        <button class="rmap-chip ${mapLabels?'on':''}" style="--c:#1a2e4a" onclick="setMapLabels(true)">Show</button>
-        <button class="rmap-chip ${mapLabels?'':'on'}" style="--c:#1a2e4a" onclick="setMapLabels(false)">Hide</button>
-        <span class="da-range">Names are off by default — hover a council and its name appears on a pointer.</span></div>
+      <div class="da-control-row"><span class="da-control-label">Show</span>
+        <button class="rmap-chip ${mapDisplay==='numbers'?'on':''}" style="--c:#1a2e4a" onclick="setMapDisplay('numbers')">Numbers</button>
+        <button class="rmap-chip ${mapDisplay==='names'?'on':''}" style="--c:#1a2e4a" onclick="setMapDisplay('names')">Names</button>
+        <button class="rmap-chip ${mapDisplay==='none'?'on':''}" style="--c:#1a2e4a" onclick="setMapDisplay('none')">Colours only</button>
+        <span class="da-range">Hover any council for its name and number.</span></div>
     </div>
     ${patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical columns are not in the database yet, so the map has nothing to shade. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>'}
     <div class="annual-kpis">
@@ -8821,7 +8837,7 @@ function printRegistryMap(){
   if(!svg){alert('The map is still loading.');return;}
   // A printed map needs its names even when they are switched off on screen.
   const svgHTML=svg.outerHTML.replace('<g id="rmap-callout"></g>','')
-    .replace('</svg>',(mapLabels?'':MALTA_MAP.areas.filter(a=>a.a>=MAP_LABEL_MIN_AREA).map(mapLabelSVG).join(''))+'</svg>');
+    .replace('</svg>',(mapDisplay==='none'?MALTA_MAP.areas.filter(a=>a.a>=MAP_LABEL_MIN_AREA).map(mapLabelSVG).join(''):'')+'</svg>');
   const rowsHtml=MALTA_MAP.areas.map(a=>({a,v:mapValueFor(a.n),n:(mapByArea[a.n]||[]).length}))
     .filter(r=>r.n)
     .sort((x,y)=>(y.v===null?-1:y.v)-(x.v===null?-1:x.v))
@@ -8836,6 +8852,9 @@ function printRegistryMap(){
       .rmap-area{stroke:#fff;stroke-width:1.6;}
       .rmap-label{font-weight:800;fill:#14304f;text-anchor:middle;
         paint-order:stroke fill;stroke:#fff;stroke-width:2.8px;stroke-linejoin:round;}
+      .rmap-num{font-weight:800;fill:#14304f;text-anchor:middle;
+        paint-order:stroke fill;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round;}
+      .rmap-num.on-dark{fill:#fff;stroke:rgba(15,35,60,.55);}
       .lg{display:flex;align-items:center;gap:6px;font-size:11px;margin:10px 0 4px;}
       .lg i{width:34px;height:11px;display:inline-block;border:1px solid #cbd5e1;}
       table{border-collapse:collapse;width:100%;font-size:11px;margin-top:12px;}
