@@ -28,3 +28,15 @@ FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'appointments'
   AND column_name IN ('appliances','accessories')
 ORDER BY column_name;
+
+-- -----------------------------------------------------------------------------
+-- Per-stoma detail. A patient can have more than one stoma at the same time,
+-- and a refashioned or newly formed stoma is a new stoma with its own id, so
+-- what is used is recorded against the stoma rather than the patient:
+--   [{"uid":"s1a2b","code":"S2","label":"S2 · Loop ileostomy · formed 12 Mar 2025",
+--     "appliances":["Stomahesive Flange 57mm","Drainable Bag 57mm"],
+--     "accessories":["Filler Paste"]}]
+-- The appliances / accessories columns above keep the flattened list for the
+-- whole visit, so counting across the register stays a single read.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.appointments ADD COLUMN IF NOT EXISTS stoma_appliances jsonb DEFAULT '[]'::jsonb;
