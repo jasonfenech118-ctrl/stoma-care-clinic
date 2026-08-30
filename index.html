@@ -2056,7 +2056,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-92';
+const APP_BUILD='2026.08.30-93';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6053,7 +6053,7 @@ async function loadPatientDirectory(){
   if(error){if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
-    status:normaliseFollowupStatus(p.followup_status||'active'),
+    status:derivedFollowupStatus(p),
     date_of_birth:p.date_of_birth||null,
     surgery_date:p.surgery_date||null,
     reversal_date:p.reversal_date||null,
@@ -6325,41 +6325,52 @@ function parseStomas(p){
    first stoma, and each later stoma carries its own. */
 // Every reversal on file, oldest first. The patient-level one belongs to the
 // first stoma; each later stoma carries its own.
-function stomaReversalDates(p){
-  const out=[p&&p.reversal_date];
-  parseStomas(p).forEach(s=>out.push(s.reversal_date));
-  return out.filter(Boolean).map(String).sort();
+/* Every stoma the patient has had, oldest first, each with the date it ended.
+   A stoma ends by its own reversal; a refashioning ends the stoma it created
+   on its stoma-reversal date. Keeping the end date on the stoma it belongs to
+   is what lets the same day carry a reversal and a new formation without one
+   closing the other. */
+function stomaEvents(p){
+  const out=[];
+  if(p&&(p.surgery_date||String(p.stoma_type||'').trim()))
+    out.push({formed:p.surgery_date||null,ended:p.reversal_date||null});
+  parseRefashionings(p).forEach(r=>out.push({formed:r.formed_date||null,ended:r.closure_date||null}));
+  parseStomas(p).forEach(s=>out.push({formed:s.formed_date||null,ended:s.reversal_date||null}));
+  out.sort((a,b)=>String(a.formed||'9999-99-99').localeCompare(String(b.formed||'9999-99-99')));
+  return out;
 }
-function latestOf(list){
-  let best=null;
-  list.forEach(x=>{const d=String(x&&x.formed_date||'');if(best===null||d>=String(best.formed_date||''))best=x;});
-  return best;
+function stomaEndDates(p){
+  const out=stomaEvents(p).map(e=>e.ended).filter(Boolean).map(String);
+  if(p&&p.reversal_date)out.push(String(p.reversal_date));
+  return out.sort();
 }
-/* Whether the patient has a stoma right now. A reversal is tied to the stoma it
-   belongs to rather than compared by date — the first stoma is often reversed
-   in the same operation that forms the next one, so the dates match and a date
-   comparison would wrongly close the new stoma too. */
 function hasStomaNow(p){
-  // A reversal dated strictly after a stoma was formed closed that stoma. Same
-  // day means the old stoma was reversed in the operation that formed this one,
-  // so the new stoma survives. This also reads records written before each
-  // stoma had its own reversal field.
-  const closedByPatientReversal=st=>!!(p&&p.reversal_date&&st&&st.formed_date&&String(p.reversal_date)>String(st.formed_date));
-  const stomas=parseStomas(p);
-  if(stomas.length){
-    const last=latestOf(stomas);
-    return !(last.reversal_date||closedByPatientReversal(last));
-  }
-  const refs=parseRefashionings(p);
-  if(refs.length)return !closedByPatientReversal(latestOf(refs));
-  if(!p||(!p.surgery_date&&!String(p.stoma_type||'').trim()))return false;
-  return !p.reversal_date;
+  const ev=stomaEvents(p);
+  if(!ev.length)return false;
+  const last=ev[ev.length-1];
+  if(last.ended)return false;
+  // Records written before each stoma carried its own end date: a patient-level
+  // reversal dated strictly after the newest stoma closed that one too.
+  if(p&&p.reversal_date&&last.formed&&String(p.reversal_date)>String(last.formed))return false;
+  return true;
 }
-// Kept under its old name: true when the patient still has a stoma despite a
-// reversal being on file, so they must not read as "reversed".
+// Kept under its old name: true when the patient still has a stoma even though
+// a reversal is on file, so they must not read as "reversed".
 function hasStomaAfterReversal(p){
-  if(!p||!stomaReversalDates(p).length)return false;
-  return hasStomaNow(p);
+  return !!stomaEndDates(p).length&&hasStomaNow(p);
+}
+/* The status the patient's own dates imply. Once the last stoma has gone the
+   patient is reversed, and while one is present they are in follow-up — so a
+   reversal recorded on a refashioning moves the status without anyone setting
+   it. Deceased, Gozo and overseas are decisions rather than something the
+   dates can tell us, so they are left as they are. */
+function derivedFollowupStatus(p){
+  const st=normaliseFollowupStatus(p&&p.followup_status);
+  if(st==='deceased'||st==='discharged_gozo'||st==='relocated_overseas')return st;
+  if(!stomaEvents(p).length)return st;
+  if(!hasStomaNow(p)&&stomaEndDates(p).length)return 'reversed';
+  if(hasStomaNow(p)&&st==='reversed')return 'active';
+  return st;
 }
 function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
@@ -6494,7 +6505,7 @@ function refashionRowHTML(d){
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
-      <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}"/></div>
+      <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
@@ -6621,8 +6632,10 @@ function formStomaSnapshot(prefix){
   const val=id=>document.getElementById(`${prefix}-${id}`)?.value||null;
   return{
     surgery_date:val('surgery'),reversal_date:val('reversal'),deceased_date:val('rip'),
+    stoma_type:document.getElementById(`${prefix}-stoma`)?.value||null,
     extra_refashionings:[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)]
-      .map(r=>({formed_date:r.querySelector('.rf-formed')?.value||null})),
+      .map(r=>({formed_date:r.querySelector('.rf-formed')?.value||null,
+                closure_date:r.querySelector('.rf-closure')?.value||null})),
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)]
       .map(r=>({formed_date:r.querySelector('.st-formed')?.value||null,
                 reversal_date:r.querySelector('.st-reversal')?.value||null}))
@@ -6643,6 +6656,13 @@ function onPatientFormOutcome(prefix){
       const lbl=cb.closest('.pf-xchk');if(lbl)lbl.classList.toggle('is-off',k===st);}});
   const extra=SECONDARY_STATUSES.filter(k=>document.getElementById(`${prefix}-xs-${k}`)?.checked);
   const p={...formStomaSnapshot(prefix),followup_status:st,extra_statuses:extra};
+  // Reversing the last stoma — on the stoma itself or on a refashioning — moves
+  // the status without anyone setting it, and forming another moves it back.
+  const derived=derivedFollowupStatus(p);
+  if(derived!==st){
+    const sel=document.getElementById(`${prefix}-status`);
+    if(sel&&[...sel.options].some(o=>o.value===derived)){sel.value=derived;p.followup_status=derived;}
+  }
   const[text,cls]=patientOutcome(p);
   note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`+extraStatusChipsHTML(p);
 }
@@ -6690,7 +6710,7 @@ function readPatientForm(prefix){
   };
   // A reversal with a later new stoma means the patient has a stoma again, so
   // never save them as "reversed".
-  if(out.followup_status==='reversed'&&hasStomaAfterReversal(out))out.followup_status='active';
+  out.followup_status=derivedFollowupStatus(out);
   return out;
 }
 // Turn a save failure into something a nurse can act on.
@@ -7222,14 +7242,12 @@ async function saveNewPatient(){
    on the patient. Used by the Registry, the patient record modal and Needs
    Checking. */
 function patientOutcome(p){
-  const st=normaliseFollowupStatus(p.followup_status);
+  const st=derivedFollowupStatus(p);
   const on=d=>d?' on '+fmtShortDate(d):'';
   if(st==='deceased')          return['Deceased'+on(p.deceased_date),'cr-out-deceased'];
   if(st==='reversed'){
-    // A stoma formed since the reversal means the patient has one again.
-    if(hasStomaAfterReversal(p))return['Still in follow-up','cr-out-active'];
-    const all=stomaReversalDates(p);
-    return['Reversed'+on(all.length?all[all.length-1]:p.reversal_date),'cr-out-reversed'];
+    const ends=stomaEndDates(p);
+    return['Reversed'+on(ends.length?ends[ends.length-1]:p.reversal_date),'cr-out-reversed'];
   }
   if(st==='discharged_gozo')   return['Discharged to Gozo','cr-out-gozo'];
   if(st==='relocated_overseas')return['Relocated overseas','cr-out-overseas'];
@@ -7409,7 +7427,7 @@ async function loadDataAnalysis(){
     body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
     return;
   }
-  dataAnalysisRows=(res.rows||[]).map(p=>({...p,st:normaliseFollowupStatus(p.followup_status)}));
+  dataAnalysisRows=(res.rows||[]).map(p=>({...p,st:derivedFollowupStatus(p)}));
   renderDataAnalysis();
 }
 function setDaYears(v){daYearsBack=v;renderDataAnalysis();}
@@ -8860,7 +8878,7 @@ async function loadRegistryMap(){
   body.innerHTML='<div class="report-note">Loading the registry…</div>';
   const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(res.error){body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';return;}
-  mapRows=(res.rows||[]).map(p=>({...p,st:normaliseFollowupStatus(p.followup_status)}));
+  mapRows=(res.rows||[]).map(p=>({...p,st:derivedFollowupStatus(p)}));
   // Place every patient once, and keep what could not be placed so the list
   // can be corrected rather than quietly under-counting a locality.
   mapByArea={};mapUnplaced=[];
@@ -9127,7 +9145,7 @@ async function openPhoneLookup(){
       if(body)body.innerHTML='<div class="pl-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
       return;
     }
-    plRows=(res.rows||[]).map(p=>({...p,st:normaliseFollowupStatus(p.followup_status)}));
+    plRows=(res.rows||[]).map(p=>({...p,st:derivedFollowupStatus(p)}));
     plLoaded=true;
   }
   plRenderSearch();
