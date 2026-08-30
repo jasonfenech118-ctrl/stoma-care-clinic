@@ -784,6 +784,30 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .pf-xchk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;}
 .pf-xchk input{width:15px;height:15px;cursor:pointer;}
 .pf-xchk.is-off{opacity:.4;}
+/* Appliance and accessory pickers — a long stock list has to stay scannable,
+   so it is grouped, searchable and scrolls inside its own box. */
+.ap-search{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:8px;}
+.ap-search:focus{outline:none;border-color:var(--teal);}
+.ap-panel{max-height:230px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;background:#fbfcfd;-webkit-overflow-scrolling:touch;}
+.ap-panel-short{max-height:170px;}
+.ap-group{padding:2px 0 6px;}
+.ap-group+.ap-group{border-top:1px solid var(--line);padding-top:8px;}
+.ap-group-h{font-size:10.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+.ap-chk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;padding:4px 10px 4px 4px;border-radius:6px;}
+.ap-chk:hover{background:#eef4f8;}
+.ap-chk input{width:15px;height:15px;cursor:pointer;flex:none;}
+.ap-chk[hidden]{display:none;}
+.ap-empty{font-size:12px;color:var(--muted);padding:6px 2px;}
+.ap-summary{margin-top:6px;font-size:11.5px;color:var(--muted);line-height:1.5;}
+.ap-summary strong{color:var(--teal);}
+.ap-summary .ap-warn{color:#b45309;font-weight:700;}
+.ap-hint{font-size:11.5px;color:var(--muted);margin-bottom:6px;}
+.ap-hint[hidden]{display:none;}
+.ap-chk.is-mismatch{background:#fff7ed;box-shadow:inset 0 0 0 1.5px #f59e0b;}
+.ap-group[hidden]{display:none;}
+.ap-pill{display:inline-block;background:#e8f5f4;color:var(--teal);border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;margin:1px 3px 1px 0;}
+.ap-chk span{min-width:0;}
+@media(max-width:640px){.ap-chk{width:100%;gap:10px;padding:8px 6px;font-size:13px;}.ap-chk input{width:18px;height:18px;}.ap-panel{max-height:210px;}}
 /* Reversed patients read violet across the whole row; deceased read black with
    white text. Both keep their action buttons legible. */
 #pd-table tr.pd-row-reversed td{background:#6d28d9;color:#ede9fe;}
@@ -2056,7 +2080,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-94';
+const APP_BUILD='2026.08.30-95';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3718,6 +3742,256 @@ async function createMissingDntuRowsFromEditForm(patientId,targetCount,sourceApp
   return true;
 }
 
+/* ---- appliances and accessories ---------------------------------------------
+   The clinic's own stock list, in the clinic's own wording. What is stored is
+   the plain name, one per tick, so a visit can record everything that was
+   actually used and the Registry can count them later without parsing.
+
+   The list is split the way the products themselves work:
+     one-piece  - bag and flange are a single unit, so it is one choice
+     two-piece  - the flange is chosen first, and only the bags that fit that
+                  flange's coupling size are then offered
+   ---------------------------------------------------------------------------- */
+const APPLIANCE_CATALOGUE=[
+  /* One-piece systems. Grouped by supplier so a code is quick to find. */
+  {name:'Salts XND 1338',system:'one',group:'Salts'},
+  {name:'Salts XND1352',system:'one',group:'Salts'},
+  {name:'Salts XNL1352',system:'one',group:'Salts'},
+  {name:'Salts NDAL13',system:'one',group:'Salts'},
+  {name:'Salts NAL1390',system:'one',group:'Salts'},
+  {name:'Hollister 24730',system:'one',group:'Hollister'},
+  {name:'Hollister 25300',system:'one',group:'Hollister'},
+  {name:'Hollister 25760',system:'one',group:'Hollister'},
+  {name:'Hollister 27300',system:'one',group:'Hollister'},
+  {name:'Hollister 27420',system:'one',group:'Hollister'},
+  {name:'Hollister 27830',system:'one',group:'Hollister'},
+  {name:'Hollister 29500',system:'one',group:'Hollister'},
+  {name:'Hollister 34200',system:'one',group:'Hollister'},
+  {name:'Welland 201148',system:'one',group:'Welland'},
+  {name:'Welland MHCS513',system:'one',group:'Welland'},
+  {name:'Welland XFM535',system:'one',group:'Welland'},
+  {name:'Welland XMDS513',system:'one',group:'Welland'},
+  {name:'Welland XMHCS513',system:'one',group:'Welland'},
+  {name:'Welland XMHDX213',system:'one',group:'Welland'},
+  {name:'Welland XMHNDS513',system:'one',group:'Welland'},
+  {name:'Welland XNHNDL913',system:'one',group:'Welland'},
+  {name:'Welland XPOP513',system:'one',group:'Welland'},
+  {name:'Lentell 201102M (70mm)',system:'one',group:'Lentell'},
+  {name:'Lentell 201108-1 (70mm trans)',system:'one',group:'Lentell'},
+  {name:'Lentell 201142 (90mm)',system:'one',group:'Lentell'},
+  {name:'Lentell 201148 (80mm)',system:'one',group:'Lentell'},
+  {name:'Lentell 201156-1 (100mm)',system:'one',group:'Lentell'},
+  {name:'Lentell 2011446M',system:'one',group:'Lentell'},
+  {name:'Esteem',system:'one',group:'Other'},
+  {name:'Little Ones',system:'one',group:'Other'},
+  {name:'Stomadress',system:'one',group:'Other'},
+
+  /* Two-piece flanges. The first number is the coupling the bag clicks onto. */
+  {name:'Stomahesive Flange 45mm',system:'two',part:'flange',coupling:45},
+  {name:'Deep Convexity 45/22mm',system:'two',part:'flange',coupling:45},
+  {name:'Deep Convexity Flange 45/25mm',system:'two',part:'flange',coupling:45},
+  {name:'Deep Convexity Flange 45/28mm',system:'two',part:'flange',coupling:45},
+  {name:'Deep Convexity Flange 45/32mm',system:'two',part:'flange',coupling:45},
+  {name:'Deep Convexity Flange 45/35mm',system:'two',part:'flange',coupling:45},
+  {name:'Microporous 45mm',system:'two',part:'flange',coupling:45},
+  {name:'Stomahesive Flange 57mm',system:'two',part:'flange',coupling:57},
+  {name:'Deep Convexity Flange 57/38mm',system:'two',part:'flange',coupling:57},
+  {name:'Deep Convexity 57/41mm',system:'two',part:'flange',coupling:57},
+  {name:'Microporous 57mm',system:'two',part:'flange',coupling:57},
+  {name:'Stomahesive Flange 70mm',system:'two',part:'flange',coupling:70},
+  {name:'Microporous 70mm',system:'two',part:'flange',coupling:70},
+  {name:'Stomahesive Flange 100mm',system:'two',part:'flange',coupling:100},
+
+  /* Two-piece bags, by the coupling they fit. */
+  {name:'Closed Bag 45mm',system:'two',part:'bag',coupling:45},
+  {name:'Drainable Bag 45mm',system:'two',part:'bag',coupling:45},
+  {name:'Urostomy Bag 45mm',system:'two',part:'bag',coupling:45},
+  {name:'Closed Bag 57mm',system:'two',part:'bag',coupling:57},
+  {name:'Drainable Bag 57mm',system:'two',part:'bag',coupling:57},
+  {name:'Urostomy Bag 57mm',system:'two',part:'bag',coupling:57},
+  {name:'Closed Bag 70mm',system:'two',part:'bag',coupling:70},
+  {name:'Drainable Bag 70mm',system:'two',part:'bag',coupling:70},
+  {name:'Urostomy Bag 70mm',system:'two',part:'bag',coupling:70},
+  {name:'Drainable Bag 100mm',system:'two',part:'bag',coupling:100}
+];
+const APPLIANCES=APPLIANCE_CATALOGUE.map(a=>a.name);
+const ACCESSORIES=['Deodorant','Dilators','Filler Paste','Flange Extenders','Gelling Agents','Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes','Stoma Belt','Stoma Seals','None'];
+const APPLIANCE_ONEPIECE_GROUPS=['Salts','Hollister','Welland','Lentell','Other'];
+function applianceCouplings(){
+  return [...new Set(APPLIANCE_CATALOGUE.filter(a=>a.part==='flange').map(a=>a.coupling))].sort((a,b)=>a-b);
+}
+
+/* Stored as a JSON array, but a list typed in by hand or imported as
+   "A, B" is read just as happily, so no record is lost in the move. */
+function parseNameList(value){
+  if(value===null||value===undefined)return[];
+  let arr=value;
+  if(typeof arr==='string'){
+    const t=arr.trim();
+    if(!t)return[];
+    if(t.startsWith('[')){try{arr=JSON.parse(t);}catch(e){arr=t.split(/\s*[;,]\s*/);}}
+    else arr=t.split(/\s*[;,]\s*/);
+  }
+  if(!Array.isArray(arr))return[];
+  const seen=new Set(),out=[];
+  arr.forEach(x=>{const n=fixText(String(x==null?'':x)).trim();if(n&&!seen.has(n)){seen.add(n);out.push(n);}});
+  return out;
+}
+function applianceChkHTML(name,checked,coupling){
+  const cpl=coupling?` data-coupling="${coupling}"`:'';
+  return `<label class="ap-chk" data-find="${htmlSafe(name.toLowerCase())}"${cpl}><input type="checkbox" class="ap-box" value="${htmlSafe(name)}" ${checked?'checked':''} onchange="onApplianceChange(this)"/><span>${htmlSafe(name)}</span></label>`;
+}
+function applianceGroupHTML(title,items,selected){
+  if(!items.length)return '';
+  return `<div class="ap-group"><div class="ap-group-h">${htmlSafe(title)}</div>${items.map(a=>applianceChkHTML(a.name,selected.includes(a.name),a.coupling)).join('')}</div>`;
+}
+function applianceSectionHTML(appliances,accessories){
+  const selApp=parseNameList(appliances),selAcc=parseNameList(accessories);
+  // Anything already on the record but not in the standard list still shows, so
+  // an older or one-off entry is never quietly dropped on the next save.
+  const extraApp=selApp.filter(n=>!APPLIANCES.includes(n)).map(n=>({name:n,system:'one',group:'Also on this record'}));
+  const extraAcc=selAcc.filter(n=>!ACCESSORIES.includes(n));
+  const one=APPLIANCE_ONEPIECE_GROUPS.concat(extraApp.length?['Also on this record']:[]).map(g=>
+    applianceGroupHTML(g,APPLIANCE_CATALOGUE.concat(extraApp).filter(a=>a.system==='one'&&a.group===g),selApp)).join('');
+  const flanges=applianceCouplings().map(c=>
+    applianceGroupHTML(`${c} mm coupling`,APPLIANCE_CATALOGUE.filter(a=>a.part==='flange'&&a.coupling===c),selApp)).join('');
+  const bags=applianceCouplings().map(c=>
+    applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selApp)).join('');
+  return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
+    <div class="edit-seen-grid">
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>Find an appliance</label>
+        <input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/>
+      </div>
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>One-piece system — bag and flange in one</label>
+        <div class="ap-panel" id="of-onepiece">${one}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div>
+      </div>
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>Two-piece system — step 1: flange</label>
+        <div class="ap-panel" id="of-flanges">${flanges}<div class="ap-empty" data-empty="1" hidden>No flange matches that search.</div></div>
+      </div>
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>Two-piece system — step 2: bag</label>
+        <div class="ap-hint" id="of-bag-hint">Choose a flange above and only the bags that fit its coupling size will be offered here.</div>
+        <div class="ap-panel" id="of-bags">${bags}<div class="ap-empty" data-empty="1" hidden>No bag matches that search.</div></div>
+      </div>
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>Accessories</label>
+        <div class="ap-panel ap-panel-short" id="of-accessories">
+          <div class="ap-group">${ACCESSORIES.concat(extraAcc).map(n=>applianceChkHTML(n,selAcc.includes(n))).join('')}</div>
+        </div>
+      </div>
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
+    </div>`;
+}
+// "None" and a real accessory can't both be true, so one clears the other.
+function onApplianceChange(box){
+  const host=box&&box.closest('#of-accessories');
+  if(host){
+    const boxes=[...host.querySelectorAll('.ap-box')];
+    if(box.value==='None'&&box.checked)boxes.forEach(b=>{if(b!==box)b.checked=false;});
+    else if(box.checked){const none=boxes.find(b=>b.value==='None');if(none)none.checked=false;}
+  }
+  filterApplianceList();
+  updateApplianceSummary();
+}
+function applianceValues(hostId){
+  const host=document.getElementById(hostId);
+  return host?[...host.querySelectorAll('.ap-box:checked')].map(b=>b.value):[];
+}
+function selectedAppliances(){
+  return applianceValues('of-onepiece').concat(applianceValues('of-flanges'),applianceValues('of-bags'));
+}
+// The coupling sizes the chosen flanges use — what step 2 is allowed to offer.
+function selectedCouplings(){
+  const host=document.getElementById('of-flanges');
+  if(!host)return[];
+  return [...new Set([...host.querySelectorAll('.ap-box:checked')].map(b=>b.closest('.ap-chk')?.dataset.coupling).filter(Boolean))];
+}
+function updateApplianceSummary(){
+  const el=document.getElementById('of-appliance-summary');
+  if(!el)return;
+  const app=selectedAppliances(),acc=applianceValues('of-accessories');
+  const parts=[];
+  parts.push(app.length?`<strong>Appliance (${app.length}):</strong> ${htmlSafe(app.join(', '))}`:'No appliance recorded for this visit.');
+  parts.push(acc.length?`<strong>Accessories (${acc.length}):</strong> ${htmlSafe(acc.join(', '))}`:'No accessory recorded.');
+  // A bag whose flange is no longer ticked is worth saying out loud rather than
+  // silently removing — the nurse decides which of the two is wrong.
+  const sizes=selectedCouplings();
+  const odd=applianceValues('of-bags').filter(n=>{
+    const item=APPLIANCE_CATALOGUE.find(a=>a.name===n);
+    return item&&!sizes.includes(String(item.coupling));
+  });
+  if(odd.length)parts.push(`<span class="ap-warn">No matching flange is ticked for ${htmlSafe(odd.join(', '))}.</span>`);
+  el.innerHTML=parts.join('<br/>');
+}
+/* One search box drives all four panels. A ticked item always stays in view, so
+   a search can never hide something that is about to be saved. */
+function filterApplianceList(){
+  const q=String(document.getElementById('of-appliance-search')?.value||'').trim().toLowerCase();
+  const sizes=selectedCouplings();
+  ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
+    const host=document.getElementById(id);
+    if(!host)return;
+    let shown=0;
+    host.querySelectorAll('.ap-group').forEach(g=>{
+      let visible=0;
+      g.querySelectorAll('.ap-chk').forEach(l=>{
+        const box=l.querySelector('.ap-box');
+        const fits=id!=='of-bags'||!l.dataset.coupling||sizes.includes(l.dataset.coupling);
+        const hit=box.checked||(fits&&(!q||l.dataset.find.includes(q)));
+        l.hidden=!hit;
+        l.classList.toggle('is-mismatch',id==='of-bags'&&box.checked&&!fits);
+        if(hit)visible++;
+      });
+      g.hidden=!visible;
+      shown+=visible;
+    });
+    const empty=host.querySelector('[data-empty]');
+    if(empty){
+      empty.hidden=shown>0;
+      if(id==='of-bags'&&!shown&&!sizes.length)empty.hidden=true;
+    }
+  });
+  const hint=document.getElementById('of-bag-hint');
+  if(hint)hint.hidden=selectedCouplings().length>0;
+}
+// The appliance list only makes sense for a visit that happened.
+function updateApplianceVisibility(){
+  const status=document.getElementById('of-status')?.value||'';
+  const off=status==='did_not_attend'||status==='cancelled';
+  const head=document.getElementById('of-appliance-head');
+  if(head){head.hidden=off;const grid=head.nextElementSibling;if(grid)grid.hidden=off;}
+}
+function appliancePillsHTML(appliances,accessories){
+  const items=parseNameList(appliances).concat(parseNameList(accessories).filter(n=>n!=='None'));
+  if(!items.length)return '<span class="pd-dash">—</span>';
+  return items.map(n=>`<span class="ap-pill">${htmlSafe(n)}</span>`).join('');
+}
+/* An install that has not run the newest SQL yet is missing a column, and one
+   missing column must never cost the whole save. The update is retried without
+   whichever column the database rejected, and the caller is told what it had
+   to leave out. */
+function missingColumnFromError(error){
+  const msg=String(error&&error.message||'');
+  const m=msg.match(/column\s+(?:[\w."]*?\.)?"?([a-z_]+)"?\s+does not exist/i)
+        ||msg.match(/could not find the '([a-z_]+)' column/i)
+        ||msg.match(/'([a-z_]+)' column of/i);
+  return m?m[1]:'';
+}
+async function updateAppointmentTolerant(apptId,payload){
+  const body={...payload},dropped=[];
+  for(let attempt=0;attempt<8;attempt++){
+    const{error}=await SB.from('appointments').update(body).eq('id',apptId);
+    if(!error)return{error:null,dropped};
+    const bad=missingColumnFromError(error);
+    if(!bad||!(bad in body))return{error,dropped};
+    delete body[bad];
+    dropped.push(bad);
+  }
+  return{error:{message:'Too many missing columns to save.'},dropped};
+}
 async function openOutcomeFollowupModal(apptId,status,options={}){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
   if(error||!raw){alert('Could not load this appointment.');return;}
@@ -3749,7 +4023,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const modalSub=isDntuEditMode?'Update patient details, clinic column, DNTU count and follow-up planning in one card.':'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
   const outcomeControl=isDntuEditMode?
     `<div class="fg"><label>Appointment outcome</label><input type="text" value="DNTU — Did Not Turn Up" readonly style="background:#f8fafc;font-weight:800;color:#856404;"/><input type="hidden" id="of-status" value="did_not_attend"/></div>`:
-    `<div class="fg"><label>Appointment outcome</label><select id="of-status">
+    `<div class="fg"><label>Appointment outcome</label><select id="of-status" onchange="updateApplianceVisibility()">
         <option value="booked" ${requestedStatus==='booked'?'selected':''}>Booked</option>
         <option value="attended" ${requestedStatus==='attended'?'selected':''}>Seen / Attended</option>
         <option value="did_not_attend" ${requestedStatus==='did_not_attend'?'selected':''}>DNTU</option>
@@ -3758,6 +4032,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const pendingCurrentDntu=(isDntuEditMode && appt.status!=='did_not_attend')?1:0;
   mb.dataset.dntuBaseAfterSave=String(Math.min(3,dntuCurrentStreak+pendingCurrentDntu));
   const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu):'';
+  const applianceSection=applianceSectionHTML(appt.appliances,appt.accessories);
   mb.innerHTML=`<h2>${modalTitle}</h2>
     <div class="msub">${modalSub}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
 
@@ -3777,6 +4052,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       ${outcomeControl}
     </div>
     ${dntuSelectionSection}
+    ${applianceSection}
 
     <div id="of-followup-planning-wrap">
     <div class="edit-seen-section">Follow-up planning</div>
@@ -3807,6 +4083,9 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   updateOutcomeAvailabilityPreview();
   updateFollowupChangeWarning();
+  filterApplianceList();
+  updateApplianceSummary();
+  updateApplianceVisibility();
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
@@ -3842,6 +4121,8 @@ async function saveOutcomeFollowup(apptId,patientId){
 
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
+    appliances:selectedAppliances(),
+    accessories:applianceValues('of-accessories'),
     status,
     appt_date:date,
     appt_slot:String(slot).slice(0,5),
@@ -3854,16 +4135,11 @@ async function saveOutcomeFollowup(apptId,patientId){
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
 
-  let{error:aErr}=await SB.from('appointments').update(outcomeUpdate).eq('id',apptId);
-  if(aErr && String(aErr.message||'').toLowerCase().includes('column')){
-    const retryUpdate={...outcomeUpdate};
-    delete retryUpdate.outcome_recorded_at;
-    delete retryUpdate.outcome_recorded_by_email;
-    delete retryUpdate.outcome_recorded_by_name;
-    const retry=await SB.from('appointments').update(retryUpdate).eq('id',apptId);
-    aErr=retry.error;
+  const saved=await updateAppointmentTolerant(apptId,outcomeUpdate);
+  if(saved.error){alert('Could not save appointment edit/outcome: '+saved.error.message);return;}
+  if(saved.dropped.includes('appliances')||saved.dropped.includes('accessories')){
+    alert('The appointment was saved, but the appliances and accessories were not: the database does not have those columns yet. Run sql/add-appliances.sql once in Supabase to turn them on.');
   }
-  if(aErr){alert('Could not save appointment edit/outcome: '+aErr.message);return;}
 
   if(patientId){
     const updatePayload=(isDntuEditMode&&dntuTarget===3)?{
@@ -5071,11 +5347,12 @@ async function openFollowupHistory(patientId){
     <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
     <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span>${followupStatusBadge(a.patients?.followup_status)}</td>
+    <td>${appliancePillsHTML(a.appliances,a.accessories)}</td>
     <td><button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button></td>
-  </tr>`).join(''):'<tr><td colspan="5" class="empty">No appointment history found</td></tr>';
+  </tr>`).join(''):'<tr><td colspan="6" class="empty">No appointment history found</td></tr>';
   document.getElementById('mb').innerHTML=`<h2>Follow-up History</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat?.id_card||'No ID')} · ${htmlSafe(pat?.phone_number||'No phone')}<br/>Owner: ${htmlSafe(pat?.followup_owner||'Common')} · Due Month: ${followupMonthName(pat?.followup_due_month)} · Year: ${htmlSafe(pat?.followup_year||'—')}</div>
-    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Seen By</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Seen By</th><th>Outcome</th><th>Appliance / accessories</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal();loadStaffAudit();">Close</button><button class="btn-save" onclick="openPatientRebookModal('${patientId}')">Rebook Patient</button></div>`;
   openMo();
 }
