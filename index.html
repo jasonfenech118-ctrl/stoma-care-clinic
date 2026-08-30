@@ -2004,7 +2004,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-87';
+const APP_BUILD='2026.08.30-89';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6314,7 +6314,7 @@ function newStomaRowHTML(d){
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
-      <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
+      <div class="fg st-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
@@ -6340,17 +6340,50 @@ function renumberStomaRows(prefix){
   lists.forEach(([id,sel,suffix])=>{
     const list=document.getElementById(id);
     if(!list)return;
-    const rows=[...list.querySelectorAll(':scope > .stoma-row')];
-    // Put each list in date order, then remember the rows for joint numbering.
-    rows.slice().sort((a,b)=>String(a.querySelector(sel)?.value||'9999-99-99')
-        .localeCompare(String(b.querySelector(sel)?.value||'9999-99-99')))
-      .forEach(r=>list.appendChild(r));
-    rows.forEach(r=>all.push({row:r,d:r.querySelector(sel)?.value||'9999-99-99',suffix}));
+    // Rows are not moved while the form is open — a row jumping away the moment
+    // a date is typed loses the nurse's place mid-entry. The lists are rendered
+    // in date order when the form opens and stored in date order on save; only
+    // the numbering follows the dates live.
+    [...list.querySelectorAll(':scope > .stoma-row')]
+      .forEach(r=>all.push({row:r,d:r.querySelector(sel)?.value||'9999-99-99',suffix}));
   });
   all.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
   all.forEach((x,i)=>{
     const t=x.row.querySelector('.stoma-row-title');
     if(t)t.textContent='Stoma '+(i+2)+x.suffix;
+  });
+  refreshReversalFields(prefix);
+}
+/* A refashioning closes the stoma it follows and forms the next one, so that
+   stoma was never reversed — its reversal date is hidden and cleared. The
+   stoma a refashioning closes is the most recent one formed on or before it;
+   a refashioning with no date yet closes the newest stoma. */
+function refreshReversalFields(prefix){
+  const stomas=[{d:document.getElementById(`${prefix}-surgery`)?.value||'',
+                 wrap:document.getElementById(`${prefix}-reversalwrap`),
+                 input:document.getElementById(`${prefix}-reversal`)}]
+    .concat([...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({
+      d:r.querySelector('.st-formed')?.value||'',
+      wrap:r.querySelector('.st-reversalwrap'),input:r.querySelector('.st-reversal')})));
+  stomas.forEach(s=>{s.key=s.d||'9999-99-99';s.refashioned=false;});
+  stomas.sort((a,b)=>String(a.key).localeCompare(String(b.key)));
+  [...document.querySelectorAll(`#${prefix}-reflist .rf-formed`)].forEach(inp=>{
+    const on=inp.value||'9999-99-99';
+    let idx=-1;
+    stomas.forEach((s,i)=>{if(String(s.key)<=String(on))idx=i;});
+    if(idx>=0)stomas[idx].refashioned=true;
+  });
+  stomas.forEach(s=>{
+    if(!s.wrap)return;
+    s.wrap.hidden=s.refashioned;
+    if(!s.input)return;
+    // The date is kept aside rather than discarded, so removing the
+    // refashioning brings it straight back.
+    if(s.refashioned){
+      if(s.input.value){s.input.dataset.kept=s.input.value;s.input.value='';}
+    }else if(!s.input.value&&s.input.dataset.kept){
+      s.input.value=s.input.dataset.kept;delete s.input.dataset.kept;
+    }
   });
 }
 // A date change can move a stoma in the sequence, so re-order and renumber.
@@ -6432,10 +6465,10 @@ function patientFormHTML(p,prefix){
   <div class="stoma-row">
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type *</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
-      <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
+      <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
-      <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
+      <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
       <div class="fg" style="grid-column:1 / -1;">
@@ -7067,6 +7100,7 @@ function renderAddPatientForm(){
         <button class="btn-save" onclick="saveNewPatient()">Add Patient</button>
       </div>
     </div>`;
+  renumberStomaRows('ap');
   onPatientFormOutcome('ap');
 }
 async function saveNewPatient(){
