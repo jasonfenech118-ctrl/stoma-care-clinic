@@ -989,6 +989,16 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
 .registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
 .registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
+.booking-find-results{margin-top:6px;display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;}
+.bfr-row{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;font-family:inherit;}
+.bfr-row:hover{border-color:var(--teal);background:#f2fbfa;}
+.bfr-row.is-blocked{opacity:.55;}
+.bfr-name{font-size:13px;font-weight:800;color:var(--navy);}
+.bfr-meta{font-size:11px;color:var(--muted);font-family:monospace;}
+.bfr-note{font-size:11.5px;color:var(--muted);padding:6px 2px;}
+.bfr-add{margin-top:7px;display:inline-block;background:#1baf7a;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit;}
+.bfr-add:hover{filter:brightness(1.07);}
+.btn-save:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.4);}
 
 </style>
 </head>
@@ -1738,28 +1748,6 @@ function followupBookingFields(prefix, defaults={}){
     <div class="fg"><label>Follow-up due year</label><select id="${prefix}-fu-year" onchange="refreshBookingMonthOptions('${prefix}')">${followupYearOptions(year)}</select></div>
     <div class="fg"><label>Follow-up due month</label><select id="${prefix}-fu-month" data-default-month="${month}"><option value="${month}">Loading availability...</option></select><div id="${prefix}-fu-availability" style="margin-top:5px;">Loading clinic availability...</div></div>`;
 }
-function newPatientEpisodeField(prefix, defaults={}){
-  return `<div id="${prefix}-episode-only" class="episode-only-box">
-    <div class="episode-note">New patient ID card not found in the saved registry. Select the booking type / episode for the first saved record. Follow-up owner and due month are completed later from Edit / Seen.</div>
-    <div class="fg" style="margin-bottom:0;"><label>Booking type / episode</label><select id="${prefix}-followup-type">${followupTypeOptions(defaults.followup_type||defaults.type||'new_case')}</select></div>
-  </div>`;
-}
-function showNewPatientEpisode(prefix,show,type='new_case'){
-  const box=document.getElementById(`${prefix}-episode-only`);
-  if(box)box.style.display=show?'block':'none';
-  const typeEl=document.getElementById(`${prefix}-followup-type`);
-  if(typeEl&&type)typeEl.value=normaliseFollowupType(type);
-}
-function readBookingPatientPayload(prefix,isNewPatient){
-  if(isNewPatient){
-    return {
-      followup_type:document.getElementById(`${prefix}-followup-type`)?.value||'new_case',
-      followup_owner:'Common',
-      followup_status:'active'
-    };
-  }
-  return {};
-}
 function readFollowupBookingPayload(prefix){
   const monthSelect=document.getElementById(`${prefix}-fu-month`);
   const year=document.getElementById(`${prefix}-fu-year`)?.value;
@@ -2080,7 +2068,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-95';
+const APP_BUILD='2026.08.30-96';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4410,6 +4398,93 @@ async function savePatientRebook(patientId){
   searchPatientsForRebook();
 }
 
+/* ---- booking is registry-only ------------------------------------------------
+   An appointment can only be given to a patient who is already in the Registry.
+   The booking card looks the patient up and never creates one, so the register
+   stays the single place a patient is entered — with their dates, stoma and
+   locality — instead of a bare name arriving through a booking.
+   ---------------------------------------------------------------------------- */
+function bookingPatientPickerHTML(phoneId){
+  return `<div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="ID card of a registered patient" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','${phoneId}','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','${phoneId}','p-reg-note')}"/></div>
+    <div id="p-reg-note" class="registry-lookup-note">Enter the ID card of a patient who is already in the Registry. Booking never creates a new patient.</div>
+    <div class="fg"><label>Or find them by name</label><input type="search" id="p-find" placeholder="Type a name, surname or ID card" oninput="bookingRegistrySearch()"/><div id="p-find-results" class="booking-find-results"></div></div>
+    <div class="fg"><label>First Name</label><input type="text" id="p-fn" readonly placeholder="Filled in from the Registry"/></div>
+    <div class="fg"><label>Surname</label><input type="text" id="p-sn" readonly placeholder="Filled in from the Registry"/></div>
+    <div class="fg"><label>Phone</label><input type="tel" id="${phoneId}" readonly placeholder="Filled in from the Registry"/></div>`;
+}
+// Nothing can be booked until the lookup has found a registered, bookable patient.
+function setBookingReady(ok){
+  const btn=document.querySelector('#mo .mact .btn-save');
+  if(!btn)return;
+  btn.disabled=!ok;
+  btn.title=ok?'':'Find a registered patient first';
+}
+let bookingSearchTimer=null;
+function bookingRegistrySearch(){
+  clearTimeout(bookingSearchTimer);
+  bookingSearchTimer=setTimeout(runBookingRegistrySearch,250);
+}
+async function runBookingRegistrySearch(){
+  const box=document.getElementById('p-find-results');
+  if(!box)return;
+  const q=String(document.getElementById('p-find')?.value||'').trim();
+  if(q.length<2){box.innerHTML='';return;}
+  box.innerHTML='<div class="bfr-note">Searching the Registry…</div>';
+  const term=q.replace(/[%,()]/g,' ').trim();
+  const{data,error}=await SB.from('patients').select(PATIENT_BASE_COLS)
+    .or(`first_name.ilike.%${term}%,surname.ilike.%${term}%,id_card.ilike.%${term}%`)
+    .order('surname',{ascending:true}).limit(10);
+  if(error){box.innerHTML=`<div class="bfr-note">Could not search the Registry: ${htmlSafe(error.message||'')}</div>`;return;}
+  const rows=(data||[]).filter(r=>r&&r.id_card);
+  if(!rows.length){
+    box.innerHTML=`<div class="bfr-note">No registered patient matches “${htmlSafe(q)}”. Add them under <strong>Add Patient</strong> first.</div>`;
+    return;
+  }
+  box.innerHTML=rows.map(r=>{
+    const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'Unnamed patient';
+    const dead=normaliseFollowupStatus(r.followup_status)==='deceased';
+    return `<button type="button" class="bfr-row${dead?' is-blocked':''}" onclick="useRegistryPatientForBooking('${jsSafe(r.id_card)}')">
+      <span class="bfr-name">${htmlSafe(nm)}</span>
+      <span class="bfr-meta">${htmlSafe(r.id_card||'')}${r.phone_number?' · '+htmlSafe(r.phone_number):''}${dead?' · Deceased':''}</span></button>`;
+  }).join('');
+}
+async function useRegistryPatientForBooking(idCard){
+  const idEl=document.getElementById('p-id');
+  if(!idEl)return;
+  idEl.value=idCard;
+  const box=document.getElementById('p-find-results');if(box)box.innerHTML='';
+  const find=document.getElementById('p-find');if(find)find.value='';
+  const phoneId=document.getElementById('p-phone')?'p-phone':'p-ph';
+  await lookupPatientByIdForBooking('p-id','p-fn','p-sn',phoneId,'p-reg-note');
+}
+// The one honest way out of a failed lookup: register the patient properly.
+function goAddPatientWithIdCard(idCard){
+  closeModal();
+  switchTab('add-patient');
+  setTimeout(()=>{
+    const el=document.getElementById('ap-idcard');
+    if(el){el.value=normaliseIdCard(idCard||'');el.focus();}
+  },120);
+}
+/* The gate both booking cards go through. It re-reads the registry at save
+   time, so a stale card can never book a patient who is no longer there. */
+async function requireRegisteredPatientForBooking(){
+  const id=normaliseIdCard(document.getElementById('p-id')?.value||'');
+  if(!id){alert('Enter the ID card of a registered patient, or find them by name.');return null;}
+  const{data,error}=await SB.from('patients')
+    .select('id,first_name,surname,id_card,followup_status')
+    .ilike('id_card',id).maybeSingle();
+  if(error){alert('Could not check the patient registry: '+error.message);return null;}
+  if(!data?.id){
+    alert(`${id} is not in the Registry.\n\nAdd the patient under Add Patient first — booking does not create patient records.`);
+    return null;
+  }
+  if(normaliseFollowupStatus(data.followup_status)==='deceased'){
+    alert('This patient is marked as deceased. Change the patient status first before booking.');
+    return null;
+  }
+  return data;
+}
 function normaliseIdCard(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
 async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId,phoneInputId,noteId){
   const idEl=document.getElementById(idInputId);
@@ -4419,10 +4494,11 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
   const id=normaliseIdCard(idEl.value);
   idEl.value=id;
   if(!id){
-    if(note){note.className='registry-lookup-note';note.textContent='Enter the ID card first. Existing patients will auto-fill and keep their history.';}
+    if(note){note.className='registry-lookup-note';note.textContent='Enter the ID card of a patient who is already in the Registry. Booking never creates a new patient.';}
     idEl.dataset.patientId='';
     idEl.dataset.deceased='false';
-    showNewPatientEpisode(prefix,false);
+    clearBookingPatientFields(firstInputId,surnameInputId,phoneInputId);
+    setBookingReady(false);
     return null;
   }
   if(note){note.className='registry-lookup-note';note.textContent='Checking saved patient registry...';}
@@ -4432,10 +4508,11 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
     .maybeSingle();
   if(error){
     console.error('Patient registry lookup error:',error);
-    if(note){note.className='registry-lookup-note error';note.textContent='Could not check patient registry. You can still continue, but please verify details.';}
+    if(note){note.className='registry-lookup-note error';note.textContent='Could not check the patient registry, so this booking cannot go ahead. Check the connection and try again.';}
     idEl.dataset.patientId='';
     idEl.dataset.deceased='false';
-    showNewPatientEpisode(prefix,false);
+    clearBookingPatientFields(firstInputId,surnameInputId,phoneInputId);
+    setBookingReady(false);
     return null;
   }
   if(data?.id){
@@ -4445,7 +4522,6 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
     if(p)p.value=data.phone_number||'';
     idEl.dataset.patientId=data.id;
     idEl.dataset.deceased=normaliseFollowupStatus(data.followup_status)==='deceased'?'true':'false';
-    showNewPatientEpisode(prefix,false,data.followup_type||'follow_up');
 
     const ownerEl=document.getElementById(`${prefix}-followup-owner`);
     if(ownerEl)ownerEl.value=normaliseFollowupOwner(data.followup_owner||'Common');
@@ -4463,38 +4539,26 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
         note.textContent=`Saved patient found but marked Deceased: ${(data.first_name||'')} ${(data.surname||'')}. Booking is blocked unless status is changed first.`;
       }else{
         note.className='registry-lookup-note found';
-        note.textContent=`Saved patient found: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to the existing history. Follow-up owner and due month can be updated from Edit / Seen.`;
+        note.textContent=`Registered patient: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to their existing history. Follow-up owner and due month can be updated from Edit / Seen.`;
       }
     }
+    setBookingReady(normaliseFollowupStatus(data.followup_status)!=='deceased');
     return data;
   }
   idEl.dataset.patientId='';
   idEl.dataset.deceased='false';
-  showNewPatientEpisode(prefix,true,'new_case');
+  clearBookingPatientFields(firstInputId,surnameInputId,phoneInputId);
   if(document.getElementById(`${prefix}-fu-month`))await refreshBookingMonthOptions(prefix);
-  if(note){note.className='registry-lookup-note new';note.textContent='No saved patient found for this ID card. Select the Booking type / episode below, then book the appointment.';}
+  if(note){
+    note.className='registry-lookup-note error';
+    note.innerHTML=`<strong>${htmlSafe(id)} is not in the Registry.</strong> A patient has to be registered before an appointment can be given, so their dates, stoma and locality are on file. <button type="button" class="bfr-add" onclick="goAddPatientWithIdCard('${jsSafe(id)}')">Add this patient to the Registry</button>`;
+  }
+  setBookingReady(false);
   return null;
 }
-async function saveOrUpdatePatientByIdCard(idCard,firstName,surname,phone,followupPayload={}){
-  const id=normaliseIdCard(idCard);
-  if(!id||!firstName||!surname)return {patient:null,error:{message:'Missing patient details.'}};
-  const existing=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
-    .ilike('id_card',id)
-    .maybeSingle();
-  if(existing.error)return {patient:null,error:existing.error};
-  if(existing.data?.id){
-    const updatePayload={first_name:firstName,surname:surname,phone_number:phone||existing.data.phone_number||null,id_card:id,...followupPayload};
-    if(normaliseFollowupStatus(existing.data.followup_status)==='deceased')delete updatePayload.followup_status;
-    const updated=await SB.from('patients').update(updatePayload).eq('id',existing.data.id).select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').single();
-    if(updated.error)return {patient:existing.data,error:updated.error};
-    return {patient:updated.data||existing.data,error:null};
-  }
-  const inserted=await SB.from('patients').insert({first_name:firstName,surname:surname,id_card:id,phone_number:phone||null,followup_status:'active',...followupPayload}).select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').single();
-  return {patient:inserted.data,error:inserted.error};
+function clearBookingPatientFields(firstInputId,surnameInputId,phoneInputId){
+  [firstInputId,surnameInputId,phoneInputId].forEach(fid=>{const el=fid&&document.getElementById(fid);if(el)el.value='';});
 }
-
-
 async function buildNurseAllocationOptions(selectedType,selectedId){
   const{data:bankRows}=await SB.from('bank_staff').select('id,full_name').order('full_name');
   let selected='common';
@@ -4513,50 +4577,17 @@ async function bookSlot(slot,date,nid,nname,ntype){
   const mb=document.getElementById('mb');
   mb.className='mb';
   mb.innerHTML=`<h2>Book Patient</h2>
-    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · default column: ${htmlSafe(targetLabel)}<br/>This card is only for scheduling the appointment.</div>
-    <div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="Enter ID card first" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-ph','p-reg-note')}"/></div>
-    <div id="p-reg-note" class="registry-lookup-note">Enter the ID card first. Existing patients will auto-fill and keep their history.</div>
-    <div class="fg"><label>First Name *</label><input type="text" id="p-fn"/></div>
-    <div class="fg"><label>Surname *</label><input type="text" id="p-sn"/></div>
-    <div class="fg"><label>Phone</label><input type="tel" id="p-ph"/></div>
-    ${newPatientEpisodeField('p',{followup_type:'new_case'})}
+    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · default column: ${htmlSafe(targetLabel)}<br/>This card only schedules the appointment, for a patient who is already in the Registry.</div>
+    ${bookingPatientPickerHTML('p-ph')}
     <div class="fg"><label>Nurse / Column *</label><select id="p-nurse">${nurseOptions}</select></div>
     <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after the appointment is scheduled by clicking Edit or Seen.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}')">Book Patient</button></div>`;
   openMo();
+  setBookingReady(false);
 }
 async function doBook(slot,date,nurseIdParam,nurseType){
-  const fn=document.getElementById('p-fn').value.trim();
-  const sn=document.getElementById('p-sn').value.trim();
-  const id=normaliseIdCard(document.getElementById('p-id').value);
-  const ph=document.getElementById('p-ph').value.trim();
-  if(!fn||!sn||!id){alert('Please enter the ID card first, then confirm first name and surname.');return;}
-
-  const existing=await SB.from('patients')
-    .select('id,followup_status')
-    .ilike('id_card',id)
-    .maybeSingle();
-  if(existing.error){alert('Could not check patient registry: '+existing.error.message);return;}
-  if(normaliseFollowupStatus(existing.data?.followup_status)==='deceased'||document.getElementById('p-id')?.dataset.deceased==='true'){
-    alert('This patient is marked as deceased. Change the patient status first before booking.');
-    return;
-  }
-
-  const isNewPatient=!existing.data?.id;
-  if(isNewPatient){
-    const episodeBox=document.getElementById('p-episode-only');
-    if(episodeBox&&episodeBox.style.display!=='block'){
-      showNewPatientEpisode('p',true,'new_case');
-      const note=document.getElementById('p-reg-note');
-      if(note){note.className='registry-lookup-note new';note.textContent='This is a new ID card. Please select the Booking type / episode, then click Book Patient again.';}
-      return;
-    }
-  }
-
-  const followupPayload=readBookingPatientPayload('p',isNewPatient);
-  const saved=await saveOrUpdatePatientByIdCard(id,fn,sn,ph,followupPayload);
-  if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
-  const pat=saved.patient;
+  const pat=await requireRegisteredPatientForBooking();
+  if(!pat)return;
 
   const manualNurse=document.getElementById('p-nurse')?.value||'common';
   const payload={patient_id:pat.id,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
@@ -8879,13 +8910,8 @@ async function openModal(type,...args){
     const[slot,date,nurseId,nurseName]=args;
     html=`<h2>Book Patient</h2>
       <div class="msub">${date} — ${slot}${nurseName?` · ${nurseName}`:''}</div>
-      <div class="fg"><label>ID Card Number * — patient registry lookup</label><input type="text" id="p-id" placeholder="Enter ID card first" onblur="lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-phone','p-reg-note')" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupPatientByIdForBooking('p-id','p-fn','p-sn','p-phone','p-reg-note')}"/></div>
-      <div id="p-reg-note" class="registry-lookup-note">Enter the ID card first. Existing patients will auto-fill and keep their history.</div>
-      <div class="fg"><label>First Name *</label><input type="text" id="p-fn" placeholder="First name"/></div>
-      <div class="fg"><label>Surname *</label><input type="text" id="p-sn" placeholder="Surname"/></div>
-      <div class="fg"><label>Phone Number</label><input type="tel" id="p-phone" placeholder="e.g. +356 9999 9999"/></div>
-      ${newPatientEpisodeField('p',{followup_type:'new_case'})}
-      <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are completed later from Edit / Seen.</div>
+      ${bookingPatientPickerHTML('p-phone')}
+      <div class="booking-guidance-note">Only patients already in the Registry can be booked. Follow-up allocation / owner, due year and due month are completed later from Edit / Seen.</div>
       <div class="mact">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" onclick="saveAppt('${slot}','${date}','${nurseId||''}')">Book Patient</button>
@@ -8914,33 +8940,13 @@ async function openModal(type,...args){
   }
   document.getElementById('mb').innerHTML=html;
   openMo();
+  if(type==='appt')setBookingReady(false);
 }
 
 async function saveAppt(slot,date,nurseId){
-  const fn=document.getElementById('p-fn').value.trim();
-  const sn=document.getElementById('p-sn').value.trim();
-  const idno=normaliseIdCard(document.getElementById('p-id').value);
-  const phone=document.getElementById('p-phone')?.value.trim()||'';
-  if(!fn||!sn||!idno){alert('Please enter the ID card first, then confirm first name and surname.');return;}
-  const existing=await SB.from('patients').select('id,followup_status').ilike('id_card',idno).maybeSingle();
-  if(existing.error){alert('Could not check patient registry: '+existing.error.message);return;}
-  if(normaliseFollowupStatus(existing.data?.followup_status)==='deceased'||document.getElementById('p-id')?.dataset.deceased==='true'){
-    alert('This patient is marked as deceased. Change the patient status first before booking.');
-    return;
-  }
-  const isNewPatient=!existing.data?.id;
-  if(isNewPatient){
-    const episodeBox=document.getElementById('p-episode-only');
-    if(episodeBox&&episodeBox.style.display!=='block'){
-      showNewPatientEpisode('p',true,'new_case');
-      alert('This is a new ID card. Please select the Booking type / episode, then click Book Patient again.');
-      return;
-    }
-  }
-  const followupPayload=readBookingPatientPayload('p',isNewPatient);
-  const saved=await saveOrUpdatePatientByIdCard(idno,fn,sn,phone,followupPayload);
-  if(saved.error||!saved.patient?.id){alert('Error saving patient registry record: '+(saved.error?.message||''));return;}
-  const patId=saved.patient.id;
+  const pat=await requireRegisteredPatientForBooking();
+  if(!pat)return;
+  const patId=pat.id;
   const{error}=await SB.from('appointments').insert({
     patient_id:patId,appt_date:date,appt_slot:slot,
     assigned_to:nurseId&&nurseId!=='undefined'&&nurseId!==''?nurseId:null,
