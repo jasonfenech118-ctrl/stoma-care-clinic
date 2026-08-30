@@ -816,8 +816,18 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .vw-dot.is-done{background:var(--teal);}
 .vw-dot.is-now{background:var(--navy);}
 .vw-carry{background:#fff8e1;color:#856404;border:1px solid #f2df9f;border-radius:8px;padding:8px 10px;font-size:11.5px;font-weight:700;margin-bottom:10px;}
+.vw-stoma{display:flex;align-items:center;gap:11px;background:#eef4f8;border:1.5px solid #cfe0ea;border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+.vw-stoma-none{background:#fff8e1;border-color:#f2df9f;}
+.vw-stoma-code{flex:none;background:var(--navy);color:#fff;border-radius:8px;padding:6px 10px;font-size:15px;font-weight:800;letter-spacing:.5px;}
+.vw-stoma-type{font-size:14.5px;font-weight:800;color:var(--navy);line-height:1.25;}
+.vw-stoma-meta{font-size:11.5px;color:var(--muted);font-weight:700;margin-top:2px;}
+.vw-stoma-inh{font-size:10px;font-weight:700;color:var(--muted);}
 .ap-chk span{min-width:0;}
-@media(max-width:640px){.ap-chk{width:100%;gap:10px;padding:8px 6px;font-size:13px;}.ap-chk input{width:18px;height:18px;}.ap-panel{max-height:210px;}}
+/* The panels sit inside .fg, whose `label` rule is more specific than a bare
+   class — so the tick rows need the same weight or they collapse to a block
+   and the label lands flush against its box. */
+.fg label.ap-chk{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:12.5px;font-weight:600;color:var(--navy);text-transform:none;letter-spacing:normal;}
+@media(max-width:640px){.ap-chk,.fg label.ap-chk{width:100%;gap:11px;padding:8px 6px;font-size:13px;}.ap-chk input{width:18px;height:18px;}.ap-panel{max-height:210px;}}
 /* Reversed patients read violet across the whole row; deceased read black with
    white text. Both keep their action buttons legible. */
 #pd-table tr.pd-row-reversed td{background:#6d28d9;color:#ede9fe;}
@@ -2078,7 +2088,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-97';
+const APP_BUILD='2026.08.30-98';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4125,6 +4135,18 @@ let visitWizard=null;
 function visitStomaLabel(st){
   return st.uid==='unassigned'?'Stoma not yet recorded in the Registry':`${st.code} · ${st.label}`;
 }
+/* Which stoma this card is for, in the words a nurse checks against: the
+   number, then the type, then where it is and when it was made. It sits on
+   the appliance card and the accessory card alike. */
+function visitStomaBannerHTML(st){
+  if(st.uid==='unassigned')
+    return `<div class="vw-stoma vw-stoma-none"><div class="vw-stoma-type">No stoma recorded in the Registry</div>
+      <div class="vw-stoma-meta">Record the stoma on the patient so what is used can be tied to it.</div></div>`;
+  return `<div class="vw-stoma">
+    <span class="vw-stoma-code">${htmlSafe(st.code)}</span>
+    <div><div class="vw-stoma-type">${htmlSafe(st.typeLabel)}${st.typeInherited?' <span class="vw-stoma-inh">carried from the stoma it replaced</span>':''}</div>
+    <div class="vw-stoma-meta">${htmlSafe(st.meta)}</div></div></div>`;
+}
 async function openVisitApplianceWizard(pending,patient){
   const stomas=stomasPresentOn(patient,pending.date);
   const list=stomas.length?stomas:[{uid:'unassigned',code:'S?',label:'no stoma recorded',kind:'stoma'}];
@@ -4195,12 +4217,12 @@ function renderVisitStep(){
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong> — that is a record too.</div></div>`;
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>${step.kind==='appliances'?'Appliances':'Accessories'}</h2>
+  mb.innerHTML=`<h2>${step.kind==='appliances'?'Appliances':'Accessories'} — ${htmlSafe(step.st.uid==='unassigned'?'this visit':step.st.code)}</h2>
     <div class="msub">${htmlSafe(`${visitWizard.patient?.first_name||''} ${visitWizard.patient?.surname||''}`.trim()||'Patient')} · ${htmlSafe(fmtShortDate(visitWizard.pending.date))} ${htmlSafe(visitWizard.pending.slot)}<br/>
-      Stoma ${stomaNo} of ${stomaCount} — <strong>${htmlSafe(visitStomaLabel(step.st))}</strong></div>
+      Stoma ${stomaNo} of ${stomaCount}${stomaCount>1?' — each stoma is recorded on its own card':''}</div>
     <div class="vw-steps">${steps.map((s,i)=>`<span class="vw-dot ${i===index?'is-now':i<index?'is-done':''}" title="${htmlSafe(visitStomaLabel(s.st))} — ${s.kind}"></span>`).join('')}</div>
+    ${visitStomaBannerHTML(step.st)}
     ${carried}
-    <div class="edit-seen-section">${htmlSafe(visitStomaLabel(step.st))}</div>
     ${body}
     <div class="ap-summary" id="of-appliance-summary"></div>
     <div class="mact">
@@ -6898,14 +6920,22 @@ function stomaTimeline(p){
       if(!out[j].ended){out[j].ended=e.formed||out[j].ended;out[j].endedBy='refashioned';break;}
     }
   });
+  // A refashioning that does not say what it made kept what it replaced.
+  out.forEach((e,i)=>{
+    if(e.origin!=='refashion'||String(e.type||'').trim())return;
+    for(let j=i-1;j>=0;j--){if(String(out[j].type||'').trim()){e.type=out[j].type;e.typeInherited=true;break;}}
+  });
   out.forEach((e,i)=>{
     e.code='S'+(i+1);
-    const kind=e.origin==='refashion'?'refashioned stoma':e.origin==='new'?'new stoma':'first stoma';
-    const bits=[e.type||kind];
-    if(e.location)bits.push(e.location);
-    if(e.formed)bits.push('formed '+fmtShortDate(e.formed));
-    e.label=bits.join(' · ');
+    const kind=e.origin==='refashion'?'refashioned':e.origin==='new'?'new stoma':'first stoma';
     e.kind=kind;
+    e.typeLabel=String(e.type||'').trim()||'Stoma type not recorded';
+    const meta=[];
+    if(e.location)meta.push(e.location);
+    meta.push(kind);
+    if(e.formed)meta.push('formed '+fmtShortDate(e.formed));
+    e.meta=meta.join(' · ');
+    e.label=`${e.typeLabel} · ${e.meta}`;
   });
   return out;
 }
@@ -7094,6 +7124,7 @@ function refashionRowHTML(d){
     <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
+      <div class="fg"><label>Stoma type</label><input type="text" class="rf-type" value="${v('type')}" placeholder="e.g. End colostomy, Loop ileostomy"/></div>
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
@@ -7263,9 +7294,10 @@ function readPatientForm(prefix){
   const refRows=[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)].map(r=>{
     const g=c=>r.querySelector(c);
     return{uid:r.dataset.uid||newStomaUid(),
+      type:(g('.rf-type')?.value||'').trim()||null,
       formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
-  }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings);
+  }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings||s.type);
   refRows.sort(byFormedDate);
   const out={
     id_card:normaliseIdCard(val('idcard')),
