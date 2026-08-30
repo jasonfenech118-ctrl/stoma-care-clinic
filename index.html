@@ -2004,7 +2004,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-85';
+const APP_BUILD='2026.08.30-87';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6311,7 +6311,7 @@ function newStomaRowHTML(d){
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this stoma</button></div>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
-      <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
+      <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
@@ -6320,18 +6320,45 @@ function newStomaRowHTML(d){
     </div>
   </div>`;
 }
-function patientStomaRows(p){return parseStomas(p).map(newStomaRowHTML).join('');}
+function patientStomaRows(p){return parseStomas(p).slice().sort(byFormedDate).map(newStomaRowHTML).join('');}
 function addStomaRow(prefix){
   document.getElementById(`${prefix}-stomalist`)?.insertAdjacentHTML('beforeend',newStomaRowHTML());
   renumberStomaRows(prefix);
 }
-/* Each stoma is its own titled section, numbered in the order it was formed —
-   Stoma 1 is the one made at the first operation, so later ones start at 2. */
+// Oldest first, anything undated last.
+function byFormedDate(a,b){
+  return String((a&&a.formed_date)||'9999-99-99').localeCompare(String((b&&b.formed_date)||'9999-99-99'));
+}
+/* Each stoma is its own titled section, ordered and numbered by when it was
+   formed. Refashionings and later stomas live in two lists but form one
+   sequence, so they are numbered together across both — Stoma 1 is the one
+   made at the first operation, so the rest run from 2. */
 function renumberStomaRows(prefix){
-  const list=document.getElementById(`${prefix}-stomalist`);
-  if(list)[...list.querySelectorAll('.stoma-row-title')].forEach((el,i)=>{el.textContent='Stoma '+(i+2);});
-  const refs=document.getElementById(`${prefix}-reflist`);
-  if(refs)[...refs.querySelectorAll('.stoma-row-title')].forEach((el,i)=>{el.textContent='Refashioning '+(i+1);});
+  const lists=[[`${prefix}-reflist`,'.rf-formed',' · refashioning'],
+               [`${prefix}-stomalist`,'.st-formed','']];
+  const all=[];
+  lists.forEach(([id,sel,suffix])=>{
+    const list=document.getElementById(id);
+    if(!list)return;
+    const rows=[...list.querySelectorAll(':scope > .stoma-row')];
+    // Put each list in date order, then remember the rows for joint numbering.
+    rows.slice().sort((a,b)=>String(a.querySelector(sel)?.value||'9999-99-99')
+        .localeCompare(String(b.querySelector(sel)?.value||'9999-99-99')))
+      .forEach(r=>list.appendChild(r));
+    rows.forEach(r=>all.push({row:r,d:r.querySelector(sel)?.value||'9999-99-99',suffix}));
+  });
+  all.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
+  all.forEach((x,i)=>{
+    const t=x.row.querySelector('.stoma-row-title');
+    if(t)t.textContent='Stoma '+(i+2)+x.suffix;
+  });
+}
+// A date change can move a stoma in the sequence, so re-order and renumber.
+function onStomaDateChange(el){
+  const list=el.closest('[id$="-reflist"],[id$="-stomalist"]');
+  const prefix=(list&&list.id||'').replace(/-(stomalist|reflist)$/,'')||'pcd';
+  renumberStomaRows(prefix);
+  onPatientFormOutcome(prefix);
 }
 function removeStomaRow(btn){
   const row=btn.closest('.stoma-row');
@@ -6357,14 +6384,14 @@ function refashionRowHTML(d){
     <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
-      <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}"/></div>
+      <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of stoma closure <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
   </div>`;
 }
-function patientRefashionRows(p){return parseRefashionings(p).map(refashionRowHTML).join('');}
+function patientRefashionRows(p){return parseRefashionings(p).slice().sort(byFormedDate).map(refashionRowHTML).join('');}
 function addRefashionRow(prefix){
   document.getElementById(`${prefix}-reflist`)?.insertAdjacentHTML('beforeend',refashionRowHTML());
   renumberStomaRows(prefix);
@@ -6420,8 +6447,8 @@ function patientFormHTML(p,prefix){
   </div>
 
   <div class="pf-add-row">
-    <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showPfSection('${prefix}','ref')" ${(hasRefash||hasNewstoma)?'hidden':''}>＋ Add stoma refashioning</button>
-    <button type="button" class="pf-add-btn" id="${prefix}-newbtn" onclick="showPfSection('${prefix}','new')" ${(hasNewstoma||hasRefash)?'hidden':''}>＋ Add new stoma formation</button>
+    <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showPfSection('${prefix}','ref')" ${hasRefash?'hidden':''}>＋ Add stoma refashioning</button>
+    <button type="button" class="pf-add-btn" id="${prefix}-newbtn" onclick="showPfSection('${prefix}','new')" ${hasNewstoma?'hidden':''}>＋ Add new stoma formation</button>
   </div>
   <div id="${prefix}-refwrap" ${hasRefash?'':'hidden'}>
     <h3 class="pf-head">Stoma refashioning</h3>
@@ -6453,9 +6480,8 @@ function patientFormHTML(p,prefix){
 function showPfSection(prefix,key){
   const wrap=document.getElementById(`${prefix}-${key}wrap`);const btn=document.getElementById(`${prefix}-${key}btn`);
   if(wrap)wrap.hidden=false; if(btn)btn.hidden=true;
-  // Refashioning and new-stoma-formation are mutually exclusive — hide the other button.
-  const other=key==='ref'?'new':'ref';
-  const otherBtn=document.getElementById(`${prefix}-${other}btn`); if(otherBtn)otherBtn.hidden=true;
+  // A patient can have refashionings and later new stomas, so opening one
+  // section leaves the other button available.
   // Opening a section with an empty list drops in a first blank row.
   if(key==='new'){const list=document.getElementById(`${prefix}-stomalist`);if(list&&!list.querySelector('.stoma-row'))addStomaRow(prefix);}
   if(key==='ref'){const list=document.getElementById(`${prefix}-reflist`);if(list&&!list.querySelector('.stoma-row'))addRefashionRow(prefix);}
@@ -6520,6 +6546,7 @@ function readPatientForm(prefix){
     return{formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
   }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings);
+  refRows.sort(byFormedDate);
   const out={
     id_card:normaliseIdCard(val('idcard')),
     first_name:val('first')||null,
@@ -6546,7 +6573,7 @@ function readPatientForm(prefix){
       return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date),
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date).sort(byFormedDate),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null,
@@ -6936,30 +6963,41 @@ async function openPatientRecord(patientId){
           ${pat.deceased_date?dDate('Date of RIP',pat.deceased_date):''}
         </dl></div>
       </div>
-      ${(function(){const arr=parseRefashionings(pat);return arr.map((r,i)=>`<div>
-        <div class="psm-sec-head"><h3>Stoma refashioning${arr.length>1?' #'+(i+1):''}</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Previous stoma closed':'Two stomas present'}</span>`:''}</div>
+      ${(function(){
+        /* Refashionings and later stomas are two lists but one story, so they
+           are merged and shown oldest first — Stoma 1 is the one made at the
+           first operation, so the rest are numbered from 2. */
+        const evs=parseRefashionings(pat).map(r=>({kind:'ref',d:r.formed_date,r}))
+          .concat(parseStomas(pat).map(s=>({kind:'new',d:s.formed_date,r:s})));
+        evs.sort((a,b)=>String(a.d||'9999-99-99').localeCompare(String(b.d||'9999-99-99')));
+        return evs.map((e,i)=>{
+          const n=i+2, r=e.r;
+          if(e.kind==='ref')return `<div>
+        <div class="psm-sec-head"><h3>Stoma ${n} · refashioning</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Previous stoma closed':'Two stomas present'}</span>`:''}</div>
         <div class="psm-card">${r.formed_date?`<div class="psm-audit" style="margin-bottom:8px;font-weight:700;color:var(--navy);">${psmIc('stoma')} Stoma refashioned on ${htmlSafe(fmtShortDate(r.formed_date))}</div>`:''}<dl class="psm-dgrid" style="margin:0;">
           ${dDate('Stoma refashioned on',r.formed_date)}
           ${dDate('Stoma closure date',r.closure_date)}
           ${dDischarge('Date of discharge',r.discharge_date)}
           ${dItem('Operation and findings',r.findings,true)}
         </dl>${(r.formed_date&&!r.closure_date)?`<div class="psm-audit">${psmIc('stoma')} No closure date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
-      </div>`).join('');})()}
-      ${(function(){const arr=parseStomas(pat);const prevReversed=!!pat.reversal_date;return arr.map((s,i)=>`<div>
-        <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${s.reversal_date?'past':''}">${s.reversal_date?'Reversed':'Stoma present'}</span></div>
+      </div>`;
+          return `<div>
+        <div class="psm-sec-head"><h3>Stoma ${n} · new stoma</h3><span class="clr-badge ${r.reversal_date?'past':''}">${r.reversal_date?'Reversed':'Stoma present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
-          ${dItem('Stoma type',s.type)}
-          ${dDate('New stoma formed',s.formed_date)}
-          ${dItem('Stoma location',s.location)}
-          ${dDischarge('Date of discharge',s.discharge_date)}
-          ${dDate('Reversed on',s.reversal_date)}
-          ${dItem('Operation and findings',s.findings,true)}
-        </dl><div class="psm-audit">${psmIc('stoma')} ${s.reversal_date
-            ? `This stoma was reversed on ${htmlSafe(fmtShortDate(s.reversal_date))}.`
-            : (i===0&&prevReversed
+          ${dItem('Stoma type',r.type)}
+          ${dDate('New stoma formed',r.formed_date)}
+          ${dItem('Stoma location',r.location)}
+          ${dDischarge('Date of discharge',r.discharge_date)}
+          ${dDate('Reversed on',r.reversal_date)}
+          ${dItem('Operation and findings',r.findings,true)}
+        </dl><div class="psm-audit">${psmIc('stoma')} ${r.reversal_date
+            ? `This stoma was reversed on ${htmlSafe(fmtShortDate(r.reversal_date))}.`
+            : (i===0&&pat.reversal_date
                 ? `The previous stoma was reversed on ${htmlSafe(fmtShortDate(pat.reversal_date))}; this one is still present.`
                 : 'A new stoma was formed with the previous one still present — this patient has two stomas.')}</div></div>
-      </div>`).join('');})()}
+      </div>`;
+        }).join('');
+      })()}
       <div>
         <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
