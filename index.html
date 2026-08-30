@@ -2002,7 +2002,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.29-83';
+const APP_BUILD='2026.08.30-84';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6260,9 +6260,47 @@ function parseStomas(p){
 }
 // A new stoma formed on or after the reversal date means the first stoma was
 // reversed but the patient has a stoma again — so they are not "reversed" now.
+/* Stomas can come and go: formed, reversed, another formed, reversed again.
+   The patient still has a stoma when the most recent formation has no reversal
+   recorded on or after it — the patient-level reversal date belongs to the
+   first stoma, and each later stoma carries its own. */
+// Every reversal on file, oldest first. The patient-level one belongs to the
+// first stoma; each later stoma carries its own.
+function stomaReversalDates(p){
+  const out=[p&&p.reversal_date];
+  parseStomas(p).forEach(s=>out.push(s.reversal_date));
+  return out.filter(Boolean).map(String).sort();
+}
+function latestOf(list){
+  let best=null;
+  list.forEach(x=>{const d=String(x&&x.formed_date||'');if(best===null||d>=String(best.formed_date||''))best=x;});
+  return best;
+}
+/* Whether the patient has a stoma right now. A reversal is tied to the stoma it
+   belongs to rather than compared by date — the first stoma is often reversed
+   in the same operation that forms the next one, so the dates match and a date
+   comparison would wrongly close the new stoma too. */
+function hasStomaNow(p){
+  // A reversal dated strictly after a stoma was formed closed that stoma. Same
+  // day means the old stoma was reversed in the operation that formed this one,
+  // so the new stoma survives. This also reads records written before each
+  // stoma had its own reversal field.
+  const closedByPatientReversal=st=>!!(p&&p.reversal_date&&st&&st.formed_date&&String(p.reversal_date)>String(st.formed_date));
+  const stomas=parseStomas(p);
+  if(stomas.length){
+    const last=latestOf(stomas);
+    return !(last.reversal_date||closedByPatientReversal(last));
+  }
+  const refs=parseRefashionings(p);
+  if(refs.length)return !closedByPatientReversal(latestOf(refs));
+  if(!p||(!p.surgery_date&&!String(p.stoma_type||'').trim()))return false;
+  return !p.reversal_date;
+}
+// Kept under its old name: true when the patient still has a stoma despite a
+// reversal being on file, so they must not read as "reversed".
 function hasStomaAfterReversal(p){
-  if(!p||!p.reversal_date)return false;
-  return parseStomas(p).some(s=>s.formed_date&&String(s.formed_date)>=String(p.reversal_date));
+  if(!p||!stomaReversalDates(p).length)return false;
+  return hasStomaNow(p);
 }
 function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
@@ -6272,6 +6310,8 @@ function newStomaRowHTML(d){
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
+        <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
     <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove this stoma</button>
@@ -6425,13 +6465,27 @@ function onPatientFormDate(prefix,status){
     let flip=true;
     // A reversal followed by a later new stoma leaves the patient with a stoma,
     // so don't flip them to "reversed".
-    if(status==='reversed'){
-      const rev=el.value;
-      flip=![...document.querySelectorAll(`#${prefix}-stomalist .stoma-row .st-formed`)]
-        .some(inp=>inp.value&&inp.value>=rev);
-    }
+    if(status==='reversed')flip=!hasStomaNow(formStomaSnapshot(prefix));
     if(flip)sel.value=status;
   }
+  onPatientFormOutcome(prefix);
+}
+// A patient object built from what is on the form right now, so the preview and
+// the status flip read the same timeline the save will.
+function formStomaSnapshot(prefix){
+  const val=id=>document.getElementById(`${prefix}-${id}`)?.value||null;
+  return{
+    surgery_date:val('surgery'),reversal_date:val('reversal'),deceased_date:val('rip'),
+    extra_refashionings:[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)]
+      .map(r=>({formed_date:r.querySelector('.rf-formed')?.value||null})),
+    extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)]
+      .map(r=>({formed_date:r.querySelector('.st-formed')?.value||null,
+                reversal_date:r.querySelector('.st-reversal')?.value||null}))
+  };
+}
+function onPatientFormOutcomeFromRow(el){
+  const wrap=el.closest('[id$="-stomalist"]');
+  const prefix=wrap?wrap.id.replace(/-stomalist$/,''):'pcd';
   onPatientFormOutcome(prefix);
 }
 function onPatientFormOutcome(prefix){
@@ -6443,10 +6497,7 @@ function onPatientFormOutcome(prefix){
     if(cb){if(k===st){cb.checked=false;cb.disabled=true;}else cb.disabled=false;
       const lbl=cb.closest('.pf-xchk');if(lbl)lbl.classList.toggle('is-off',k===st);}});
   const extra=SECONDARY_STATUSES.filter(k=>document.getElementById(`${prefix}-xs-${k}`)?.checked);
-  const p={followup_status:st,
-    reversal_date:document.getElementById(`${prefix}-reversal`)?.value||'',
-    deceased_date:document.getElementById(`${prefix}-rip`)?.value||'',extra_statuses:extra,
-    extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({formed_date:r.querySelector('.st-formed')?.value||null}))};
+  const p={...formStomaSnapshot(prefix),followup_status:st,extra_statuses:extra};
   const[text,cls]=patientOutcome(p);
   note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`+extraStatusChipsHTML(p);
 }
@@ -6483,8 +6534,9 @@ function readPatientForm(prefix){
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
       const g=c=>r.querySelector(c);
       return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
-        discharge_date:g('.st-discharge')?.value||null,findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date),
+        discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
+        findings:(g('.st-findings')?.value||'').trim()||null};
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null,
@@ -6883,14 +6935,19 @@ async function openPatientRecord(patientId){
         </dl>${(r.formed_date&&!r.closure_date)?`<div class="psm-audit">${psmIc('stoma')} No closure date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
       </div>`).join('');})()}
       ${(function(){const arr=parseStomas(pat);const prevReversed=!!pat.reversal_date;return arr.map((s,i)=>`<div>
-        <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${prevReversed?'past':''}">${prevReversed?'Previous stoma reversed':'Two stomas present'}</span></div>
+        <div class="psm-sec-head"><h3>New stoma formation${arr.length>1?' #'+(i+1):''}</h3><span class="clr-badge ${s.reversal_date?'past':''}">${s.reversal_date?'Reversed':'Stoma present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
           ${dItem('Stoma type',s.type)}
           ${dDate('New stoma formed',s.formed_date)}
           ${dItem('Stoma location',s.location)}
           ${dDischarge('Date of discharge',s.discharge_date)}
+          ${dDate('Reversed on',s.reversal_date)}
           ${dItem('Operation and findings',s.findings,true)}
-        </dl><div class="psm-audit">${psmIc('stoma')} ${prevReversed?('Previous stoma reversed on '+htmlSafe(fmtShortDate(pat.reversal_date))+'.'):'A new stoma was formed with the previous one still present — this patient has two stomas.'}</div></div>
+        </dl><div class="psm-audit">${psmIc('stoma')} ${s.reversal_date
+            ? `This stoma was reversed on ${htmlSafe(fmtShortDate(s.reversal_date))}.`
+            : (i===0&&prevReversed
+                ? `The previous stoma was reversed on ${htmlSafe(fmtShortDate(pat.reversal_date))}; this one is still present.`
+                : 'A new stoma was formed with the previous one still present — this patient has two stomas.')}</div></div>
       </div>`).join('');})()}
       <div>
         <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
@@ -7008,9 +7065,10 @@ function patientOutcome(p){
   const on=d=>d?' on '+fmtShortDate(d):'';
   if(st==='deceased')          return['Deceased'+on(p.deceased_date),'cr-out-deceased'];
   if(st==='reversed'){
-    // A new stoma formed after the reversal means the patient has a stoma again.
+    // A stoma formed since the reversal means the patient has one again.
     if(hasStomaAfterReversal(p))return['Still in follow-up','cr-out-active'];
-    return['Reversed'+on(p.reversal_date),'cr-out-reversed'];
+    const all=stomaReversalDates(p);
+    return['Reversed'+on(all.length?all[all.length-1]:p.reversal_date),'cr-out-reversed'];
   }
   if(st==='discharged_gozo')   return['Discharged to Gozo','cr-out-gozo'];
   if(st==='relocated_overseas')return['Relocated overseas','cr-out-overseas'];
