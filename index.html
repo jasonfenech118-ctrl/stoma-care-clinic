@@ -806,6 +806,16 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .ap-chk.is-mismatch{background:#fff7ed;box-shadow:inset 0 0 0 1.5px #f59e0b;}
 .ap-group[hidden]{display:none;}
 .ap-pill{display:inline-block;background:#e8f5f4;color:var(--teal);border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;margin:1px 3px 1px 0;}
+.ap-code{display:inline-block;background:var(--navy);color:#fff;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:800;margin-right:4px;}
+.vw-recap{padding:7px 0;}
+.vw-recap+.vw-recap{border-top:1px solid var(--line);}
+.vw-recap-h{font-size:11px;font-weight:800;color:var(--navy);margin-bottom:4px;}
+.vw-recap-line{padding:2px 0;}
+.vw-steps{display:flex;gap:5px;margin:0 0 12px;flex-wrap:wrap;}
+.vw-dot{width:22px;height:5px;border-radius:3px;background:var(--line);}
+.vw-dot.is-done{background:var(--teal);}
+.vw-dot.is-now{background:var(--navy);}
+.vw-carry{background:#fff8e1;color:#856404;border:1px solid #f2df9f;border-radius:8px;padding:8px 10px;font-size:11.5px;font-weight:700;margin-bottom:10px;}
 .ap-chk span{min-width:0;}
 @media(max-width:640px){.ap-chk{width:100%;gap:10px;padding:8px 6px;font-size:13px;}.ap-chk input{width:18px;height:18px;}.ap-panel{max-height:210px;}}
 /* Reversed patients read violet across the whole row; deceased read black with
@@ -2068,7 +2078,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-96';
+const APP_BUILD='2026.08.30-97';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3833,6 +3843,24 @@ function applianceGroupHTML(title,items,selected){
   if(!items.length)return '';
   return `<div class="ap-group"><div class="ap-group-h">${htmlSafe(title)}</div>${items.map(a=>applianceChkHTML(a.name,selected.includes(a.name),a.coupling)).join('')}</div>`;
 }
+/* On the appointment card this is a read-back, not an entry point: what was
+   used is recorded stoma by stoma when the visit is saved as Seen. */
+function visitApplianceSummaryHTML(appt,patient){
+  let rows=appt&&appt.stoma_appliances;
+  if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+  if(!Array.isArray(rows))rows=[];
+  if(!rows.length){
+    const flat=parseNameList(appt&&appt.appliances),acc=parseNameList(appt&&appt.accessories);
+    if(flat.length||acc.length)rows=[{code:'',label:'Recorded for this visit',appliances:flat,accessories:acc}];
+  }
+  const stomaCount=stomasPresentOn(patient,appt&&appt.appt_date).length;
+  const body=rows.length?rows.map(r=>`<div class="vw-recap">
+      <div class="vw-recap-h">${htmlSafe(r.code?`${r.code} · ${r.label||''}`:(r.label||'This visit'))}</div>
+      <div>${appliancePillsHTML(r.appliances,r.accessories)}</div></div>`).join('')
+    :`<div class="ap-hint" style="margin:0;">Nothing recorded yet. Saving this appointment as <strong>Seen</strong> asks for the appliances and accessories${stomaCount>1?`, one card for each of the ${stomaCount} stomas`:''}.</div>`;
+  return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
+    <div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">${body}</div></div>`;
+}
 function applianceSectionHTML(appliances,accessories){
   const selApp=parseNameList(appliances),selAcc=parseNameList(accessories);
   // Anything already on the record but not in the standard list still shows, so
@@ -3902,8 +3930,11 @@ function updateApplianceSummary(){
   if(!el)return;
   const app=selectedAppliances(),acc=applianceValues('of-accessories');
   const parts=[];
-  parts.push(app.length?`<strong>Appliance (${app.length}):</strong> ${htmlSafe(app.join(', '))}`:'No appliance recorded for this visit.');
-  parts.push(acc.length?`<strong>Accessories (${acc.length}):</strong> ${htmlSafe(acc.join(', '))}`:'No accessory recorded.');
+  // Each card summarises only what that card is asking for.
+  if(document.getElementById('of-onepiece'))
+    parts.push(app.length?`<strong>Appliance (${app.length}):</strong> ${htmlSafe(app.join(', '))}`:'Nothing ticked yet — at least one appliance is needed.');
+  if(document.getElementById('of-accessories'))
+    parts.push(acc.length?`<strong>Accessories (${acc.length}):</strong> ${htmlSafe(acc.join(', '))}`:'Nothing ticked yet — tick None if none were used.');
   // A bag whose flange is no longer ticked is worth saying out loud rather than
   // silently removing — the nurse decides which of the two is wrong.
   const sizes=selectedCouplings();
@@ -3951,6 +3982,14 @@ function updateApplianceVisibility(){
   const off=status==='did_not_attend'||status==='cancelled';
   const head=document.getElementById('of-appliance-head');
   if(head){head.hidden=off;const grid=head.nextElementSibling;if(grid)grid.hidden=off;}
+}
+// One line per stoma when the visit recorded them separately.
+function visitPillsByStomaHTML(appt){
+  let rows=appt&&appt.stoma_appliances;
+  if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+  if(!Array.isArray(rows)||!rows.length)return appliancePillsHTML(appt&&appt.appliances,appt&&appt.accessories);
+  if(rows.length===1)return appliancePillsHTML(rows[0].appliances,rows[0].accessories);
+  return rows.map(r=>`<div class="vw-recap-line"><span class="ap-code">${htmlSafe(r.code||'')}</span> ${appliancePillsHTML(r.appliances,r.accessories)}</div>`).join('');
 }
 function appliancePillsHTML(appliances,accessories){
   const items=parseNameList(appliances).concat(parseNameList(accessories).filter(n=>n!=='None'));
@@ -4020,7 +4059,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const pendingCurrentDntu=(isDntuEditMode && appt.status!=='did_not_attend')?1:0;
   mb.dataset.dntuBaseAfterSave=String(Math.min(3,dntuCurrentStreak+pendingCurrentDntu));
   const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu):'';
-  const applianceSection=applianceSectionHTML(appt.appliances,appt.accessories);
+  const applianceSection=visitApplianceSummaryHTML(appt,p);
   mb.innerHTML=`<h2>${modalTitle}</h2>
     <div class="msub">${modalSub}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
 
@@ -4075,6 +4114,175 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   updateApplianceSummary();
   updateApplianceVisibility();
 }
+/* ---- what was used, stoma by stoma ------------------------------------------
+   Marking a visit as Seen walks through one card per stoma: its appliances,
+   then its accessories. Both are required, because a blank is indistinguishable
+   from "nobody wrote it down". Nothing has to be re-typed when nothing changed:
+   each card opens on what that stoma had at its last visit, and Next records it
+   again for this one.
+   ---------------------------------------------------------------------------- */
+let visitWizard=null;
+function visitStomaLabel(st){
+  return st.uid==='unassigned'?'Stoma not yet recorded in the Registry':`${st.code} · ${st.label}`;
+}
+async function openVisitApplianceWizard(pending,patient){
+  const stomas=stomasPresentOn(patient,pending.date);
+  const list=stomas.length?stomas:[{uid:'unassigned',code:'S?',label:'no stoma recorded',kind:'stoma'}];
+  // What each stoma had last time, so an unchanged visit is two clicks.
+  const{data:hist}=await SB.from('appointments')
+    .select('id,appt_date,status,appliances,accessories,stoma_appliances')
+    .eq('patient_id',pending.patientId)
+    .order('appt_date',{ascending:false}).limit(25);
+  const previous=previousStomaRecords(hist||[],pending.apptId,list);
+  const mine=stomaRecordsFor((hist||[]).find(a=>String(a.id)===String(pending.apptId)));
+  visitWizard={
+    pending,patient,
+    steps:list.flatMap(st=>[{st,kind:'appliances'},{st,kind:'accessories'}]),
+    index:0,
+    data:Object.fromEntries(list.map(st=>{
+      const own=mine[st.uid];
+      const prev=previous[st.uid];
+      const src=(own&&(own.appliances?.length||own.accessories?.length))?own:prev;
+      return [st.uid,{appliances:parseNameList(src?.appliances),accessories:parseNameList(src?.accessories),
+                      carriedFrom:(!own||!(own.appliances?.length||own.accessories?.length))&&prev?prev.appt_date:null}];
+    }))
+  };
+  renderVisitStep();
+}
+function stomaRecordsFor(appt){
+  const out={};
+  if(!appt)return out;
+  let rows=appt.stoma_appliances;
+  if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+  if(Array.isArray(rows))rows.forEach(r=>{if(r&&r.uid)out[r.uid]={appliances:r.appliances,accessories:r.accessories,appt_date:appt.appt_date};});
+  return out;
+}
+/* The most recent earlier visit that recorded something for each stoma. A
+   patient who has only ever had one stoma also inherits the flat record kept
+   before appliances were held per stoma. */
+function previousStomaRecords(history,apptId,stomas){
+  const out={};
+  const earlier=history.filter(a=>String(a.id)!==String(apptId));
+  earlier.forEach(a=>{
+    const rows=stomaRecordsFor(a);
+    Object.keys(rows).forEach(uid=>{if(!out[uid]&&(rows[uid].appliances?.length||rows[uid].accessories?.length))out[uid]=rows[uid];});
+    if(stomas.length===1&&!out[stomas[0].uid]){
+      const flat={appliances:parseNameList(a.appliances),accessories:parseNameList(a.accessories),appt_date:a.appt_date};
+      if(flat.appliances.length||flat.accessories.length)out[stomas[0].uid]=flat;
+    }
+  });
+  return out;
+}
+function renderVisitStep(){
+  if(!visitWizard)return;
+  const{steps,index,data}=visitWizard;
+  const step=steps[index];
+  const held=data[step.st.uid];
+  const stomaNo=Math.floor(index/2)+1,stomaCount=steps.length/2;
+  const isLast=index===steps.length-1;
+  const carried=held.carriedFrom?`<div class="vw-carry">Carried over from the visit on <strong>${htmlSafe(fmtShortDate(held.carriedFrom))}</strong> — change only what changed.</div>`:'';
+  const body=step.kind==='appliances'
+    ?`<div class="fg"><label>Find an appliance</label><input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>
+      <div class="fg"><label>One-piece system — bag and flange in one</label>
+        <div class="ap-panel" id="of-onepiece">${visitPanelHTML('one',held.appliances)}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>
+      <div class="fg"><label>Two-piece system — step 1: flange</label>
+        <div class="ap-panel" id="of-flanges">${visitPanelHTML('flange',held.appliances)}<div class="ap-empty" data-empty="1" hidden>No flange matches that search.</div></div></div>
+      <div class="fg"><label>Two-piece system — step 2: bag</label>
+        <div class="ap-hint" id="of-bag-hint">Choose a flange above and only the bags that fit its coupling size will be offered here.</div>
+        <div class="ap-panel" id="of-bags">${visitPanelHTML('bag',held.appliances)}<div class="ap-empty" data-empty="1" hidden>No bag matches that search.</div></div></div>`
+    :`<div class="fg"><label>Accessories used on this stoma</label>
+        <div class="ap-panel" id="of-accessories"><div class="ap-group">${ACCESSORIES.concat(held.accessories.filter(n=>!ACCESSORIES.includes(n))).map(n=>applianceChkHTML(n,held.accessories.includes(n))).join('')}</div></div>
+        <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong> — that is a record too.</div></div>`;
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>${step.kind==='appliances'?'Appliances':'Accessories'}</h2>
+    <div class="msub">${htmlSafe(`${visitWizard.patient?.first_name||''} ${visitWizard.patient?.surname||''}`.trim()||'Patient')} · ${htmlSafe(fmtShortDate(visitWizard.pending.date))} ${htmlSafe(visitWizard.pending.slot)}<br/>
+      Stoma ${stomaNo} of ${stomaCount} — <strong>${htmlSafe(visitStomaLabel(step.st))}</strong></div>
+    <div class="vw-steps">${steps.map((s,i)=>`<span class="vw-dot ${i===index?'is-now':i<index?'is-done':''}" title="${htmlSafe(visitStomaLabel(s.st))} — ${s.kind}"></span>`).join('')}</div>
+    ${carried}
+    <div class="edit-seen-section">${htmlSafe(visitStomaLabel(step.st))}</div>
+    ${body}
+    <div class="ap-summary" id="of-appliance-summary"></div>
+    <div class="mact">
+      <button class="btn-cancel" onclick="visitWizardBack()">${index===0?'Back to appointment':'Back'}</button>
+      <button class="btn-save" onclick="visitWizardNext()">${isLast?'Save visit':'Next'}</button>
+    </div>`;
+  openMo();
+  filterApplianceList();
+  updateApplianceSummary();
+  scrollPanelsToTicked();
+}
+// A carried-over record is only reassuring if it can be seen without scrolling.
+function scrollPanelsToTicked(){
+  ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
+    const host=document.getElementById(id);
+    if(!host)return;
+    const first=host.querySelector('.ap-box:checked');
+    const row=first&&first.closest('.ap-chk');
+    if(row)host.scrollTop=Math.max(0,row.offsetTop-host.offsetTop-8);
+  });
+}
+function visitPanelHTML(part,selected){
+  const extra=part==='one'?selected.filter(n=>!APPLIANCES.includes(n)).map(n=>({name:n,system:'one',group:'Also on this record'})):[];
+  const all=APPLIANCE_CATALOGUE.concat(extra);
+  if(part==='one')
+    return APPLIANCE_ONEPIECE_GROUPS.concat(extra.length?['Also on this record']:[]).map(g=>
+      applianceGroupHTML(g,all.filter(a=>a.system==='one'&&a.group===g),selected)).join('');
+  return applianceCouplings().map(c=>applianceGroupHTML(
+    part==='flange'?`${c} mm coupling`:`Fits a ${c} mm flange`,
+    all.filter(a=>a.part===part&&a.coupling===c),selected)).join('');
+}
+function captureVisitStep(){
+  if(!visitWizard)return;
+  const step=visitWizard.steps[visitWizard.index];
+  const held=visitWizard.data[step.st.uid];
+  if(step.kind==='appliances')held.appliances=selectedAppliances();
+  else held.accessories=applianceValues('of-accessories');
+}
+function visitWizardNext(){
+  if(!visitWizard)return;
+  captureVisitStep();
+  const step=visitWizard.steps[visitWizard.index];
+  const held=visitWizard.data[step.st.uid];
+  if(step.kind==='appliances'&&!held.appliances.length){
+    alert('Record at least one appliance for this stoma. If it is unchanged from the last visit it is already ticked — just click Next.');
+    return;
+  }
+  if(step.kind==='accessories'&&!held.accessories.length){
+    alert('Record the accessories for this stoma. If none were used, tick None.');
+    return;
+  }
+  held.carriedFrom=null;
+  if(visitWizard.index<visitWizard.steps.length-1){visitWizard.index++;renderVisitStep();return;}
+  commitVisitFromWizard();
+}
+async function visitWizardBack(){
+  if(!visitWizard)return;
+  captureVisitStep();
+  if(visitWizard.index>0){visitWizard.index--;renderVisitStep();return;}
+  const pending=visitWizard.pending;
+  visitWizard=null;
+  await openOutcomeFollowupModal(pending.apptId,pending.status);
+  restoreOutcomeForm(pending);
+}
+function restoreOutcomeForm(v){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null&&val!=='')el.value=val;};
+  set('of-idcard',v.idcard);set('of-phone',v.phone);set('of-fn',v.fn);set('of-sn',v.sn);
+  set('of-date',v.date);set('of-slot',v.slot);set('of-nurse',v.nurse);set('of-status',v.status);
+  set('of-owner',v.owner);set('of-year',v.year);set('of-month',v.month);set('of-followup-status',v.followupStatus);
+  const same=document.getElementById('of-allow-same-month');if(same)same.checked=!!v.allowSameMonth;
+  updateFollowupChangeWarning();
+}
+async function commitVisitFromWizard(){
+  const w=visitWizard;
+  if(!w)return;
+  const rows=w.steps.filter(s=>s.kind==='appliances').map(s=>({
+    uid:s.st.uid,code:s.st.code,label:visitStomaLabel(s.st),
+    appliances:w.data[s.st.uid].appliances,accessories:w.data[s.st.uid].accessories
+  }));
+  visitWizard=null;
+  await commitOutcomeFollowup(w.pending,rows);
+}
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
   const year=document.getElementById('of-year')?.value;
@@ -4107,13 +4315,32 @@ async function saveOutcomeFollowup(apptId,patientId){
   }
   if(isDntuEditMode&&dntuTarget>0&&!validateMissingDntuFieldsBeforeSave(dntuTarget))return;
 
+  const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
+    slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
+    allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
+
+  /* A patient who was seen has to leave a record of what was used, one card per
+     stoma. Anything other than Seen has nothing to record, so it saves here. */
+  if(status==='attended'&&patientId){
+    const{data:pat}=await SB.from('patients').select(patientSelectCols()).eq('id',patientId).maybeSingle();
+    if(pat&&stomasPresentOn(pat,date).length){
+      await openVisitApplianceWizard(pending,pat);
+      return;
+    }
+  }
+  return commitOutcomeFollowup(pending,[]);
+}
+async function commitOutcomeFollowup(v,stomaRows){
+  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget}=v;
+  const flat=list=>[...new Set((stomaRows||[]).flatMap(r=>r[list]||[]))];
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
-    appliances:selectedAppliances(),
-    accessories:applianceValues('of-accessories'),
+    appliances:flat('appliances'),
+    accessories:flat('accessories'),
+    stoma_appliances:stomaRows||[],
     status,
     appt_date:date,
-    appt_slot:String(slot).slice(0,5),
+    appt_slot:slot,
     assigned_to:null,
     bank_staff_id:null,
     outcome_recorded_at:new Date().toISOString(),
@@ -4125,8 +4352,8 @@ async function saveOutcomeFollowup(apptId,patientId){
 
   const saved=await updateAppointmentTolerant(apptId,outcomeUpdate);
   if(saved.error){alert('Could not save appointment edit/outcome: '+saved.error.message);return;}
-  if(saved.dropped.includes('appliances')||saved.dropped.includes('accessories')){
-    alert('The appointment was saved, but the appliances and accessories were not: the database does not have those columns yet. Run sql/add-appliances.sql once in Supabase to turn them on.');
+  if(['appliances','accessories','stoma_appliances'].some(c=>saved.dropped.includes(c))){
+    alert('The appointment was saved, but what was used was not: the database does not have those columns yet. Run sql/add-appliances.sql once in Supabase to turn them on.');
   }
 
   if(patientId){
@@ -5378,7 +5605,7 @@ async function openFollowupHistory(patientId){
     <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
     <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span>${followupStatusBadge(a.patients?.followup_status)}</td>
-    <td>${appliancePillsHTML(a.appliances,a.accessories)}</td>
+    <td>${visitPillsByStomaHTML(a)}</td>
     <td><button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button></td>
   </tr>`).join(''):'<tr><td colspan="6" class="empty">No appointment history found</td></tr>';
   document.getElementById('mb').innerHTML=`<h2>Follow-up History</h2>
@@ -6638,6 +6865,61 @@ function parseStomas(p){
    on its stoma-reversal date. Keeping the end date on the stoma it belongs to
    is what lets the same day carry a reversal and a new formation without one
    closing the other. */
+/* ---- stoma identity ---------------------------------------------------------
+   Every stoma a patient has had is a thing in its own right: it is formed on a
+   date, it may be refashioned or reversed, and what is used on it belongs to
+   it and not to the patient in general. A refashioned stoma is a NEW stoma —
+   it gets its own id, and the appliances recorded from then on go to that id.
+
+   The id is stored on the stoma when the patient form is saved, so correcting
+   a date later never moves a visit's record onto a different stoma. Rows saved
+   before ids existed fall back to one derived from where they sit.
+   ---------------------------------------------------------------------------- */
+function newStomaUid(){return 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function stomaTimeline(p){
+  const out=[];
+  if(p&&(p.surgery_date||String(p.stoma_type||'').trim())){
+    out.push({uid:'base',origin:'base',type:p.stoma_type||'',location:p.stoma_location||'',
+      formed:p.surgery_date||null,ended:p.reversal_date||null,findings:p.findings||''});
+  }
+  parseRefashionings(p).forEach((r,i)=>out.push({
+    uid:r.uid||('ref:'+(r.formed_date||('#'+i))),origin:'refashion',type:r.type||'',location:r.location||'',
+    formed:r.formed_date||null,ended:r.closure_date||null,findings:r.findings||''}));
+  parseStomas(p).forEach((st,i)=>out.push({
+    uid:st.uid||('new:'+(st.formed_date||('#'+i))),origin:'new',type:st.type||'',location:st.location||'',
+    formed:st.formed_date||null,ended:st.reversal_date||null,findings:st.findings||''}));
+  out.sort((a,b)=>String(a.formed||'9999-99-99').localeCompare(String(b.formed||'9999-99-99')));
+  /* A refashioning replaces the stoma that was there: the old one ends the day
+     the new one is formed, and from then on what is used belongs to the new
+     stoma's id. Without this the patient would look like they had both. */
+  out.forEach((e,i)=>{
+    if(e.origin!=='refashion')return;
+    for(let j=i-1;j>=0;j--){
+      if(!out[j].ended){out[j].ended=e.formed||out[j].ended;out[j].endedBy='refashioned';break;}
+    }
+  });
+  out.forEach((e,i)=>{
+    e.code='S'+(i+1);
+    const kind=e.origin==='refashion'?'refashioned stoma':e.origin==='new'?'new stoma':'first stoma';
+    const bits=[e.type||kind];
+    if(e.location)bits.push(e.location);
+    if(e.formed)bits.push('formed '+fmtShortDate(e.formed));
+    e.label=bits.join(' · ');
+    e.kind=kind;
+  });
+  return out;
+}
+// The stomas the patient actually had on the day of the visit — a stoma
+// reversed before it, or formed after it, has nothing to record.
+function stomasPresentOn(p,date){
+  const d=String(date||'').slice(0,10);
+  return stomaTimeline(p).filter(e=>{
+    if(d&&e.formed&&String(e.formed)>d)return false;
+    if(d&&e.ended&&String(e.ended)<d)return false;
+    if(!d&&e.ended)return false;
+    return true;
+  });
+}
 function stomaEvents(p){
   const out=[];
   if(p&&(p.surgery_date||String(p.stoma_type||'').trim()))
@@ -6682,7 +6964,7 @@ function derivedFollowupStatus(p){
 }
 function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
-  return `<div class="stoma-row">
+  return `<div class="stoma-row" data-uid="${htmlSafe(d.uid||'')}">
     <div class="stoma-row-head"><span class="stoma-row-title">Stoma</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this stoma</button></div>
     <div class="edit-seen-grid">
@@ -6808,7 +7090,7 @@ function parseRefashionings(p){
 }
 function refashionRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
-  return `<div class="stoma-row">
+  return `<div class="stoma-row" data-uid="${htmlSafe(d.uid||'')}">
     <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
@@ -6980,7 +7262,8 @@ function readPatientForm(prefix){
   const loc=v=>{v=(v||'').trim();return v&&v!=='__add__'?v:null;};   // ignore the "Add location…" sentinel
   const refRows=[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)].map(r=>{
     const g=c=>r.querySelector(c);
-    return{formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
+    return{uid:r.dataset.uid||newStomaUid(),
+      formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
   }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings);
   refRows.sort(byFormedDate);
@@ -7007,7 +7290,8 @@ function readPatientForm(prefix){
     extra_refashionings:refRows,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
       const g=c=>r.querySelector(c);
-      return{type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
+      return{uid:r.dataset.uid||newStomaUid(),
+        type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
     }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date).sort(byFormedDate),
