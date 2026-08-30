@@ -685,7 +685,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pf-add-btn[hidden]{display:none;}
 .pf-add-row{display:flex;gap:8px;flex-wrap:wrap;}
 .stoma-row{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;background:#fafbfc;}
-.stoma-row .clr-mini{margin-top:8px;}
+.stoma-row .clr-mini{margin-top:0;}
+.stoma-row-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-2px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+.stoma-row-title{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--teal);}
 .clr-rec-meta{font-size:11.5px;color:var(--muted);}
 .clr-rec-actions{display:flex;gap:6px;flex:0 0 auto;}
 .clr-mini{padding:4px 9px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--navy);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -2002,7 +2004,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-84';
+const APP_BUILD='2026.08.30-85';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6305,6 +6307,8 @@ function hasStomaAfterReversal(p){
 function newStomaRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row">
+    <div class="stoma-row-head"><span class="stoma-row-title">Stoma</span>
+      <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this stoma</button></div>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}"/></div>
@@ -6314,11 +6318,29 @@ function newStomaRowHTML(d){
         <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
-    <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove this stoma</button>
   </div>`;
 }
 function patientStomaRows(p){return parseStomas(p).map(newStomaRowHTML).join('');}
-function addStomaRow(prefix){document.getElementById(`${prefix}-stomalist`)?.insertAdjacentHTML('beforeend',newStomaRowHTML());}
+function addStomaRow(prefix){
+  document.getElementById(`${prefix}-stomalist`)?.insertAdjacentHTML('beforeend',newStomaRowHTML());
+  renumberStomaRows(prefix);
+}
+/* Each stoma is its own titled section, numbered in the order it was formed —
+   Stoma 1 is the one made at the first operation, so later ones start at 2. */
+function renumberStomaRows(prefix){
+  const list=document.getElementById(`${prefix}-stomalist`);
+  if(list)[...list.querySelectorAll('.stoma-row-title')].forEach((el,i)=>{el.textContent='Stoma '+(i+2);});
+  const refs=document.getElementById(`${prefix}-reflist`);
+  if(refs)[...refs.querySelectorAll('.stoma-row-title')].forEach((el,i)=>{el.textContent='Refashioning '+(i+1);});
+}
+function removeStomaRow(btn){
+  const row=btn.closest('.stoma-row');
+  const list=row&&row.parentElement;
+  const prefix=(list&&list.id||'').replace(/-(stomalist|reflist)$/,'')||'pcd';
+  if(row)row.remove();
+  renumberStomaRows(prefix);
+  onPatientFormOutcome(prefix);
+}
 // A patient can have several stoma refashionings — held as a JSON array in
 // extra_refashionings. Parse it, falling back to the older single-column fields.
 function parseRefashionings(p){
@@ -6332,17 +6354,21 @@ function parseRefashionings(p){
 function refashionRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row">
+    <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
+      <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}"/></div>
       <div class="fg"><label>Date of stoma closure <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
-    <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove this refashioning</button>
   </div>`;
 }
 function patientRefashionRows(p){return parseRefashionings(p).map(refashionRowHTML).join('');}
-function addRefashionRow(prefix){document.getElementById(`${prefix}-reflist`)?.insertAdjacentHTML('beforeend',refashionRowHTML());}
+function addRefashionRow(prefix){
+  document.getElementById(`${prefix}-reflist`)?.insertAdjacentHTML('beforeend',refashionRowHTML());
+  renumberStomaRows(prefix);
+}
 // Additional outputs formed at the SAME first operation — a second stoma, a
 // mucus fistula, etc. Held as a JSON array (initial_stomas), each {type,location}.
 function parseInitialStomas(p){let a=p?.initial_stomas;if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}return Array.isArray(a)?a:[];}
@@ -6373,15 +6399,24 @@ function patientFormHTML(p,prefix){
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
     <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)">${localityOptions(p?.locality)}</select></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
-    <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
-    <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
-    <div class="fg"><label>Stoma type *</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
-    <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
-    <div class="fg" style="grid-column:1 / -1;">
-      <div id="${prefix}-iststomalist">${parseInitialStomas(p).map(initialStomaRowHTML).join('')}</div>
-      <button type="button" class="pf-add-btn" onclick="addInitialStomaRow('${prefix}')">＋ Add another stoma / mucus fistula (same operation)</button>
+  </div>
+
+  <h3 class="pf-head">Stoma 1 · formed at the first operation</h3>
+  <div class="stoma-row">
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Stoma type *</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
+      <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}"/></div>
+      <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
+      <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
+        <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
+      <div class="fg" style="grid-column:1 / -1;">
+        <label>Also formed at this same operation <span style="font-weight:400;color:var(--muted);">(a second stoma, a mucus fistula)</span></label>
+        <div id="${prefix}-iststomalist">${parseInitialStomas(p).map(initialStomaRowHTML).join('')}</div>
+        <button type="button" class="pf-add-btn" onclick="addInitialStomaRow('${prefix}')">＋ Add another stoma / mucus fistula</button>
+      </div>
     </div>
-    <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
   </div>
 
   <div class="pf-add-row">
@@ -6395,26 +6430,16 @@ function patientFormHTML(p,prefix){
     <div class="registry-lookup-note" style="margin-bottom:10px;">The previous stoma is closed and a new one formed. Fill the <strong>closure date</strong> if the old stoma was closed; leave it blank if it is still present (the patient then has two stomas).</div>
   </div>
   <div id="${prefix}-newwrap" ${hasNewstoma?'':'hidden'}>
-    <h3 class="pf-head">New stoma formation</h3>
-    <div class="edit-seen-grid" style="margin-bottom:6px;">
-      <div class="fg"><label>Was the previous stoma reversed?</label>
-        <select id="${prefix}-prevrev" onchange="togglePrevReversal('${prefix}')">
-          <option value="no" ${p?.reversal_date?'':'selected'}>No — the previous stoma was not reversed</option>
-          <option value="yes" ${p?.reversal_date?'selected':''}>Yes — reversed before this new stoma</option>
-        </select></div>
-      <div class="fg" id="${prefix}-prevrevwrap" ${p?.reversal_date?'':'hidden'}><label>Date of reversal</label>
-        <input type="date" id="${prefix}-prevrevdate" value="${v('reversal_date')}" onchange="syncPrevReversal('${prefix}')"/></div>
-    </div>
+    <h3 class="pf-head">Later stomas</h3>
     <div id="${prefix}-stomalist">${patientStomaRows(p)}</div>
     <button type="button" class="pf-add-btn" onclick="addStomaRow('${prefix}')">＋ Add another stoma</button>
+    <div class="registry-lookup-note" style="margin-bottom:10px;">Each stoma keeps its own dates. Leave a stoma's <strong>reversal date</strong> blank while it is still present.</div>
   </div>
 
   <h3 class="pf-head">Outcome</h3>
   <div class="edit-seen-grid">
     <div class="fg"><label>Status</label><select id="${prefix}-status" onchange="onPatientFormOutcome('${prefix}')">
       ${followupStatusOptionsHTML(p?.followup_status||'active')}</select></div>
-    <div class="fg"><label>Date of reversal</label>
-      <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
     <div class="fg"><label>Date of RIP (death)</label>
       <input type="date" id="${prefix}-rip" value="${v('deceased_date')}" onchange="onPatientFormDate('${prefix}','deceased')"/></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Other statuses that also apply</label>
@@ -6422,7 +6447,7 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
   </div>
-  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Filling in a reversal or RIP date sets the status to match; you can still change it back. If a <strong>new stoma was formed after the reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>`;
+  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Each stoma's reversal date lives with that stoma; the status follows the newest one. If a <strong>stoma was formed after a reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>`;
 }
 // Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
 function showPfSection(prefix,key){
@@ -6434,21 +6459,6 @@ function showPfSection(prefix,key){
   // Opening a section with an empty list drops in a first blank row.
   if(key==='new'){const list=document.getElementById(`${prefix}-stomalist`);if(list&&!list.querySelector('.stoma-row'))addStomaRow(prefix);}
   if(key==='ref'){const list=document.getElementById(`${prefix}-reflist`);if(list&&!list.querySelector('.stoma-row'))addRefashionRow(prefix);}
-}
-// "Was the previous stoma reversed?" in the new-stoma section. Shows the date on
-// Yes, and mirrors it into the canonical reversal date so the outcome logic (a
-// reversal with a later new stoma stays in follow-up) still applies.
-function togglePrevReversal(prefix){
-  const yes=document.getElementById(`${prefix}-prevrev`)?.value==='yes';
-  const wrap=document.getElementById(`${prefix}-prevrevwrap`);
-  if(wrap)wrap.hidden=!yes;
-  if(!yes){const d=document.getElementById(`${prefix}-prevrevdate`);if(d)d.value='';}
-  syncPrevReversal(prefix);
-}
-function syncPrevReversal(prefix){
-  const d=document.getElementById(`${prefix}-prevrevdate`)?.value||'';
-  const rev=document.getElementById(`${prefix}-reversal`);
-  if(rev){rev.value=d;onPatientFormDate(prefix,'reversed');}
 }
 // Show the closure-date field on a new stoma formation only when the old stoma was closed.
 function toggleNewClosure(prefix){
@@ -6587,6 +6597,7 @@ async function openPatientDatesModal(patientId){
         <button class="btn-save" onclick="savePatientDates('${patientId}')">Save Patient</button>
       </div></div>`;
   openMo();
+  renumberStomaRows('pcd');
   onPatientFormOutcome('pcd');
 }
 async function savePatientDates(patientId){
