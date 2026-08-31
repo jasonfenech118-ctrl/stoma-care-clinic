@@ -7,6 +7,7 @@
 --
 --   is_inpatient         - on the handover list right now
 --   inpatient_ward       - e.g. "SW1-15", "ITU-12", "Burns-1"
+--   inpatient_bed        - the bed within the ward, e.g. "Bed 4"
 --   inpatient_notes      - the appliance and notes line, as it is written today
 --   inpatient_since      - the date they went onto the list
 --   discharge_letter     - the care discharge letter: '' or 'done'
@@ -26,6 +27,7 @@
 
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS is_inpatient         boolean DEFAULT false;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_ward       text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_bed        text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_notes      text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_since      date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharge_letter     text;
@@ -42,7 +44,7 @@ CREATE INDEX IF NOT EXISTS patients_is_inpatient_idx
 SELECT column_name, data_type
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'patients'
-  AND column_name IN ('is_inpatient','inpatient_ward','inpatient_notes',
+  AND column_name IN ('is_inpatient','inpatient_ward','inpatient_bed','inpatient_notes',
                       'inpatient_since','discharge_letter','schedule_five_permit')
 ORDER BY column_name;
 

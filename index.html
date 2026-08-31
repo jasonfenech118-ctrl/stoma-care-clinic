@@ -2142,7 +2142,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-103';
+const APP_BUILD='2026.08.31-105';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6648,7 +6648,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -7274,6 +7274,7 @@ function patientFormHTML(p,prefix){
     <div class="fg" style="grid-column:1 / -1;">
       <label class="pf-xchk"><input type="checkbox" id="${prefix}-inpatient" ${p?.is_inpatient?'checked':''} onchange="onInpatientToggle('${prefix}')"/> This patient is an <strong>inpatient</strong> right now — show them on the Handover list</label></div>
     <div class="fg"><label>Ward</label><input type="text" id="${prefix}-ward" value="${v('inpatient_ward')}" placeholder="e.g. SW1-15, ITU-12, Burns-1"/></div>
+    <div class="fg"><label>Bed</label><input type="text" id="${prefix}-bed" value="${v('inpatient_bed')}" placeholder="e.g. Bed 4"/></div>
     <div class="fg"><label>On the list since</label><input type="date" id="${prefix}-inpsince" value="${v('inpatient_since')}"/></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Appliance + notes for the handover</label>
       <input type="text" id="${prefix}-inpnotes" value="${v('inpatient_notes')}" placeholder="e.g. SH flange / drainable bag 57mm — flange due 02/09/26"/></div>
@@ -7411,6 +7412,7 @@ function readPatientForm(prefix){
     }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date).sort(byFormedDate),
     is_inpatient:!!document.getElementById(`${prefix}-inpatient`)?.checked,
     inpatient_ward:val('ward')||null,
+    inpatient_bed:val('bed')||null,
     inpatient_notes:val('inpnotes')||null,
     inpatient_since:val('inpsince')||null,
     followup_status:normaliseFollowupStatus(val('status')),
@@ -7550,7 +7552,8 @@ const PSM_ICONS={
   pouch:'<path d="M8 3h8l-1 4a6 6 0 0 1 3 5v4a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5v-4a6 6 0 0 1 3-5Z"/><path d="M9 3h6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   chevron:'<path d="M9 6l6 6-6 6"/>',
-  chevleft:'<path d="M15 6l-6 6 6 6"/>'
+  chevleft:'<path d="M15 6l-6 6 6 6"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/>'
 };
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
@@ -7659,11 +7662,102 @@ function renderClinicalPanel(){
     </div>`;
   }).join('');
   host.innerHTML=`<div class="clr-head"><h3>Clinical records</h3>
-      <button class="psm-btn psm-btn-primary" onclick="openClinicalRecordForm('episode')">${psmIc('plus')} Add record</button></div>
+      <button class="psm-btn psm-btn-primary" onclick="openInpatientVisit()">${psmIc('plus')} Open inpatient visit</button></div>
     <div class="clr-cats">${cats}</div>
     ${newest?`<div class="psm-audit">${psmIc('clock')} Last updated ${htmlSafe(fmtShortDate(String(newest.updated_at||newest.created_at||'').slice(0,10)))}${newest.created_by?' by '+htmlSafe(newest.created_by):''}</div>`:''}`;
 }
 function toggleClinicalCategory(kind){clrState.expanded[kind]=!clrState.expanded[kind];renderClinicalPanel();}
+/* Opening an inpatient visit is a small admission form: the ward and bed, and
+   what the patient is wearing. On save it records an Inpatient episode dated
+   today, puts the patient on the Handover list with those details, and the two
+   never drift apart. The episode is a normal clinical record afterwards. */
+function openInpatientVisit(){
+  const pid=clrState.patientId, pat=clrState.patient;
+  if(!pid)return;
+  const name=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'this patient';
+  const panel=(id,part,label,hint)=>`<div class="fg" style="grid-column:1 / -1;">
+      <label>${label}</label>${hint||''}
+      <div class="ap-panel" id="${id}">${visitPanelHTML(part,[])}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>Open inpatient visit</h2>
+    <div class="msub">${htmlSafe(name)} · records an Inpatient episode dated ${htmlSafe(fmtShortDate(TODAY))} and puts them on the Handover list.</div>
+    <div class="edit-seen-section">Where on the ward</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Ward *</label><input type="text" id="iv-ward" value="${htmlSafe(pat?.inpatient_ward||'')}" placeholder="e.g. SW1-15, ITU-12, Burns-1"/></div>
+      <div class="fg"><label>Bed</label><input type="text" id="iv-bed" value="${htmlSafe(pat?.inpatient_bed||'')}" placeholder="e.g. Bed 4"/></div>
+    </div>
+    <div class="edit-seen-section">Appliance &amp; accessories</div>
+    <div class="edit-seen-grid">
+      <div class="fg" style="grid-column:1 / -1;"><label>Find an appliance</label>
+        <input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>
+      ${panel('of-onepiece','one','One-piece system — bag and flange in one')}
+      ${panel('of-flanges','flange','Two-piece system — step 1: flange')}
+      ${panel('of-bags','bag','Two-piece system — step 2: bag','<div class="ap-hint" id="of-bag-hint">Choose a flange above and only the bags that fit its coupling size will be offered here.</div>')}
+      <div class="fg" style="grid-column:1 / -1;"><label>Accessories</label>
+        <div class="ap-panel ap-panel-short" id="of-accessories"><div class="ap-group">${ACCESSORIES.map(n=>applianceChkHTML(n,false)).join('')}</div></div></div>
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Extra notes for the handover</label>
+        <input type="text" id="iv-notes" placeholder="e.g. flange due 02/09/26, COVID +ve"/></div>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveInpatientVisit('${pid}')">Open inpatient visit</button></div>`;
+  openMo();
+  filterApplianceList();
+  updateApplianceSummary();
+}
+/* Turn the ticked appliances and accessories into the one-line note the
+   handover sheet shows. "None" is not written out. */
+function inpatientApplianceSummary(){
+  const app=selectedAppliances();
+  const acc=applianceValues('of-accessories').filter(a=>a!=='None');
+  const parts=[];
+  if(app.length)parts.push(app.join(', '));
+  if(acc.length)parts.push(acc.join(', '));
+  return parts.join(' · ');
+}
+async function saveInpatientVisit(pid){
+  const pat=clrState.patient;
+  const ward=String(document.getElementById('iv-ward')?.value||'').trim();
+  const bed=String(document.getElementById('iv-bed')?.value||'').trim();
+  const extra=String(document.getElementById('iv-notes')?.value||'').trim();
+  if(!ward){alert('Please say which ward the patient is on.');return;}
+  const summary=inpatientApplianceSummary();
+  const notes=[summary,extra].filter(Boolean).join(' — ');
+
+  // The episode — recorded when the table exists; a missing table must not stop
+  // the patient going onto the handover.
+  let epErr=null;
+  if(clrState.available){
+    const detail=`Ward ${ward}${bed?', '+bed:''}`;
+    const payload={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:TODAY,is_current:true,notes:summary||null};
+    try{const u=await getCurrentUserForAudit();payload.created_by=u?.name||null;}catch(e){}
+    ({error:epErr}=await SB.from('clinical_records').insert(payload));
+  }
+
+  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null};
+  if(!pat?.inpatient_since)patch.inpatient_since=TODAY;
+  const res=await updatePatientTolerant(pid,patch);
+  if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
+  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,inpatient_since:pat.inpatient_since||TODAY});
+
+  closeModal();
+  await loadClinicalRecords(pid);
+  clrState.expanded.episode=true;
+  renderClinicalPanel();
+  const tab=document.getElementById('psm-tab-clinical');
+  if(tab){const c=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(clrState.patient).length;
+    tab.innerHTML=`${psmIc('records')} Clinical${c?` (${c})`:''}`;}
+
+  if(res.dropped.includes('is_inpatient'))
+    alert('The details were saved, but the patient could not be added to the Handover list — the inpatient columns are not in the database yet. Run sql/add-inpatients.sql once in Supabase.');
+  else if(epErr && !clrStateMissing(epErr))
+    alert('The patient is on the Handover list, but the Inpatient episode could not be recorded: '+epErr.message);
+}
+function clrStateMissing(error){
+  const m=String(error&&error.message||'').toLowerCase();
+  return m.includes('clinical_records')||m.includes('does not exist')||m.includes('relation')||m.includes('schema cache');
+}
 function openClinicalRecordForm(kind,recordId){
   const host=document.getElementById('psm-clinical');
   if(!host)return;
@@ -7748,6 +7842,63 @@ async function deleteClinicalRecord(recordId){
 }
 // Return from the patient record page back to the Registry.
 function goRegistry(){switchTab('patients');}
+/* A natural-language list: "a, b and c". */
+function humanList(arr){
+  arr=(arr||[]).filter(Boolean);
+  if(!arr.length)return '';
+  if(arr.length===1)return arr[0];
+  return arr.slice(0,-1).join(', ')+' and '+arr[arr.length-1];
+}
+/* The appliance/accessory sentence in the letter's house style: the flange
+   "with" its bag, then "and" the accessories. Falls back to a plain list when
+   the items are one-piece or don't split into flange + bag. */
+function composeApplianceSentence(appliances,accessories){
+  const apps=parseNameList(appliances);
+  const accs=parseNameList(accessories).filter(a=>a!=='None');
+  const partOf=n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it?it.part:null;};
+  const flanges=apps.filter(n=>partOf(n)==='flange');
+  const bags=apps.filter(n=>partOf(n)==='bag');
+  const others=apps.filter(n=>partOf(n)!=='flange'&&partOf(n)!=='bag');
+  let core;
+  if(flanges.length&&bags.length)core=`${humanList(flanges)} with ${humanList(bags)}`;
+  else core=humanList(apps);
+  if(others.length&&(flanges.length&&bags.length))core+=', '+humanList(others);
+  if(accs.length)core+=(core?' and ':'')+humanList(accs.map(a=>a.toLowerCase()));
+  return core;
+}
+/* Open the discharge-letter builder for this patient. Their name, surname, ID,
+   stoma type and surgery date are carried across, together with the appliance
+   and accessory from their most recent seen visit, so the letter opens already
+   written in the clinic's own wording. */
+async function openDischargeLetterFor(patientId){
+  let p=(clrState.patient&&clrState.patient.id===patientId)?clrState.patient:null;
+  if(!p){const r=await fetchPatientById(patientId);p=r&&r.data;}
+  const q=new URLSearchParams();
+  if(p){
+    if(p.first_name)q.set('fn',p.first_name);
+    if(p.surname)q.set('sn',p.surname);
+    if(p.id_card)q.set('id',p.id_card);
+    const t=/^m/i.test(p.sex||'')?'Mr':(/^f/i.test(p.sex||'')?'Ms':'');
+    if(t)q.set('title',t);
+    if(p.stoma_type)q.set('type',p.stoma_type);
+    if(p.surgery_date)q.set('opdate',p.surgery_date);
+    if(p.procedure_performed)q.set('procedure',p.procedure_performed);
+    // The appliance and accessory in use — the most recent seen visit.
+    try{
+      const{data:appts}=await SB.from('appointments')
+        .select('appt_date,status,appliances,accessories')
+        .eq('patient_id',patientId).eq('status','attended')
+        .order('appt_date',{ascending:false}).limit(1);
+      const last=(appts||[])[0];
+      if(last){
+        const sentence=composeApplianceSentence(last.appliances,last.accessories);
+        if(sentence)q.set('appliance',sentence);
+      }
+    }catch(e){}
+  }
+  const qs=q.toString();
+  window.open('discharge-letter.html'+(qs?'?'+qs:''),'_blank');
+}
 async function openPatientRecord(patientId){
   const host=document.getElementById('page-patient-record');
   const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Back to Registry</button></div>';
@@ -7893,7 +8044,10 @@ async function openPatientRecord(patientId){
 
     <footer class="psm-foot">
       <button class="psm-btn" onclick="goRegistry()">${psmIc('chevleft')} Back</button>
-      <button class="psm-btn psm-btn-primary" onclick="openPatientDatesModal('${patientId}')">${psmIc('pencil')} Edit patient</button>
+      <div class="psm-foot-right">
+        <button class="psm-btn" onclick="openDischargeLetterFor('${patientId}')">${psmIc('mail')} Discharge letter</button>
+        <button class="psm-btn psm-btn-primary" onclick="openPatientDatesModal('${patientId}')">${psmIc('pencil')} Edit patient</button>
+      </div>
     </footer>
   </div></div>`;
   renderClinicalPanel();
@@ -8084,7 +8238,7 @@ async function loadHandover(){
   if(!body)return;
   if(dateEl)dateEl.textContent=fmtLabel(TODAY);
   const{data,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit')
+    .select('id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit')
     .eq('is_inpatient',true);
   if(error){
     const missing=/is_inpatient|column/i.test(String(error.message||''));
@@ -8102,7 +8256,7 @@ async function loadHandover(){
   }
   body.innerHTML=`<div class="roster-wrap"><table class="history-table hv-table" id="hv-table">
     <thead><tr>
-      <th style="width:88px;">Ward</th><th style="width:104px;">ID number</th>
+      <th style="width:82px;">Ward</th><th style="width:64px;">Bed</th><th style="width:100px;">ID number</th>
       <th>Surname</th><th>First name</th><th style="min-width:230px;">Appliance + notes</th>
       <th style="width:132px;">✉ Discharge letter</th><th style="width:140px;">📄 Schedule 5 permit</th>
       <th style="width:96px;"></th>
@@ -8125,6 +8279,8 @@ function handoverRowHTML(p){
   return `<tr>
     <td><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/></td>
+    <td><input type="text" class="hv-inp" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
+      onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></td>
     <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td>${htmlSafe(p.first_name||'')}</td>
@@ -8152,8 +8308,8 @@ function printHandover(){
     const txt=i=>{const c=cell(i);const inp=c&&c.querySelector('input');return (inp?inp.value:(c?c.innerText:'')).trim();};
     const doc=i=>{const b=cell(i)?.querySelector('.hs-btn');return b?b.textContent.replace(/[✉📄]/g,'').trim():'';};
     return `<tr><td>${htmlSafe(txt(0))}</td><td>${htmlSafe(txt(1))}</td><td>${htmlSafe(txt(2))}</td>
-      <td>${htmlSafe(txt(3))}</td><td>${htmlSafe(txt(4))}</td>
-      <td class="doc">${htmlSafe(doc(5))}</td><td class="doc">${htmlSafe(doc(6))}</td></tr>`;
+      <td>${htmlSafe(txt(3))}</td><td>${htmlSafe(txt(4))}</td><td>${htmlSafe(txt(5))}</td>
+      <td class="doc">${htmlSafe(doc(6))}</td><td class="doc">${htmlSafe(doc(7))}</td></tr>`;
   }).join('');
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
@@ -8168,7 +8324,7 @@ function printHandover(){
   </style></head><body>
     <h1>MDH Stoma Care Clinic — Inpatients Handover</h1>
     <h2>${htmlSafe(fmtLabel(TODAY))}</h2>
-    <table><thead><tr><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th>
+    <table><thead><tr><th>Ward</th><th>Bed</th><th>ID number</th><th>Surname</th><th>First name</th>
       <th>Appliance + notes</th><th>Discharge letter</th><th>Schedule 5 permit</th></tr></thead>
       <tbody>${rows}</tbody></table></body></html>`);
   w.document.close();w.focus();setTimeout(()=>w.print(),250);

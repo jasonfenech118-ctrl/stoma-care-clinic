@@ -519,6 +519,85 @@
     if(el){ el.value = d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear(); }
   })();
 
+  /* Pre-fill from the patient record when opened as
+       discharge-letter.html?fn=..&sn=..&id=..&title=..&type=..&opdate=..&procedure=..&appliance=..
+     The demographics, stoma type, surgery date and the appliance/accessory in
+     use are filled in through the letter's own body templates, so the wording
+     is exactly what the wizard would have produced. Everything the record does
+     not know (stoma colour, function, skin, consultant) stays as its bracketed
+     placeholder for the nurse to complete. Returns true when it filled the
+     letter, so the guided wizard is not also thrown up on top. */
+  function _mapStomaType(t){
+    t = (t||'').toLowerCase();
+    if(/uro/.test(t))  return 'urostomy';
+    if(/ileo/.test(t)) return 'ileostomy';
+    if(/colo/.test(t)) return 'colostomy';
+    return '';
+  }
+  function _mapSubtype(t){
+    t = (t||'').toLowerCase();
+    if(/loop/.test(t))        return 'loop';
+    if(/transverse/.test(t))  return 'transverse';
+    if(/double/.test(t))      return 'double-barrel';
+    if(/end/.test(t))         return 'end';
+    return '';
+  }
+  function prefillFromQuery(){
+    var q;
+    try{ q = new URLSearchParams(location.search); }catch(e){ return false; }
+    var fn=q.get('fn'), sn=q.get('sn'), id=q.get('id'), title=q.get('title');
+    var type=q.get('type'), opdate=q.get('opdate'), procedure=q.get('procedure');
+    var appliance=q.get('appliance');
+    if(!(fn||sn||id||type||appliance)) return false;
+
+    // Patient fields on the letter
+    var setFld=function(sel,v){ var el=document.querySelector(sel); if(el&&v!=null&&v!=='') el.value=v; };
+    if(title){
+      var ts=document.querySelector('.fld-title');
+      if(ts){ for(var i=0;i<ts.options.length;i++){ if(ts.options[i].text.trim()===title){ ts.selectedIndex=i; break; } } }
+    }
+    setFld('.fld-fname', fn);
+    setFld('.fld-sname', sn);
+    setFld('.fld-id',    id);
+
+    // Feed the same WZ the wizard uses, so subtypeLabel()/pronouns behave
+    WZ.title=title||''; WZ.fname=fn||''; WZ.sname=sn||''; WZ.id=id||'';
+    WZ.procedure=procedure||''; WZ.opdate=opdate||''; WZ.consultant='';
+    WZ.type=_mapStomaType(type); WZ.subtype=_mapSubtype(type);
+
+    // Body wording, through the letter's own template + filler
+    if(WZ.type){
+      var typeWord = subtypeLabel() ? subtypeLabel().toLowerCase() : WZ.type;
+      var proc = WZ.procedure || '[procedure]';
+      var mentionsStoma = /colostomy|ileostomy|urostomy|conduit|stoma|formation/i.test(proc);
+      var bodyVars = {
+        who: ((WZ.title?WZ.title+' ':'')+(WZ.sname||'')).trim() || '[Patient]',
+        pron: (WZ.title==='Mr')?'He':(_isFemaleTitle()?'She':'He/She'),
+        heShe: (WZ.title==='Mr')?'he':(_isFemaleTitle()?'she':'he/she'),
+        hisHer: (WZ.title==='Mr')?'his':(_isFemaleTitle()?'her':'his/her'),
+        procedure: proc,
+        type: typeWord,
+        a: _an(typeWord),
+        formation: mentionsStoma ? '' : (' with formation of ' + _an(typeWord) + ' ' + typeWord),
+        date: _fmtDate(WZ.opdate) || '[date of operation]',
+        consultant: '[consultant]',
+        retracted: '', colour: '[stoma colour]', 'function': '[function]', skin: '[peristomal skin]',
+        mucoSep: '', teaching: '', rod: '', stents: ''
+      };
+      var tpl = bodyTemplateFor(WZ.type);
+      var body = document.querySelector('.body');
+      if(body && body.children[0]) body.children[0].innerHTML = fillBodyTemplate(tpl.opening, bodyVars);
+      if(body && body.children[1]) body.children[1].innerHTML = fillBodyTemplate(tpl.discharge, bodyVars);
+    }
+
+    // The appliance/accessory in use — already composed in house style upstream
+    if(appliance) setApplianceSlot(appliance);
+
+    if(typeof autosizePatientFlds==='function') autosizePatientFlds();
+    if(typeof updateRibbon==='function') updateRibbon();
+    return true;
+  }
+
   // ======================= DEFAULT CATALOGUE =======================
   var DEFAULT_CATALOGUE = {
     onePiece: [
@@ -2654,7 +2733,7 @@
     if(t) t.addEventListener('change', updatePatientPrint);
   })();
   autosizePatientFlds();
-  openWizard();
+  if(!prefillFromQuery()) openWizard();
 </script>
 </body>
 </html>
