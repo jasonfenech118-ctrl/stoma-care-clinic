@@ -735,6 +735,15 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-src{display:inline-block;margin-left:4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;padding:1px 5px;vertical-align:middle;}
 .clr-src.inpatient{background:#fff3cd;color:#8a6100;}
 .clr-src.followup{background:#e6f0ff;color:#1d4ed8;}
+.va-stoma-list{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px;}
+.va-stoma{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;font-family:inherit;}
+.va-stoma:hover{border-color:var(--teal);background:#f2fbfa;}
+.va-stoma.is-done{border-color:#a8e3c6;background:#f2fbf6;}
+.va-stoma-code{flex:none;background:var(--navy);color:#fff;border-radius:8px;padding:6px 10px;font-size:14px;font-weight:800;}
+.va-stoma-main{flex:1;display:flex;flex-direction:column;gap:2px;}
+.va-stoma-type{font-size:14px;font-weight:800;color:var(--navy);}
+.va-stoma-meta{font-size:11.5px;color:var(--muted);font-weight:700;}
+.va-stoma-state{flex:none;font-size:12px;font-weight:800;color:var(--teal);}
 .clr-cat-head-static{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;cursor:default;background:none;border:none;text-align:left;}
 .clr-cat-static .clr-list{border-top:1px solid var(--border);}
 .clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
@@ -915,6 +924,14 @@ body.pl-only .pl-wrap{padding-top:14px;}
 /* On the dark deceased row the amber wash needs a touch more strength to show. */
 #pd-table tr.pd-row-incomplete.pd-row-deceased td{box-shadow:inset 0 0 0 999px rgba(245,158,11,.28);}
 #pd-table tr.pd-row-incomplete.pd-row-deceased td:first-child{box-shadow:inset 5px 0 0 #f59e0b,inset 0 0 0 999px rgba(245,158,11,.28);}
+/* A complete record keeps its row colour and is ringed with a soft green
+   border, so a finished record reads as finished at a glance. */
+#pd-table tr.pd-row-complete td{box-shadow:inset 0 1.5px 0 #34d399,inset 0 -1.5px 0 #34d399;}
+#pd-table tr.pd-row-complete td:first-child{box-shadow:inset 3px 0 0 #10b981,inset 0 1.5px 0 #34d399,inset 0 -1.5px 0 #34d399;}
+#pd-table tr.pd-row-complete td:last-child{box-shadow:inset -1.5px 0 0 #34d399,inset 0 1.5px 0 #34d399,inset 0 -1.5px 0 #34d399;}
+#pd-table tr.pd-row-complete:hover td{box-shadow:inset 0 1.5px 0 #10b981,inset 0 -1.5px 0 #10b981;}
+#pd-table tr.pd-row-complete:hover td:first-child{box-shadow:inset 3px 0 0 #059669,inset 0 1.5px 0 #10b981,inset 0 -1.5px 0 #10b981;}
+#pd-table tr.pd-row-complete:hover td:last-child{box-shadow:inset -1.5px 0 0 #10b981,inset 0 1.5px 0 #10b981,inset 0 -1.5px 0 #10b981;}
 .pr-missing{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 11px;font-size:12.5px;margin:2px 0 14px;}
 .pr-missing strong{color:#78350f;}
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
@@ -2174,7 +2191,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-114';
+const APP_BUILD='2026.08.31-115';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4213,7 +4230,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     </div>
     </div>
 
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">${isDntuEditMode?'Save Edit / DNTU Appointment':'Save Edit / Seen'}</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">${isDntuEditMode?'Save Edit / DNTU Appointment':'Set appliance'}</button></div>`;
   openMo();
   const ofMonth=document.getElementById('of-month');
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
@@ -4249,27 +4266,25 @@ function visitStomaBannerHTML(st){
 }
 async function openVisitApplianceWizard(pending,patient){
   const stomas=stomasPresentOn(patient,pending.date);
-  const list=stomas.length?stomas:[{uid:'unassigned',code:'S?',label:'no stoma recorded',kind:'stoma'}];
-  // What each stoma had last time, so an unchanged visit is two clicks.
+  const list=stomas.length?stomas:[{uid:'unassigned',code:'S?',label:'no stoma recorded',typeLabel:'No stoma recorded',meta:'',kind:'stoma'}];
   const{data:hist}=await SB.from('appointments')
     .select('id,appt_date,status,appliances,accessories,stoma_appliances')
     .eq('patient_id',pending.patientId)
     .order('appt_date',{ascending:false}).limit(25);
   const previous=previousStomaRecords(hist||[],pending.apptId,list);
   const mine=stomaRecordsFor((hist||[]).find(a=>String(a.id)===String(pending.apptId)));
-  visitWizard={
-    pending,patient,
-    steps:list.flatMap(st=>[{st,kind:'appliances'},{st,kind:'accessories'}]),
-    index:0,
-    data:Object.fromEntries(list.map(st=>{
-      const own=mine[st.uid];
-      const prev=previous[st.uid];
-      const src=(own&&(own.appliances?.length||own.accessories?.length))?own:prev;
-      return [st.uid,{appliances:parseNameList(src?.appliances),accessories:parseNameList(src?.accessories),
-                      carriedFrom:(!own||!(own.appliances?.length||own.accessories?.length))&&prev?prev.appt_date:null}];
-    }))
-  };
-  renderVisitStep();
+  const prev={};
+  list.forEach(st=>{
+    const own=mine[st.uid], p=previous[st.uid];
+    const src=(own&&(own.appliances?.length||own.accessories?.length))?own:p;
+    prev[st.uid]={appliances:parseNameList(src?.appliances),accessories:parseNameList(src?.accessories),
+                  carriedFrom:(!own||!(own.appliances?.length||own.accessories?.length))&&p?p.appt_date:null};
+  });
+  visitWizard={pending,patient,stomas:list,prev,rows:{},chosen:null,step:'stoma',system:'',work:{appliances:[],accessories:[],carriedFrom:null}};
+  // Rows already recorded on this appointment stay editable / kept.
+  Object.keys(mine).forEach(uid=>{const st=list.find(x=>x.uid===uid);if(st&&(mine[uid].appliances?.length||mine[uid].accessories?.length))
+    visitWizard.rows[uid]={uid,code:st.code,label:visitStomaLabel(st),stoma_type:st.typeLabel||'',appliances:parseNameList(mine[uid].appliances),accessories:parseNameList(mine[uid].accessories)};});
+  if(list.length===1){startVisitStoma(list[0].uid);} else {renderVisitStep();}
 }
 function stomaRecordsFor(appt){
   const out={};
@@ -4279,9 +4294,6 @@ function stomaRecordsFor(appt){
   if(Array.isArray(rows))rows.forEach(r=>{if(r&&r.uid)out[r.uid]={appliances:r.appliances,accessories:r.accessories,appt_date:appt.appt_date};});
   return out;
 }
-/* The most recent earlier visit that recorded something for each stoma. A
-   patient who has only ever had one stoma also inherits the flat record kept
-   before appliances were held per stoma. */
 function previousStomaRecords(history,apptId,stomas){
   const out={};
   const earlier=history.filter(a=>String(a.id)!==String(apptId));
@@ -4295,46 +4307,167 @@ function previousStomaRecords(history,apptId,stomas){
   });
   return out;
 }
+function visitStoma(uid){return (visitWizard.stomas||[]).find(s=>s.uid===uid);}
+// Begin (or resume) setting one stoma's appliance.
+function startVisitStoma(uid){
+  const w=visitWizard; if(!w)return;
+  w.chosen=uid;
+  const done=w.rows[uid];
+  const carry=w.prev[uid]||{};
+  const app=done?done.appliances.slice():carry.appliances.slice();
+  const acc=done?done.accessories.slice():carry.accessories.slice();
+  w.work={appliances:app,accessories:acc,carriedFrom:done?null:(carry.carriedFrom||null)};
+  // Infer the system from what is carried over, so it lands on the right page.
+  w.system=app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(it.part==='flange'||it.part==='bag');})?'two'
+          :(app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&it.system==='one';})?'one':'');
+  w.step='system';
+  renderVisitStep();
+}
+function vaFlangeCouplings(){
+  return [...new Set((visitWizard.work.appliances||[]).map(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)).filter(it=>it&&it.part==='flange').map(it=>it.coupling))];
+}
+function vaBagPanelHTML(selected){
+  const cs=vaFlangeCouplings().sort((a,b)=>a-b);
+  if(!cs.length)return '<div class="ap-empty">Go back and choose a flange first — the bags that fit it are then offered here.</div>';
+  return cs.map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selected)).join('');
+}
 function renderVisitStep(){
   if(!visitWizard)return;
-  const{steps,index,data}=visitWizard;
-  const step=steps[index];
-  const held=data[step.st.uid];
-  const stomaNo=Math.floor(index/2)+1,stomaCount=steps.length/2;
-  const isLast=index===steps.length-1;
-  const carried=held.carriedFrom?`<div class="vw-carry">Carried over from the visit on <strong>${htmlSafe(fmtShortDate(held.carriedFrom))}</strong> — change only what changed.</div>`:'';
-  const body=step.kind==='appliances'
-    ?`<div class="fg"><label>Find an appliance</label><input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>
-      <div class="fg"><label>One-piece system — bag and flange in one</label>
-        <div class="ap-panel" id="of-onepiece">${visitPanelHTML('one',held.appliances)}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>
-      <div class="fg"><label>Two-piece system — step 1: flange</label>
-        <div class="ap-panel" id="of-flanges">${visitPanelHTML('flange',held.appliances)}<div class="ap-empty" data-empty="1" hidden>No flange matches that search.</div></div></div>
-      <div class="fg"><label>Two-piece system — step 2: bag</label>
-        <div class="ap-hint" id="of-bag-hint">Choose a flange above and only the bags that fit its coupling size will be offered here.</div>
-        <div class="ap-panel" id="of-bags">${visitPanelHTML('bag',held.appliances)}<div class="ap-empty" data-empty="1" hidden>No bag matches that search.</div></div></div>`
-    :`<div class="fg"><label>Accessories used on this stoma</label>
-        <div class="ap-panel" id="of-accessories"><div class="ap-group">${ACCESSORIES.concat(held.accessories.filter(n=>!ACCESSORIES.includes(n))).map(n=>applianceChkHTML(n,held.accessories.includes(n))).join('')}</div></div>
-        <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong> — that is a record too.</div></div>`;
+  const w=visitWizard;
+  const name=`${w.patient?.first_name||''} ${w.patient?.surname||''}`.trim()||'Patient';
+  const sub=`${htmlSafe(name)} · ${htmlSafe(fmtShortDate(w.pending.date))} ${htmlSafe(w.pending.slot||'')}`;
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>${step.kind==='appliances'?'Appliances':'Accessories'} — ${htmlSafe(step.st.uid==='unassigned'?'this visit':step.st.code)}</h2>
-    <div class="msub">${htmlSafe(`${visitWizard.patient?.first_name||''} ${visitWizard.patient?.surname||''}`.trim()||'Patient')} · ${htmlSafe(fmtShortDate(visitWizard.pending.date))} ${htmlSafe(visitWizard.pending.slot)}<br/>
-      Stoma ${stomaNo} of ${stomaCount}${stomaCount>1?' — each stoma is recorded on its own card':''}</div>
-    <div class="vw-steps">${steps.map((s,i)=>`<span class="vw-dot ${i===index?'is-now':i<index?'is-done':''}" title="${htmlSafe(visitStomaLabel(s.st))} — ${s.kind}"></span>`).join('')}</div>
-    ${visitStomaBannerHTML(step.st)}
-    ${carried}
+
+  if(w.step==='stoma'){
+    const rows=w.stomas.map(st=>{
+      const set=!!w.rows[st.uid];
+      return `<button type="button" class="va-stoma ${set?'is-done':''}" onclick="startVisitStoma('${jsSafe(st.uid)}')">
+        <span class="va-stoma-code">${htmlSafe(st.code)}</span>
+        <span class="va-stoma-main"><span class="va-stoma-type">${htmlSafe(st.typeLabel||'Stoma')}</span><span class="va-stoma-meta">${htmlSafe(st.meta||'')}</span></span>
+        <span class="va-stoma-state">${set?'✓ set':'Set appliance ›'}</span></button>`;
+    }).join('');
+    const anySet=Object.keys(w.rows).length>0;
+    mb.innerHTML=`<h2>Set appliance</h2>
+      <div class="msub">${sub}<br/>Choose a stoma to set its appliance and accessories. Active stomas only.</div>
+      <div class="va-stoma-list">${rows}</div>
+      <div class="mact"><button class="btn-cancel" onclick="visitBackToAppointment()">Back to appointment</button>
+        <button class="btn-save" onclick="commitVisitFromWizard()" ${anySet?'':'disabled'}>Save change</button></div>`;
+    openMo();return;
+  }
+
+  const st=visitStoma(w.chosen)||{code:'S?',typeLabel:'Stoma',meta:'',uid:'unassigned'};
+  const banner=visitStomaBannerHTML(st);
+  const carry=w.work.carriedFrom?`<div class="vw-carry">Carried over from the visit on <strong>${htmlSafe(fmtShortDate(w.work.carriedFrom))}</strong> — change only what changed.</div>`:'';
+  const backLabel=(w.stomas.length>1)?'Back':'Back to appointment';
+  let body='', title='', foot=`<button class="btn-save" onclick="visitNext()">Next</button>`;
+  if(w.step==='system'){
+    title='Appliance system';
+    const sysBtn=(sys,label,note)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="visitChooseSystem('${sys}')"><span class="iv-sys-t">${label}</span><span class="iv-sys-s">${note}</span></button>`;
+    body=`${banner}${carry}<div class="iv-sys-row">${sysBtn('one','One-piece system','Bag and flange in one')}${sysBtn('two','Two-piece system','Flange, then bag')}</div>
+      <div class="ap-hint" style="margin:2px 0 0;">Pick a system to choose the appliance.</div>`;
+    foot=`<button class="btn-save" onclick="visitNext()" ${w.system?'':'disabled'}>Next</button>`;
+  }else if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'){
+    const search=`<div class="fg" style="grid-column:1 / -1;"><label>Find an appliance</label><input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>`;
+    const panel=(id,inner)=>`<div class="fg" style="grid-column:1 / -1;"><div class="ap-panel" id="${id}">${inner}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
+    title=w.step==='onepiece'?'One-piece appliance':(w.step==='flange'?'Two-piece — flange':'Two-piece — bag');
+    let pick;
+    if(w.step==='onepiece')pick=`${search}${panel('of-onepiece',visitPanelHTML('one',w.work.appliances))}`;
+    else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`;
+    else pick=`${search}${panel('of-bags',vaBagPanelHTML(w.work.appliances))}`;
+    body=`${banner}${carry}<div class="edit-seen-grid">${pick}<div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
+  }else{ // accessory
+    title='Accessories';
+    body=`${banner}${carry}<div class="edit-seen-grid">
+      <div class="fg" style="grid-column:1 / -1;"><label>Accessories used on this stoma</label>
+        <div class="ap-panel" id="of-accessories"><div class="ap-group">${ACCESSORIES.concat(w.work.accessories.filter(n=>!ACCESSORIES.includes(n))).map(n=>applianceChkHTML(n,w.work.accessories.includes(n))).join('')}</div></div>
+        <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
+    foot=`<button class="btn-save" onclick="visitNext()">Save change</button>`;
+  }
+  mb.innerHTML=`<h2>Set appliance — ${htmlSafe(st.code||'')}</h2>
+    <div class="msub">${sub}</div>
+    <div class="edit-seen-section">${title}</div>
     ${body}
-    <div class="ap-summary" id="of-appliance-summary"></div>
-    <div class="mact">
-      <button class="btn-cancel" onclick="visitWizardBack()">${index===0?'Back to appointment':'Back'}</button>
-      <button class="btn-save" onclick="visitWizardNext()">${isLast?'Save visit':'Next'}</button>
-    </div>`;
+    <div class="mact"><button class="btn-cancel" onclick="visitBack()">${backLabel}</button>${foot}</div>`;
   openMo();
-  filterApplianceList();
-  updateApplianceSummary();
-  scrollPanelsToTicked();
+  if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
+  if(w.step==='accessory')updateApplianceSummary();
 }
-// A carried-over record is only reassuring if it can be seen without scrolling.
+function visitChooseSystem(sys){
+  if(!visitWizard)return;
+  const w=visitWizard;
+  w.system=sys;
+  w.work.appliances=(w.work.appliances||[]).filter(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(sys==='one'?it.system==='one':(it.part==='flange'||it.part==='bag'));});
+  w.step=(sys==='one')?'onepiece':'flange';
+  renderVisitStep();
+}
+function captureVisitStep(){
+  if(!visitWizard)return;
+  const w=visitWizard, vis=selectedAppliances();
+  if(w.step==='onepiece')w.work.appliances=vis;
+  else if(w.step==='flange'){const bags=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='bag');w.work.appliances=vis.concat(bags);}
+  else if(w.step==='bag'){const fl=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='flange');w.work.appliances=fl.concat(vis);}
+  else if(w.step==='accessory')w.work.accessories=applianceValues('of-accessories');
+}
+function visitSubSteps(){
+  return visitWizard.system==='two'?['system','flange','bag','accessory']:['system','onepiece','accessory'];
+}
+function visitNext(){
+  if(!visitWizard)return;
+  const w=visitWizard;
+  captureVisitStep();
+  if(w.step==='system'&&!w.system){alert('Please choose one-piece or two-piece.');return;}
+  if((w.step==='onepiece'||w.step==='bag')&&!w.work.appliances.length){alert('Record at least one appliance for this stoma. If it is unchanged it is already ticked — just continue.');return;}
+  if(w.step==='accessory'){
+    if(!w.work.accessories.length){alert('Record the accessories for this stoma. If none were used, tick None.');return;}
+    // store this stoma and either return to the list or save the visit
+    const st=visitStoma(w.chosen);
+    w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',appliances:w.work.appliances.slice(),accessories:w.work.accessories.slice()};
+    if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
+    else{commitVisitFromWizard();}
+    return;
+  }
+  const steps=visitSubSteps(), i=steps.indexOf(w.step);
+  w.step=steps[i+1];
+  renderVisitStep();
+}
+function visitBack(){
+  if(!visitWizard)return;
+  const w=visitWizard;
+  captureVisitStep();
+  const steps=visitSubSteps(), i=steps.indexOf(w.step);
+  if(i<=0){ // leaving the sub-flow
+    if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
+    else{visitBackToAppointment();}
+    return;
+  }
+  w.step=steps[i-1];
+  renderVisitStep();
+}
+async function visitBackToAppointment(){
+  if(!visitWizard)return;
+  const pending=visitWizard.pending;
+  visitWizard=null;
+  await openOutcomeFollowupModal(pending.apptId,pending.status);
+  restoreOutcomeForm(pending);
+}
+function restoreOutcomeForm(v){
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null&&val!=='')el.value=val;};
+  set('of-idcard',v.idcard);set('of-phone',v.phone);set('of-fn',v.fn);set('of-sn',v.sn);
+  set('of-date',v.date);set('of-slot',v.slot);set('of-nurse',v.nurse);set('of-status',v.status);
+  set('of-owner',v.owner);set('of-year',v.year);set('of-month',v.month);set('of-followup-status',v.followupStatus);
+  const same=document.getElementById('of-allow-same-month');if(same)same.checked=!!v.allowSameMonth;
+  updateFollowupChangeWarning();
+}
+async function commitVisitFromWizard(){
+  const w=visitWizard;
+  if(!w)return;
+  const rows=Object.values(w.rows);
+  visitWizard=null;
+  await commitOutcomeFollowup(w.pending,rows);
+}
+// A carried-over selection should be visible without scrolling.
 function scrollPanelsToTicked(){
   ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
     const host=document.getElementById(id);
@@ -4353,57 +4486,6 @@ function visitPanelHTML(part,selected){
   return applianceCouplings().map(c=>applianceGroupHTML(
     part==='flange'?`${c} mm coupling`:`Fits a ${c} mm flange`,
     all.filter(a=>a.part===part&&a.coupling===c),selected)).join('');
-}
-function captureVisitStep(){
-  if(!visitWizard)return;
-  const step=visitWizard.steps[visitWizard.index];
-  const held=visitWizard.data[step.st.uid];
-  if(step.kind==='appliances')held.appliances=selectedAppliances();
-  else held.accessories=applianceValues('of-accessories');
-}
-function visitWizardNext(){
-  if(!visitWizard)return;
-  captureVisitStep();
-  const step=visitWizard.steps[visitWizard.index];
-  const held=visitWizard.data[step.st.uid];
-  if(step.kind==='appliances'&&!held.appliances.length){
-    alert('Record at least one appliance for this stoma. If it is unchanged from the last visit it is already ticked — just click Next.');
-    return;
-  }
-  if(step.kind==='accessories'&&!held.accessories.length){
-    alert('Record the accessories for this stoma. If none were used, tick None.');
-    return;
-  }
-  held.carriedFrom=null;
-  if(visitWizard.index<visitWizard.steps.length-1){visitWizard.index++;renderVisitStep();return;}
-  commitVisitFromWizard();
-}
-async function visitWizardBack(){
-  if(!visitWizard)return;
-  captureVisitStep();
-  if(visitWizard.index>0){visitWizard.index--;renderVisitStep();return;}
-  const pending=visitWizard.pending;
-  visitWizard=null;
-  await openOutcomeFollowupModal(pending.apptId,pending.status);
-  restoreOutcomeForm(pending);
-}
-function restoreOutcomeForm(v){
-  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null&&val!=='')el.value=val;};
-  set('of-idcard',v.idcard);set('of-phone',v.phone);set('of-fn',v.fn);set('of-sn',v.sn);
-  set('of-date',v.date);set('of-slot',v.slot);set('of-nurse',v.nurse);set('of-status',v.status);
-  set('of-owner',v.owner);set('of-year',v.year);set('of-month',v.month);set('of-followup-status',v.followupStatus);
-  const same=document.getElementById('of-allow-same-month');if(same)same.checked=!!v.allowSameMonth;
-  updateFollowupChangeWarning();
-}
-async function commitVisitFromWizard(){
-  const w=visitWizard;
-  if(!w)return;
-  const rows=w.steps.filter(s=>s.kind==='appliances').map(s=>({
-    uid:s.st.uid,code:s.st.code,label:visitStomaLabel(s.st),
-    appliances:w.data[s.st.uid].appliances,accessories:w.data[s.st.uid].accessories
-  }));
-  visitWizard=null;
-  await commitOutcomeFollowup(w.pending,rows);
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
@@ -6808,7 +6890,7 @@ function renderPatientDirectory(){
     // Deceased reads black, reversed purple, Gozo blue, overseas teal.
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
-    const incompleteCls=patientIsIncomplete(p)?' pd-row-incomplete':'';
+    const incompleteCls=patientIsIncomplete(p)?' pd-row-incomplete':' pd-row-complete';
     const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
     const middle=outcomeView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
