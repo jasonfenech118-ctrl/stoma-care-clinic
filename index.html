@@ -1678,7 +1678,6 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div class="phdr">
         <div><h2>🏥 Handover</h2><p>The patients on the wards right now — ward, appliance and what still has to be signed</p></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button class="btn-add" onclick="openHandoverAddModal()" style="background:#1baf7a;">➕ Add inpatient</button>
           <button class="btn-add" onclick="printHandover()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadHandover()">Refresh</button>
         </div>
@@ -2143,7 +2142,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-102';
+const APP_BUILD='2026.08.31-103';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8098,7 +8097,7 @@ async function loadHandover(){
   const rows=(data||[]).slice().sort(handoverByWard);
   if(countEl)countEl.textContent=rows.length?`${rows.length} inpatient${rows.length===1?'':'s'}`:'';
   if(!rows.length){
-    body.innerHTML='<div class="report-note">Nobody is on the handover list. Use <strong>Add inpatient</strong> to put a registered patient on it.</div>';
+    body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
     return;
   }
   body.innerHTML=`<div class="roster-wrap"><table class="history-table hv-table" id="hv-table">
@@ -8144,88 +8143,6 @@ async function dischargeFromHandover(patientId,name){
   const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(error){alert('Could not discharge: '+error.message);return;}
   loadHandover();
-}
-/* Only someone already in the Registry can go on the list, for the same reason
-   only a registered patient can be booked. */
-function openHandoverAddModal(){
-  const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2>Add an inpatient</h2>
-    <div class="msub">Find a registered patient, then say which ward they are on.</div>
-    <div class="fg"><label>Find the patient</label>
-      <input type="search" id="hv-find" placeholder="Name, surname or ID card" oninput="handoverRegistrySearch()"/>
-      <div id="hv-find-results" class="booking-find-results"></div></div>
-    <div id="hv-picked" class="registry-lookup-note">No patient chosen yet.</div>
-    <div class="fg"><label>Ward *</label><input type="text" id="hv-ward" placeholder="e.g. SW1-15, ITU-12, Burns-1"/></div>
-    <div class="fg"><label>Appliance + notes</label><input type="text" id="hv-notes" placeholder="e.g. SH flange / drainable bag 57mm — flange due 02/09/26"/></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="addToHandover()">Add to handover</button></div>`;
-  openMo();
-  const btn=document.querySelector('#mo .mact .btn-save');
-  if(btn)btn.disabled=true;
-}
-let handoverSearchTimer=null;
-function handoverRegistrySearch(){
-  clearTimeout(handoverSearchTimer);
-  handoverSearchTimer=setTimeout(runHandoverRegistrySearch,250);
-}
-async function runHandoverRegistrySearch(){
-  const box=document.getElementById('hv-find-results');
-  if(!box)return;
-  const q=String(document.getElementById('hv-find')?.value||'').trim();
-  if(q.length<2){box.innerHTML='';return;}
-  box.innerHTML='<div class="bfr-note">Searching the Registry…</div>';
-  const term=q.replace(/[%,()]/g,' ').trim();
-  const{data,error}=await SB.from('patients').select(PATIENT_BASE_COLS+',is_inpatient,inpatient_ward')
-    .or(`first_name.ilike.%${term}%,surname.ilike.%${term}%,id_card.ilike.%${term}%`)
-    .order('surname',{ascending:true}).limit(10);
-  if(error){box.innerHTML=`<div class="bfr-note">Could not search the Registry: ${htmlSafe(error.message||'')}</div>`;return;}
-  const rows=data||[];
-  if(!rows.length){
-    box.innerHTML=`<div class="bfr-note">No registered patient matches “${htmlSafe(q)}”. Add them under <strong>Add Patient</strong> first.</div>`;
-    return;
-  }
-  box.innerHTML=rows.map(r=>{
-    const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'Unnamed patient';
-    const on=r.is_inpatient;
-    return `<button type="button" class="bfr-row${on?' is-blocked':''}" onclick="pickHandoverPatient('${r.id}','${jsSafe(nm)}','${jsSafe(r.id_card||'')}',${on?'true':'false'},'${jsSafe(r.inpatient_ward||'')}')">
-      <span class="bfr-name">${htmlSafe(nm)}</span>
-      <span class="bfr-meta">${htmlSafe(r.id_card||'')}${on?` · already on the handover${r.inpatient_ward?' · '+htmlSafe(r.inpatient_ward):''}`:''}</span></button>`;
-  }).join('');
-}
-function pickHandoverPatient(id,name,idCard,alreadyOn,ward){
-  const note=document.getElementById('hv-picked');
-  const btn=document.querySelector('#mo .mact .btn-save');
-  document.getElementById('hv-find-results').innerHTML='';
-  const find=document.getElementById('hv-find');if(find)find.value='';
-  if(note){
-    note.dataset.patientId=id;
-    note.className=`registry-lookup-note ${alreadyOn?'new':'found'}`;
-    note.innerHTML=alreadyOn
-      ? `<strong>${htmlSafe(name)}</strong> · ${htmlSafe(idCard)} is already on the handover list. Saving will update their ward and notes.`
-      : `<strong>${htmlSafe(name)}</strong> · ${htmlSafe(idCard)} will go onto the handover list.`;
-  }
-  const wardEl=document.getElementById('hv-ward');
-  if(wardEl&&ward&&!wardEl.value)wardEl.value=ward;
-  if(btn)btn.disabled=false;
-}
-async function addToHandover(){
-  const id=document.getElementById('hv-picked')?.dataset.patientId||'';
-  const ward=String(document.getElementById('hv-ward')?.value||'').trim();
-  const notes=String(document.getElementById('hv-notes')?.value||'').trim();
-  if(!id){alert('Find the patient in the Registry first.');return;}
-  if(!ward){alert('Please say which ward the patient is on.');return;}
-  const{error}=await SB.from('patients').update({
-    is_inpatient:true,inpatient_ward:ward,inpatient_notes:notes||null,inpatient_since:TODAY
-  }).eq('id',id);
-  if(error){
-    alert(/column/i.test(String(error.message||''))
-      ? 'The inpatient columns are not in the database yet. Run sql/add-inpatients.sql once in Supabase.'
-      : 'Could not add to the handover list: '+error.message);
-    return;
-  }
-  closeModal();
-  switchTab('handover');
 }
 function printHandover(){
   const table=document.getElementById('hv-table');
