@@ -7,7 +7,57 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
+<script>
+window.__DATA={
+ staff:[{id:'s1',full_name:'Jason',role:'Staff Nurse',is_active:true},
+        {id:'s2',full_name:'Jacqueline',role:'Staff Nurse',is_active:true},
+        {id:'s3',full_name:'Lorraine',role:'Staff Nurse',is_active:true},
+        {id:'s4',full_name:'Erika Psaila',role:'Senior Staff Nurse',is_active:true}],
+ patients:[
+  {id:'p1',first_name:'Maria',surname:'Borg',id_card:'123456M',phone_number:'79001122',followup_owner:'Jason',followup_due_month:7,followup_year:2026,followup_status:'active',followup_type:'follow_up'},
+  {id:'p2',first_name:'Joseph',surname:'Camilleri',id_card:'223344M',phone_number:'79003344',followup_owner:'Jason',followup_due_month:8,followup_year:2026,followup_status:'active',followup_type:'follow_up'},
+  {id:'p3',first_name:'Carmen',surname:'Vella',id_card:'334455M',phone_number:'79005566',followup_owner:'Lorraine',followup_due_month:9,followup_year:2026,followup_status:'active',followup_type:'follow_up'},
+  {id:'p4',first_name:'Paul',surname:'Zammit',id_card:'445566M',phone_number:'79007788',followup_owner:'Jason',followup_due_month:9,followup_year:2026,followup_status:'active',followup_type:'follow_up'},
+  {id:'p5',first_name:'Rita',surname:'Grech',id_card:'556677M',phone_number:'79009900',followup_owner:'Erika',followup_due_month:9,followup_year:2026,followup_status:'active',followup_type:'follow_up'},
+  {id:'p6',first_name:'Anton',surname:'Farrugia',id_card:'667788M',phone_number:'79001010',followup_owner:'Common',followup_due_month:10,followup_year:2026,followup_status:'active',followup_type:'follow_up'}],
+ appointments:[],roster:[],leave_records:[],bank_staff_assignments:[],bank_staff:[],public_holidays:[]
+};
+function qb(name){
+  let rows=[...(window.__DATA[name]||[])];
+  const api={select:()=>api,eq:(k,v)=>{rows=rows.filter(r=>String(r[k])===String(v));return api;},
+   neq:(k,v)=>{rows=rows.filter(r=>String(r[k])!==String(v));return api;},
+   gte:(k,v)=>{rows=rows.filter(r=>String(r[k])>=String(v));return api;},
+   lte:(k,v)=>{rows=rows.filter(r=>String(r[k])<=String(v));return api;},
+   in:(k,vs)=>{rows=rows.filter(r=>vs.map(String).includes(String(r[k])));return api;},
+   like:()=>{rows=[];return api;},ilike:(k,v)=>{const pat=String(v).replace(/%/g,'').toLowerCase();rows=rows.filter(r=>String(r[k]||'').toLowerCase().includes(pat));return api;},or:(expr)=>{const terms=String(expr).split(',').map(t=>{const m=t.match(/^([a-z_]+)\.ilike\.%?(.*?)%?$/);return m?[m[1],m[2].toLowerCase()]:null;}).filter(Boolean);rows=rows.filter(r=>terms.some(([k,v])=>String(r[k]||'').toLowerCase().includes(v)));return api;},order:()=>api,limit:n=>{rows=rows.slice(0,n);return api;},range:(a,b)=>{rows=rows.slice(a,b+1);return api;},
+   insert:v=>{const a=(Array.isArray(v)?v:[v]).map(r=>Object.assign({id:'new_'+Math.random().toString(36).slice(2,9)},r));
+     (window.__DATA[name]=window.__DATA[name]||[]).push(...a);
+     // The real client returns a builder here: .insert(x).select().single().
+     const res={data:a,error:null};
+     const chain={select:()=>({single:()=>Promise.resolve({data:a[0],error:null}),
+                               maybeSingle:()=>Promise.resolve({data:a[0],error:null}),
+                               then:r=>Promise.resolve(res).then(r)}),
+                  then:r=>Promise.resolve(res).then(r)};
+     return chain;},
+   update:v=>({eq:(k,val)=>{ (window.__DATA[name]||[]).forEach(r=>{ if(String(r[k])===String(val)) Object.assign(r,v); }); return Promise.resolve({error:null}); }}),delete:()=>({eq:()=>Promise.resolve({error:null})}),
+   maybeSingle:()=>Promise.resolve({data:rows[0]||null,error:null}),
+   single:()=>Promise.resolve({data:rows[0]||null,error:null}),
+   then:(r)=>Promise.resolve({data:rows,error:null}).then(r)};
+  return api;
+}
+window.supabase={createClient:()=>({from:qb,auth:{
+  getSession:async()=>({data:{session:null}}),
+  signInWithPassword:async()=>({error:null}),
+  signOut:async()=>({}),getUser:async()=>({data:{user:{email:'nurse@clinic.mt'}}})}})};
+window.Chart=function(){return{destroy(){}};};
+
+
+(function(){
+Object.assign(window.__DATA.patients[0],{surname:'Abdilla',first_name:'Daniela',id_card:'40426M',sex:'Female',locality:'Zejtun',date_of_birth:'1961-01-01',surgery_date:'2024-08-29',stoma_type:'End Colostomy',procedure_performed:'Hartmann',findings:'CA rectum',followup_status:'active'});
+window.__DATA.clinical_records=[];
+window.__DATA.appointments.push({id:'ap1',patient_id:'p1',appt_date:'2026-05-10',appt_slot:'09:00:00',status:'attended',assigned_to:'s1',appliances:['Stomahesive Flange 57mm','Drainable Bag 57mm'],accessories:['Filler Paste','None'].filter(x=>x!=='None').concat(['Filler Paste'])});
+window.__DATA.appointments[window.__DATA.appointments.length-1].accessories=['Filler Paste'];
+})();</script><style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
   --red:#c0392b;--green:#27ae60;--orange:#e67e22;--blue:#2980b9;
