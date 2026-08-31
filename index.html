@@ -724,6 +724,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-rec-title{font-size:13px;font-weight:700;color:var(--navy);}
 .clr-code{font-family:monospace;font-size:10.5px;font-weight:800;color:var(--teal);background:#e8f5f4;padding:1px 6px;border-radius:6px;margin-left:7px;letter-spacing:.3px;vertical-align:middle;}
 .clr-rec-tag{font-size:10.5px;font-weight:700;color:#64748b;background:#f1f5f9;border:1px solid var(--border);border-radius:999px;padding:3px 9px;white-space:nowrap;}
+.clr-tag{display:inline-block;margin-left:8px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:6px;padding:1px 6px;vertical-align:middle;}
+.clr-tag.appliance{background:#e8f5f4;color:var(--teal);}
+.clr-tag.accessory{background:#eef2ff;color:#4338ca;}
+.clr-cat-head-static{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;cursor:default;background:none;border:none;text-align:left;}
+.clr-cat-static .clr-list{border-top:1px solid var(--border);}
 .clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
 .clr-idline[hidden]{display:none;}
 .pf-add-btn{display:inline-flex;align-items:center;gap:6px;margin:2px 0 12px;padding:9px 14px;border:1.5px dashed var(--border);border-radius:10px;background:#f7f9fb;color:var(--teal);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
@@ -2161,7 +2166,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-110';
+const APP_BUILD='2026.08.31-112';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7632,6 +7637,75 @@ function clrBadgeCls(kind,rec){
   if(!rec?.status)return '';
   return rec.is_current?'':'past';
 }
+/* Every appliance and accessory the patient has used, each with the date it
+   started and the date it ended — built from the inpatient episodes (admission
+   to discharge) and the seen visits. An item still in use on an open episode
+   reads as "In use". */
+function applianceUsageTimeline(){
+  const map=new Map();
+  const add=(name,kind,start,end,ongoing)=>{
+    name=String(name||'').trim(); if(!name||name==='None')return;
+    const k=kind+'|'+name.toLowerCase();
+    let e=map.get(k);
+    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing};map.set(k,e);return;}
+    if(start&&(!e.start||start<e.start))e.start=start;
+    if(ongoing)e.ongoing=true;
+    if(!e.ongoing){const en=end||start;if(en&&(!e.end||en>e.end))e.end=en;}
+  };
+  (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
+    const a=parseEpisodeAppliances(ep); if(!a)return;
+    const start=ep.record_date||null, end=ep.discharge_date||null, ongoing=!!ep.is_current&&!ep.discharge_date;
+    a.appliances.forEach(n=>add(n,'appliance',start,end,ongoing));
+    a.accessories.forEach(n=>add(n,'accessory',start,end,ongoing));
+  });
+  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>{
+    add(r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current);
+  });
+  (clrState.appts||[]).filter(a=>a.status==='attended').forEach(v=>{
+    const d=v.appt_date||null;
+    let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
+    if(Array.isArray(rows)&&rows.length){
+      rows.forEach(r=>{parseNameList(r.appliances).forEach(n=>add(n,'appliance',d,d,false));
+                       parseNameList(r.accessories).forEach(n=>add(n,'accessory',d,d,false));});
+    }else{
+      parseNameList(v.appliances).forEach(n=>add(n,'appliance',d,d,false));
+      parseNameList(v.accessories).forEach(n=>add(n,'accessory',d,d,false));
+    }
+  });
+  const list=[...map.values()];
+  list.sort((a,b)=> a.ongoing!==b.ongoing ? (a.ongoing?-1:1) : String(b.start||'').localeCompare(String(a.start||'')));
+  return list;
+}
+function applianceDateRange(e){
+  const from=e.start?('From '+htmlSafe(fmtShortDate(e.start))):'Date not recorded';
+  const to=e.ongoing?'<strong>In use</strong>':(e.end?('to '+htmlSafe(fmtShortDate(e.end))):'—');
+  return `${from} · ${to}`;
+}
+/* The Appliances category, expanding to the used-appliance list rather than
+   the (unused) appliance clinical records. */
+function applianceCategoryHTML(meta){
+  const list=applianceUsageTimeline();
+  const cur=list[0]||null;
+  const line=cur?`${htmlSafe(cur.name)} — ${cur.ongoing?'in use':'last used '+htmlSafe(fmtShortDate(cur.end||cur.start))}`:'';
+  const rows=list.length?list.map(e=>`<div class="clr-rec">
+      <div class="clr-rec-copy">
+        <span class="clr-rec-title">${htmlSafe(e.name)}<span class="clr-tag ${e.kind}">${e.kind==='accessory'?'Accessory':'Appliance'}</span></span>
+        <span class="clr-rec-meta">${applianceDateRange(e)}</span>
+      </div>
+      ${e.ongoing?'<div class="clr-rec-actions"><span class="clr-badge">In use</span></div>':''}
+    </div>`).join(''):`<div class="clr-empty">No appliance or accessory recorded yet — they are saved from an inpatient visit or a seen appointment.</div>`;
+  // Shown as an always-open section — no expand button.
+  return `<div class="clr-cat clr-cat-static">
+    <div class="clr-cat-head clr-cat-head-static">
+      <span class="clr-cat-ic">${psmIc(meta.icon)}</span>
+      <span class="clr-cat-main">
+        <span class="clr-cat-title">${meta.label} <span class="clr-count">${list.length}</span></span>
+        <span class="clr-cat-sub">${list.length?'Appliances &amp; accessories used, with dates':htmlSafe(meta.none)}</span>
+      </span>
+    </div>
+    <div class="clr-list">${rows}</div>
+  </div>`;
+}
 function clrMetaHTML(r){
   const parts=[];
   if(r.detail)parts.push(htmlSafe(r.detail));
@@ -7655,6 +7729,7 @@ function renderClinicalPanel(){
   }
   const newest=clrState.rows[0];
   const cats=CLR_KINDS.map(meta=>{
+    if(meta.kind==='appliance')return applianceCategoryHTML(meta);
     let recs=clrState.rows.filter(r=>r.kind===meta.kind);
     if(meta.kind==='stoma')recs=derivedStomaRecords(clrState.patient).concat(recs);
     const cur=recs.find(r=>r.is_current)||recs[0];
@@ -8101,6 +8176,7 @@ async function openPatientRecord(patientId){
   clrState.expanded={};
   await loadClinicalRecords(patientId);
   clrState.patient=pat;
+  clrState.appts=appts;
   const clrCount=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(pat).length;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const[outText,outCls]=patientOutcome(pat);
