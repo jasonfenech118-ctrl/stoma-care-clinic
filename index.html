@@ -822,6 +822,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .vw-stoma-type{font-size:14.5px;font-weight:800;color:var(--navy);line-height:1.25;}
 .vw-stoma-meta{font-size:11.5px;color:var(--muted);font-weight:700;margin-top:2px;}
 .vw-stoma-inh{font-size:10px;font-weight:700;color:var(--muted);}
+.prov-chip{display:inline-block;margin-left:6px;background:#fff8e1;color:#856404;border:1px solid #f2df9f;border-radius:20px;padding:1px 7px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;vertical-align:middle;}
 .ap-chk span{min-width:0;}
 /* The panels sit inside .fg, whose `label` rule is more specific than a bare
    class — so the tick rows need the same weight or they collapse to a block
@@ -1830,6 +1831,14 @@ function fixText(v){
 function htmlSafe(v){return String(fixText(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 
+/* Nurses on the roster on a provisional footing — rostered and bookable like
+   any other core nurse, but marked so nobody has to remember which is which.
+   Taking a name off this list is all it takes to make them permanent. */
+const PROVISIONAL_CORE_STAFF=['Tracey Galea'];
+function isProvisionalStaff(name){
+  const n=normStaffName(name);
+  return PROVISIONAL_CORE_STAFF.some(p=>normStaffName(p)===n);
+}
 function normStaffName(v){
   return String(v||'')
     .toLowerCase()
@@ -1939,6 +1948,10 @@ function defaultCode(staff,dateStr){
   if(name==='Lorraine') return PATTERN_DDDOO[((diff+3)%5+5)%5];
   // Erika Psaila — Day, Day, Off, Day, Off (5-day cycle). Anchored so 2026-07-06 is her 2nd day.
   if(normStaffName(name).includes('psaila')||normStaffName(name).includes('erik')) return PATTERN_DDODO[((diff)%5+5)%5];
+  // Tracey Galea — Day, Day, Day, Off, Off (5-day cycle), starting 1 September
+  // 2026 on the first of her two off days. That date lands on index 3 of the
+  // pattern on its own, so she needs no offset from the anchor.
+  if(normStaffName(name).includes('tracey')||normStaffName(name).includes('galea')) return PATTERN_DDDOO[((diff)%5+5)%5];
   return 'working';
 }
 
@@ -2088,7 +2101,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.30-98';
+const APP_BUILD='2026.08.31-99';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2299,7 +2312,8 @@ async function ensureCoreStaff(){
   const{data:oldRec}=await SB.from('staff').select('id').ilike('full_name','Erica Borg');
   if(oldRec&&oldRec.length)await SB.from('staff').update({full_name:'Erika Psaila'}).eq('id',oldRec[0].id);
   // Core nurses that must exist on the roster. Their shift pattern is defined in defaultCode().
-  const targets=[{full_name:'Erika Psaila',role:'Senior Staff Nurse'}];
+  const targets=[{full_name:'Erika Psaila',role:'Senior Staff Nurse'},
+                 {full_name:'Tracey Galea',role:'Senior Staff Nurse'}];
   for(const t of targets){
     const{data:existing,error}=await SB.from('staff').select('id,is_active,role').ilike('full_name',t.full_name);
     if(error){console.warn('ensureCoreStaff lookup failed:',error.message);continue;}
@@ -2416,7 +2430,7 @@ async function renderRoster(){
   html+=`<tr class="sr"><td colspan="${days+2}">Core Staff</td></tr>`;
 
   for(const st of staffList){
-    html+=`<tr><td class="td-name">${st.full_name}</td><td class="td-role">${st.role}</td>`;
+    html+=`<tr><td class="td-name">${htmlSafe(st.full_name)}${isProvisionalStaff(st.full_name)?'<span class="prov-chip">provisional</span>':''}</td><td class="td-role">${htmlSafe(st.role||'')}</td>`;
     for(let d=1;d<=days;d++){
       const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
       const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
