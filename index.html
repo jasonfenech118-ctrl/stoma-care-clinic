@@ -824,6 +824,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .vw-stoma-inh{font-size:10px;font-weight:700;color:var(--muted);}
 .prov-chip{display:inline-block;margin-left:6px;background:#fff8e1;color:#856404;border:1px solid #f2df9f;border-radius:20px;padding:1px 7px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;vertical-align:middle;}
 .hv-datebar{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 12px;}
+.discharge-frame{width:100%;height:calc(100vh - 210px);min-height:560px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);}
 .hv-date{font-size:15px;font-weight:800;color:var(--navy);}
 .hv-count{font-size:12px;font-weight:700;color:var(--muted);}
 .hv-table td{vertical-align:middle;}
@@ -1686,6 +1687,16 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div id="hv-body"><div class="report-note">Loading the handover list…</div></div>
     </div>
 
+    <div class="page" id="page-discharge">
+      <div class="phdr">
+        <div><h2>✉ Discharge letters</h2><p>Build a stoma discharge letter on the Mater Dei letterhead — fill in, print or save as PDF</p></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-add" onclick="openDischargeFull()" style="background:#0369a1;">↗ Open full page</button>
+        </div>
+      </div>
+      <iframe id="discharge-frame" class="discharge-frame" title="Stoma Discharge Letter" data-src="discharge-letter.html"></iframe>
+    </div>
+
     <!-- PATIENT RECORD (opened full-page from the Registry) -->
     <div class="page" id="page-patient-record"></div>
 
@@ -2132,7 +2143,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-101';
+const APP_BUILD='2026.08.31-102';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2199,13 +2210,10 @@ const TAB_GROUPS=[
      {tab:'roster',label:'Monthly Roster',icon:'M',color:'#7c3aed'},
      {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'}
    ]},
-  {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',
+  {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',badge:'reminders',
    pages:[
      {tab:'appointments',label:'Daily Clinic',icon:'P',color:'#2980b9'},
-     {tab:'appointment-outcomes',label:'Appointment Outcomes',icon:'A',color:'#27ae60'}
-   ]},
-  {key:'followups',label:'Follow-ups',icon:'🔔',color:'#0d7377',badge:'reminders',
-   pages:[
+     {tab:'appointment-outcomes',label:'Appointment Outcomes',icon:'A',color:'#27ae60'},
      {tab:'reminders',label:'Reminders',icon:'🔔',color:'#d97706',badge:'reminders'},
      {tab:'staff-audit',label:'Follow-up Planning',icon:'F',color:'#0d7377'}
    ]},
@@ -2229,6 +2237,10 @@ const TAB_GROUPS=[
   {key:'handover',label:'Handover',icon:'🏥',color:'#b45309',
    pages:[
      {tab:'handover',label:'Handover',icon:'🏥',color:'#b45309'}
+   ]},
+  {key:'discharge',label:'Discharge letters',icon:'✉',color:'#0369a1',
+   pages:[
+     {tab:'discharge',label:'Discharge letters',icon:'✉',color:'#0369a1'}
    ]}
 ];
 const TAB_LABELS={};
@@ -2302,6 +2314,7 @@ function switchTab(name){
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')loadHandover();
+  if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
   if(name==='reports')loadReports();
   if(name==='annual-report')loadAnnualReport();
@@ -8057,6 +8070,14 @@ async function saveHandoverField(patientId,field,value){
 function handoverMissingHTML(message){
   return `<div class="psm-missing">${psmIc('records')}<div>${message}</div></div>`;
 }
+/* The letter builder is a self-contained page of its own (its own letterhead,
+   wizard and PDF export), so it is hosted in an isolated frame rather than
+   folded into the app. Loaded only when the tab is first opened. */
+function loadDischargeLetters(){
+  const f=document.getElementById('discharge-frame');
+  if(f&&!f.getAttribute('src'))f.setAttribute('src',f.dataset.src);
+}
+function openDischargeFull(){window.open('discharge-letter.html','_blank');}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   const dateEl=document.getElementById('hv-date');
