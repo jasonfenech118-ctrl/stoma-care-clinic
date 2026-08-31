@@ -2188,7 +2188,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-116';
+const APP_BUILD='2026.08.31-117';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4131,17 +4131,20 @@ function missingColumnFromError(error){
         ||msg.match(/'([a-z_]+)' column of/i);
   return m?m[1]:'';
 }
-async function updateAppointmentTolerant(apptId,payload){
-  const body={...payload},dropped=[];
+async function updateAppointmentTolerant(apptId,payload,protectedCols){
+  const body={...payload},dropped=[],guard=new Set(protectedCols||[]);
   for(let attempt=0;attempt<8;attempt++){
     const{error}=await SB.from('appointments').update(body).eq('id',apptId);
-    if(!error)return{error:null,dropped};
+    if(!error)return{error:null,dropped,protectedMissing:null};
     const bad=missingColumnFromError(error);
-    if(!bad||!(bad in body))return{error,dropped};
+    if(!bad||!(bad in body))return{error,dropped,protectedMissing:null};
+    // A protected column must not be quietly dropped — the whole save is refused
+    // so nothing is written until the column exists.
+    if(guard.has(bad))return{error,dropped,protectedMissing:bad};
     delete body[bad];
     dropped.push(bad);
   }
-  return{error:{message:'Too many missing columns to save.'},dropped};
+  return{error:{message:'Too many missing columns to save.'},dropped,protectedMissing:null};
 }
 async function openOutcomeFollowupModal(apptId,status,options={}){
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
@@ -4551,11 +4554,17 @@ async function commitOutcomeFollowup(v,stomaRows){
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
 
-  const saved=await updateAppointmentTolerant(apptId,outcomeUpdate);
-  if(saved.error){alert('Could not save appointment edit/outcome: '+saved.error.message);return;}
-  if(['appliances','accessories','stoma_appliances'].some(c=>saved.dropped.includes(c))){
-    alert('The appointment was saved, but what was used was not: the database does not have those columns yet. Run sql/add-appliances.sql once in Supabase to turn them on.');
+  // When a Seen visit has appliances to record, the appliance columns are
+  // protected: if the database does not have them the appointment is NOT saved,
+  // so a visit is never marked Seen without what was used.
+  const hasAppliances=(stomaRows||[]).some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length));
+  const protectedCols=hasAppliances?['appliances','accessories','stoma_appliances']:[];
+  const saved=await updateAppointmentTolerant(apptId,outcomeUpdate,protectedCols);
+  if(saved.protectedMissing){
+    alert('This visit was NOT saved.\n\nThe database does not have the appliance columns yet, so what was used could not be recorded. Run sql/add-appliances.sql once in Supabase, then mark the appointment as Seen again.');
+    return;
   }
+  if(saved.error){alert('Could not save appointment edit/outcome: '+saved.error.message);return;}
 
   if(patientId){
     const updatePayload=(isDntuEditMode&&dntuTarget===3)?{
