@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS public.clinical_records (
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
 
+-- Episode fields: the admission's discharge date and the appliances used
+-- (with the stoma type). record_date is the admission date.
+ALTER TABLE public.clinical_records ADD COLUMN IF NOT EXISTS discharge_date date;
+ALTER TABLE public.clinical_records ADD COLUMN IF NOT EXISTS appliances     jsonb DEFAULT '[]'::jsonb;
+
 CREATE INDEX IF NOT EXISTS clinical_records_patient_idx
   ON public.clinical_records (patient_id);
 
