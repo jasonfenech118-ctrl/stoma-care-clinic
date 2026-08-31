@@ -732,6 +732,9 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-appl-list{margin:2px 0 4px;padding:0 4px 4px 14px;border-left:2px solid #e2e8f0;}
 .clr-appl-h{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 2px;}
 .clr-appl-rec{padding-left:2px;}
+.clr-src{display:inline-block;margin-left:4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;padding:1px 5px;vertical-align:middle;}
+.clr-src.inpatient{background:#fff3cd;color:#8a6100;}
+.clr-src.followup{background:#e6f0ff;color:#1d4ed8;}
 .clr-cat-head-static{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;cursor:default;background:none;border:none;text-align:left;}
 .clr-cat-static .clr-list{border-top:1px solid var(--border);}
 .clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
@@ -2171,7 +2174,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-113';
+const APP_BUILD='2026.08.31-114';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7653,36 +7656,40 @@ const _normType=t=>String(t||'').trim().toLowerCase();
 function applianceTimelineByStomaType(){
   const groups=new Map();
   const bucket=k=>{let m=groups.get(k);if(!m){m=new Map();groups.set(k,m);}return m;};
-  const add=(typeKey,name,kind,start,end,ongoing)=>{
+  const add=(typeKey,name,kind,start,end,ongoing,source)=>{
     name=String(name||'').trim(); if(!name||name==='None')return;
     const m=bucket(typeKey||'__unassigned__');
     const k=kind+'|'+name.toLowerCase();
     let e=m.get(k);
-    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing};m.set(k,e);return;}
+    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing,sources:new Set(source?[source]:[]),lastSource:source||'',lastDate:start||end||''};m.set(k,e);return;}
+    if(source)e.sources.add(source);
     if(start&&(!e.start||start<e.start))e.start=start;
     if(ongoing)e.ongoing=true;
     if(!e.ongoing){const en=end||start;if(en&&(!e.end||en>e.end))e.end=en;}
+    // Remember which context the newest use of this item came from.
+    const d=end||start||'';
+    if(source&&d>=String(e.lastDate||'')){e.lastDate=d;e.lastSource=source;}
   };
   (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
     const a=parseEpisodeAppliances(ep); if(!a)return;
     const start=ep.record_date||null,end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
     const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
     (types.length?types:['__unassigned__']).forEach(tk=>{
-      a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing));
-      a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing));
+      a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient'));
+      a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient'));
     });
   });
-  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>add('__unassigned__',r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current));
+  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>add('__unassigned__',r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current,'inpatient'));
   (clrState.appts||[]).filter(a=>a.status==='attended').forEach(v=>{
     const d=v.appt_date||null;
     let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
     if(Array.isArray(rows)&&rows.length){
       rows.forEach(r=>{const tk=_normType(r.stoma_type)||'__unassigned__';
-        parseNameList(r.appliances).forEach(n=>add(tk,n,'appliance',d,d,false));
-        parseNameList(r.accessories).forEach(n=>add(tk,n,'accessory',d,d,false));});
+        parseNameList(r.appliances).forEach(n=>add(tk,n,'appliance',d,d,false,'followup'));
+        parseNameList(r.accessories).forEach(n=>add(tk,n,'accessory',d,d,false,'followup'));});
     }else{
-      parseNameList(v.appliances).forEach(n=>add('__unassigned__',n,'appliance',d,d,false));
-      parseNameList(v.accessories).forEach(n=>add('__unassigned__',n,'accessory',d,d,false));
+      parseNameList(v.appliances).forEach(n=>add('__unassigned__',n,'appliance',d,d,false,'followup'));
+      parseNameList(v.accessories).forEach(n=>add('__unassigned__',n,'accessory',d,d,false,'followup'));
     }
   });
   return groups;
@@ -7692,10 +7699,12 @@ function applianceTimelineByStomaType(){
 function applianceListForStoma(groups,stomaTitle,includeUnassigned){
   const merged=new Map();
   const mergeIn=m=>{if(!m)return;m.forEach((e,k)=>{let t=merged.get(k);
-    if(!t){merged.set(k,{...e});return;}
+    if(!t){merged.set(k,{...e,sources:new Set(e.sources||[])});return;}
+    (e.sources||[]).forEach(x=>t.sources.add(x));
     if(e.start&&(!t.start||e.start<t.start))t.start=e.start;
     if(e.ongoing)t.ongoing=true;
-    if(!t.ongoing){const en=e.end||e.start;if(en&&(!t.end||en>t.end))t.end=en;}});};
+    if(!t.ongoing){const en=e.end||e.start;if(en&&(!t.end||en>t.end))t.end=en;}
+    const d=e.end||e.start||'';if(e.lastSource&&d>=String(t.lastDate||'')){t.lastDate=d;t.lastSource=e.lastSource;}});};
   mergeIn(groups.get(_normType(stomaTitle)));
   if(includeUnassigned)mergeIn(groups.get('__unassigned__'));
   const list=[...merged.values()];
@@ -7707,11 +7716,17 @@ function applianceDateRange(e){
   const to=e.ongoing?'<strong>In use</strong>':(e.end?('to '+htmlSafe(fmtShortDate(e.end))):'—');
   return `${from} · ${to}`;
 }
+const APPL_SRC_LABEL={inpatient:'Inpatient',followup:'Follow-up'};
+function applianceSourceHTML(e){
+  // Order the tags with the most recent context first.
+  const src=[...(e.sources||[])].sort((a,b)=>a===e.lastSource?-1:b===e.lastSource?1:0);
+  return src.map(sname=>`<span class="clr-src ${sname}">${APPL_SRC_LABEL[sname]||sname}</span>`).join('');
+}
 function applianceRowHTML(e){
   return `<div class="clr-rec clr-appl-rec">
       <div class="clr-rec-copy">
         <span class="clr-rec-title">${htmlSafe(e.name)}<span class="clr-tag ${e.kind}">${e.kind==='accessory'?'Accessory':'Appliance'}</span></span>
-        <span class="clr-rec-meta">${applianceDateRange(e)}</span>
+        <span class="clr-rec-meta">${applianceDateRange(e)}${applianceSourceHTML(e)?' · '+applianceSourceHTML(e):''}</span>
       </div>${e.ongoing?'<div class="clr-rec-actions"><span class="clr-badge">In use</span></div>':''}
     </div>`;
 }
