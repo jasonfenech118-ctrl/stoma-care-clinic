@@ -831,6 +831,12 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .iv-done p{margin:8px 0;font-size:14px;color:var(--navy);}
 .iv-done .clr-code{background:var(--navy);color:#fff;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:800;}
 .iv-done-note{font-size:12.5px;color:var(--muted);}
+.iv-sys-row{display:flex;gap:10px;margin:2px 0 12px;flex-wrap:wrap;}
+.iv-sys-btn{flex:1;min-width:170px;display:flex;flex-direction:column;gap:3px;padding:18px 16px;border:1.5px solid var(--border);border-radius:12px;background:#fff;color:var(--navy);font-family:inherit;cursor:pointer;text-align:left;}
+.iv-sys-btn:hover{border-color:var(--teal);background:#f2fbfa;}
+.iv-sys-btn.active{background:var(--teal);border-color:var(--teal);color:#fff;}
+.iv-sys-t{font-size:15px;font-weight:800;}
+.iv-sys-s{font-size:11.5px;font-weight:600;opacity:.8;}
 .hv-date{font-size:15px;font-weight:800;color:var(--navy);}
 .hv-count{font-size:12px;font-weight:700;color:var(--muted);}
 .hv-table td{vertical-align:middle;}
@@ -2148,7 +2154,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-107';
+const APP_BUILD='2026.08.31-109';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4026,7 +4032,10 @@ function updateApplianceSummary(){
    a search can never hide something that is about to be saved. */
 function filterApplianceList(){
   const q=String(document.getElementById('of-appliance-search')?.value||'').trim().toLowerCase();
-  const sizes=selectedCouplings();
+  // Coupling-filter the bags only when a flange panel is on the same page (the
+  // visit wizard). When the bag list is a page of its own it has already been
+  // limited to the chosen flange's couplings, so no further filtering applies.
+  const sizes=document.getElementById('of-flanges')?selectedCouplings():null;
   ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
     const host=document.getElementById(id);
     if(!host)return;
@@ -4035,10 +4044,10 @@ function filterApplianceList(){
       let visible=0;
       g.querySelectorAll('.ap-chk').forEach(l=>{
         const box=l.querySelector('.ap-box');
-        const fits=id!=='of-bags'||!l.dataset.coupling||sizes.includes(l.dataset.coupling);
+        const fits=id!=='of-bags'||sizes===null||!l.dataset.coupling||sizes.includes(l.dataset.coupling);
         const hit=box.checked||(fits&&(!q||l.dataset.find.includes(q)));
         l.hidden=!hit;
-        l.classList.toggle('is-mismatch',id==='of-bags'&&box.checked&&!fits);
+        l.classList.toggle('is-mismatch',id==='of-bags'&&sizes!==null&&box.checked&&!fits);
         if(hit)visible++;
       });
       g.hidden=!visible;
@@ -4047,7 +4056,7 @@ function filterApplianceList(){
     const empty=host.querySelector('[data-empty]');
     if(empty){
       empty.hidden=shown>0;
-      if(id==='of-bags'&&!shown&&!sizes.length)empty.hidden=true;
+      if(id==='of-bags'&&!shown&&sizes&&!sizes.length)empty.hidden=true;
     }
   });
   const hint=document.getElementById('of-bag-hint');
@@ -7274,16 +7283,6 @@ function patientFormHTML(p,prefix){
     <div class="registry-lookup-note" style="margin-bottom:10px;">Each stoma keeps its own dates. Leave a stoma's <strong>reversal date</strong> blank while it is still present.</div>
   </div>
 
-  <h3 class="pf-head">On the ward</h3>
-  <div class="edit-seen-grid">
-    <div class="fg" style="grid-column:1 / -1;">
-      <label class="pf-xchk"><input type="checkbox" id="${prefix}-inpatient" ${p?.is_inpatient?'checked':''} onchange="onInpatientToggle('${prefix}')"/> This patient is an <strong>inpatient</strong> right now — show them on the Handover list</label></div>
-    <div class="fg"><label>Ward</label><input type="text" id="${prefix}-ward" value="${v('inpatient_ward')}" placeholder="e.g. SW1-15, ITU-12, Burns-1"/></div>
-    <div class="fg"><label>Bed</label><input type="text" id="${prefix}-bed" value="${v('inpatient_bed')}" placeholder="e.g. Bed 4"/></div>
-    <div class="fg"><label>On the list since</label><input type="date" id="${prefix}-inpsince" value="${v('inpatient_since')}"/></div>
-    <div class="fg" style="grid-column:1 / -1;"><label>Appliance + notes for the handover</label>
-      <input type="text" id="${prefix}-inpnotes" value="${v('inpatient_notes')}" placeholder="e.g. SH flange / drainable bag 57mm — flange due 02/09/26"/></div>
-  </div>
 
   <h3 class="pf-head">Outcome</h3>
   <div class="edit-seen-grid">
@@ -7297,13 +7296,6 @@ function patientFormHTML(p,prefix){
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
   </div>
   <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Each stoma's reversal date lives with that stoma; the status follows the newest one. If a <strong>stoma was formed after a reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>`;
-}
-/* Ticking "inpatient" with no date fills in today, so the list can say how
-   long someone has been on it without anyone having to think about it. */
-function onInpatientToggle(prefix){
-  const on=document.getElementById(`${prefix}-inpatient`)?.checked;
-  const since=document.getElementById(`${prefix}-inpsince`);
-  if(on&&since&&!since.value)since.value=TODAY;
 }
 // Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
 function showPfSection(prefix,key){
@@ -7415,11 +7407,6 @@ function readPatientForm(prefix){
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
     }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date).sort(byFormedDate),
-    is_inpatient:!!document.getElementById(`${prefix}-inpatient`)?.checked,
-    inpatient_ward:val('ward')||null,
-    inpatient_bed:val('bed')||null,
-    inpatient_notes:val('inpnotes')||null,
-    inpatient_since:val('inpsince')||null,
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
     deceased_date:val('rip')||null,
@@ -7702,39 +7689,66 @@ function wardOptions(selected){
    appliances, then the accessories — one page each. On the last page it records
    an Inpatient episode dated today and puts the patient on the Handover list. */
 let ivWizard=null;
+const ivCat=n=>APPLIANCE_CATALOGUE.find(a=>a.name===n);
 function openInpatientVisit(){
   const pid=clrState.patientId, pat=clrState.patient;
   if(!pid)return;
-  ivWizard={pid,patient:pat,step:1,ward:pat?.inpatient_ward||'',bed:pat?.inpatient_bed||'',appliances:[],accessories:[],notes:''};
+  ivWizard={pid,patient:pat,step:'ward',ward:pat?.inpatient_ward||'',bed:pat?.inpatient_bed||'',system:'',appliances:[],accessories:[],notes:''};
   renderInpatientStep();
+}
+/* The pages depend on the appliance system: one-piece is a single list, a
+   two-piece is a flange page and then a bag page. */
+function ivSteps(){
+  const w=ivWizard;
+  if(w.system==='one')return ['ward','system','onepiece','accessory'];
+  if(w.system==='two')return ['ward','system','flange','bag','accessory'];
+  return ['ward','system'];
+}
+const IV_TITLES={ward:'Where on the ward',system:'Appliance system',onepiece:'One-piece appliance',flange:'Two-piece system — flange',bag:'Two-piece system — bag',accessory:'Accessories'};
+// The coupling sizes of the flanges already chosen — what the bag page offers.
+function ivFlangeCouplings(){
+  return [...new Set((ivWizard.appliances||[]).map(ivCat).filter(it=>it&&it.part==='flange').map(it=>it.coupling))];
+}
+function ivBagPanelHTML(selected){
+  const couplings=ivFlangeCouplings().sort((a,b)=>a-b);
+  if(!couplings.length)return '<div class="ap-empty">Go back and choose a flange first — the bags that fit it will then be offered here.</div>';
+  return couplings.map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selected)).join('');
 }
 function renderInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard, pat=w.patient;
   const name=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'this patient';
-  const dots=[1,2,3].map(n=>`<span class="vw-dot ${n===w.step?'is-now':n<w.step?'is-done':''}"></span>`).join('');
-  const titles={1:'Where on the ward',2:'Appliances',3:'Accessories'};
-  const panel=(id,part,label,hint)=>`<div class="fg" style="grid-column:1 / -1;">
-      <label>${label}</label>${hint||''}
-      <div class="ap-panel" id="${id}">${visitPanelHTML(part,w.appliances)}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
+  const steps=ivSteps(), idx=steps.indexOf(w.step), isLast=idx===steps.length-1;
+  const dots=steps.map((k,i)=>`<span class="vw-dot ${i===idx?'is-now':i<idx?'is-done':''}"></span>`).join('');
+  const search=`<div class="fg" style="grid-column:1 / -1;"><label>Find an appliance</label>
+      <input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>`;
+  const panel=(id,inner)=>`<div class="fg" style="grid-column:1 / -1;">
+      <div class="ap-panel" id="${id}">${inner}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
   let body='';
-  if(w.step===1){
+  if(w.step==='ward'){
     body=`<div class="edit-seen-grid">
       <div class="fg"><label>Ward *</label><select id="iv-ward">${wardOptions(w.ward)}</select></div>
       <div class="fg"><label>Bed number</label><input type="text" id="iv-bed" value="${htmlSafe(w.bed||'')}" placeholder="e.g. 15"/></div>
     </div>`;
-  }else if(w.step===2){
-    body=`<div class="edit-seen-grid">
-      <div class="fg" style="grid-column:1 / -1;"><label>Find an appliance</label>
-        <input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>
-      ${panel('of-onepiece','one','One-piece system — bag and flange in one')}
-      ${panel('of-flanges','flange','Two-piece system — step 1: flange')}
-      ${panel('of-bags','bag','Two-piece system — step 2: bag','<div class="ap-hint" id="of-bag-hint">Choose a flange above and only the bags that fit its coupling size will be offered here.</div>')}
-      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
-    </div>`;
+  }else if(w.step==='system'){
+    const sysBtn=(sys,label,sub)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="ivChooseSystem('${sys}')">
+        <span class="iv-sys-t">${label}</span><span class="iv-sys-s">${sub}</span></button>`;
+    body=`<div class="iv-sys-row">
+      ${sysBtn('one','One-piece system','Bag and flange in one')}
+      ${sysBtn('two','Two-piece system','Flange, then bag')}
+    </div><div class="ap-hint" style="margin:2px 0 0;">Pick a system to choose the appliance.</div>`;
+  }else if(w.step==='onepiece'){
+    body=`<div class="edit-seen-grid">${search}${panel('of-onepiece',visitPanelHTML('one',w.appliances))}
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
+  }else if(w.step==='flange'){
+    body=`<div class="edit-seen-grid">${search}${panel('of-flanges',visitPanelHTML('flange',w.appliances))}
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
+  }else if(w.step==='bag'){
+    body=`<div class="edit-seen-grid">${search}${panel('of-bags',ivBagPanelHTML(w.appliances))}
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else{
     body=`<div class="edit-seen-grid">
-      <div class="fg" style="grid-column:1 / -1;"><label>Accessories used on this stoma</label>
+      <div class="fg" style="grid-column:1 / -1;"><label>Accessories</label>
         <div class="ap-panel ap-panel-short" id="of-accessories"><div class="ap-group">${ACCESSORIES.map(n=>applianceChkHTML(n,w.accessories.includes(n))).join('')}</div></div>
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
@@ -7745,34 +7759,58 @@ function renderInpatientStep(){
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>Open inpatient visit</h2>
-    <div class="msub">${htmlSafe(name)} · Step ${w.step} of 3 — records an Inpatient episode dated ${htmlSafe(fmtShortDate(TODAY))} and puts them on the Handover list.</div>
+    <div class="msub">${htmlSafe(name)} · Step ${idx+1} of ${steps.length} — records an Inpatient episode dated ${htmlSafe(fmtShortDate(TODAY))} and puts them on the Handover list.</div>
     <div class="vw-steps">${dots}</div>
-    <div class="edit-seen-section">${titles[w.step]}</div>
+    <div class="edit-seen-section">${IV_TITLES[w.step]}</div>
     ${body}
-    <div class="mact"><button class="btn-cancel" onclick="ivBack()">${w.step===1?'Cancel':'Back'}</button>
-      <button class="btn-save" onclick="ivNext()">${w.step===3?'Open inpatient visit':'Next'}</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="ivBack()">${w.step==='ward'?'Cancel':'Back'}</button>
+      <button class="btn-save" onclick="ivNext()"${w.step==='system'&&!w.system?' disabled':''}>${(isLast&&w.step!=='system')?'Open inpatient visit':'Next'}</button></div>`;
   openMo();
-  if(w.step===2){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
-  if(w.step===3){updateApplianceSummary();}
+  if(['onepiece','flange','bag'].includes(w.step)){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
+  if(w.step==='accessory')updateApplianceSummary();
+}
+/* Choosing a system drops anything ticked from the other system, then goes
+   straight to that system's first appliance page. */
+function ivChooseSystem(sys){
+  if(!ivWizard)return;
+  const w=ivWizard;
+  w.system=sys;
+  w.appliances=(w.appliances||[]).filter(n=>{const it=ivCat(n);return it&&(sys==='one'?it.system==='one':(it.part==='flange'||it.part==='bag'));});
+  w.step=(sys==='one')?'onepiece':'flange';
+  renderInpatientStep();
+}
+// Capture only the part the current appliance page owns, keeping the rest.
+function captureAppliancePage(){
+  const w=ivWizard, visible=selectedAppliances();
+  if(w.step==='onepiece'){w.appliances=visible;}
+  else if(w.step==='flange'){const bags=w.appliances.filter(n=>ivCat(n)?.part==='bag');w.appliances=visible.concat(bags);}
+  else if(w.step==='bag'){const flanges=w.appliances.filter(n=>ivCat(n)?.part==='flange');w.appliances=flanges.concat(visible);}
 }
 function captureInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard;
-  if(w.step===1){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();}
-  else if(w.step===2){w.appliances=selectedAppliances();}
-  else if(w.step===3){w.accessories=applianceValues('of-accessories');w.notes=String(document.getElementById('iv-notes')?.value||'').trim();}
+  if(w.step==='ward'){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();}
+  else if(['onepiece','flange','bag'].includes(w.step)){captureAppliancePage();}
+  else if(w.step==='accessory'){w.accessories=applianceValues('of-accessories');w.notes=String(document.getElementById('iv-notes')?.value||'').trim();}
 }
 function ivBack(){
   if(!ivWizard)return;
-  if(ivWizard.step===1){ivWizard=null;closeModal();return;}
-  captureInpatientStep();ivWizard.step--;renderInpatientStep();
+  captureInpatientStep();
+  const steps=ivSteps(), i=steps.indexOf(ivWizard.step);
+  if(i<=0){ivWizard=null;closeModal();return;}
+  ivWizard.step=steps[i-1];
+  renderInpatientStep();
 }
 function ivNext(){
   if(!ivWizard)return;
   captureInpatientStep();
-  if(ivWizard.step===1&&!ivWizard.ward){alert('Please choose the ward.');return;}
-  if(ivWizard.step<3){ivWizard.step++;renderInpatientStep();return;}
-  saveInpatientVisit();
+  const w=ivWizard;
+  if(w.step==='ward'&&!w.ward){alert('Please choose the ward.');return;}
+  if(w.step==='system'&&!w.system){alert('Please choose one-piece or two-piece.');return;}
+  const steps=ivSteps(), i=steps.indexOf(w.step);
+  if(i>=steps.length-1){saveInpatientVisit();return;}
+  w.step=steps[i+1];
+  renderInpatientStep();
 }
 async function saveInpatientVisit(){
   const w=ivWizard;
