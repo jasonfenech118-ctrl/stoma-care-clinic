@@ -727,6 +727,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-tag{display:inline-block;margin-left:8px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:6px;padding:1px 6px;vertical-align:middle;}
 .clr-tag.appliance{background:#e8f5f4;color:var(--teal);}
 .clr-tag.accessory{background:#eef2ff;color:#4338ca;}
+.clr-stoma-block{padding:0 0 6px;}
+.clr-stoma-block+.clr-stoma-block{border-top:2px solid var(--border);margin-top:6px;padding-top:6px;}
+.clr-appl-list{margin:2px 0 4px;padding:0 4px 4px 14px;border-left:2px solid #e2e8f0;}
+.clr-appl-h{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:4px 0 2px;}
+.clr-appl-rec{padding-left:2px;}
 .clr-cat-head-static{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;cursor:default;background:none;border:none;text-align:left;}
 .clr-cat-static .clr-list{border-top:1px solid var(--border);}
 .clr-idline{font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);background:#e8f5f4;border-radius:8px;padding:7px 11px;letter-spacing:.3px;}
@@ -2166,7 +2171,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-112';
+const APP_BUILD='2026.08.31-113';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7579,8 +7584,7 @@ function switchPatientPanel(which){
    remove. If the table has not been created yet the tab explains how. */
 const CLR_KINDS=[
   {kind:'episode',  label:'Episodes',  icon:'folder',title:'Episode',  titleLabel:'Episode type', titlePh:'e.g. Stoma surgery',        detailLabel:'Detail',   detailPh:'e.g. Elective admission', statusPh:'e.g. Still in follow-up', cur:'Current episode',  none:'No episodes recorded'},
-  {kind:'stoma',    label:'Stomas',    icon:'stoma', title:'Stoma',    titleLabel:'Stoma type',   titlePh:'e.g. End colostomy',        detailLabel:'Site',     detailPh:'e.g. Left lower quadrant', statusPh:'e.g. Active',            cur:'Active stoma',     none:'No stoma recorded'},
-  {kind:'appliance',label:'Appliances',icon:'pouch', title:'Appliance',titleLabel:'Appliance',    titlePh:'e.g. One-piece closed pouch',detailLabel:'Detail',  detailPh:'e.g. 40mm cut-to-fit',    statusPh:'e.g. Current',           cur:'Current appliance',none:'No appliance recorded'}];
+  {kind:'stoma',    label:'Stomas',    icon:'stoma', title:'Stoma',    titleLabel:'Stoma type',   titlePh:'e.g. End colostomy',        detailLabel:'Site',     detailPh:'e.g. Left lower quadrant', statusPh:'e.g. Active',            cur:'Active stoma',     none:'No stoma recorded'}];
 const clrMeta=k=>CLR_KINDS.find(c=>c.kind===k)||CLR_KINDS[0];
 // Each stoma carries a unique, automatic ID derived from its database id —
 // e.g. STO-7F3K9A2C. It needs no coordination and never changes for a record.
@@ -7641,39 +7645,61 @@ function clrBadgeCls(kind,rec){
    started and the date it ended — built from the inpatient episodes (admission
    to discharge) and the seen visits. An item still in use on an open episode
    reads as "In use". */
-function applianceUsageTimeline(){
-  const map=new Map();
-  const add=(name,kind,start,end,ongoing)=>{
+const _normType=t=>String(t||'').trim().toLowerCase();
+/* Appliance/accessory usage grouped by the stoma type it was used on, so it can
+   be shown under each stoma. Anything recorded without a stoma type lands in an
+   "__unassigned__" bucket. Each entry carries the date it started and ended
+   (or "In use" while it is on an open episode). */
+function applianceTimelineByStomaType(){
+  const groups=new Map();
+  const bucket=k=>{let m=groups.get(k);if(!m){m=new Map();groups.set(k,m);}return m;};
+  const add=(typeKey,name,kind,start,end,ongoing)=>{
     name=String(name||'').trim(); if(!name||name==='None')return;
+    const m=bucket(typeKey||'__unassigned__');
     const k=kind+'|'+name.toLowerCase();
-    let e=map.get(k);
-    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing};map.set(k,e);return;}
+    let e=m.get(k);
+    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing};m.set(k,e);return;}
     if(start&&(!e.start||start<e.start))e.start=start;
     if(ongoing)e.ongoing=true;
     if(!e.ongoing){const en=end||start;if(en&&(!e.end||en>e.end))e.end=en;}
   };
   (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
     const a=parseEpisodeAppliances(ep); if(!a)return;
-    const start=ep.record_date||null, end=ep.discharge_date||null, ongoing=!!ep.is_current&&!ep.discharge_date;
-    a.appliances.forEach(n=>add(n,'appliance',start,end,ongoing));
-    a.accessories.forEach(n=>add(n,'accessory',start,end,ongoing));
+    const start=ep.record_date||null,end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
+    const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
+    (types.length?types:['__unassigned__']).forEach(tk=>{
+      a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing));
+      a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing));
+    });
   });
-  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>{
-    add(r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current);
-  });
+  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>add('__unassigned__',r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current));
   (clrState.appts||[]).filter(a=>a.status==='attended').forEach(v=>{
     const d=v.appt_date||null;
     let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
     if(Array.isArray(rows)&&rows.length){
-      rows.forEach(r=>{parseNameList(r.appliances).forEach(n=>add(n,'appliance',d,d,false));
-                       parseNameList(r.accessories).forEach(n=>add(n,'accessory',d,d,false));});
+      rows.forEach(r=>{const tk=_normType(r.stoma_type)||'__unassigned__';
+        parseNameList(r.appliances).forEach(n=>add(tk,n,'appliance',d,d,false));
+        parseNameList(r.accessories).forEach(n=>add(tk,n,'accessory',d,d,false));});
     }else{
-      parseNameList(v.appliances).forEach(n=>add(n,'appliance',d,d,false));
-      parseNameList(v.accessories).forEach(n=>add(n,'accessory',d,d,false));
+      parseNameList(v.appliances).forEach(n=>add('__unassigned__',n,'appliance',d,d,false));
+      parseNameList(v.accessories).forEach(n=>add('__unassigned__',n,'accessory',d,d,false));
     }
   });
-  const list=[...map.values()];
-  list.sort((a,b)=> a.ongoing!==b.ongoing ? (a.ongoing?-1:1) : String(b.start||'').localeCompare(String(a.start||'')));
+  return groups;
+}
+/* The merged, sorted appliance list for one stoma. When the patient has a
+   single stoma, appliances recorded without a stoma type are shown under it. */
+function applianceListForStoma(groups,stomaTitle,includeUnassigned){
+  const merged=new Map();
+  const mergeIn=m=>{if(!m)return;m.forEach((e,k)=>{let t=merged.get(k);
+    if(!t){merged.set(k,{...e});return;}
+    if(e.start&&(!t.start||e.start<t.start))t.start=e.start;
+    if(e.ongoing)t.ongoing=true;
+    if(!t.ongoing){const en=e.end||e.start;if(en&&(!t.end||en>t.end))t.end=en;}});};
+  mergeIn(groups.get(_normType(stomaTitle)));
+  if(includeUnassigned)mergeIn(groups.get('__unassigned__'));
+  const list=[...merged.values()];
+  list.sort((a,b)=> a.ongoing!==b.ongoing?(a.ongoing?-1:1):String(b.start||'').localeCompare(String(a.start||'')));
   return list;
 }
 function applianceDateRange(e){
@@ -7681,29 +7707,52 @@ function applianceDateRange(e){
   const to=e.ongoing?'<strong>In use</strong>':(e.end?('to '+htmlSafe(fmtShortDate(e.end))):'—');
   return `${from} · ${to}`;
 }
-/* The Appliances category, expanding to the used-appliance list rather than
-   the (unused) appliance clinical records. */
-function applianceCategoryHTML(meta){
-  const list=applianceUsageTimeline();
-  const cur=list[0]||null;
-  const line=cur?`${htmlSafe(cur.name)} — ${cur.ongoing?'in use':'last used '+htmlSafe(fmtShortDate(cur.end||cur.start))}`:'';
-  const rows=list.length?list.map(e=>`<div class="clr-rec">
+function applianceRowHTML(e){
+  return `<div class="clr-rec clr-appl-rec">
       <div class="clr-rec-copy">
         <span class="clr-rec-title">${htmlSafe(e.name)}<span class="clr-tag ${e.kind}">${e.kind==='accessory'?'Accessory':'Appliance'}</span></span>
         <span class="clr-rec-meta">${applianceDateRange(e)}</span>
+      </div>${e.ongoing?'<div class="clr-rec-actions"><span class="clr-badge">In use</span></div>':''}
+    </div>`;
+}
+/* The Stomas category: each stoma, with the appliances and accessories used on
+   it underneath — matched by the stoma type, so the STO- code and its
+   appliances read together. */
+function stomaCategoryHTML(meta,open){
+  const pat=clrState.patient;
+  const recs=derivedStomaRecords(pat).concat(clrState.rows.filter(r=>r.kind==='stoma'));
+  const cur=recs.find(r=>r.is_current)||recs[0];
+  const curCode=recCode(cur);
+  const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
+  const groups=applianceTimelineByStomaType();
+  const single=recs.length===1;
+  const blocks=recs.length?recs.map(r=>{
+    const appl=applianceListForStoma(groups,r.title,single);
+    const applHTML=appl.length?appl.map(applianceRowHTML).join(''):'<div class="clr-empty">No appliance recorded for this stoma yet — they are saved from an inpatient visit or a seen appointment.</div>';
+    return `<div class="clr-stoma-block">
+      <div class="clr-rec">
+        <div class="clr-rec-copy">
+          <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}${recCode(r)?`<span class="clr-code">${recCode(r)}</span>`:''}</span>
+          <span class="clr-rec-meta">${clrMetaHTML(r)}</span>
+        </div>
+        <div class="clr-rec-actions">${r.derived?'<span class="clr-rec-tag">From patient record</span>':`<button class="clr-mini" onclick="openClinicalRecordForm('stoma','${r.id}')">Edit</button>
+          <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}</div>
       </div>
-      ${e.ongoing?'<div class="clr-rec-actions"><span class="clr-badge">In use</span></div>':''}
-    </div>`).join(''):`<div class="clr-empty">No appliance or accessory recorded yet — they are saved from an inpatient visit or a seen appointment.</div>`;
-  // Shown as an always-open section — no expand button.
-  return `<div class="clr-cat clr-cat-static">
-    <div class="clr-cat-head clr-cat-head-static">
+      <div class="clr-appl-list"><div class="clr-appl-h">Appliances &amp; accessories on ${recCode(r)?htmlSafe(recCode(r)):'this stoma'}</div>${applHTML}</div>
+    </div>`;
+  }).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
+  return `<div class="clr-cat">
+    <button class="clr-cat-head" onclick="toggleClinicalCategory('stoma')">
       <span class="clr-cat-ic">${psmIc(meta.icon)}</span>
       <span class="clr-cat-main">
-        <span class="clr-cat-title">${meta.label} <span class="clr-count">${list.length}</span></span>
-        <span class="clr-cat-sub">${list.length?'Appliances &amp; accessories used, with dates':htmlSafe(meta.none)}</span>
+        <span class="clr-cat-title">${meta.label} <span class="clr-count">${recs.length}</span></span>
+        <span class="clr-cat-sub">${cur?htmlSafe(meta.cur):htmlSafe(meta.none)}</span>
+        ${cur?`<span class="clr-cat-line">${line}</span>`:''}
       </span>
-    </div>
-    <div class="clr-list">${rows}</div>
+      ${cur&&cur.status?`<span class="clr-badge ${clrBadgeCls('stoma',cur)}">${htmlSafe(cur.status)}</span>`:''}
+      <span class="clr-chev ${open?'open':''}">${psmIc('chevron')}</span>
+    </button>
+    ${open?`<div class="clr-list">${blocks}</div>`:''}
   </div>`;
 }
 function clrMetaHTML(r){
@@ -7729,9 +7778,8 @@ function renderClinicalPanel(){
   }
   const newest=clrState.rows[0];
   const cats=CLR_KINDS.map(meta=>{
-    if(meta.kind==='appliance')return applianceCategoryHTML(meta);
+    if(meta.kind==='stoma')return stomaCategoryHTML(meta,!!clrState.expanded.stoma);
     let recs=clrState.rows.filter(r=>r.kind===meta.kind);
-    if(meta.kind==='stoma')recs=derivedStomaRecords(clrState.patient).concat(recs);
     const cur=recs.find(r=>r.is_current)||recs[0];
     const open=!!clrState.expanded[meta.kind];
     const curCode=recCode(cur);
