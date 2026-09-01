@@ -880,10 +880,9 @@ body.pl-only .pl-wrap{padding-top:14px;}
   font-family:inherit;font-size:inherit;color:inherit;padding:3px 4px;}
 .hv-xl .hv-inp:hover{border-color:#9aa6b2;}
 .hv-xl .hv-inp:focus{outline:none;border-color:#0369a1;background:#fff;box-shadow:0 0 0 2px rgba(3,105,161,.18);}
-.hv-xl .hv-wb{white-space:nowrap;}
-.hv-xl .hv-wb .hv-inp{display:inline-block;}
-.hv-xl .hv-wb .hv-ward{width:52%;}
-.hv-xl .hv-wb .hv-bed{width:30%;}
+.hv-xl .hv-wb{display:flex;align-items:center;gap:2px;}
+.hv-xl .hv-wb .hv-inp{flex:0 0 auto;width:auto;min-width:0;}
+.hv-xl .hv-wb .hv-ward{flex:0 1 auto;}
 .hv-xl .hv-dash{color:#444;font-weight:700;padding:0 1px;}
 .hv-xl .hs-btn{width:100%;}
 .hv-xl .followup-actions{display:flex;justify-content:center;}
@@ -2206,7 +2205,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-125';
+const APP_BUILD='2026.09.01-126';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8696,16 +8695,24 @@ async function loadHandover(){
   }).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="hv-table">
     <colgroup>
-      <col style="width:126px"><col style="width:98px"><col style="width:112px"><col style="width:112px">
+      <col style="width:128px"><col style="width:98px"><col style="width:112px"><col style="width:112px">
       <col><col style="width:118px"><col style="width:126px"><col style="width:92px">
     </colgroup>
     <thead><tr>
-      <th>Ward - Bed</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
+      <th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
       <th class="icon">✉ Discharge letter</th><th class="icon">📄 Schedule 5 permit</th><th></th>
     </tr></thead><tbody>${trs}</tbody></table></div>`;
+  fitAllWardBed();
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
 const HANDOVER_FONT_PX=13;
+/* The bed number reads as part of the ward — "SW4 - 4" — so each box is only as
+   wide as what is typed in it rather than a fixed share of the column. */
+function fitWardBed(el){
+  const n=Math.max(2,String(el.value||'').length);
+  el.style.width='calc('+(n*1.1+1.4).toFixed(2)+'ch + 10px)';
+}
+function fitAllWardBed(){document.querySelectorAll('#hv-table .hv-wb .hv-inp').forEach(fitWardBed);}
 function openHandoverStandalone(){document.body.classList.add('ho-only');switchTab('handover');if(location.hash!=='#handover')history.replaceState(null,'','#handover');}
 
 /* Wards read as SW1-15, ITU-12, Burns-1 — letters then a number. Sorting them
@@ -8738,9 +8745,9 @@ function handoverByWard(a,b){
 function handoverRowHTML(p,cls){
   return `<tr class="${cls||''}">
     <td class="hv-wb"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
-      onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span class="hv-dash">-</span><input
-      type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
-      onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></td>
+      oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
+      class="hv-dash">-</span><input type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
+      oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></td>
     <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td>${htmlSafe(p.first_name||'')}</td>
@@ -8846,7 +8853,7 @@ function printHandover(){
       <thead>
         <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
         <tr class="cols">
-          <th class="cwb">Ward - Bed</th><th class="cid">ID: Number</th>
+          <th class="cwb">Ward</th><th class="cid">ID: Number</th>
           <th class="csur">Surname</th><th class="cfn">First Name</th><th class="capp">Appliance + notes</th>
           <th class="icon cdoc" title="Care discharge letter">✉</th><th class="icon cdoc" title="Schedule 5 permit">📄</th>
         </tr>
