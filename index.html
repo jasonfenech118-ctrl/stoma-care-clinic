@@ -1821,6 +1821,17 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div id="postop-body"><div class="report-note">Loading the postop discharge list…</div></div>
     </div>
 
+    <div class="page" id="page-siting">
+      <div class="phdr">
+        <div><h2>📍 Siting Session</h2><p>Book a pre-operative stoma siting session — an hour long — and follow it through to surgery</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="openSitingBooking()" style="background:#1baf7a;">＋ Book siting session</button>
+          <button class="btn-add" onclick="loadSitingSessions()">Refresh</button>
+        </div>
+      </div>
+      <div id="siting-body"><div class="report-note">Loading siting sessions…</div></div>
+    </div>
+
     <div class="page" id="page-discharge">
       <div class="phdr">
         <div><h2>✉ Discharge letters</h2><p>Build a stoma discharge letter on the Mater Dei letterhead — fill in, print or save as PDF</p></div>
@@ -2277,7 +2288,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-145';
+const APP_BUILD='2026.09.01-146';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2344,7 +2355,8 @@ const TAB_GROUPS=[
   {key:'calendar',label:'Clinic Calendar',icon:'📅',color:'#7c3aed',
    pages:[
      {tab:'roster',label:'Monthly Roster',icon:'M',color:'#7c3aed'},
-     {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'}
+     {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'},
+     {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'}
    ]},
   {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',badge:'reminders',
    pages:[
@@ -2451,6 +2463,7 @@ function switchTab(name){
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')loadHandover();
+  if(name==='siting')loadSitingSessions();
   if(name==='postop')loadPostopDischarges();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
@@ -9214,6 +9227,116 @@ function episodeApplianceSummaryLine(ep){
   }
   return String(ep&&ep.notes||'').trim();
 }
+/* ------------------------------------------------------------------------- *
+ * Siting sessions — pre-operative stoma siting appointments.
+ * A siting session is booked for someone who may not yet be a registry patient;
+ * they become one only if a stoma is formed. Stage 1: book and list them.
+ * ------------------------------------------------------------------------- */
+let sitingState={rows:[]};
+async function loadSitingSessions(){
+  const body=document.getElementById('siting-body');
+  if(!body)return;
+  const{data,error}=await SB.from('siting_sessions').select('*')
+    .order('session_date',{ascending:true}).order('session_slot',{ascending:true});
+  if(error){
+    const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.')
+      : `<div class="report-note">Could not load siting sessions: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  const rows=(data||[]).filter(r=>r.status!=='cancelled');
+  sitingState.rows=rows;
+  if(!rows.length){
+    body.innerHTML='<div class="report-note">No siting sessions booked yet. Press <strong>＋ Book siting session</strong> to add one.</div>';
+    return;
+  }
+  const trs=rows.map(r=>`<tr>
+    <td data-label="Date">${r.session_date?htmlSafe(fmtShortDate(r.session_date)):'—'}</td>
+    <td data-label="Time">${htmlSafe(sitingSlotLabel(r.session_slot))}</td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
+    <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
+    <td data-label="Status">${htmlSafe(sitingStatusLabel(r))}</td>
+    <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="cancelSitingSession('${r.id}','${jsSafe(`${r.first_name||''} ${r.surname||''}`.trim())}')">Cancel</button>
+    </div></td>
+  </tr>`).join('');
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="siting-table">
+    <colgroup><col style="width:96px"><col style="width:120px"><col style="width:104px"><col style="width:110px"><col style="width:110px"><col><col style="width:120px"><col style="width:92px"></colgroup>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Siting Sessions</span><span class="hv-count">${rows.length} booked</span></th></tr>
+      <tr><th>Date</th><th>Time</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Status</th><th></th></tr>
+    </thead><tbody>${trs}</tbody></table></div>`;
+}
+// A siting session is an hour, so the slot label shows the whole hour.
+function sitingSlotLabel(slot){
+  const s=String(slot||'').slice(0,5);
+  if(!s)return '—';
+  const i=SLOTS.indexOf(s);
+  const end=(i>=0&&SLOTS[i+2])?SLOTS[i+2]:addHour(s);
+  return end?`${s}–${end}`:s;
+}
+function addHour(hhmm){
+  const m=String(hhmm||'').match(/^(\d{2}):(\d{2})$/); if(!m)return '';
+  let h=(+m[1]+1)%24; return String(h).padStart(2,'0')+':'+m[2];
+}
+function sitingStatusLabel(r){
+  if(r.surgery_performed===true)return r.stoma_formed?'Stoma formed':'Operated — no stoma';
+  if(r.surgery_performed===false)return 'No surgery';
+  return 'Booked';
+}
+/* The booking modal: who it is for, the firm, and the day / hour. */
+function openSitingBooking(){
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  const slotOpts=SLOTS.filter(sl=>{const i=SLOTS.indexOf(sl);return i>=0&&SLOTS[i+2];})
+    .map(sl=>`<option value="${sl}">${sitingSlotLabel(sl)}</option>`).join('');
+  mb.innerHTML=`<h2>📍 Book siting session</h2>
+    <div class="msub">A pre-operative stoma siting — one hour long, booked as a single session.</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>ID card *</label><input type="text" id="sit-idcard" placeholder="e.g. 404261M"/></div>
+      <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name"/></div>
+      <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions('')}</select></div>
+      <div class="fg"><label>Date *</label><input type="date" id="sit-date" value="${htmlSafe(TODAY)}"/></div>
+      <div class="fg"><label>Time (1 hour) *</label><select id="sit-slot">${slotOpts}</select></div>
+    </div>
+    <div id="sit-msg"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveSitingSession()">Book session</button></div>`;
+  openMo();
+}
+async function saveSitingSession(){
+  const val=id=>String(document.getElementById(id)?.value||'').trim();
+  const idcard=normaliseIdCard(val('sit-idcard'));
+  const first=val('sit-first'), surname=val('sit-surname');
+  const consultant=val('sit-consultant');
+  const date=val('sit-date'), slot=val('sit-slot');
+  const msg=document.getElementById('sit-msg');
+  if(!idcard||!first||!surname){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Fill in ID card, first name and surname.</div>';return;}
+  if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
+  const payload={id_card:idcard,first_name:first,surname:surname,
+    consultant:(consultant&&consultant!=='__add__')?consultant:null,
+    session_date:date,session_slot:slot||null,status:'booked'};
+  try{const u=await getCurrentUserForAudit();payload.created_by=u?.name||null;}catch(e){}
+  const{error}=await SB.from('siting_sessions').insert(payload);
+  if(error){
+    const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
+    if(msg)msg.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${missing?'Run sql/add-siting-sessions.sql once in Supabase first.':'Could not book: '+htmlSafe(error.message)}</div>`;
+    return;
+  }
+  closeModal();
+  if(document.getElementById('siting-body'))loadSitingSessions();
+}
+async function cancelSitingSession(id,name){
+  if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
+  const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){alert('Could not cancel: '+error.message);return;}
+  loadSitingSessions();
+}
+
 async function loadPostopDischarges(){
   const body=document.getElementById('postop-body');
   if(!body)return;
