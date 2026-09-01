@@ -2214,7 +2214,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-127';
+const APP_BUILD='2026.09.01-128';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4545,13 +4545,37 @@ async function commitEpisodeAppliances(pending,rows){
   if(!ep)alert('Recorded on the ward note. This patient has no open admission on their clinical record, so it could not be filed against an episode — open them in the Registry and start an inpatient episode to keep the full history.');
   if(document.getElementById('hv-body'))loadHandover();
 }
+/* How an appliance is written on the ward sheet. The picker keeps the full
+   supplier name and code so it can still be found by either; what gets written
+   down is the short form a nurse actually uses:
+
+     Stomahesive Flange 57mm        -> SH flange 57mm
+     Lentell 201102M (70mm)         -> Lentell 70mm
+     Lentell 201108-1 (70mm trans)  -> Lentell 70mm transparent
+     Welland XPOP513                -> XPOP513
+
+   Anything else is left exactly as it is. */
+function shortAppliance(name){
+  let v=String(name||'').trim();
+  if(!v)return '';
+  // A Lentell is known by its size, not its product code.
+  const len=v.match(/^Lentell\b[^(]*\((\d+)\s*mm([^)]*)\)\s*$/i);
+  if(len)return 'Lentell '+len[1]+'mm'+(/trans/i.test(len[2]||'')?' transparent':'');
+  v=v.replace(/\bStomahesive\s+Flange\b/i,'SH flange').replace(/\bStomahesive\b/i,'SH');
+  // A Welland is known by its code alone, the way a Salts code is written.
+  v=v.replace(/^Welland\s+/i,'');
+  return v;
+}
+function shortApplianceList(list){
+  return (list||[]).map(shortAppliance).filter(Boolean);
+}
 /* The one line the ward sheet prints for a patient: each stoma in shorthand,
    what is on it, then the accessories and when the flange is due. */
 function episodeApplianceNote(entries){
   return entries.map(e=>{
     const acc=(e.accessories||[]).filter(a=>a&&a!=='None');
-    const bits=[(e.appliances||[]).join(', ')];
-    if(acc.length)bits.push(acc.join(', '));
+    const bits=[shortApplianceList(e.appliances).join(', ')];
+    if(acc.length)bits.push(shortApplianceList(acc).join(', '));
     let line=bits.filter(Boolean).join('; ');
     const tag=e.stoma_short||e.stoma_code;
     if(tag)line=tag+': '+line;
