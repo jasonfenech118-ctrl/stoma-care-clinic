@@ -2187,7 +2187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-119';
+const APP_BUILD='2026.08.31-120';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8694,11 +8694,19 @@ function wardRank(ward){
   const i=WARD_ORDER.indexOf(w);
   return i<0?WARD_ORDER.length:i;
 }
+// The bed's number, so beds run 1, 2, 10 rather than 1, 10, 2. Beds with no
+// number sort after the numbered ones.
+function bedNum(bed){const m=String(bed||'').match(/\d+/);return m?parseInt(m[0],10):Infinity;}
 function handoverByWard(a,b){
   const ra=wardRank(a.inpatient_ward), rb=wardRank(b.inpatient_ward);
   if(ra!==rb)return ra-rb;
   const wa=String(a.inpatient_ward||'').toUpperCase(), wb=String(b.inpatient_ward||'').toUpperCase();
   if(wa!==wb)return wa.localeCompare(wb);
+  // Within a ward, go systematically through the bed numbers.
+  const na=bedNum(a.inpatient_bed), nb=bedNum(b.inpatient_bed);
+  if(na!==nb)return na-nb;
+  const bda=String(a.inpatient_bed||''), bdb=String(b.inpatient_bed||'');
+  if(bda!==bdb)return bda.localeCompare(bdb);
   return String(a.surname||'').localeCompare(String(b.surname||''));
 }
 function handoverRowHTML(p){
