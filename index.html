@@ -2277,7 +2277,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-143';
+const APP_BUILD='2026.09.01-144';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9119,6 +9119,7 @@ function handoverRowHTML(p,cls,flangeDue){
     <td class="hv-actions-cell"><div class="followup-actions">
       <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverAppliance('${p.id}')">Set appliance</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Postop discharge</button>
+      <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge (old case)</button>
     </div></td>
   </tr>`;
 }
@@ -9153,7 +9154,17 @@ async function dischargeFromHandover(patientId,name){
   if(!confirm(`Postop discharge for ${name||'this patient'}?\n\nThey come off the handover list and their inpatient episode is closed with today's date. They keep everything on their record and appear in the Postop Discharges list.`))return;
   const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(error){alert('Could not discharge: '+error.message);return;}
-  await closeOpenInpatientEpisode(patientId);
+  await closeOpenInpatientEpisode(patientId,{postop:true});
+  loadHandover();
+}
+/* An old case: taken off the handover without being counted as a postop
+   discharge. The episode is closed but not stamped with a discharge date, so it
+   does not appear in the Postop Discharges list. */
+async function dischargeOldFromHandover(patientId,name){
+  if(!confirm(`Discharge ${name||'this patient'} as an old case?\n\nThey come off the handover list, but this is NOT a postop discharge — they will not appear in the Postop Discharges list. They keep everything on their record.`))return;
+  const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
+  if(error){alert('Could not discharge: '+error.message);return;}
+  await closeOpenInpatientEpisode(patientId,{postop:false});
   loadHandover();
 }
 /* ------------------------------------------------------------------------- *
@@ -9294,14 +9305,17 @@ function printPostopDischarges(){
 
 /* Discharging closes the patient's open inpatient episode: it keeps its number
    and stays in Episodes, now stamped with the discharge date. */
-async function closeOpenInpatientEpisode(pid){
+async function closeOpenInpatientEpisode(pid,opts){
+  const postop=!opts||opts.postop!==false;
   try{
     const{data}=await SB.from('clinical_records').select('id')
       .eq('patient_id',pid).eq('kind','episode').eq('is_current',true)
       .order('record_date',{ascending:false}).limit(1);
     const ep=(data||[])[0];
     if(!ep)return;
-    const full={discharge_date:TODAY,is_current:false,status:'Discharged',updated_at:new Date().toISOString()};
+    const full=postop
+      ? {discharge_date:TODAY,is_current:false,status:'Discharged',updated_at:new Date().toISOString()}
+      : {is_current:false,status:'Closed (old case)',updated_at:new Date().toISOString()};
     let r=await SB.from('clinical_records').update(full).eq('id',ep.id);
     if(r.error&&missingColumnFromError(r.error)){
       const{discharge_date,...rest}=full;
