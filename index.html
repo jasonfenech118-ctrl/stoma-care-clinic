@@ -2187,7 +2187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-121';
+const APP_BUILD='2026.09.01-123';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8754,8 +8754,10 @@ async function closeOpenInpatientEpisode(pid){
 function printHandover(){
   const table=document.getElementById('hv-table');
   if(!table){alert('There is nobody on the handover list to print.');return;}
-  // Discharge letter and Schedule 5 permit print as ticks, like the ward sheet.
-  const box={'':'☐','done':'☑','signed':'☑','in_ward':'◨'};
+  // Discharge letter and Schedule 5 permit print as marks that stay distinct on a
+  // black-and-white printout: a tick for done/signed, a filled square for a permit
+  // left in the ward, an empty box for not done.
+  const box={'':'☐','done':'✔','signed':'✔','in_ward':'■'};
   // Bold the "flange due …" note the way the ward sheet does.
   const notes=t=>htmlSafe(t).replace(/(flange due[^,;·]*)/ig,'<b>$1</b>');
   // Shade by ward group (like the Excel sheet): each ward's block of rows keeps
@@ -8769,8 +8771,11 @@ function printHandover(){
     const ward=txt(0);
     if(prevWard===null||ward!==prevWard){wg++;prevWard=ward;}
     const cls=(wg%2)?'wg-odd':'wg-even';
+    // Ward and bed share one column, e.g. "SW5 - 2".
+    const bed=txt(1);
+    const wb=htmlSafe(ward)+(bed?' - '+htmlSafe(bed):'');
     return `<tr class="${cls}">
-      <td>${htmlSafe(ward)}</td><td>${htmlSafe(txt(1))}</td><td>${htmlSafe(txt(2))}</td>
+      <td class="cwb">${wb}</td><td>${htmlSafe(txt(2))}</td>
       <td>${htmlSafe(txt(3))}</td><td>${htmlSafe(txt(4))}</td><td class="capp">${notes(txt(5))}</td>
       <td class="cbx">${box[val(6)]||'☐'}</td><td class="cbx">${box[val(7)]||'☐'}</td></tr>`;
   }).join('');
@@ -8778,7 +8783,7 @@ function printHandover(){
   // Excel sheet's empty rows. Fill out to a full page, always at least a few.
   const blankCount=Math.max(6,22-dataTrs.length);
   const blanks=Array.from({length:blankCount},()=>
-    `<tr class="wgblank"><td></td><td></td><td></td><td></td><td></td><td class="capp"></td><td class="cbx"></td><td class="cbx"></td></tr>`
+    `<tr class="wgblank"><td class="cwb"></td><td></td><td></td><td></td><td class="capp"></td><td class="cbx"></td><td class="cbx"></td></tr>`
   ).join('');
   const fpx=handoverFont();
   const w=window.open('','_blank');
@@ -8793,10 +8798,10 @@ function printHandover(){
     tbody td{height:34px;padding-top:5px;padding-bottom:5px;}
     thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:${fpx+4}px;border-color:#000;}
     thead .cols th{background:#000;color:#fff;text-align:left;font-weight:800;}
-    thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;font-size:${fpx+3}px;}
-    td.cbx{text-align:center;font-size:${fpx+4}px;line-height:1;}
+    thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;font-size:${fpx+5}px;}
+    td.cbx{text-align:center;font-size:${fpx+9}px;font-weight:700;line-height:1;}
     td.capp b{font-weight:800;}
-    .cward{width:7%}.cbed{width:5%}.cid{width:11%}.csur{width:12%}.cfn{width:12%}.capp{width:41%}.cdoc{width:6%}
+    .cwb{width:11%}.cid{width:12%}.csur{width:13%}.cfn{width:13%}.capp{width:39%}.cdoc{width:6%}
     tbody tr.wg-odd td{background:#e6e6e6;}
     tbody tr.wg-even td{background:#fff;}
     tbody tr.wgblank td{background:#fff;height:34px;}
@@ -8804,9 +8809,9 @@ function printHandover(){
     <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
     <table>
       <thead>
-        <tr class="hdate"><td colspan="8">${htmlSafe(fmtLabel(TODAY))}</td></tr>
+        <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
         <tr class="cols">
-          <th class="cward">Ward</th><th class="cbed">Bed</th><th class="cid">ID: Number</th>
+          <th class="cwb">Ward - Bed</th><th class="cid">ID: Number</th>
           <th class="csur">Surname</th><th class="cfn">First Name</th><th class="capp">Appliance + notes</th>
           <th class="icon cdoc" title="Care discharge letter">✉</th><th class="icon cdoc" title="Schedule 5 permit">📄</th>
         </tr>
@@ -8814,7 +8819,7 @@ function printHandover(){
       <tbody>${rows}${blanks}</tbody>
     </table>
     <div style="margin-top:6px;font-size:${Math.max(8,fpx-2)}px;color:#333;">
-      ✉ Care discharge letter &nbsp;&nbsp; 📄 Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ☑ done / signed &nbsp; ◨ permit left in ward &nbsp; ☐ not done
+      ✉ Care discharge letter &nbsp;&nbsp; 📄 Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done / signed &nbsp; ■ permit left in ward &nbsp; ☐ not done
     </div>
   </body></html>`);
   w.document.close();w.focus();setTimeout(()=>w.print(),250);
