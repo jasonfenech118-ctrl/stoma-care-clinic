@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-150';
+const APP_BUILD='2026.09.01-151';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2365,9 +2365,7 @@ const TAB_GROUPS=[
   {key:'calendar',label:'Clinic Calendar',icon:'📅',color:'#7c3aed',
    pages:[
      {tab:'roster',label:'Monthly Roster',icon:'M',color:'#7c3aed'},
-     {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'},
-     {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'},
-     {tab:'nostoma',label:'No-stoma Ops',icon:'📋',color:'#7c3aed'}
+     {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'}
    ]},
   {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',badge:'reminders',
    pages:[
@@ -2398,9 +2396,10 @@ const TAB_GROUPS=[
      {tab:'handover',label:'Handover',icon:'🏥',color:'#b45309'},
      {tab:'postop',label:'Postop Discharges',icon:'📤',color:'#b45309'}
    ]},
-  {key:'discharge',label:'Discharge letters',icon:'✉',color:'#0369a1',
+  {key:'siting',label:'Siting',icon:'📍',color:'#7c3aed',
    pages:[
-     {tab:'discharge',label:'Discharge letters',icon:'✉',color:'#0369a1'}
+     {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'},
+     {tab:'nostoma',label:'No-stoma Ops',icon:'📋',color:'#7c3aed'}
    ]}
 ];
 const TAB_LABELS={};
@@ -5700,7 +5699,46 @@ function showReminderLoadError(message){
   const page=document.getElementById('rem-page-body');
   if(page)page.innerHTML=html;
 }
+let sitingReminders={items:[],total:0,today:0};
+/* The one reminder that is kept: siting sessions whose surgery day has come
+   (or passed) and whose post-op outcome has not been recorded yet. Follow-up
+   reminders no longer drive the bell or the pop-up. */
+async function getSitingReminders(){
+  try{
+    const{data,error}=await SB.from('siting_sessions').select('*').eq('status','booked');
+    if(error)return {items:[],total:0,today:0};
+    const items=(data||[]).filter(r=>String(r.session_date||'')&&String(r.session_date)<=TODAY)
+      .sort((a,b)=>String(a.session_date).localeCompare(String(b.session_date)));
+    return {items,total:items.length,today:items.filter(r=>String(r.session_date)===TODAY).length};
+  }catch(e){return {items:[],total:0,today:0};}
+}
+function renderSitingReminderList(items){
+  if(!items||!items.length)return '<div class="rem-empty">No siting post-op reminders.</div>';
+  return items.map(r=>{
+    const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'—';
+    const today=String(r.session_date||'')===TODAY;
+    const tag=today
+      ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
+      : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
+    return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
+      <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}</div>
+      <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${r.consultant?' · '+htmlSafe(r.consultant):''} · siting ${htmlSafe(fmtShortDate(r.session_date))}</div>
+      <div style="margin-top:5px;"><button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="closeReminderPanel();closeModal();openSitingPostop('${r.id}')">Record post-op</button></div>
+    </div>`;
+  }).join('');
+}
 async function refreshReminders(){
+  try{reminderData=await getReminderData();}catch(e){reminderData=null;}
+  sitingReminders=await getSitingReminders();
+  updateReminderBadges(sitingReminders.total);
+  const bbody=document.getElementById('bell-panel-body');
+  if(bbody)bbody.innerHTML=renderSitingReminderList(sitingReminders.items);
+  const bsub=document.getElementById('bell-panel-sub');
+  if(bsub)bsub.textContent=sitingReminders.total?`${sitingReminders.total} siting post-op reminder${sitingReminders.total!==1?'s':''}`:'No siting reminders';
+  if(document.getElementById('page-reminders')?.classList.contains('active'))renderRemindersPage();
+  return sitingReminders;
+}
+async function refreshRemindersOLD(){
   try{
     reminderData=await getReminderData();
   }catch(e){
@@ -5884,20 +5922,20 @@ async function markReminderSeenToday(){
   try{localStorage.setItem(await reminderSeenKey(),TODAY);}catch(e){/* private mode — just show it again */}
 }
 async function openDailyReminderModal(force){
-  // The standalone Handover and Quick Look pages are chrome-free views for
-  // sharing or pinning — the daily booking reminder must not pop up over them.
+  // Chrome-free pinned views never get a pop-up.
   if(document.body.classList.contains('ho-only')||document.body.classList.contains('pl-only'))return;
-  if(!reminderData||reminderData.error)return;
-  if(!force&&(!reminderData.total||await reminderSeenToday()))return;
-  const{months}=reminderData;
+  // Only siting sessions due for surgery TODAY raise the pop-up — nothing today
+  // means no pop-up at all, so it is no longer a daily reminder.
+  const todayItems=(sitingReminders.items||[]).filter(r=>String(r.session_date||'')===TODAY);
+  if(!todayItems.length)return;
+  if(!force&&await reminderSeenToday())return;
   const mb=document.getElementById('mb');
   if(!mb)return;
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>🔔 Daily Booking Reminder</h2>
+  mb.innerHTML=`<h2>🔔 Siting — post-op today</h2>
     <div class="msub"><strong>${htmlSafe(fmtLabel(TODAY))}</strong><br/>
-      ${reminderData.total} patient${reminderData.total!==1?'s':''} are due for a follow-up and have no appointment yet.
-      Plan <strong>${htmlSafe(months.next.label)}</strong> with the nurse lists below — you can book each one straight from here.</div>
-    <div class="rem-popup-scroll">${renderReminderBuckets(reminderData,false)}</div>
+      ${todayItems.length} siting patient${todayItems.length!==1?'s are':' is'} down for surgery today. Record the post-op outcome once the operation is done.</div>
+    <div class="rem-popup-scroll">${renderSitingReminderList(todayItems)}</div>
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Remind me again later today</button>
       <button class="btn-save" onclick="markReminderSeenToday();closeModal()">Got it — hide until tomorrow</button>
