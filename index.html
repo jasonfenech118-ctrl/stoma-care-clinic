@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-155';
+const APP_BUILD='2026.09.01-156';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9427,52 +9427,81 @@ async function nurseCapacityForDate(date){
   if(!isClinicDay(date))cap++;   // the Common (general) column
   return cap;
 }
+/* The nurse columns for a date — the nurses working (roster or their default
+   shift pattern), plus a Common column on non-clinic days. */
+async function nurseListForDate(date){
+  const out=[];
+  try{
+    const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+    const OFF=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+    (staffList||[]).forEach(st=>{
+      const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
+      if(e){if(!OFF.includes(e.status))out.push({id:String(st.id),name:st.full_name});}
+      else if(defaultCode(st,date)==='working')out.push({id:String(st.id),name:st.full_name});
+    });
+  }catch(e){}
+  if(!isClinicDay(date))out.push({id:'common',name:'Common'});
+  return out;
+}
+function firstNameOf(n){return String(n||'').trim().split(/\s+/)[0]||n;}
+function surnameOf(p){return (p&&p.surname)?p.surname:((`${p?.first_name||''}`.trim())||'Booked');}
 async function refreshSitingSlotAvail(){
   const host=document.getElementById('sit-slot-avail'); if(!host)return;
   const date=document.getElementById('sit-date')?.value;
   if(!date){host.innerHTML='<div class="ap-hint">Pick a date first.</div>';return;}
   host.innerHTML='<div class="ap-hint">Loading the day…</div>';
+  const nurses=await nurseListForDate(date);
   let sit=[],ap=[];
   try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  try{const{data}=await SB.from('appointments').select('appt_slot,status,patients(first_name,surname)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  const capacity=await nurseCapacityForDate(date);
-  // Who is booked in each half-hour, plus how many columns are used, so a slot
-  // is only free while at least one column is still open.
-  const bookedBySlot={}, usedBySlot={};
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  // cell[slot][nurseId] = who that nurse has in that half-hour.
+  const cell={};
+  const setCell=(sl,nid,label)=>{if(!nid)return;(cell[sl]=cell[sl]||{});if(!cell[sl][nid])cell[sl][nid]=label;};
   ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;
-    (bookedBySlot[sl]=bookedBySlot[sl]||[]).push(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked');
-    usedBySlot[sl]=(usedBySlot[sl]||0)+1;});
-  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0)return;
-    const nm=`${x.first_name||''} ${x.surname||''}`.trim()||'Siting';
-    [SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k){(bookedBySlot[k]=bookedBySlot[k]||[]).push('📍 '+nm);usedBySlot[k]=(usedBySlot[k]||0)+1;}});});
-  // A half-hour is full when every column is taken. If capacity could not be
-  // worked out, do not block (treat as open).
-  const slotFull=sl=>capacity>0&&(usedBySlot[sl]||0)>=capacity;
+    let nid=a.assigned_to?String(a.assigned_to):null;
+    if(!nid&&a.bank_staff_id){const core=findCoreStaffByName(a.bank_staff?.full_name);nid=core?String(core.id):String(a.bank_staff_id);}
+    if(!nid&&!a.assigned_to&&!a.bank_staff_id)nid='common';
+    if(!nurses.some(n=>n.id===nid)){const spare=nurses.find(n=>!(cell[sl]&&cell[sl][n.id]));nid=spare?spare.id:nid;}
+    setCell(sl,nid,surnameOf(a.patients));});
+  // Existing sitings take the first nurse free for their whole hour.
+  const busy={}; nurses.forEach(n=>busy[n.id]=new Set());
+  Object.keys(cell).forEach(sl=>Object.keys(cell[sl]).forEach(nid=>{if(busy[nid])busy[nid].add(sl);}));
+  sit.slice().sort((a,b)=>String(a.session_slot).localeCompare(String(b.session_slot))).forEach(x=>{
+    const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0||!SLOTS[i+1])return;
+    const h=SLOTS[i+1];
+    const hostN=nurses.find(n=>!busy[n.id].has(st)&&!busy[n.id].has(h));
+    const lbl='📍 '+surnameOf({surname:x.surname,first_name:x.first_name});
+    if(hostN){busy[hostN.id].add(st);busy[hostN.id].add(h);setCell(st,hostN.id,lbl);setCell(h,hostN.id,lbl);}
+  });
+  const freeCount=sl=>nurses.filter(n=>!(cell[sl]&&cell[sl][n.id])).length;
+  const slotFull=sl=>nurses.length>0&&freeCount(sl)<=0;
   const hourFull=sl=>{const i=SLOTS.indexOf(sl);return slotFull(sl)||(SLOTS[i+1]&&slotFull(SLOTS[i+1]));};
-  const canStart=sl=>{const i=SLOTS.indexOf(sl);return !!SLOTS[i+2];};   // a full hour fits
+  const canStart=sl=>{const i=SLOTS.indexOf(sl);return !!SLOTS[i+2];};
   if(sitingChosenSlot&&(!canStart(sitingChosenSlot)||hourFull(sitingChosenSlot)))sitingChosenSlot='';
   const selSet=new Set();
   if(sitingChosenSlot){const i=SLOTS.indexOf(sitingChosenSlot);selSet.add(sitingChosenSlot);if(SLOTS[i+1])selSet.add(SLOTS[i+1]);}
   let anyFree=false;
-  const rows=SLOTS.map(sl=>{
-    const who=(bookedBySlot[sl]||[]);
-    const inSel=selSet.has(sl);           // this half-hour is part of the chosen hour
-    const isStartSel=sitingChosenSlot===sl; // this row is the chosen hour's start
-    const start=canStart(sl);
-    const full=hourFull(sl);
+  const head=`<tr>
+    <th style="position:sticky;left:0;background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;text-align:left;">Time</th>
+    ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}</th>`).join('')}
+    <th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;">Hour</th></tr>`;
+  const body=SLOTS.map(sl=>{
+    const inSel=selSet.has(sl), isStartSel=sitingChosenSlot===sl, start=canStart(sl), full=hourFull(sl);
     if(start&&!full)anyFree=true;
+    const cells=nurses.map(n=>{const c=cell[sl]&&cell[sl][n.id];
+      return `<td style="padding:5px 7px;border-top:1px solid var(--border);font-size:11px;white-space:nowrap;text-align:center;color:${c?'#1a2e4a':'#b6c0cc'};background:${c?(String(c).startsWith('📍')?'#f3effe':'#fff'):'#f7fbf7'};">${c?htmlSafe(c):'·'}</td>`;}).join('');
     const pick=start
       ? (full?'<span style="font-size:10px;font-weight:800;color:#b91c1c;">full</span>'
-             :`<button type="button" onclick="pickSitingSlot('${sl}')" style="padding:4px 9px;border-radius:6px;border:1.5px solid #0d7377;background:${isStartSel?'#0d7377':'#fff'};color:${isStartSel?'#fff':'#0d7377'};font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">${isStartSel?'✓ '+htmlSafe(sitingSlotLabel(sl)):'Pick '+htmlSafe(sitingSlotLabel(sl))}</button>`)
+             :`<button type="button" onclick="pickSitingSlot('${sl}')" style="padding:4px 8px;border-radius:6px;border:1.5px solid #0d7377;background:${isStartSel?'#0d7377':'#fff'};color:${isStartSel?'#fff':'#0d7377'};font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;">${isStartSel?'✓ '+htmlSafe(sitingSlotLabel(sl)):'Pick'}</button>`)
       : '';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border);${inSel?'background:#e8f5f4;':''}">
-      <span style="width:46px;font-weight:800;color:#0d7377;font-size:12px;flex:0 0 46px;">${htmlSafe(sl)}</span>
-      <span style="flex:1;min-width:0;font-size:11.5px;color:${who.length?'#1a2e4a':'#9ca3af'};">${who.length?htmlSafe(who.join(', ')):'free'}</span>
-      <span style="flex:0 0 auto;">${pick}</span>
-    </div>`;
+    return `<tr style="${inSel?'background:#e8f5f4;':''}">
+      <td style="position:sticky;left:0;padding:5px 8px;border-top:1px solid var(--border);font-weight:800;color:#0d7377;font-size:11px;background:${inSel?'#e8f5f4':'#fafafa'};">${htmlSafe(sl)}</td>
+      ${cells}
+      <td style="padding:5px 7px;border-top:1px solid var(--border);text-align:center;">${pick}</td></tr>`;
   }).join('');
-  host.innerHTML=`<div class="ap-hint" style="margin-bottom:6px;">The day\u2019s bookings are shown so you can plan around a longer review. Pick the hour to place the one-hour siting.</div>
-    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">${rows}</div>`
+  host.innerHTML=`<div class="ap-hint" style="margin-bottom:6px;">The nurse allocation for the day is shown so you can see who is free. Pick the hour to place the one-hour siting.</div>
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px;">
+      <table style="border-collapse:collapse;width:100%;">${head}${body}</table></div>`
     +(anyFree?'':'<div class="ap-hint" style="margin-top:6px;color:#a3241a;">No free hour on this day — pick another date.</div>');
 }
 
