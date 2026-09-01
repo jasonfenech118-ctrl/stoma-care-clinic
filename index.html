@@ -543,7 +543,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
    box uses a 16px font so Android never zooms the page on focus. */
 body.pl-only .topbar,body.pl-only .tabs,body.pl-only .subtabs{display:none;}
 body.ho-only .topbar,body.ho-only .tabs,body.ho-only .subtabs{display:none;}
-body.ho-only .page{padding-top:14px;}
+/* On its own the handover is just the sheet: the page heading, its blurb and
+   the button that opened this tab all go, leaving the date banner, the grid and
+   the two things the ward actually presses. */
+body.ho-only .phdr>div:first-child,body.ho-only #hv-newtab{display:none;}
+body.ho-only .phdr{justify-content:flex-end;margin-bottom:8px;}
+body.ho-only .page{padding-top:10px;}
 body.pl-only .pl-wrap{padding-top:14px;}
 .pl-wrap{max-width:640px;margin:0 auto;padding:0 12px 40px;}
 .pl-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px;}
@@ -849,8 +854,10 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .prov-chip{display:inline-block;margin-left:6px;background:#fff8e1;color:#856404;border:1px solid #f2df9f;border-radius:20px;padding:1px 7px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;vertical-align:middle;}
 /* The date sits in a green banner straight on top of the grid, the way it
    does on the ward's Excel sheet. */
-.hv-datebar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
-  background:#c6e0b4;border:1px solid #000;border-bottom:none;padding:5px 10px;margin:0;}
+/* The green date banner is the grid's own first row, so it lines up with the
+   columns exactly instead of floating a pixel proud above them. */
+.hv-xl .hv-bannerrow th{background:#c6e0b4;color:#000;text-transform:none;letter-spacing:0;
+  text-align:center;padding:6px 10px;border-bottom:1px solid #000;}
 .discharge-frame{width:100%;height:calc(100vh - 210px);min-height:560px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.06);}
 .iv-done{text-align:center;padding:14px 6px 4px;}
 .iv-done-ic{width:56px;height:56px;margin:0 auto 12px;border-radius:50%;background:#dcf5e8;color:#136c42;display:flex;align-items:center;justify-content:center;}
@@ -865,7 +872,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .iv-sys-t{font-size:15px;font-weight:800;}
 .iv-sys-s{font-size:11.5px;font-weight:600;opacity:.8;}
 .hv-date{font-size:15px;font-weight:800;color:#000;}
-.hv-count{font-size:12px;font-weight:700;color:#33502a;}
+.hv-count{font-size:12px;font-weight:700;color:#33502a;margin-left:12px;}
 .hv-table td{vertical-align:middle;}
 /* The handover list on screen is the ward sheet: a plain black grid, a black
    header, yellow tick columns and one shade per ward. */
@@ -1751,11 +1758,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div class="phdr">
         <div><h2>🏥 Handover</h2><p>The patients on the wards right now — ward, appliance and what still has to be signed</p></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" id="hv-newtab" onclick="openHandoverInNewTab()" style="background:var(--navy);">↗ Open in new tab</button>
           <button class="btn-add" onclick="printHandover()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadHandover()">Refresh</button>
         </div>
       </div>
-      <div class="hv-datebar"><span class="hv-date" id="hv-date"></span><span class="hv-count" id="hv-count"></span></div>
       <div id="hv-body"><div class="report-note">Loading the handover list…</div></div>
     </div>
 
@@ -2215,7 +2222,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-131';
+const APP_BUILD='2026.09.01-132';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4538,7 +4545,10 @@ async function commitEpisodeAppliances(pending,rows){
   const stamp=TODAY;
   const entries=rows.map(r=>({stoma_uid:r.uid||'',stoma_code:r.code||'',stoma_short:r.short||'',
     stoma_type:r.stoma_type||'',appliances:r.appliances||[],accessories:r.accessories||[],
-    flange_due:r.flange_due||'',changed_on:stamp,changed_by:(who&&who.name)||''}));
+    flange_due:r.flange_due||'',changed_on:stamp,changed_by:(who&&who.name)||'',
+    // Where the change was made, so the history says the ward and not just
+    // "inpatient" — the patient may move ward before the episode closes.
+    ward:pending.ward||'',bed:pending.bed||''}));
   const ep=await currentInpatientEpisode(pending.patientId);
   if(ep){
     const kept=parseEpisodeApplianceRows(ep)
@@ -7912,12 +7922,13 @@ const _normType=t=>String(t||'').trim().toLowerCase();
 function applianceTimelineByStomaType(){
   const groups=new Map();
   const bucket=k=>{let m=groups.get(k);if(!m){m=new Map();groups.set(k,m);}return m;};
-  const add=(typeKey,name,kind,start,end,ongoing,source)=>{
+  const add=(typeKey,name,kind,start,end,ongoing,source,where)=>{
     name=String(name||'').trim(); if(!name||name==='None')return;
     const m=bucket(typeKey||'__unassigned__');
     const k=kind+'|'+name.toLowerCase();
     let e=m.get(k);
-    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing,sources:new Set(source?[source]:[]),lastSource:source||'',lastDate:start||end||''};m.set(k,e);return;}
+    if(!e){e={name,kind,start:start||null,end:ongoing?null:(end||start||null),ongoing:!!ongoing,sources:new Set(source?[source]:[]),wards:new Set(where?[where]:[]),lastSource:source||'',lastDate:start||end||''};m.set(k,e);return;}
+    if(where)e.wards.add(where);
     if(source)e.sources.add(source);
     if(start&&(!e.start||start<e.start))e.start=start;
     if(ongoing)e.ongoing=true;
@@ -7931,10 +7942,14 @@ function applianceTimelineByStomaType(){
     parseEpisodeApplianceRows(ep).forEach(a=>{
       // The day it was set, falling back to the admission date on older records.
       const start=a.changed_on||ep.record_date||null;
+      /* Which ward it was set on. Entries written before the ward was kept fall
+         back to where the patient is now, but only while the episode is open —
+         a closed episode's ward is not today's ward. */
+      const ward=a.ward||(ongoing?(clrState.patient&&clrState.patient.inpatient_ward)||'':'');
       const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
       (types.length?types:['__unassigned__']).forEach(tk=>{
-        a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient'));
-        a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient'));
+        a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient',ward));
+        a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient',ward));
       });
     });
   });
@@ -7979,7 +7994,13 @@ const APPL_SRC_LABEL={inpatient:'Inpatient',followup:'Follow-up'};
 function applianceSourceHTML(e){
   // Order the tags with the most recent context first.
   const src=[...(e.sources||[])].sort((a,b)=>a===e.lastSource?-1:b===e.lastSource?1:0);
-  return src.map(sname=>`<span class="clr-src ${sname}">${APPL_SRC_LABEL[sname]||sname}</span>`).join('');
+  // An inpatient change says where it was made — "Inpatient · SW4".
+  const wards=[...(e.wards||[])].filter(Boolean);
+  return src.map(sname=>{
+    const label=APPL_SRC_LABEL[sname]||sname;
+    const where=(sname==='inpatient'&&wards.length)?' · '+htmlSafe(wards.join(', ')):'';
+    return `<span class="clr-src ${sname}">${label}${where}</span>`;
+  }).join('');
 }
 function applianceRowHTML(e){
   return `<div class="clr-rec clr-appl-rec">
@@ -8125,7 +8146,8 @@ function parseEpisodeApplianceRows(e){
   return list.filter(r=>r&&typeof r==='object').map(r=>({
     stoma_uid:r.stoma_uid||'',stoma_code:r.stoma_code||'',stoma_short:r.stoma_short||'',
     stoma_type:r.stoma_type||'',appliances:parseNameList(r.appliances),accessories:parseNameList(r.accessories),
-    flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_by:r.changed_by||''}));
+    flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_by:r.changed_by||'',
+    ward:r.ward||'',bed:r.bed||''}));
 }
 /* Kept for the readmission carry-over, which only needs the latest single set. */
 function parseEpisodeAppliances(e){
@@ -8827,10 +8849,7 @@ function loadDischargeLetters(){
 function openDischargeFull(){window.open('discharge-letter.html','_blank');}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
-  const dateEl=document.getElementById('hv-date');
-  const countEl=document.getElementById('hv-count');
   if(!body)return;
-  if(dateEl)dateEl.textContent=fmtLabel(TODAY);
   const{data,error}=await SB.from('patients')
     .select('id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit')
     .eq('is_inpatient',true);
@@ -8839,12 +8858,11 @@ async function loadHandover(){
     body.innerHTML=missing
       ? handoverMissingHTML('The inpatient columns are not in the database yet. Run <strong>sql/add-inpatients.sql</strong> once in Supabase to turn the handover list on.')
       : `<div class="report-note">Could not load the handover list: ${htmlSafe(error.message||'')}</div>`;
-    if(countEl)countEl.textContent='';
     return;
   }
   const rows=(data||[]).slice().sort(handoverByWard);
   const dueBy=await handoverFlangeDue(rows.map(r=>r.id));
-  if(countEl)countEl.textContent=rows.length?`${rows.length} inpatient${rows.length===1?'':'s'}`:'';
+  const countTxt=rows.length?`${rows.length} inpatient${rows.length===1?'':'s'}`:'';
   if(!rows.length){
     body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
     return;
@@ -8861,7 +8879,9 @@ async function loadHandover(){
       <col style="width:128px"><col style="width:98px"><col style="width:112px"><col style="width:112px">
       <col><col style="width:118px"><col style="width:126px"><col style="width:104px">
     </colgroup>
-    <thead><tr>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">${htmlSafe(fmtLabel(TODAY))}</span>${countTxt?`<span class="hv-count">${htmlSafe(countTxt)}</span>`:''}</th></tr>
+      <tr>
       <th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
       <th class="icon">✉ Discharge letter</th><th class="icon">📄 Schedule 5 permit</th><th></th>
     </tr></thead><tbody>${trs}</tbody></table></div>`;
@@ -8881,6 +8901,13 @@ function fitWardBed(el){
 }
 function fitAllWardBed(){document.querySelectorAll('#hv-table .hv-wb .hv-inp').forEach(fitWardBed);}
 function openHandoverStandalone(){document.body.classList.add('ho-only');switchTab('handover');if(location.hash!=='#handover')history.replaceState(null,'','#handover');}
+/* A tab of its own for the ward screen: the sheet and nothing else, so it can
+   be left open on the ward's machine without the rest of the app around it. */
+function openHandoverInNewTab(){
+  const url=location.origin+location.pathname+location.search+'#handover';
+  const w=window.open(url,'_blank');
+  if(!w)alert('The new tab was blocked. Allow pop-ups for this site and try again.');
+}
 
 /* Wards read as SW1-15, ITU-12, Burns-1 — letters then a number. Sorting them
    as plain text puts SW1-15 before SW1-4, so the number is compared as one. */
@@ -8971,7 +8998,8 @@ function flangeDueChipHTML(due){
 async function openHandoverAppliance(patientId){
   const{data,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
   if(error||!data){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
-  await openVisitApplianceWizard({patientId,apptId:null,date:TODAY,slot:'',mode:'episode'},data);
+  await openVisitApplianceWizard({patientId,apptId:null,date:TODAY,slot:'',mode:'episode',
+    ward:data.inpatient_ward||'',bed:data.inpatient_bed||''},data);
 }
 async function dischargeFromHandover(patientId,name){
   if(!confirm(`Take ${name||'this patient'} off the handover list?\n\nThe patient stays in the Registry with everything on their record — they simply stop being an inpatient, and their inpatient episode is closed with today's date.`))return;
