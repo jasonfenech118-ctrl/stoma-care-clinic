@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-153';
+const APP_BUILD='2026.09.01-154';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9414,33 +9414,45 @@ async function refreshSitingSlotAvail(){
   const host=document.getElementById('sit-slot-avail'); if(!host)return;
   const date=document.getElementById('sit-date')?.value;
   if(!date){host.innerHTML='<div class="ap-hint">Pick a date first.</div>';return;}
-  host.innerHTML='<div class="ap-hint">Checking availability…</div>';
-  let sit=[];
-  try{const{data}=await SB.from('siting_sessions').select('session_slot,status').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  // Several sitings can run in the same hour — one per nurse — so an hour is only
-  // full once this many overlap it. A Common appointment no longer blocks it.
+  host.innerHTML='<div class="ap-hint">Loading the day…</div>';
+  let sit=[],ap=[];
+  try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,patients(first_name,surname)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  // Who is booked in each half-hour slot, so the day can be seen while booking.
+  const bookedBySlot={}, sitingCount={};
+  ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;(bookedBySlot[sl]=bookedBySlot[sl]||[]).push(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked');});
+  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0)return;
+    const nm=`${x.first_name||''} ${x.surname||''}`.trim()||'Siting';
+    [SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k){(bookedBySlot[k]=bookedBySlot[k]||[]).push('📍 '+nm);sitingCount[k]=(sitingCount[k]||0)+1;}});});
   const SITING_MAX_PER_HOUR=3;
-  const perSlot={};
-  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i>=0){[SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k)perSlot[k]=(perSlot[k]||0)+1;});}});
-  const slotFull=sl=>(perSlot[sl]||0)>=SITING_MAX_PER_HOUR;
-  const starts=SLOTS.filter((sl,i)=>SLOTS[i+2]);
-  if(sitingChosenSlot&&(slotFull(sitingChosenSlot)||slotFull(SLOTS[SLOTS.indexOf(sitingChosenSlot)+1])))sitingChosenSlot='';
+  const hourFull=sl=>{const i=SLOTS.indexOf(sl);return (sitingCount[sl]||0)>=SITING_MAX_PER_HOUR||(SLOTS[i+1]&&(sitingCount[SLOTS[i+1]]||0)>=SITING_MAX_PER_HOUR);};
+  const canStart=sl=>{const i=SLOTS.indexOf(sl);return !!SLOTS[i+2];};   // a full hour fits
+  if(sitingChosenSlot&&(!canStart(sitingChosenSlot)||hourFull(sitingChosenSlot)))sitingChosenSlot='';
+  const selSet=new Set();
+  if(sitingChosenSlot){const i=SLOTS.indexOf(sitingChosenSlot);selSet.add(sitingChosenSlot);if(SLOTS[i+1])selSet.add(SLOTS[i+1]);}
   let anyFree=false;
-  const btns=starts.map(sl=>{
-    const i=SLOTS.indexOf(sl);
-    const isTaken=slotFull(sl)||slotFull(SLOTS[i+1]);
-    if(!isTaken)anyFree=true;
-    const sel=sitingChosenSlot===sl;
-    const base='padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;min-width:104px;';
-    const st=isTaken
-      ? base+'border:1.5px solid #e5e7eb;background:#f3f4f6;color:#9ca3af;cursor:not-allowed;'
-      : sel? base+'border:1.5px solid #0d7377;background:#0d7377;color:#fff;cursor:pointer;'
-           : base+'border:1.5px solid #cdb6f0;background:#fff;color:#6d28d9;cursor:pointer;';
-    return `<button type="button" ${isTaken?'disabled':''} onclick="pickSitingSlot('${sl}')" style="${st}">${htmlSafe(sitingSlotLabel(sl))}${isTaken?' · full':''}</button>`;
+  const rows=SLOTS.map(sl=>{
+    const who=(bookedBySlot[sl]||[]);
+    const inSel=selSet.has(sl);           // this half-hour is part of the chosen hour
+    const isStartSel=sitingChosenSlot===sl; // this row is the chosen hour's start
+    const start=canStart(sl);
+    const full=hourFull(sl);
+    if(start&&!full)anyFree=true;
+    const pick=start
+      ? (full?'<span style="font-size:10px;font-weight:800;color:#b91c1c;">full</span>'
+             :`<button type="button" onclick="pickSitingSlot('${sl}')" style="padding:4px 9px;border-radius:6px;border:1.5px solid #0d7377;background:${isStartSel?'#0d7377':'#fff'};color:${isStartSel?'#fff':'#0d7377'};font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;">${isStartSel?'✓ '+htmlSafe(sitingSlotLabel(sl)):'Pick '+htmlSafe(sitingSlotLabel(sl))}</button>`)
+      : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border);${inSel?'background:#e8f5f4;':''}">
+      <span style="width:46px;font-weight:800;color:#0d7377;font-size:12px;flex:0 0 46px;">${htmlSafe(sl)}</span>
+      <span style="flex:1;min-width:0;font-size:11.5px;color:${who.length?'#1a2e4a':'#9ca3af'};">${who.length?htmlSafe(who.join(', ')):'free'}</span>
+      <span style="flex:0 0 auto;">${pick}</span>
+    </div>`;
   }).join('');
-  host.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;">${btns}</div>`
+  host.innerHTML=`<div class="ap-hint" style="margin-bottom:6px;">The day\u2019s bookings are shown so you can plan around a longer review. Pick the hour to place the one-hour siting.</div>
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">${rows}</div>`
     +(anyFree?'':'<div class="ap-hint" style="margin-top:6px;color:#a3241a;">No free hour on this day — pick another date.</div>');
 }
+
 function pickSitingSlot(sl){sitingChosenSlot=sl;refreshSitingSlotAvail();}
 async function saveSitingSession(){
   const val=id=>String(document.getElementById(id)?.value||'').trim();
