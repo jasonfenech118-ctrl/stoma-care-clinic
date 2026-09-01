@@ -2288,7 +2288,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-146';
+const APP_BUILD='2026.09.01-147';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3111,6 +3111,17 @@ async function loadAppts(){
     .order('appt_slot');
   const appts=await enrichAppointments(rawAppts||[]);
 
+  // Siting sessions for the day — shown in their own column as one-hour boxes.
+  let sitingToday=[];
+  try{
+    const{data:sd}=await SB.from('siting_sessions').select('*').eq('session_date',date).neq('status','cancelled');
+    sitingToday=sd||[];
+  }catch(e){}
+  const sitingByStart={};
+  sitingToday.forEach(ss=>{const k=String(ss.session_slot||'').slice(0,5);if(k)sitingByStart[k]=ss;});
+  const sitingCovered=new Set();
+  SLOTS.forEach((sl,i)=>{if(sitingByStart[sl]&&SLOTS[i+1])sitingCovered.add(SLOTS[i+1]);});
+
   const nurses=[];
   const addNurse=(n)=>{
     const sameId=nurses.some(x=>String(x.id)===String(n.id) && x.type!=='common' && n.type!=='common');
@@ -3188,9 +3199,10 @@ async function loadAppts(){
     else if(n.type==='absent'||n.type==='ot-booked') nbadge='<span style="font-size:9px;background:#c0392b;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">Booked / Not Working</span>';
     html+=`<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#1a2e4a;border-bottom:2px solid #dde3ea;border-left:1px solid #dde3ea;background:#fafafa;">${htmlSafe(n.name)}${nbadge}</th>`;
   });
+  html+='<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#6d28d9;border-bottom:2px solid #dde3ea;border-left:2px solid #d9c9f5;background:#f6f2fe;min-width:150px;">📍 Siting</th>';
   html+='</tr></thead><tbody>';
 
-  SLOTS.forEach(slot=>{
+  SLOTS.forEach((slot,si)=>{
     html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
     nurses.forEach(n=>{
       const slotAppts=appointmentsForSlotAndColumn(appts,slot,n);
@@ -3229,6 +3241,29 @@ async function loadAppts(){
         </td>`;
       }
     });
+    // The siting column: one box per session, spanning its two half-hour rows.
+    if(sitingCovered.has(slot)){
+      // covered by the rowspan of the session starting in the row above — no cell
+    }else if(sitingByStart[slot]){
+      const ss=sitingByStart[slot];
+      const span=SLOTS[si+1]?2:1;
+      const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
+      html+=`<td rowspan="${span}" style="padding:8px 10px;background:#f6f2fe;border-left:2px solid #d9c9f5;border-bottom:1px solid #dde3ea;vertical-align:top;">
+        <div style="font-size:10px;font-weight:800;color:#6d28d9;">${htmlSafe(sitingSlotLabel(ss.session_slot))}</div>
+        <div style="font-weight:700;color:#1a2e4a;font-size:13px;margin-top:2px;">${htmlSafe(nm||'—')}</div>
+        <div style="font-size:11px;color:#5a6b7b;font-family:monospace;">${htmlSafe(ss.id_card||'')}</div>
+        ${ss.consultant?`<div style="font-size:11px;color:#5a6b7b;">${htmlSafe(ss.consultant)}</div>`:''}
+        <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="switchTab('siting')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Open</button>
+          <button onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
+        </div>
+      </td>`;
+    }else{
+      const canBook=!!SLOTS[si+2];
+      html+=`<td style="padding:8px;background:#faf8ff;border-left:2px solid #eee6fb;vertical-align:top;">
+        ${canBook?`<button onclick="openSitingBooking('${date}','${slot}')" style="width:100%;padding:6px;border:2px dashed #d9c9f5;border-radius:7px;background:none;color:#8b7bb5;font-size:11px;cursor:pointer;">+ Siting</button>`:''}
+      </td>`;
+    }
     html+='</tr>';
   });
   html+='</tbody></table>';
@@ -9288,7 +9323,7 @@ function sitingStatusLabel(r){
   return 'Booked';
 }
 /* The booking modal: who it is for, the firm, and the day / hour. */
-function openSitingBooking(){
+function openSitingBooking(presetDate,presetSlot){
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   const slotOpts=SLOTS.filter(sl=>{const i=SLOTS.indexOf(sl);return i>=0&&SLOTS[i+2];})
@@ -9300,13 +9335,14 @@ function openSitingBooking(){
       <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name"/></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions('')}</select></div>
-      <div class="fg"><label>Date *</label><input type="date" id="sit-date" value="${htmlSafe(TODAY)}"/></div>
+      <div class="fg"><label>Date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}"/></div>
       <div class="fg"><label>Time (1 hour) *</label><select id="sit-slot">${slotOpts}</select></div>
     </div>
     <div id="sit-msg"></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" onclick="saveSitingSession()">Book session</button></div>`;
   openMo();
+  if(presetSlot){const sel=document.getElementById('sit-slot');if(sel&&[...sel.options].some(o=>o.value===presetSlot))sel.value=presetSlot;}
 }
 async function saveSitingSession(){
   const val=id=>String(document.getElementById(id)?.value||'').trim();
@@ -9329,12 +9365,14 @@ async function saveSitingSession(){
   }
   closeModal();
   if(document.getElementById('siting-body'))loadSitingSessions();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 async function cancelSitingSession(id,name){
   if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not cancel: '+error.message);return;}
-  loadSitingSessions();
+  if(document.getElementById('siting-body'))loadSitingSessions();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 
 async function loadPostopDischarges(){
