@@ -2187,7 +2187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.08.31-120';
+const APP_BUILD='2026.09.01-121';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8758,15 +8758,28 @@ function printHandover(){
   const box={'':'☐','done':'☑','signed':'☑','in_ward':'◨'};
   // Bold the "flange due …" note the way the ward sheet does.
   const notes=t=>htmlSafe(t).replace(/(flange due[^,;·]*)/ig,'<b>$1</b>');
-  const rows=[...table.querySelectorAll('tbody tr')].map(tr=>{
+  // Shade by ward group (like the Excel sheet): each ward's block of rows keeps
+  // one shade, and the shade flips to the next ward — not per-row zebra striping.
+  let prevWard=null, wg=0;
+  const dataTrs=[...table.querySelectorAll('tbody tr')];
+  const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
     const txt=i=>{const c=cell(i);const inp=c&&c.querySelector('input');return (inp?inp.value:(c?c.innerText:'')).trim();};
     const val=i=>cell(i)?.querySelector('.hs-btn')?.dataset.value||'';
-    return `<tr>
-      <td>${htmlSafe(txt(0))}</td><td>${htmlSafe(txt(1))}</td><td>${htmlSafe(txt(2))}</td>
+    const ward=txt(0);
+    if(prevWard===null||ward!==prevWard){wg++;prevWard=ward;}
+    const cls=(wg%2)?'wg-odd':'wg-even';
+    return `<tr class="${cls}">
+      <td>${htmlSafe(ward)}</td><td>${htmlSafe(txt(1))}</td><td>${htmlSafe(txt(2))}</td>
       <td>${htmlSafe(txt(3))}</td><td>${htmlSafe(txt(4))}</td><td class="capp">${notes(txt(5))}</td>
       <td class="cbx">${box[val(6)]||'☐'}</td><td class="cbx">${box[val(7)]||'☐'}</td></tr>`;
   }).join('');
+  // Blank writing rows so a nurse can add new/pending patients by hand, like the
+  // Excel sheet's empty rows. Fill out to a full page, always at least a few.
+  const blankCount=Math.max(6,22-dataTrs.length);
+  const blanks=Array.from({length:blankCount},()=>
+    `<tr class="wgblank"><td></td><td></td><td></td><td></td><td></td><td class="capp"></td><td class="cbx"></td><td class="cbx"></td></tr>`
+  ).join('');
   const fpx=handoverFont();
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
@@ -8777,13 +8790,16 @@ function printHandover(){
     h1{font-size:${fpx+3}px;font-weight:800;margin:0 0 5px;}
     table{width:100%;border-collapse:collapse;font-size:${fpx}px;table-layout:fixed;}
     th,td{border:0.75pt solid #000;padding:3px 5px;vertical-align:top;word-wrap:break-word;line-height:1.25;}
+    tbody td{height:34px;padding-top:5px;padding-bottom:5px;}
     thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:${fpx+4}px;border-color:#000;}
     thead .cols th{background:#000;color:#fff;text-align:left;font-weight:800;}
     thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;font-size:${fpx+3}px;}
     td.cbx{text-align:center;font-size:${fpx+4}px;line-height:1;}
     td.capp b{font-weight:800;}
     .cward{width:7%}.cbed{width:5%}.cid{width:11%}.csur{width:12%}.cfn{width:12%}.capp{width:41%}.cdoc{width:6%}
-    tbody tr:nth-child(odd) td{background:#f7f7f7;}
+    tbody tr.wg-odd td{background:#e6e6e6;}
+    tbody tr.wg-even td{background:#fff;}
+    tbody tr.wgblank td{background:#fff;height:34px;}
   </style></head><body>
     <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
     <table>
@@ -8795,7 +8811,7 @@ function printHandover(){
           <th class="icon cdoc" title="Care discharge letter">✉</th><th class="icon cdoc" title="Schedule 5 permit">📄</th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${blanks}</tbody>
     </table>
     <div style="margin-top:6px;font-size:${Math.max(8,fpx-2)}px;color:#333;">
       ✉ Care discharge letter &nbsp;&nbsp; 📄 Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ☑ done / signed &nbsp; ◨ permit left in ward &nbsp; ☐ not done
