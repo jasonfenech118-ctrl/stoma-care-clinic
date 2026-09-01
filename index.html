@@ -2277,7 +2277,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-144';
+const APP_BUILD='2026.09.01-145';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7208,7 +7208,18 @@ function firmOptions(cur){
     +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
     +'<option value="__add__">＋ Add firm…</option>';
 }
-function firmAdd(sel){optionAdd(sel,'Enter the firm (consultant / team)');}
+async function firmAdd(sel){
+  // Add the typed firm to this dropdown now…
+  optionAdd(sel,'Enter the firm (consultant / team)');
+  const v=String(sel&&sel.value||'').trim();
+  if(!v||v==='__add__')return;
+  // …then save it to the firms table so it is there next time too.
+  if(!firmList.some(f=>f.toLowerCase()===v.toLowerCase())){
+    try{const{error}=await SB.from('firms').insert({name:v});if(!error){firmList.push(v);firmsAvailable=true;}
+      else{alert('The firm was used for this patient but could not be saved to the list: '+error.message+'\n\nRun sql/add-firms.sql once in Supabase so new firms are kept.');}
+    }catch(e){}
+  }
+}
 /* ── MANAGE FIRMS ──────────────────────────────────────────────────────────
    Add, rename and remove the firms offered in the patient Firm dropdown. */
 async function openFirmsModal(){
