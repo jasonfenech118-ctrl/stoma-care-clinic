@@ -2288,7 +2288,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-147';
+const APP_BUILD='2026.09.01-148';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3254,7 +3254,7 @@ async function loadAppts(){
         <div style="font-size:11px;color:#5a6b7b;font-family:monospace;">${htmlSafe(ss.id_card||'')}</div>
         ${ss.consultant?`<div style="font-size:11px;color:#5a6b7b;">${htmlSafe(ss.consultant)}</div>`:''}
         <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;">
-          <button onclick="switchTab('siting')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Open</button>
+          <button onclick="openSitingPostop('${ss.id}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Post-op</button>
           <button onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
         </div>
       </td>`;
@@ -8903,13 +8903,16 @@ async function executeDeletePatient(patientId){
 function renderAddPatientForm(){
   const body=document.getElementById('ap-body');
   if(!body)return;
+  const prefill=pendingPatientPrefill; pendingPatientPrefill=null;
+  const fromSiting=!!sitingStomaCtx;
   body.innerHTML=`
     <div class="ap-card">
-      ${patientFormHTML(null,'ap')}
+      ${fromSiting?'<div class="registry-lookup-note found" style="margin-bottom:12px;">From a siting session — a stoma was formed. Fill in the operation, findings and stoma details. On saving, this patient is created and <strong>added to the Handover as an inpatient</strong>.</div>':''}
+      ${patientFormHTML(prefill||null,'ap')}
       <div id="ap-error"></div>
       <div class="ap-actions">
-        <button class="btn-cancel" onclick="renderAddPatientForm()">Clear form</button>
-        <button class="btn-save" onclick="saveNewPatient()">Add Patient</button>
+        <button class="btn-cancel" onclick="clearAddPatientForm()">Clear form</button>
+        <button class="btn-save" onclick="saveNewPatient()">${fromSiting?'Add patient &amp; put on Handover':'Add Patient'}</button>
       </div>
     </div>`;
   renumberStomaRows('ap');
@@ -8937,9 +8940,19 @@ async function saveNewPatient(){
       <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${existing.id}')">Open that patient</button></div>`);
     return;
   }
+  if(sitingStomaCtx){payload.is_inpatient=true;if(!payload.inpatient_since)payload.inpatient_since=TODAY;}
   const{data:made,error,dropped}=await insertPatientTolerant(payload);
   if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
   if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
+  if(sitingStomaCtx&&made&&made.id){
+    const ctx=sitingStomaCtx; sitingStomaCtx=null;
+    await createSitingInpatientEpisode(made.id,ctx.surgery_date);
+    try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:made.id,surgery_date:ctx.surgery_date,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
+    const nmi=`${payload.first_name||''} ${payload.surname||''}`.trim();
+    alert(`${nmi} added and placed on the Handover as an inpatient.`);
+    switchTab('handover');
+    return;
+  }
 
   const nm=`${payload.first_name||''} ${payload.surname||''}`.trim();
   say(`<div class="registry-lookup-note found" style="font-size:13px;">✅ <strong>${htmlSafe(nm)}</strong> added · ${htmlSafe(payload.id_card)}
@@ -9295,6 +9308,7 @@ async function loadSitingSessions(){
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
     <td data-label="Status">${htmlSafe(sitingStatusLabel(r))}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="openSitingPostop('${r.id}')">Post-op</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="cancelSitingSession('${r.id}','${jsSafe(`${r.first_name||''} ${r.surname||''}`.trim())}')">Cancel</button>
     </div></td>
   </tr>`).join('');
@@ -9371,8 +9385,101 @@ async function cancelSitingSession(id,name){
   if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not cancel: '+error.message);return;}
+  refreshSitingViews();
+}
+function refreshSitingViews(){
   if(document.getElementById('siting-body'))loadSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+/* The post-operative step of a siting session:
+     surgery performed?  no  → keep the session, nothing else
+                         yes → stoma formed?  yes → create the patient, mark
+                                                     inpatient, put on Handover
+                                               no  → save to the no-stoma list  */
+let sitingPostopCtx=null;
+async function openSitingPostop(id){
+  const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
+  if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
+  sitingPostopCtx={session:ss};
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
+  mb.innerHTML=`<h2>📍 Siting session — post-op</h2>
+    <div class="msub">${htmlSafe(nm||'—')} · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</div>
+    <div class="edit-seen-grid"><div class="fg"><label>Surgery date</label><input type="date" id="sop-surgdate" value="${htmlSafe(ss.surgery_date||TODAY)}"/></div></div>
+    <div class="edit-seen-section">Has the surgery been performed?</div>
+    <div class="iv-sys-row">
+      <button type="button" class="iv-sys-btn" onclick="sitingPostopPerformed(false)"><span class="iv-sys-t">Not yet</span><span class="iv-sys-s">No surgery done — keep the session</span></button>
+      <button type="button" class="iv-sys-btn" onclick="sitingPostopPerformed(true)"><span class="iv-sys-t">Surgery performed</span><span class="iv-sys-s">Record the outcome</span></button>
+    </div>
+    <div id="sop-branch"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+}
+function sitingPostopPerformed(done){
+  const branch=document.getElementById('sop-branch');if(!branch)return;
+  if(!done){branch.innerHTML=`<div class="ap-hint" style="margin:8px 0 0;">The session stays booked; you can record the outcome after the operation.</div>
+    <div class="mact" style="margin-top:10px;"><button class="btn-save" onclick="saveSitingNoSurgery()">Save — not operated yet</button></div>`;return;}
+  branch.innerHTML=`<div class="edit-seen-section">Was a stoma formed?</div>
+    <div class="iv-sys-row">
+      <button type="button" class="iv-sys-btn" onclick="sitingPostopStoma(true)"><span class="iv-sys-t">Stoma formed</span><span class="iv-sys-s">Create the patient and add to the Handover</span></button>
+      <button type="button" class="iv-sys-btn" onclick="sitingPostopStoma(false)"><span class="iv-sys-t">No stoma formed</span><span class="iv-sys-s">Save to the no-stoma list</span></button>
+    </div>
+    <div id="sop-stoma"></div>`;
+}
+function sitingPostopStoma(formed){
+  const surg=document.getElementById('sop-surgdate')?.value||TODAY;
+  const ss=sitingPostopCtx&&sitingPostopCtx.session;if(!ss)return;
+  if(formed){beginSitingStomaPatient(ss,surg);return;}
+  const host=document.getElementById('sop-stoma');if(!host)return;
+  host.innerHTML=`<div class="edit-seen-grid">
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation performed</label><input type="text" id="sop-operation" placeholder="e.g. Anterior resection — no stoma"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Findings / notes</label><input type="text" id="sop-findings" placeholder="e.g. tumour resected, primary anastomosis"/></div>
+    </div>
+    <div class="mact"><button class="btn-save" onclick="saveSitingNoStoma()">Save to the no-stoma list</button></div>`;
+}
+async function saveSitingNoSurgery(){
+  const ss=sitingPostopCtx&&sitingPostopCtx.session;if(!ss)return;
+  const surg=document.getElementById('sop-surgdate')?.value||null;
+  const{error}=await SB.from('siting_sessions').update({surgery_performed:false,surgery_date:surg,updated_at:new Date().toISOString()}).eq('id',ss.id);
+  if(error){alert('Could not save: '+error.message);return;}
+  closeModal();refreshSitingViews();
+}
+async function saveSitingNoStoma(){
+  const ss=sitingPostopCtx&&sitingPostopCtx.session;if(!ss)return;
+  const surg=document.getElementById('sop-surgdate')?.value||null;
+  const rec={siting_session_id:ss.id,id_card:ss.id_card,first_name:ss.first_name,surname:ss.surname,consultant:ss.consultant,
+    surgery_date:surg,operation:document.getElementById('sop-operation')?.value.trim()||null,findings:document.getElementById('sop-findings')?.value.trim()||null};
+  try{const u=await getCurrentUserForAudit();rec.created_by=u?.name||null;}catch(e){}
+  const{error}=await SB.from('operations_no_stoma').insert(rec);
+  if(error){alert('Could not save to the no-stoma list: '+error.message+'\n\nRun sql/add-siting-sessions.sql once in Supabase if you have not.');return;}
+  await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:false,surgery_date:surg,status:'done',updated_at:new Date().toISOString()}).eq('id',ss.id);
+  closeModal();refreshSitingViews();
+}
+/* A stoma was formed: continue into the full patient form, pre-filled from the
+   siting session. On saving, the patient is created, marked as an inpatient and
+   put straight on the Handover. */
+let pendingPatientPrefill=null;
+let sitingStomaCtx=null;
+function beginSitingStomaPatient(session,surgeryDate){
+  pendingPatientPrefill={id_card:session.id_card,first_name:session.first_name,surname:session.surname,
+    consultant:session.consultant,surgery_date:surgeryDate||null};
+  sitingStomaCtx={sessionId:session.id,surgery_date:surgeryDate||null};
+  closeModal();
+  switchTab('add-patient');
+}
+function clearAddPatientForm(){pendingPatientPrefill=null;sitingStomaCtx=null;renderAddPatientForm();}
+async function createSitingInpatientEpisode(pid,surgeryDate){
+  const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:'',status:'Inpatient',
+    record_date:surgeryDate||TODAY,is_current:true,appliances:[]};
+  try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
+  let body={...base};
+  for(let i=0;i<5;i++){
+    const r=await SB.from('clinical_records').insert(body);
+    if(!r.error)return;
+    const bad=missingColumnFromError(r.error);
+    if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
+    return;
+  }
 }
 
 async function loadPostopDischarges(){
