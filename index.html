@@ -885,7 +885,16 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .hv-xl .hv-wb .hv-ward{flex:0 1 auto;}
 .hv-xl .hv-dash{color:#444;font-weight:700;padding:0 1px;}
 .hv-xl .hs-btn{width:100%;}
-.hv-xl .followup-actions{display:flex;justify-content:center;}
+.hv-xl .followup-actions{display:flex;flex-direction:column;gap:4px;align-items:stretch;}
+.hv-flange{display:inline-block;margin-top:4px;padding:2px 7px;border-radius:999px;
+  font-size:11px;font-weight:800;border:1px solid;}
+.hv-flange-ok{background:#eef2f6;color:#33506b;border-color:#c3d0dc;}
+.hv-flange-soon{background:#fff6e0;color:#8a5a00;border-color:#e8c579;}
+.hv-flange-due{background:#fff1c9;color:#7a4a00;border-color:#e0a83a;}
+.hv-flange-over{background:#fdecea;color:#a3241a;border-color:#e39a92;}
+/* The stoma shorthand a nurse writes on the ward — Ileo, Colo, MF RUQ. */
+.stoma-short{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;
+  background:var(--navy);color:#fff;font-size:11px;font-weight:800;letter-spacing:.02em;vertical-align:1px;}
 .hv-inp{width:100%;min-width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:12.5px;font-family:inherit;color:var(--navy);background:#fff;}
 .hv-inp:focus{outline:none;border-color:var(--teal);}
 .hv-ward{font-weight:800;}
@@ -2205,7 +2214,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-126';
+const APP_BUILD='2026.09.01-127';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4278,7 +4287,7 @@ function visitStomaBannerHTML(st){
       <div class="vw-stoma-meta">Record the stoma on the patient so what is used can be tied to it.</div></div>`;
   return `<div class="vw-stoma">
     <span class="vw-stoma-code">${htmlSafe(st.code)}</span>
-    <div><div class="vw-stoma-type">${htmlSafe(st.typeLabel)}${st.typeInherited?' <span class="vw-stoma-inh">carried from the stoma it replaced</span>':''}</div>
+    <div><div class="vw-stoma-type">${st.shortLabel?`<span class="stoma-short">${htmlSafe(st.shortLabel)}</span>`:''}${htmlSafe(st.typeLabel)}${st.typeInherited?' <span class="vw-stoma-inh">carried from the stoma it replaced</span>':''}</div>
     <div class="vw-stoma-meta">${htmlSafe(st.meta)}</div></div></div>`;
 }
 async function openVisitApplianceWizard(pending,patient){
@@ -4295,12 +4304,13 @@ async function openVisitApplianceWizard(pending,patient){
     const own=mine[st.uid], p=previous[st.uid];
     const src=(own&&(own.appliances?.length||own.accessories?.length))?own:p;
     prev[st.uid]={appliances:parseNameList(src?.appliances),accessories:parseNameList(src?.accessories),
+                  flange_due:src?.flange_due||'',
                   carriedFrom:(!own||!(own.appliances?.length||own.accessories?.length))&&p?p.appt_date:null};
   });
-  visitWizard={pending,patient,stomas:list,prev,rows:{},chosen:null,step:'stoma',system:'',work:{appliances:[],accessories:[],carriedFrom:null}};
+  visitWizard={pending,patient,stomas:list,prev,rows:{},chosen:null,step:'stoma',system:'',work:{appliances:[],accessories:[],flange_due:'',carriedFrom:null}};
   // Rows already recorded on this appointment stay editable / kept.
   Object.keys(mine).forEach(uid=>{const st=list.find(x=>x.uid===uid);if(st&&(mine[uid].appliances?.length||mine[uid].accessories?.length))
-    visitWizard.rows[uid]={uid,code:st.code,label:visitStomaLabel(st),stoma_type:st.typeLabel||'',appliances:parseNameList(mine[uid].appliances),accessories:parseNameList(mine[uid].accessories)};});
+    visitWizard.rows[uid]={uid,code:st.code,short:st.shortLabel||'',label:visitStomaLabel(st),stoma_type:st.typeLabel||'',appliances:parseNameList(mine[uid].appliances),accessories:parseNameList(mine[uid].accessories),flange_due:mine[uid].flange_due||''};});
   if(list.length===1){startVisitStoma(list[0].uid);} else {renderVisitStep();}
 }
 function stomaRecordsFor(appt){
@@ -4333,7 +4343,8 @@ function startVisitStoma(uid){
   const carry=w.prev[uid]||{};
   const app=done?done.appliances.slice():carry.appliances.slice();
   const acc=done?done.accessories.slice():carry.accessories.slice();
-  w.work={appliances:app,accessories:acc,carriedFrom:done?null:(carry.carriedFrom||null)};
+  w.work={appliances:app,accessories:acc,flange_due:(done?done.flange_due:carry.flange_due)||'',
+    carriedFrom:done?null:(carry.carriedFrom||null)};
   // Infer the system from what is carried over, so it lands on the right page.
   w.system=app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(it.part==='flange'||it.part==='bag');})?'two'
           :(app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&it.system==='one';})?'one':'');
@@ -4361,7 +4372,7 @@ function renderVisitStep(){
       const set=!!w.rows[st.uid];
       return `<button type="button" class="va-stoma ${set?'is-done':''}" onclick="startVisitStoma('${jsSafe(st.uid)}')">
         <span class="va-stoma-code">${htmlSafe(st.code)}</span>
-        <span class="va-stoma-main"><span class="va-stoma-type">${htmlSafe(st.typeLabel||'Stoma')}</span><span class="va-stoma-meta">${htmlSafe(st.meta||'')}</span></span>
+        <span class="va-stoma-main"><span class="va-stoma-type">${st.shortLabel?`<span class="stoma-short">${htmlSafe(st.shortLabel)}</span>`:''}${htmlSafe(st.typeLabel||'Stoma')}</span><span class="va-stoma-meta">${htmlSafe(st.meta||'')}</span></span>
         <span class="va-stoma-state">${set?'✓ set':'Set appliance ›'}</span></button>`;
     }).join('');
     const anySet=Object.keys(w.rows).length>0;
@@ -4390,11 +4401,12 @@ function renderVisitStep(){
     title=w.step==='onepiece'?'One-piece appliance':(w.step==='flange'?'Two-piece — flange':'Two-piece — bag');
     let pick;
     if(w.step==='onepiece')pick=`${search}${panel('of-onepiece',visitPanelHTML('one',w.work.appliances))}`;
-    else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`;
+    else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`+flangeDueFieldHTML(w.work.flange_due);
     else pick=`${search}${panel('of-bags',vaBagPanelHTML(w.work.appliances))}`;
     body=`${banner}${carry}<div class="edit-seen-grid">${pick}<div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else{ // accessory
     title='Accessories';
+    if(w.system==='one')body='';
     body=`${banner}${carry}<div class="edit-seen-grid">
       <div class="fg" style="grid-column:1 / -1;"><label>Accessories used on this stoma</label>
         <div class="ap-panel" id="of-accessories"><div class="ap-group">${ACCESSORIES.concat(w.work.accessories.filter(n=>!ACCESSORIES.includes(n))).map(n=>applianceChkHTML(n,w.work.accessories.includes(n))).join('')}</div></div>
@@ -4411,19 +4423,29 @@ function renderVisitStep(){
   if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
   if(w.step==='accessory')updateApplianceSummary();
 }
+/* Only a two-piece has a flange due date: the flange stays on for days, so the
+   ward has to be reminded when it is due. A one-piece is changed every day and
+   needs no date, so the field is never shown for one. */
+function flangeDueFieldHTML(due){
+  return `<div class="fg" style="grid-column:1 / -1;"><label for="of-flange-due">Flange due to be changed on</label>
+    <input type="date" id="of-flange-due" value="${htmlSafe(String(due||'').slice(0,10))}"/>
+    <div class="ap-hint" style="margin:6px 0 0;">The handover shows a reminder as this date comes up, and it prints on the ward sheet. Leave it empty if it is not decided yet.</div></div>`;
+}
 function visitChooseSystem(sys){
   if(!visitWizard)return;
   const w=visitWizard;
   w.system=sys;
   w.work.appliances=(w.work.appliances||[]).filter(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(sys==='one'?it.system==='one':(it.part==='flange'||it.part==='bag'));});
   w.step=(sys==='one')?'onepiece':'flange';
+  if(sys==='one')w.work.flange_due='';   // a one-piece is changed daily
   renderVisitStep();
 }
 function captureVisitStep(){
   if(!visitWizard)return;
   const w=visitWizard, vis=selectedAppliances();
   if(w.step==='onepiece')w.work.appliances=vis;
-  else if(w.step==='flange'){const bags=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='bag');w.work.appliances=vis.concat(bags);}
+  else if(w.step==='flange'){const bags=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='bag');w.work.appliances=vis.concat(bags);
+    w.work.flange_due=document.getElementById('of-flange-due')?.value||'';}
   else if(w.step==='bag'){const fl=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='flange');w.work.appliances=fl.concat(vis);}
   else if(w.step==='accessory')w.work.accessories=applianceValues('of-accessories');
 }
@@ -4440,7 +4462,9 @@ function visitNext(){
     if(!w.work.accessories.length){alert('Record the accessories for this stoma. If none were used, tick None.');return;}
     // store this stoma and either return to the list or save the visit
     const st=visitStoma(w.chosen);
-    w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',appliances:w.work.appliances.slice(),accessories:w.work.accessories.slice()};
+    w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
+      appliances:w.work.appliances.slice(),accessories:w.work.accessories.slice(),
+      flange_due:w.system==='two'?(w.work.flange_due||''):''};
     if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
     else{commitVisitFromWizard();}
     return;
@@ -4466,6 +4490,7 @@ async function visitBackToAppointment(){
   if(!visitWizard)return;
   const pending=visitWizard.pending;
   visitWizard=null;
+  if(pending&&pending.mode==='episode'){closeModal();return;}
   await openOutcomeFollowupModal(pending.apptId,pending.status);
   restoreOutcomeForm(pending);
 }
@@ -4481,8 +4506,58 @@ async function commitVisitFromWizard(){
   const w=visitWizard;
   if(!w)return;
   const rows=Object.values(w.rows);
+  const pending=w.pending;
   visitWizard=null;
-  await commitOutcomeFollowup(w.pending,rows);
+  if(pending&&pending.mode==='episode'){await commitEpisodeAppliances(pending,rows);return;}
+  await commitOutcomeFollowup(pending,rows);
+}
+/* The admission the patient is on right now. What is set on the ward is
+   written here, so it belongs to this episode rather than floating loose. */
+async function currentInpatientEpisode(pid){
+  const{data,error}=await SB.from('clinical_records').select('id,appliances,record_date')
+    .eq('patient_id',pid).eq('kind','episode').eq('is_current',true)
+    .order('record_date',{ascending:false}).limit(1);
+  if(error)return null;
+  return (data||[])[0]||null;
+}
+/* What the ward set, written stoma by stoma against the current admission, and
+   mirrored into the handover note so the printed sheet carries the same words.
+   Setting the same stoma again on the same day replaces that day's entry rather
+   than stacking a second one. */
+async function commitEpisodeAppliances(pending,rows){
+  if(!rows.length){closeModal();return;}
+  const who=await getCurrentUserForAudit();
+  const stamp=TODAY;
+  const entries=rows.map(r=>({stoma_uid:r.uid||'',stoma_code:r.code||'',stoma_short:r.short||'',
+    stoma_type:r.stoma_type||'',appliances:r.appliances||[],accessories:r.accessories||[],
+    flange_due:r.flange_due||'',changed_on:stamp,changed_by:(who&&who.name)||''}));
+  const ep=await currentInpatientEpisode(pending.patientId);
+  if(ep){
+    const kept=parseEpisodeApplianceRows(ep)
+      .filter(e=>!entries.some(n=>n.stoma_uid===e.stoma_uid&&String(e.changed_on||'')===stamp));
+    const{error}=await SB.from('clinical_records').update({appliances:kept.concat(entries)}).eq('id',ep.id);
+    if(error){alert('Could not record what was set: '+error.message);return;}
+  }
+  const note=episodeApplianceNote(entries);
+  const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
+  if(pe){alert('The appliance was recorded, but the ward note could not be updated: '+pe.message);}
+  closeModal();
+  if(!ep)alert('Recorded on the ward note. This patient has no open admission on their clinical record, so it could not be filed against an episode — open them in the Registry and start an inpatient episode to keep the full history.');
+  if(document.getElementById('hv-body'))loadHandover();
+}
+/* The one line the ward sheet prints for a patient: each stoma in shorthand,
+   what is on it, then the accessories and when the flange is due. */
+function episodeApplianceNote(entries){
+  return entries.map(e=>{
+    const acc=(e.accessories||[]).filter(a=>a&&a!=='None');
+    const bits=[(e.appliances||[]).join(', ')];
+    if(acc.length)bits.push(acc.join(', '));
+    let line=bits.filter(Boolean).join('; ');
+    const tag=e.stoma_short||e.stoma_code;
+    if(tag)line=tag+': '+line;
+    if(e.flange_due)line+=' - flange due '+fmtShortDate(e.flange_due);
+    return line;
+  }).filter(Boolean).join('  ·  ');
 }
 // A carried-over selection should be visible without scrolling.
 function scrollPanelsToTicked(){
@@ -7106,12 +7181,45 @@ function parseStomas(p){
    before ids existed fall back to one derived from where they sit.
    ---------------------------------------------------------------------------- */
 function newStomaUid(){return 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+/* The shorthand a nurse writes on the ward: the stoma type cut down to Ileo,
+   Colo, Uro or MF. The quadrant is added only when the patient has more than
+   one of that same type to tell apart — one mucus fistula is "MF", two are
+   "MF RUQ" and "MF LLQ". Order matters: an ileal conduit is a urostomy. */
+const STOMA_SHORTS=[
+  [/muc\w*\s*fistula|\bmf\b/i,'MF'],
+  [/ileal\s*conduit|urostom|\buro\b/i,'Uro'],
+  [/ileostom|\bileo/i,'Ileo'],
+  [/colostom|\bcolo/i,'Colo'],
+  [/jejunostom|\bjejun/i,'Jej'],
+  [/caecostom|cecostom/i,'Caeco'],
+  [/gastrostom/i,'Gastro'],
+  [/nephrostom/i,'Nephro']];
+function stomaShortType(type){
+  const t=String(type||'');
+  for(const pair of STOMA_SHORTS)if(pair[0].test(t))return pair[1];
+  return '';
+}
+const STOMA_QUADS=[
+  [/\bruq\b|right\s+upper/i,'RUQ'],[/\bluq\b|left\s+upper/i,'LUQ'],
+  [/\brlq\b|right\s+(lower|iliac)/i,'RLQ'],[/\bllq\b|left\s+(lower|iliac)/i,'LLQ']];
+function stomaQuadrant(loc){
+  const v=String(loc||'');
+  for(const pair of STOMA_QUADS)if(pair[0].test(v))return pair[1];
+  return '';
+}
 function stomaTimeline(p){
   const out=[];
   if(p&&(p.surgery_date||String(p.stoma_type||'').trim())){
     out.push({uid:'base',origin:'base',type:p.stoma_type||'',location:p.stoma_location||'',
       formed:p.surgery_date||null,ended:p.reversal_date||null,findings:p.findings||''});
   }
+  /* Stomas made at the same first operation — a mucus fistula alongside the
+     ileostomy, say. They share the surgery date and the patient-level reversal,
+     and without them a two-stoma patient offers only one to set. */
+  parseInitialStomas(p).forEach((st,i)=>out.push({
+    uid:st.uid||('init:'+String(st.type||'')+':'+String(st.location||'')+':'+i),origin:'initial',
+    type:st.type||'',location:st.location||'',
+    formed:p.surgery_date||null,ended:p.reversal_date||null,findings:''}));
   parseRefashionings(p).forEach((r,i)=>out.push({
     uid:r.uid||('ref:'+(r.formed_date||('#'+i))),origin:'refashion',type:r.type||'',location:r.location||'',
     formed:r.formed_date||null,ended:r.closure_date||null,findings:r.findings||''}));
@@ -7144,6 +7252,17 @@ function stomaTimeline(p){
     if(e.formed)meta.push('formed '+fmtShortDate(e.formed));
     e.meta=meta.join(' · ');
     e.label=`${e.typeLabel} · ${e.meta}`;
+  });
+  /* The shorthand is qualified by quadrant only where it has to be, so a single
+     stoma stays short and two of a kind still read apart. */
+  const shortCounts={};
+  out.forEach(e=>{
+    e.short=stomaShortType(e.type);
+    e.quad=stomaQuadrant(e.location);
+    if(e.short)shortCounts[e.short]=(shortCounts[e.short]||0)+1;
+  });
+  out.forEach(e=>{
+    e.shortLabel=e.short?((shortCounts[e.short]>1&&e.quad)?e.short+' '+e.quad:e.short):(e.quad||'');
   });
   return out;
 }
@@ -7776,12 +7895,15 @@ function applianceTimelineByStomaType(){
     if(source&&d>=String(e.lastDate||'')){e.lastDate=d;e.lastSource=source;}
   };
   (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
-    const a=parseEpisodeAppliances(ep); if(!a)return;
-    const start=ep.record_date||null,end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
-    const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
-    (types.length?types:['__unassigned__']).forEach(tk=>{
-      a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient'));
-      a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient'));
+    const end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
+    parseEpisodeApplianceRows(ep).forEach(a=>{
+      // The day it was set, falling back to the admission date on older records.
+      const start=a.changed_on||ep.record_date||null;
+      const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
+      (types.length?types:['__unassigned__']).forEach(tk=>{
+        a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient'));
+        a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient'));
+      });
     });
   });
   (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>add('__unassigned__',r.title,'appliance',r.record_date,r.is_current?null:r.record_date,!!r.is_current,'inpatient'));
@@ -7963,12 +8085,20 @@ function inpatientStomaType(pat){
   return list.length?[...new Set(list)].join(', '):(pat&&pat.stoma_type||'');
 }
 /* The appliances jsonb on an episode: {stoma_type, appliances[], accessories[]}. */
-function parseEpisodeAppliances(e){
+function parseEpisodeApplianceRows(e){
   let a=e&&e.appliances;
   if(typeof a==='string'){try{a=JSON.parse(a);}catch(_){a=null;}}
-  if(Array.isArray(a))a=a[0];
-  if(!a||typeof a!=='object')return null;
-  return {stoma_type:a.stoma_type||'',appliances:parseNameList(a.appliances),accessories:parseNameList(a.accessories)};
+  if(!a)return [];
+  const list=Array.isArray(a)?a:[a];
+  return list.filter(r=>r&&typeof r==='object').map(r=>({
+    stoma_uid:r.stoma_uid||'',stoma_code:r.stoma_code||'',stoma_short:r.stoma_short||'',
+    stoma_type:r.stoma_type||'',appliances:parseNameList(r.appliances),accessories:parseNameList(r.accessories),
+    flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_by:r.changed_by||''}));
+}
+/* Kept for the readmission carry-over, which only needs the latest single set. */
+function parseEpisodeAppliances(e){
+  const rows=parseEpisodeApplianceRows(e);
+  return rows.length?rows[0]:null;
 }
 /* What the patient last had in use — the most recent episode that recorded it,
    or failing that their most recent seen visit — so a readmission need not
@@ -8681,6 +8811,7 @@ async function loadHandover(){
     return;
   }
   const rows=(data||[]).slice().sort(handoverByWard);
+  const dueBy=await handoverFlangeDue(rows.map(r=>r.id));
   if(countEl)countEl.textContent=rows.length?`${rows.length} inpatient${rows.length===1?'':'s'}`:'';
   if(!rows.length){
     body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
@@ -8691,12 +8822,12 @@ async function loadHandover(){
   const trs=rows.map(p=>{
     const w=String(p.inpatient_ward||'').toUpperCase();
     if(pw===null||w!==pw){wg++;pw=w;}
-    return handoverRowHTML(p,(wg%2)?'wg-odd':'wg-even');
+    return handoverRowHTML(p,(wg%2)?'wg-odd':'wg-even',dueBy[p.id]||'');
   }).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="hv-table">
     <colgroup>
       <col style="width:128px"><col style="width:98px"><col style="width:112px"><col style="width:112px">
-      <col><col style="width:118px"><col style="width:126px"><col style="width:92px">
+      <col><col style="width:118px"><col style="width:126px"><col style="width:104px">
     </colgroup>
     <thead><tr>
       <th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
@@ -8742,7 +8873,26 @@ function handoverByWard(a,b){
   if(bda!==bdb)return bda.localeCompare(bdb);
   return String(a.surname||'').localeCompare(String(b.surname||''));
 }
-function handoverRowHTML(p,cls){
+/* The soonest flange due date on each patient's open admission, read in one go
+   for the whole list. A missing episode table simply means no reminders. */
+async function handoverFlangeDue(ids){
+  const out={};
+  if(!ids.length)return out;
+  try{
+    const{data,error}=await SB.from('clinical_records').select('patient_id,appliances')
+      .in('patient_id',ids).eq('kind','episode').eq('is_current',true);
+    if(error)return out;
+    (data||[]).forEach(ep=>{
+      parseEpisodeApplianceRows(ep).forEach(r=>{
+        if(!r.flange_due)return;
+        const cur=out[ep.patient_id];
+        if(!cur||String(r.flange_due)<String(cur))out[ep.patient_id]=r.flange_due;
+      });
+    });
+  }catch(e){}
+  return out;
+}
+function handoverRowHTML(p,cls,flangeDue){
   return `<tr class="${cls||''}">
     <td class="hv-wb"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
@@ -8752,13 +8902,40 @@ function handoverRowHTML(p,cls){
     <td><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td>${htmlSafe(p.first_name||'')}</td>
     <td><input type="text" class="hv-inp" value="${htmlSafe(p.inpatient_notes||'')}" placeholder="Appliance, size, when it is due…"
-      onchange="saveHandoverField('${p.id}','inpatient_notes',this.value.trim())"/></td>
+      onchange="saveHandoverField('${p.id}','inpatient_notes',this.value.trim())"/>${flangeDueChipHTML(flangeDue)}</td>
     <td>${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td>${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
     <td><div class="followup-actions">
+      <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverAppliance('${p.id}')">Set appliance</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge</button>
     </div></td>
   </tr>`;
+}
+/* How many days from today — negative once the date has gone by. */
+function daysUntilDate(d){
+  const a=new Date(String(TODAY).slice(0,10)+'T00:00:00');
+  const b=new Date(String(d||'').slice(0,10)+'T00:00:00');
+  if(isNaN(b))return null;
+  return Math.round((b-a)/86400000);
+}
+/* A two-piece flange stays on for days, so the handover carries the reminder.
+   A one-piece is changed daily and never has a date to show. */
+function flangeDueChipHTML(due){
+  const n=daysUntilDate(due);
+  if(n===null)return '';
+  let cls='ok',txt='Flange due '+fmtShortDate(due);
+  if(n<0)     {cls='over'; txt='Flange overdue by '+Math.abs(n)+' day'+(Math.abs(n)===1?'':'s');}
+  else if(n===0){cls='due';  txt='Flange due today';}
+  else if(n<=2){cls='soon'; txt='Flange due in '+n+' day'+(n===1?'':'s');}
+  return `<span class="hv-flange hv-flange-${cls}">${htmlSafe(txt)}</span>`;
+}
+/* Setting an appliance from the handover files it against the stoma and the
+   admission the patient is on now, so it lands in the stoma's history rather
+   than only in the ward note. */
+async function openHandoverAppliance(patientId){
+  const{data,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  if(error||!data){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
+  await openVisitApplianceWizard({patientId,apptId:null,date:TODAY,slot:'',mode:'episode'},data);
 }
 async function dischargeFromHandover(patientId,name){
   if(!confirm(`Take ${name||'this patient'} off the handover list?\n\nThe patient stays in the Registry with everything on their record — they simply stop being an inpatient, and their inpatient episode is closed with today's date.`))return;
