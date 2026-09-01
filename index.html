@@ -1807,6 +1807,17 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div id="hv-body"><div class="report-note">Loading the handover list…</div></div>
     </div>
 
+    <div class="page" id="page-postop">
+      <div class="phdr">
+        <div><h2>📤 Postop Discharges</h2><p>Patients discharged home after their operation — most recent first</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="printPostopDischarges()" style="background:#0369a1;">🖨 Print / PDF</button>
+          <button class="btn-add" onclick="loadPostopDischarges()">Refresh</button>
+        </div>
+      </div>
+      <div id="postop-body"><div class="report-note">Loading the postop discharge list…</div></div>
+    </div>
+
     <div class="page" id="page-discharge">
       <div class="phdr">
         <div><h2>✉ Discharge letters</h2><p>Build a stoma discharge letter on the Mater Dei letterhead — fill in, print or save as PDF</p></div>
@@ -2263,7 +2274,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-135';
+const APP_BUILD='2026.09.01-136';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2357,7 +2368,8 @@ const TAB_GROUPS=[
    ]},
   {key:'handover',label:'Handover',icon:'🏥',color:'#b45309',
    pages:[
-     {tab:'handover',label:'Handover',icon:'🏥',color:'#b45309'}
+     {tab:'handover',label:'Handover',icon:'🏥',color:'#b45309'},
+     {tab:'postop',label:'Postop Discharges',icon:'📤',color:'#b45309'}
    ]},
   {key:'discharge',label:'Discharge letters',icon:'✉',color:'#0369a1',
    pages:[
@@ -2435,6 +2447,7 @@ function switchTab(name){
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')loadHandover();
+  if(name==='postop')loadPostopDischarges();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
   if(name==='reports')loadReports();
@@ -9014,7 +9027,7 @@ function handoverRowHTML(p,cls,flangeDue){
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
       <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverAppliance('${p.id}')">Set appliance</button>
-      <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge</button>
+      <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Postop discharge</button>
     </div></td>
   </tr>`;
 }
@@ -9046,12 +9059,148 @@ async function openHandoverAppliance(patientId){
     ward:data.inpatient_ward||'',bed:data.inpatient_bed||''},data);
 }
 async function dischargeFromHandover(patientId,name){
-  if(!confirm(`Take ${name||'this patient'} off the handover list?\n\nThe patient stays in the Registry with everything on their record — they simply stop being an inpatient, and their inpatient episode is closed with today's date.`))return;
+  if(!confirm(`Postop discharge for ${name||'this patient'}?\n\nThey come off the handover list and their inpatient episode is closed with today's date. They keep everything on their record and appear in the Postop Discharges list.`))return;
   const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(error){alert('Could not discharge: '+error.message);return;}
   await closeOpenInpatientEpisode(patientId);
   loadHandover();
 }
+/* ------------------------------------------------------------------------- *
+ * Postop Discharges — the patients discharged home after their operation.
+ * It is the list of closed inpatient episodes (an episode carries its admission
+ * ward, its dates and what was used), newest discharge first.
+ * ------------------------------------------------------------------------- */
+let postopState={rows:[]};
+// The ward and bed an episode was admitted on, read from its "Ward SW4, Bed 13"
+// detail line and shown as "SW4 - 13".
+function episodeWardBed(ep){
+  const m=String(ep&&ep.detail||'').match(/Ward\s*([^,]+?)(?:,\s*Bed\s*(.+))?$/i);
+  if(!m)return '';
+  const ward=(m[1]||'').trim(), bed=(m[2]||'').trim();
+  return ward+(bed?' - '+bed:'');
+}
+// One appliance line for the episode, in the ward shorthand: the newest entry
+// per stoma, else the admission summary the episode was created with.
+function episodeApplianceSummaryLine(ep){
+  const rows=parseEpisodeApplianceRows(ep);
+  if(rows.length){
+    // Keep the newest entry for each stoma.
+    const latest={};
+    rows.forEach(r=>{const k=r.stoma_uid||r.stoma_code||r.stoma_type||'';
+      if(!latest[k]||String(r.changed_on||'')>=String(latest[k].changed_on||''))latest[k]=r;});
+    return Object.values(latest).map(e=>{
+      const acc=shortApplianceList((e.accessories||[]).filter(a=>a&&a!=='None'));
+      const bits=[shortApplianceList(e.appliances||[]).join(', ')];
+      if(acc.length)bits.push(acc.join(', '));
+      let line=bits.filter(Boolean).join('; ');
+      const tag=e.stoma_short||e.stoma_code;
+      if(tag)line=tag+': '+line;
+      if(e.flange_due)line+=' - flange due '+fmtShortDate(e.flange_due);
+      return line;
+    }).filter(Boolean).join('  ·  ');
+  }
+  return String(ep&&ep.notes||'').trim();
+}
+async function loadPostopDischarges(){
+  const body=document.getElementById('postop-body');
+  if(!body)return;
+  const{data,error}=await SB.from('clinical_records')
+    .select('id,patient_id,detail,record_date,discharge_date,notes,appliances,status')
+    .eq('kind','episode').order('discharge_date',{ascending:false});
+  if(error){
+    const missing=/clinical_records|discharge_date|column|relation|does not exist/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The clinical records table is not in the database yet. Run <strong>sql/add-clinical-records.sql</strong> once in Supabase to turn the postop discharge list on.')
+      : `<div class="report-note">Could not load the postop discharge list: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  const eps=(data||[]).filter(r=>r.discharge_date);
+  if(!eps.length){
+    postopState.rows=[];
+    body.innerHTML='<div class="report-note">Nobody has been postop discharged yet. A patient joins this list when you press <strong>Postop discharge</strong> on the handover.</div>';
+    return;
+  }
+  // Names come from the patients table, fetched in one read.
+  const ids=[...new Set(eps.map(e=>e.patient_id).filter(Boolean))];
+  const byId={};
+  if(ids.length){
+    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant').in('id',ids);
+    (pats||[]).forEach(p=>{byId[p.id]=p;});
+  }
+  const rows=eps.map(ep=>{
+    const pt=byId[ep.patient_id]||{};
+    return {discharge_date:ep.discharge_date,record_date:ep.record_date,
+      wardbed:episodeWardBed(ep),id_card:pt.id_card||'',surname:pt.surname||'',
+      first_name:pt.first_name||'',consultant:pt.consultant||'',
+      appliance:episodeApplianceSummaryLine(ep)};
+  });
+  postopState.rows=rows;
+  const trs=rows.map(r=>`<tr>
+    <td data-label="Discharged">${htmlSafe(fmtShortDate(r.discharge_date))}</td>
+    <td data-label="Ward" class="hv-wb"><div class="hv-wbin" style="font-weight:800;">${htmlSafe(r.wardbed||'—')}</div></td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(r.surname)}</strong></td>
+    <td data-label="First name">${htmlSafe(r.first_name)}</td>
+    <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
+    <td data-label="Appliance + notes">${htmlSafe(r.appliance)}</td>
+    <td data-label="Admitted">${r.record_date?htmlSafe(fmtShortDate(r.record_date)):'—'}</td>
+  </tr>`).join('');
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="postop-table">
+    <colgroup>
+      <col style="width:92px"><col style="width:96px"><col style="width:104px"><col style="width:110px">
+      <col style="width:110px"><col style="width:96px"><col><col style="width:92px">
+    </colgroup>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} discharge${rows.length===1?'':'s'}</span></th></tr>
+      <tr>
+        <th>Discharged</th><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th>
+      </tr>
+    </thead><tbody>${trs}</tbody></table></div>`;
+}
+/* The printable postop discharge list, in the same Excel style as the handover
+   sheet: a green banner, a black header, one shade per patient row. */
+function printPostopDischarges(){
+  const rows=postopState.rows||[];
+  if(!rows.length){alert('There is nobody on the postop discharge list to print.');return;}
+  const fpx=HANDOVER_FONT_PX;
+  const body=rows.map((r,i)=>`<tr class="${i%2?'zeb':''}">
+    <td>${htmlSafe(fmtShortDate(r.discharge_date))}</td>
+    <td>${htmlSafe(r.wardbed||'')}</td>
+    <td>${htmlSafe(r.id_card||'')}</td>
+    <td>${htmlSafe(r.surname||'')}</td>
+    <td>${htmlSafe(r.first_name||'')}</td>
+    <td>${htmlSafe(r.consultant||'')}</td>
+    <td class="capp">${htmlSafe(r.appliance||'')}</td>
+    <td>${r.record_date?htmlSafe(fmtShortDate(r.record_date)):''}</td></tr>`).join('');
+  const w=window.open('','_blank');
+  if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
+  w.document.write(`<!DOCTYPE html><html><head><title>Postop Discharges ${htmlSafe(TODAY)}</title><style>
+    @page{size:A4 landscape;margin:7mm}
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:5mm 4mm;}
+    h1{font-size:${fpx+3}px;font-weight:800;margin:0 0 5px;}
+    table{width:100%;border-collapse:collapse;font-size:${fpx}px;table-layout:fixed;}
+    th,td{border:0.75pt solid #000;padding:4px 5px;text-align:left;vertical-align:top;
+      overflow-wrap:break-word;word-wrap:break-word;line-height:1.25;}
+    thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:${fpx+4}px;}
+    thead .cols th{background:#000;color:#fff;font-weight:800;}
+    td.capp{white-space:normal;}
+    tbody tr.zeb td{background:#eef2f6;}
+    .cdd{width:9%}.cwb{width:9%}.cid{width:11%}.csur{width:12%}.cfn{width:12%}.cfm{width:10%}.cadm{width:9%}
+  </style></head><body>
+    <h1>MDH Nursing Stoma Care — Postop Discharges</h1>
+    <table>
+      <colgroup><col class="cdd"><col class="cwb"><col class="cid"><col class="csur"><col class="cfn"><col class="cfm"><col><col class="cadm"></colgroup>
+      <thead>
+        <tr class="hdate"><td colspan="8">${htmlSafe(fmtLabel(TODAY))}</td></tr>
+        <tr class="cols"><th>Discharged</th><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th></tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>
+  </body></html>`);
+  w.document.close();w.focus();setTimeout(()=>w.print(),250);
+}
+
 /* Discharging closes the patient's open inpatient episode: it keeps its number
    and stays in Episodes, now stamped with the discharge date. */
 async function closeOpenInpatientEpisode(pid){
