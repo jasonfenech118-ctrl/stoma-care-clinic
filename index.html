@@ -1832,6 +1832,16 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div id="siting-body"><div class="report-note">Loading siting sessions…</div></div>
     </div>
 
+    <div class="page" id="page-nostoma">
+      <div class="phdr">
+        <div><h2>📋 No-stoma Operations</h2><p>Operations performed where no stoma was formed — kept separate from the patient registry</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="loadNoStomaOps()">Refresh</button>
+        </div>
+      </div>
+      <div id="nostoma-body"><div class="report-note">Loading…</div></div>
+    </div>
+
     <div class="page" id="page-discharge">
       <div class="phdr">
         <div><h2>✉ Discharge letters</h2><p>Build a stoma discharge letter on the Mater Dei letterhead — fill in, print or save as PDF</p></div>
@@ -2288,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-148';
+const APP_BUILD='2026.09.01-150';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2356,7 +2366,8 @@ const TAB_GROUPS=[
    pages:[
      {tab:'roster',label:'Monthly Roster',icon:'M',color:'#7c3aed'},
      {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'},
-     {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'}
+     {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'},
+     {tab:'nostoma',label:'No-stoma Ops',icon:'📋',color:'#7c3aed'}
    ]},
   {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',badge:'reminders',
    pages:[
@@ -2464,6 +2475,7 @@ function switchTab(name){
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')loadHandover();
   if(name==='siting')loadSitingSessions();
+  if(name==='nostoma')loadNoStomaOps();
   if(name==='postop')loadPostopDischarges();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
@@ -8903,16 +8915,13 @@ async function executeDeletePatient(patientId){
 function renderAddPatientForm(){
   const body=document.getElementById('ap-body');
   if(!body)return;
-  const prefill=pendingPatientPrefill; pendingPatientPrefill=null;
-  const fromSiting=!!sitingStomaCtx;
   body.innerHTML=`
     <div class="ap-card">
-      ${fromSiting?'<div class="registry-lookup-note found" style="margin-bottom:12px;">From a siting session — a stoma was formed. Fill in the operation, findings and stoma details. On saving, this patient is created and <strong>added to the Handover as an inpatient</strong>.</div>':''}
-      ${patientFormHTML(prefill||null,'ap')}
+      ${patientFormHTML(null,'ap')}
       <div id="ap-error"></div>
       <div class="ap-actions">
-        <button class="btn-cancel" onclick="clearAddPatientForm()">Clear form</button>
-        <button class="btn-save" onclick="saveNewPatient()">${fromSiting?'Add patient &amp; put on Handover':'Add Patient'}</button>
+        <button class="btn-cancel" onclick="renderAddPatientForm()">Clear form</button>
+        <button class="btn-save" onclick="saveNewPatient()">Add Patient</button>
       </div>
     </div>`;
   renumberStomaRows('ap');
@@ -8940,19 +8949,9 @@ async function saveNewPatient(){
       <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${existing.id}')">Open that patient</button></div>`);
     return;
   }
-  if(sitingStomaCtx){payload.is_inpatient=true;if(!payload.inpatient_since)payload.inpatient_since=TODAY;}
   const{data:made,error,dropped}=await insertPatientTolerant(payload);
   if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
   if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
-  if(sitingStomaCtx&&made&&made.id){
-    const ctx=sitingStomaCtx; sitingStomaCtx=null;
-    await createSitingInpatientEpisode(made.id,ctx.surgery_date);
-    try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:made.id,surgery_date:ctx.surgery_date,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
-    const nmi=`${payload.first_name||''} ${payload.surname||''}`.trim();
-    alert(`${nmi} added and placed on the Handover as an inpatient.`);
-    switchTab('handover');
-    return;
-  }
 
   const nm=`${payload.first_name||''} ${payload.surname||''}`.trim();
   say(`<div class="registry-lookup-note found" style="font-size:13px;">✅ <strong>${htmlSafe(nm)}</strong> added · ${htmlSafe(payload.id_card)}
@@ -9458,16 +9457,73 @@ async function saveSitingNoStoma(){
 /* A stoma was formed: continue into the full patient form, pre-filled from the
    siting session. On saving, the patient is created, marked as an inpatient and
    put straight on the Handover. */
-let pendingPatientPrefill=null;
+/* The siting-stoma patient form is its OWN form, shown on the Siting page — it
+   does not touch Add Patient. It uses the same patient form under a separate
+   prefix and its own save, then creates the patient as an inpatient. */
 let sitingStomaCtx=null;
 function beginSitingStomaPatient(session,surgeryDate){
-  pendingPatientPrefill={id_card:session.id_card,first_name:session.first_name,surname:session.surname,
-    consultant:session.consultant,surgery_date:surgeryDate||null};
-  sitingStomaCtx={sessionId:session.id,surgery_date:surgeryDate||null};
+  sitingStomaCtx={sessionId:session.id,surgery_date:surgeryDate||null,
+    prefill:{id_card:session.id_card,first_name:session.first_name,surname:session.surname,
+      consultant:session.consultant,surgery_date:surgeryDate||null}};
   closeModal();
-  switchTab('add-patient');
+  // Show the Siting page without reloading its list, then render the form into it.
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-siting')?.classList.add('active');
+  renderPrimaryTabs('siting');renderSubTabs('siting');renderMobileNav('siting');
+  const label=document.getElementById('mob-current-tab');if(label)label.textContent=TAB_LABELS['siting']||'Siting Session';
+  renderSitingStomaForm();
 }
-function clearAddPatientForm(){pendingPatientPrefill=null;sitingStomaCtx=null;renderAddPatientForm();}
+function renderSitingStomaForm(){
+  const body=document.getElementById('siting-body');
+  if(!body||!sitingStomaCtx)return;
+  body.innerHTML=`<div class="ap-card">
+    <div class="registry-lookup-note found" style="margin-bottom:12px;">Stoma formed at this operation. Fill in the operation, findings and stoma details. On saving, this patient is created and <strong>added to the Handover as an inpatient</strong>. This is part of the siting workflow and is separate from Add Patient.</div>
+    ${patientFormHTML(sitingStomaCtx.prefill,'sop')}
+    <div id="sop-error"></div>
+    <div class="ap-actions">
+      <button class="btn-cancel" onclick="cancelSitingStomaForm()">Cancel</button>
+      <button class="btn-save" onclick="saveSitingStomaPatient()">Add patient &amp; put on Handover</button>
+    </div></div>`;
+  renumberStomaRows('sop');
+  onPatientFormOutcome('sop');
+}
+function cancelSitingStomaForm(){sitingStomaCtx=null;loadSitingSessions();}
+async function saveSitingStomaPatient(){
+  const err=document.getElementById('sop-error');
+  const say=html=>{if(err)err.innerHTML=html;};
+  const ctx=sitingStomaCtx; if(!ctx)return;
+  const payload=readPatientForm('sop');
+  payload.followup_owner='Common';
+  payload.followup_type=normaliseFollowupType('new_case');
+  if(!payload.id_card){say('<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>');return;}
+  const miss=patientMissingFields(payload);
+  if(miss.length){say(`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`);return;}
+  const refErr=refashioningError(payload);
+  if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
+  say('<div class="registry-lookup-note">Checking the registry…</div>');
+  const{data:existing,error:lookErr}=await SB.from('patients')
+    .select('id,first_name,surname').eq('id_card',payload.id_card).maybeSingle();
+  if(lookErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(lookErr))}</div>`);return;}
+  if(existing){
+    const nm=`${existing.first_name||''} ${existing.surname||''}`.trim()||'a patient';
+    say(`<div class="registry-lookup-note error">${htmlSafe(payload.id_card)} is already on file as <strong>${htmlSafe(nm)}</strong>. Discharge/handover them from their record instead.</div>`);
+    return;
+  }
+  payload.is_inpatient=true;
+  if(!payload.inpatient_since)payload.inpatient_since=TODAY;
+  const{data:made,error,dropped}=await insertPatientTolerant(payload);
+  if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
+  if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
+  sitingStomaCtx=null;
+  if(made&&made.id){
+    await createSitingInpatientEpisode(made.id,ctx.surgery_date);
+    try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:made.id,surgery_date:ctx.surgery_date,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
+  }
+  refreshReminders();
+  const nmi=`${payload.first_name||''} ${payload.surname||''}`.trim();
+  alert(`${nmi} added and placed on the Handover as an inpatient.`);
+  switchTab('handover');
+}
 async function createSitingInpatientEpisode(pid,surgeryDate){
   const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:'',status:'Inpatient',
     record_date:surgeryDate||TODAY,is_current:true,appliances:[]};
@@ -9482,6 +9538,38 @@ async function createSitingInpatientEpisode(pid,surgeryDate){
   }
 }
 
+async function loadNoStomaOps(){
+  const body=document.getElementById('nostoma-body');
+  if(!body)return;
+  const{data,error}=await SB.from('operations_no_stoma').select('*').order('surgery_date',{ascending:false});
+  if(error){
+    const missing=/operations_no_stoma|relation|does not exist|column/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The no-stoma operations table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.')
+      : `<div class="report-note">Could not load: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  const rows=data||[];
+  if(!rows.length){
+    body.innerHTML='<div class="report-note">Nothing here yet. A record is added from a siting session\u2019s Post-op step when the surgery was performed but no stoma was formed.</div>';
+    return;
+  }
+  const trs=rows.map(r=>`<tr>
+    <td data-label="Surgery date">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'\u2014'}</td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'\u2014')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
+    <td data-label="Firm">${htmlSafe(r.consultant||'\u2014')}</td>
+    <td data-label="Operation">${htmlSafe(r.operation||'\u2014')}</td>
+    <td data-label="Findings">${htmlSafe(r.findings||'')}</td>
+  </tr>`).join('');
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="nostoma-table">
+    <colgroup><col style="width:104px"><col style="width:104px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:22%"><col></colgroup>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="7"><span class="hv-date">No-stoma Operations</span><span class="hv-count">${rows.length} record${rows.length===1?'':'s'}</span></th></tr>
+      <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Operation</th><th>Findings</th></tr>
+    </thead><tbody>${trs}</tbody></table></div>`;
+}
 async function loadPostopDischarges(){
   const body=document.getElementById('postop-body');
   if(!body)return;
