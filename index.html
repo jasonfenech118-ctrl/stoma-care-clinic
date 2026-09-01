@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-151';
+const APP_BUILD='2026.09.01-152';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3130,8 +3130,6 @@ async function loadAppts(){
   }catch(e){}
   const sitingByStart={};
   sitingToday.forEach(ss=>{const k=String(ss.session_slot||'').slice(0,5);if(k)sitingByStart[k]=ss;});
-  const sitingCovered=new Set();
-  SLOTS.forEach((sl,i)=>{if(sitingByStart[sl]&&SLOTS[i+1])sitingCovered.add(SLOTS[i+1]);});
 
   const nurses=[];
   const addNurse=(n)=>{
@@ -3196,6 +3194,18 @@ async function loadAppts(){
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
   document.getElementById('appt-slot-summary').textContent=`${booked} patients booked`;
 
+  // A siting session shows as a box in the Common column, spanning its hour —
+  // no extra column. Only rendered where both of its half-hours are free.
+  const commonNurse=nurses.find(n=>n.type==='common');
+  const commonBusyAt=sl=>!!(commonNurse&&appointmentsForSlotAndColumn(appts,sl,commonNurse).some(a=>a.status!=='cancelled'));
+  const sitingCommonAt={}, sitingCommonCovered=new Set();
+  SLOTS.forEach((sl,i)=>{
+    const ss=sitingByStart[sl];
+    if(!ss||!SLOTS[i+1])return;
+    if(commonBusyAt(sl)||commonBusyAt(SLOTS[i+1]))return;
+    sitingCommonAt[sl]=ss; sitingCommonCovered.add(SLOTS[i+1]);
+  });
+
   const con=document.getElementById('slots-container');
   if(!con)return;
 
@@ -3210,12 +3220,28 @@ async function loadAppts(){
     else if(n.type==='absent'||n.type==='ot-booked') nbadge='<span style="font-size:9px;background:#c0392b;color:#fff;padding:1px 6px;border-radius:4px;margin-left:4px;">Booked / Not Working</span>';
     html+=`<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#1a2e4a;border-bottom:2px solid #dde3ea;border-left:1px solid #dde3ea;background:#fafafa;">${htmlSafe(n.name)}${nbadge}</th>`;
   });
-  html+='<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:#6d28d9;border-bottom:2px solid #dde3ea;border-left:2px solid #d9c9f5;background:#f6f2fe;min-width:150px;">📍 Siting</th>';
   html+='</tr></thead><tbody>';
 
   SLOTS.forEach((slot,si)=>{
     html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
     nurses.forEach(n=>{
+      // The siting box lives in the Common column, spanning its hour.
+      if(n.type==='common'&&sitingCommonCovered.has(slot))return;   // covered by the row above
+      if(n.type==='common'&&sitingCommonAt[slot]){
+        const ss=sitingCommonAt[slot];
+        const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
+        html+=`<td rowspan="2" class="appt-cell-card booked" style="padding:8px 10px;background:#f3effe;border-left:2px solid #d9c9f5;vertical-align:top;">
+          <div style="font-size:10px;font-weight:800;color:#6d28d9;">📍 SITING · ${htmlSafe(sitingSlotLabel(ss.session_slot))}</div>
+          <div class="appt-patient-name">${htmlSafe(nm||'—')}</div>
+          <div style="font-size:11px;color:#5a6b7b;font-family:monospace;">${htmlSafe(ss.id_card||'')}</div>
+          ${ss.consultant?`<div style="font-size:11px;color:#5a6b7b;">${htmlSafe(ss.consultant)}</div>`:''}
+          <div class="appt-action-row">
+            <button onclick="openSitingPostop('${ss.id}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Post-op</button>
+            <button onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
+          </div>
+        </td>`;
+        return;
+      }
       const slotAppts=appointmentsForSlotAndColumn(appts,slot,n);
       const appt=slotAppts.find(a=>a.status!=='cancelled');
       const cancelledHere=slotAppts.filter(a=>a.status==='cancelled');
@@ -3252,29 +3278,6 @@ async function loadAppts(){
         </td>`;
       }
     });
-    // The siting column: one box per session, spanning its two half-hour rows.
-    if(sitingCovered.has(slot)){
-      // covered by the rowspan of the session starting in the row above — no cell
-    }else if(sitingByStart[slot]){
-      const ss=sitingByStart[slot];
-      const span=SLOTS[si+1]?2:1;
-      const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
-      html+=`<td rowspan="${span}" style="padding:8px 10px;background:#f6f2fe;border-left:2px solid #d9c9f5;border-bottom:1px solid #dde3ea;vertical-align:top;">
-        <div style="font-size:10px;font-weight:800;color:#6d28d9;">${htmlSafe(sitingSlotLabel(ss.session_slot))}</div>
-        <div style="font-weight:700;color:#1a2e4a;font-size:13px;margin-top:2px;">${htmlSafe(nm||'—')}</div>
-        <div style="font-size:11px;color:#5a6b7b;font-family:monospace;">${htmlSafe(ss.id_card||'')}</div>
-        ${ss.consultant?`<div style="font-size:11px;color:#5a6b7b;">${htmlSafe(ss.consultant)}</div>`:''}
-        <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;">
-          <button onclick="openSitingPostop('${ss.id}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Post-op</button>
-          <button onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
-        </div>
-      </td>`;
-    }else{
-      const canBook=!!SLOTS[si+2];
-      html+=`<td style="padding:8px;background:#faf8ff;border-left:2px solid #eee6fb;vertical-align:top;">
-        ${canBook?`<button onclick="openSitingBooking('${date}','${slot}')" style="width:100%;padding:6px;border:2px dashed #d9c9f5;border-radius:7px;background:none;color:#8b7bb5;font-size:11px;cursor:pointer;">+ Siting</button>`:''}
-      </td>`;
-    }
     html+='</tr>';
   });
   html+='</tbody></table>';
@@ -9374,11 +9377,11 @@ function sitingStatusLabel(r){
   return 'Booked';
 }
 /* The booking modal: who it is for, the firm, and the day / hour. */
+let sitingChosenSlot='';
 function openSitingBooking(presetDate,presetSlot){
+  sitingChosenSlot=presetSlot||'';
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  const slotOpts=SLOTS.filter(sl=>{const i=SLOTS.indexOf(sl);return i>=0&&SLOTS[i+2];})
-    .map(sl=>`<option value="${sl}">${sitingSlotLabel(sl)}</option>`).join('');
   mb.innerHTML=`<h2>📍 Book siting session</h2>
     <div class="msub">A pre-operative stoma siting — one hour long, booked as a single session.</div>
     <div class="edit-seen-grid">
@@ -9386,23 +9389,56 @@ function openSitingBooking(presetDate,presetSlot){
       <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name"/></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions('')}</select></div>
-      <div class="fg"><label>Date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}"/></div>
-      <div class="fg"><label>Time (1 hour) *</label><select id="sit-slot">${slotOpts}</select></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}" onchange="refreshSitingSlotAvail()"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Pick a free hour *</label><div id="sit-slot-avail"><div class="ap-hint">Choose a date to see the free hours.</div></div></div>
     </div>
     <div id="sit-msg"></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" onclick="saveSitingSession()">Book session</button></div>`;
   openMo();
-  if(presetSlot){const sel=document.getElementById('sit-slot');if(sel&&[...sel.options].some(o=>o.value===presetSlot))sel.value=presetSlot;}
+  refreshSitingSlotAvail();
 }
+/* Show the day's 1-hour slots as buttons — free ones are pickable, ones already
+   taken by another siting or a Common appointment are greyed. */
+async function refreshSitingSlotAvail(){
+  const host=document.getElementById('sit-slot-avail'); if(!host)return;
+  const date=document.getElementById('sit-date')?.value;
+  if(!date){host.innerHTML='<div class="ap-hint">Pick a date first.</div>';return;}
+  host.innerHTML='<div class="ap-hint">Checking availability…</div>';
+  let sit=[],ap=[];
+  try{const{data}=await SB.from('siting_sessions').select('session_slot,status').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  const taken=new Set();
+  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i>=0){taken.add(SLOTS[i]);if(SLOTS[i+1])taken.add(SLOTS[i+1]);}});
+  ap.filter(a=>!a.assigned_to&&!a.bank_staff_id).forEach(a=>taken.add(String(a.appt_slot||'').slice(0,5)));
+  const starts=SLOTS.filter((sl,i)=>SLOTS[i+2]);
+  if(sitingChosenSlot&&(taken.has(sitingChosenSlot)||taken.has(SLOTS[SLOTS.indexOf(sitingChosenSlot)+1])))sitingChosenSlot='';
+  let anyFree=false;
+  const btns=starts.map(sl=>{
+    const i=SLOTS.indexOf(sl);
+    const isTaken=taken.has(sl)||taken.has(SLOTS[i+1]);
+    if(!isTaken)anyFree=true;
+    const sel=sitingChosenSlot===sl;
+    const base='padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;min-width:104px;';
+    const st=isTaken
+      ? base+'border:1.5px solid #e5e7eb;background:#f3f4f6;color:#9ca3af;cursor:not-allowed;'
+      : sel? base+'border:1.5px solid #0d7377;background:#0d7377;color:#fff;cursor:pointer;'
+           : base+'border:1.5px solid #cdb6f0;background:#fff;color:#6d28d9;cursor:pointer;';
+    return `<button type="button" ${isTaken?'disabled':''} onclick="pickSitingSlot('${sl}')" style="${st}">${htmlSafe(sitingSlotLabel(sl))}${isTaken?' · booked':''}</button>`;
+  }).join('');
+  host.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;">${btns}</div>`
+    +(anyFree?'':'<div class="ap-hint" style="margin-top:6px;color:#a3241a;">No free hour on this day — pick another date.</div>');
+}
+function pickSitingSlot(sl){sitingChosenSlot=sl;refreshSitingSlotAvail();}
 async function saveSitingSession(){
   const val=id=>String(document.getElementById(id)?.value||'').trim();
   const idcard=normaliseIdCard(val('sit-idcard'));
   const first=val('sit-first'), surname=val('sit-surname');
   const consultant=val('sit-consultant');
-  const date=val('sit-date'), slot=val('sit-slot');
+  const date=val('sit-date'), slot=sitingChosenSlot;
   const msg=document.getElementById('sit-msg');
   if(!idcard||!first||!surname){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Fill in ID card, first name and surname.</div>';return;}
+  if(!slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a free hour for the session.</div>';return;}
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
