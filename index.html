@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-152';
+const APP_BUILD='2026.09.01-153';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3183,7 +3183,11 @@ async function loadAppts(){
     }
   }
 
-  nurses.push({id:'common',name:'Common',type:'common'});
+  // The Common (general) column is for the Monday–Saturday lists; on a nurse-led
+  // clinic day (Sunday / public holiday) it is dropped, unless a Common booking
+  // already exists that day so nothing is hidden.
+  const hasCommonAppt=(appts||[]).some(a=>a.status!=='cancelled'&&!a.assigned_to&&!a.bank_staff_id);
+  if(!isClinicDay(date)||hasCommonAppt)nurses.push({id:'common',name:'Common',type:'common'});
 
   const workingCount=nurses.filter(n=>!['common','absent','ot-booked'].includes(n.type)).length;
   const extraCount=nurses.filter(n=>['absent','ot-booked'].includes(n.type)).length;
@@ -3194,16 +3198,22 @@ async function loadAppts(){
   const booked=(appts||[]).filter(a=>a.status!=='cancelled').length;
   document.getElementById('appt-slot-summary').textContent=`${booked} patients booked`;
 
-  // A siting session shows as a box in the Common column, spanning its hour —
-  // no extra column. Only rendered where both of its half-hours are free.
-  const commonNurse=nurses.find(n=>n.type==='common');
-  const commonBusyAt=sl=>!!(commonNurse&&appointmentsForSlotAndColumn(appts,sl,commonNurse).some(a=>a.status!=='cancelled'));
-  const sitingCommonAt={}, sitingCommonCovered=new Set();
+  // A siting takes one nurse for its hour, so it shows in a free nurse column
+  // (falling back to Common only if no nurse is free) — not a column of its own,
+  // and never blocking Common. Several sitings can run at once, one per nurse.
+  const busyAt=(n,sl)=>appointmentsForSlotAndColumn(appts,sl,n).some(a=>a.status!=='cancelled');
+  const hostCandidates=nurses.filter(n=>!['absent','ot-booked'].includes(n.type))
+    .sort((a,b)=>(a.type==='common'?1:0)-(b.type==='common'?1:0));   // nurses first, Common last
+  const nurseBusy={};
+  hostCandidates.forEach(n=>{nurseBusy[n.id]=new Set(SLOTS.filter(sl=>busyAt(n,sl)));});
+  const sitingHost={}, sitingCover=new Set();   // sitingHost[startSlot]=nurseId ; cover has "nurseId|slot"
   SLOTS.forEach((sl,i)=>{
-    const ss=sitingByStart[sl];
-    if(!ss||!SLOTS[i+1])return;
-    if(commonBusyAt(sl)||commonBusyAt(SLOTS[i+1]))return;
-    sitingCommonAt[sl]=ss; sitingCommonCovered.add(SLOTS[i+1]);
+    const ss=sitingByStart[sl]; if(!ss||!SLOTS[i+1])return;
+    const h=SLOTS[i+1];
+    const host=hostCandidates.find(n=>!nurseBusy[n.id].has(sl)&&!nurseBusy[n.id].has(h));
+    if(!host)return;   // no free column this hour — the session still lives in the Siting tab
+    nurseBusy[host.id].add(sl); nurseBusy[host.id].add(h);
+    sitingHost[sl]=String(host.id); sitingCover.add(String(host.id)+'|'+h);
   });
 
   const con=document.getElementById('slots-container');
@@ -3225,10 +3235,10 @@ async function loadAppts(){
   SLOTS.forEach((slot,si)=>{
     html+=`<tr><td style="padding:10px 14px;font-weight:700;color:#0d7377;font-size:13px;border-bottom:1px solid #dde3ea;background:#fafafa;">${slot}</td>`;
     nurses.forEach(n=>{
-      // The siting box lives in the Common column, spanning its hour.
-      if(n.type==='common'&&sitingCommonCovered.has(slot))return;   // covered by the row above
-      if(n.type==='common'&&sitingCommonAt[slot]){
-        const ss=sitingCommonAt[slot];
+      // The siting box lives in whichever nurse column is hosting it, spanning its hour.
+      if(sitingCover.has(String(n.id)+'|'+slot))return;   // covered by the row above
+      if(sitingHost[slot]===String(n.id)){
+        const ss=sitingByStart[slot];
         const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
         html+=`<td rowspan="2" class="appt-cell-card booked" style="padding:8px 10px;background:#f3effe;border-left:2px solid #d9c9f5;vertical-align:top;">
           <div style="font-size:10px;font-weight:800;color:#6d28d9;">📍 SITING · ${htmlSafe(sitingSlotLabel(ss.session_slot))}</div>
@@ -9405,18 +9415,20 @@ async function refreshSitingSlotAvail(){
   const date=document.getElementById('sit-date')?.value;
   if(!date){host.innerHTML='<div class="ap-hint">Pick a date first.</div>';return;}
   host.innerHTML='<div class="ap-hint">Checking availability…</div>';
-  let sit=[],ap=[];
+  let sit=[];
   try{const{data}=await SB.from('siting_sessions').select('session_slot,status').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  const taken=new Set();
-  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i>=0){taken.add(SLOTS[i]);if(SLOTS[i+1])taken.add(SLOTS[i+1]);}});
-  ap.filter(a=>!a.assigned_to&&!a.bank_staff_id).forEach(a=>taken.add(String(a.appt_slot||'').slice(0,5)));
+  // Several sitings can run in the same hour — one per nurse — so an hour is only
+  // full once this many overlap it. A Common appointment no longer blocks it.
+  const SITING_MAX_PER_HOUR=3;
+  const perSlot={};
+  sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i>=0){[SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k)perSlot[k]=(perSlot[k]||0)+1;});}});
+  const slotFull=sl=>(perSlot[sl]||0)>=SITING_MAX_PER_HOUR;
   const starts=SLOTS.filter((sl,i)=>SLOTS[i+2]);
-  if(sitingChosenSlot&&(taken.has(sitingChosenSlot)||taken.has(SLOTS[SLOTS.indexOf(sitingChosenSlot)+1])))sitingChosenSlot='';
+  if(sitingChosenSlot&&(slotFull(sitingChosenSlot)||slotFull(SLOTS[SLOTS.indexOf(sitingChosenSlot)+1])))sitingChosenSlot='';
   let anyFree=false;
   const btns=starts.map(sl=>{
     const i=SLOTS.indexOf(sl);
-    const isTaken=taken.has(sl)||taken.has(SLOTS[i+1]);
+    const isTaken=slotFull(sl)||slotFull(SLOTS[i+1]);
     if(!isTaken)anyFree=true;
     const sel=sitingChosenSlot===sl;
     const base='padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;font-family:inherit;min-width:104px;';
@@ -9424,7 +9436,7 @@ async function refreshSitingSlotAvail(){
       ? base+'border:1.5px solid #e5e7eb;background:#f3f4f6;color:#9ca3af;cursor:not-allowed;'
       : sel? base+'border:1.5px solid #0d7377;background:#0d7377;color:#fff;cursor:pointer;'
            : base+'border:1.5px solid #cdb6f0;background:#fff;color:#6d28d9;cursor:pointer;';
-    return `<button type="button" ${isTaken?'disabled':''} onclick="pickSitingSlot('${sl}')" style="${st}">${htmlSafe(sitingSlotLabel(sl))}${isTaken?' · booked':''}</button>`;
+    return `<button type="button" ${isTaken?'disabled':''} onclick="pickSitingSlot('${sl}')" style="${st}">${htmlSafe(sitingSlotLabel(sl))}${isTaken?' · full':''}</button>`;
   }).join('');
   host.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;">${btns}</div>`
     +(anyFree?'':'<div class="ap-hint" style="margin-top:6px;color:#a3241a;">No free hour on this day — pick another date.</div>');
