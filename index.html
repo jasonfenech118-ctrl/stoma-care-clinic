@@ -1744,6 +1744,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
         <div><h2>➕ Add Patient</h2><p>Register a new patient and record the outcome — reversed, deceased, discharged — whenever it changes</p></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn-add" style="background:#6d28d9;" onclick="openLocalitiesModal()">🏘 Manage localities</button>
+          <button class="btn-add" style="background:#0d7377;" onclick="openFirmsModal()">🩺 Manage firms</button>
           <button class="btn-add" onclick="switchTab('patients')">Go to Registry</button>
         </div>
       </div>
@@ -2276,7 +2277,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-139';
+const APP_BUILD='2026.09.01-140';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2304,6 +2305,7 @@ async function startApp(){
   await loadHolidays();
   await loadStaff();
   await loadLocalities();
+  await loadFirms();
   renderRoster();
   loadTodaySnapshot();
   initAppts();
@@ -7183,6 +7185,91 @@ function localityOptions(cur){
     +'<option value="__add__">＋ Add locality…</option>';
 }
 function localityAdd(sel){optionAdd(sel,'Enter the locality');}
+/* The firm (consultant / surgical team). The list lives in the firms table so
+   it can be managed from the app; it starts empty and falls back to whatever is
+   already on patients if the table is missing. */
+let firmList=[];
+let firmsAvailable=false;
+let firmsError='';
+async function loadFirms(){
+  try{
+    const{data,error}=await SB.from('firms').select('name').order('name');
+    if(error||!Array.isArray(data)){firmsAvailable=false;firmsError=error?.message||'';return;}
+    firmsAvailable=true;firmsError='';
+    firmList=data.map(r=>r.name).filter(Boolean);
+  }catch(e){firmsAvailable=false;firmsError=String(e&&e.message||e);}
+}
+function firmOptions(cur){
+  const c=(cur==null?'':String(cur)).trim();
+  const opts=firmList.slice();
+  if(c&&!opts.includes(c))opts.push(c);
+  return '<option value="">— firm —</option>'
+    +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
+    +'<option value="__add__">＋ Add firm…</option>';
+}
+function firmAdd(sel){optionAdd(sel,'Enter the firm (consultant / team)');}
+/* ── MANAGE FIRMS ──────────────────────────────────────────────────────────
+   Add, rename and remove the firms offered in the patient Firm dropdown. */
+async function openFirmsModal(){
+  await loadFirms();
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  if(!firmsAvailable){
+    mb.innerHTML=`<h2>🩺 Manage firms</h2>
+      <div class="registry-lookup-note error" style="margin-bottom:12px;">The <strong>firms</strong> list could not be opened. Run <strong>sql/add-firms.sql</strong> once in the Supabase SQL Editor (it creates the table and grants access), then reopen this.${firmsError?`<br><br><span style="font-weight:400;">Database said: ${htmlSafe(firmsError)}</span>`:''}</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    openMo();return;
+  }
+  renderFirmsModal();
+  openMo();
+}
+function renderFirmsModal(){
+  const mb=document.getElementById('mb');
+  const rows=firmList.slice().sort((a,b)=>a.localeCompare(b));
+  mb.innerHTML=`<h2>🩺 Manage firms</h2>
+    <div class="msub">Add, rename or remove the firms offered in the patient <strong>Firm</strong> dropdown. Patients already saved keep their firm even if it is removed here.</div>
+    <div class="fg" style="display:flex;gap:8px;align-items:flex-end;">
+      <div style="flex:1;"><label>New firm</label><input type="text" id="firm-new" placeholder="e.g. Mr Zammit" onkeydown="if(event.key==='Enter'){event.preventDefault();addFirm()}"/></div>
+      <button class="btn-save" onclick="addFirm()">Add</button>
+    </div>
+    <div id="firm-msg"></div>
+    <div class="loc-list">${rows.length?rows.map(n=>`
+      <div class="loc-row" data-name="${htmlSafe(n)}">
+        <span class="loc-name">${htmlSafe(n)}</span>
+        <span class="loc-acts">
+          <button class="clr-mini" onclick="renameFirm('${jsSafe(n)}')">Rename</button>
+          <button class="clr-mini danger" onclick="deleteFirm('${jsSafe(n)}')">Delete</button>
+        </span>
+      </div>`).join(''):'<div class="report-note">No firms yet — add the first one above.</div>'}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+}
+function firmMsg(html){const el=document.getElementById('firm-msg');if(el)el.innerHTML=html?`<div class="registry-lookup-note ${html.err?'error':'found'}" style="margin:6px 0;">${htmlSafe(html.text)}</div>`:'';}
+async function addFirm(){
+  const inp=document.getElementById('firm-new');const name=(inp?.value||'').trim();
+  if(!name){firmMsg({err:true,text:'Type a firm name first.'});return;}
+  if(firmList.some(l=>l.toLowerCase()===name.toLowerCase())){firmMsg({err:true,text:`${name} is already on the list.`});return;}
+  const{error}=await SB.from('firms').insert({name});
+  if(error){firmMsg({err:true,text:'Could not add: '+error.message});return;}
+  await loadFirms();renderFirmsModal();firmMsg({text:`Added ${name}.`});
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
+async function renameFirm(oldName){
+  const name=(prompt('Rename firm',oldName)||'').trim();
+  if(!name||name===oldName)return;
+  if(firmList.some(l=>l.toLowerCase()===name.toLowerCase()&&l.toLowerCase()!==oldName.toLowerCase())){alert(`${name} is already on the list.`);return;}
+  const{error}=await SB.from('firms').update({name}).eq('name',oldName);
+  if(error){alert('Could not rename: '+error.message);return;}
+  await loadFirms();renderFirmsModal();
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
+async function deleteFirm(name){
+  if(!confirm(`Remove "${name}" from the firm list?\n\nPatients already recorded under ${name} keep it.`))return;
+  const{error}=await SB.from('firms').delete().eq('name',name);
+  if(error){alert('Could not delete: '+error.message);return;}
+  await loadFirms();renderFirmsModal();
+  if(document.getElementById('page-add-patient')?.classList.contains('active'))renderAddPatientForm();
+}
+
 /* ── MANAGE LOCALITIES ─────────────────────────────────────────────────────
    A small admin screen to add, rename and remove the localities offered in the
    patient Locality dropdown. Backed by the localities table. */
@@ -7592,7 +7679,7 @@ function patientFormHTML(p,prefix){
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
     <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)">${localityOptions(p?.locality)}</select></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
-    <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><input type="text" id="${prefix}-consultant" value="${v('consultant')}" placeholder="e.g. Mr Zammit"/></div>
+    <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)">${firmOptions(p?.consultant)}</select></div>
   </div>
 
   <h3 class="pf-head">Stoma 1 · formed at the first operation</h3>
@@ -7733,7 +7820,7 @@ function readPatientForm(prefix){
     phone_number:val('phone')||null,
     sex:val('sex')||null,
     locality:loc(val('locality')),
-    consultant:val('consultant')||null,
+    consultant:loc(val('consultant')),
     date_of_birth:val('dob')||null,
     surgery_date:val('surgery')||null,
     discharge_date:val('discharge')||null,
