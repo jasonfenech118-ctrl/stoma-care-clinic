@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-154';
+const APP_BUILD='2026.09.01-155';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9410,6 +9410,23 @@ function openSitingBooking(presetDate,presetSlot){
 }
 /* Show the day's 1-hour slots as buttons — free ones are pickable, ones already
    taken by another siting or a Common appointment are greyed. */
+/* How many booking columns a day has — the nurses working (roster or their
+   default pattern), plus the Common column on non-clinic days. A siting needs
+   one of these free for the whole hour, so this caps the availability. */
+async function nurseCapacityForDate(date){
+  let cap=0;
+  try{
+    const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+    const OFF=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+    (staffList||[]).forEach(st=>{
+      const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
+      if(e){if(!OFF.includes(e.status))cap++;}
+      else if(defaultCode(st,date)==='working')cap++;
+    });
+  }catch(e){}
+  if(!isClinicDay(date))cap++;   // the Common (general) column
+  return cap;
+}
 async function refreshSitingSlotAvail(){
   const host=document.getElementById('sit-slot-avail'); if(!host)return;
   const date=document.getElementById('sit-date')?.value;
@@ -9418,14 +9435,20 @@ async function refreshSitingSlotAvail(){
   let sit=[],ap=[];
   try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
   try{const{data}=await SB.from('appointments').select('appt_slot,status,patients(first_name,surname)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  // Who is booked in each half-hour slot, so the day can be seen while booking.
-  const bookedBySlot={}, sitingCount={};
-  ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;(bookedBySlot[sl]=bookedBySlot[sl]||[]).push(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked');});
+  const capacity=await nurseCapacityForDate(date);
+  // Who is booked in each half-hour, plus how many columns are used, so a slot
+  // is only free while at least one column is still open.
+  const bookedBySlot={}, usedBySlot={};
+  ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;
+    (bookedBySlot[sl]=bookedBySlot[sl]||[]).push(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked');
+    usedBySlot[sl]=(usedBySlot[sl]||0)+1;});
   sit.forEach(x=>{const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0)return;
     const nm=`${x.first_name||''} ${x.surname||''}`.trim()||'Siting';
-    [SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k){(bookedBySlot[k]=bookedBySlot[k]||[]).push('📍 '+nm);sitingCount[k]=(sitingCount[k]||0)+1;}});});
-  const SITING_MAX_PER_HOUR=3;
-  const hourFull=sl=>{const i=SLOTS.indexOf(sl);return (sitingCount[sl]||0)>=SITING_MAX_PER_HOUR||(SLOTS[i+1]&&(sitingCount[SLOTS[i+1]]||0)>=SITING_MAX_PER_HOUR);};
+    [SLOTS[i],SLOTS[i+1]].forEach(k=>{if(k){(bookedBySlot[k]=bookedBySlot[k]||[]).push('📍 '+nm);usedBySlot[k]=(usedBySlot[k]||0)+1;}});});
+  // A half-hour is full when every column is taken. If capacity could not be
+  // worked out, do not block (treat as open).
+  const slotFull=sl=>capacity>0&&(usedBySlot[sl]||0)>=capacity;
+  const hourFull=sl=>{const i=SLOTS.indexOf(sl);return slotFull(sl)||(SLOTS[i+1]&&slotFull(SLOTS[i+1]));};
   const canStart=sl=>{const i=SLOTS.indexOf(sl);return !!SLOTS[i+2];};   // a full hour fits
   if(sitingChosenSlot&&(!canStart(sitingChosenSlot)||hourFull(sitingChosenSlot)))sitingChosenSlot='';
   const selSet=new Set();
