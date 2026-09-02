@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-160';
+const APP_BUILD='2026.09.02-161';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8014,6 +8014,7 @@ async function openPatientDatesModal(patientId){
     <div class="mact" style="justify-content:space-between;">
       <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">🗑 Delete Patient</button>
       <div style="display:flex;gap:8px;">
+        <button class="btn-cancel" style="background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="openPatientSiting('${patientId}','${jsSafe(pat.id_card||'')}','${jsSafe(nm)}')">📍 Siting</button>
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" onclick="savePatientDates('${patientId}')">Save Patient</button>
       </div></div>`;
@@ -9390,6 +9391,56 @@ function sitingStatusLabel(r){
   if(r.surgery_performed===false)return 'No surgery';
   return 'Booked';
 }
+/* The Siting view on a patient record. A patient's siting sessions are matched
+   by ID card (the key used everywhere) and by the patient_id stamped on the
+   session when a stoma was formed — so every session shows here whether or not
+   a stoma was the outcome. Read-only: booking and post-op live on the Siting tab. */
+async function openPatientSiting(patientId,idCard,name){
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>📍 Siting sessions</h2>
+    <div class="msub"><strong>${htmlSafe(name||'Patient')}</strong>${idCard?' · '+htmlSafe(idCard):''}</div>
+    <div id="patient-siting-body"><div class="report-note">Loading…</div></div>
+    <div class="mact"><button class="btn-cancel" onclick="openPatientDatesModal('${patientId}')">Back to patient</button><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+  const body=document.getElementById('patient-siting-body');
+  const byId=new Map();
+  let missing=false,failed='';
+  if(idCard){
+    const{data,error}=await SB.from('siting_sessions').select('*').eq('id_card',idCard);
+    if(error){ if(/siting_sessions|relation|does not exist/i.test(String(error.message||'')))missing=true; else failed=error.message||''; }
+    (data||[]).forEach(r=>byId.set(String(r.id),r));
+  }
+  if(!missing&&patientId){
+    const{data,error}=await SB.from('siting_sessions').select('*').eq('patient_id',patientId);
+    if(error&&/siting_sessions|relation|does not exist/i.test(String(error.message||'')))missing=true;
+    (data||[]).forEach(r=>byId.set(String(r.id),r));
+  }
+  if(!body)return;
+  if(missing){body.innerHTML=handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.');return;}
+  const rows=[...byId.values()].filter(r=>r.status!=='cancelled')
+    .sort((a,b)=>String(b.session_date||'').localeCompare(String(a.session_date||'')));
+  if(!rows.length){
+    body.innerHTML=`<div class="report-note">${failed?('Could not load: '+htmlSafe(failed)):'No siting sessions on record for this patient. Book one from the <strong>Siting Session</strong> tab.'}</div>`;
+    return;
+  }
+  const cards=rows.map(r=>{
+    const st=sitingStatusLabel(r);
+    const stColor=r.surgery_performed===true?(r.stoma_formed?'#0d7377':'#8a6d3b'):(r.surgery_performed===false?'#8a6d3b':'#0d7377');
+    return `<div class="ap-card" style="margin:0 0 10px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;">
+        <strong>${htmlSafe(r.siting_for||'Siting')}</strong>
+        <span style="font-weight:700;color:${stColor};">${htmlSafe(st)}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 14px;margin-top:6px;font-size:13px;">
+        <span style="color:#6b7280;">Siting date</span><span>${r.session_date?htmlSafe(fmtShortDate(r.session_date)):'—'}${r.session_slot?' · '+htmlSafe(sitingSlotLabel(r.session_slot)):''}</span>
+        <span style="color:#6b7280;">Surgery date</span><span>${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</span>
+        <span style="color:#6b7280;">Firm</span><span>${htmlSafe(r.consultant||'—')}</span>
+      </div>
+    </div>`;
+  }).join('');
+  body.innerHTML=cards;
+}
 /* The booking modal: who it is for, the firm, and the day / hour. */
 let sitingChosenSlot='';
 function openSitingBooking(presetDate,presetSlot){
@@ -9540,6 +9591,10 @@ async function saveSitingSession(){
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
     session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null,status:'booked'};
+  // If this ID already belongs to a registry patient, stamp the link so the
+  // patient's Siting view finds it even before any surgery/stoma outcome.
+  try{const{data:existing}=await SB.from('patients').select('id').eq('id_card',idcard).maybeSingle();
+    if(existing&&existing.id)payload.patient_id=existing.id;}catch(e){}
   try{const u=await getCurrentUserForAudit();payload.created_by=u?.name||null;}catch(e){}
   let{error}=await SB.from('siting_sessions').insert(payload);
   if(error&&/siting_for/.test(String(error.message||''))){
