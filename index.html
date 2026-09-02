@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-159';
+const APP_BUILD='2026.09.01-160';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9358,6 +9358,7 @@ async function loadSitingSessions(){
     <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
+    <td data-label="Sited for">${htmlSafe(r.siting_for||'—')}</td>
     <td data-label="Surgery">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</td>
     <td data-label="Status">${htmlSafe(sitingStatusLabel(r))}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
@@ -9366,10 +9367,10 @@ async function loadSitingSessions(){
     </div></td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="siting-table">
-    <colgroup><col style="width:96px"><col style="width:118px"><col style="width:104px"><col style="width:104px"><col style="width:104px"><col style="width:100px"><col><col style="width:110px"><col style="width:88px"></colgroup>
+    <colgroup><col style="width:92px"><col style="width:112px"><col style="width:100px"><col style="width:100px"><col style="width:100px"><col style="width:96px"><col style="width:100px"><col><col style="width:104px"><col style="width:84px"></colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="9"><span class="hv-date">Siting Sessions</span><span class="hv-count">${rows.length} booked</span></th></tr>
-      <tr><th>Siting date</th><th>Time</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Surgery</th><th>Status</th><th></th></tr>
+      <tr class="hv-bannerrow"><th colspan="10"><span class="hv-date">Siting Sessions</span><span class="hv-count">${rows.length} booked</span></th></tr>
+      <tr><th>Siting date</th><th>Time</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Sited for</th><th>Surgery</th><th>Status</th><th></th></tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
 // A siting session is an hour, so the slot label shows the whole hour.
@@ -9403,6 +9404,11 @@ function openSitingBooking(presetDate,presetSlot){
       <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name"/></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions('')}</select></div>
       <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Being sited for *</label><select id="sit-for">
+        <option value="">— stoma —</option>
+        <option value="Colostomy">Colostomy</option>
+        <option value="Ileostomy">Ileostomy</option>
+        <option value="Urostomy">Urostomy</option></select></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Siting date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}" onchange="refreshSitingSlotAvail()"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Pick a free hour *</label><div id="sit-slot-avail"><div class="ap-hint">Choose a date to see the free hours.</div></div></div>
     </div>
@@ -9526,14 +9532,19 @@ async function saveSitingSession(){
   const date=val('sit-date'), slot=sitingChosenSlot;
   const msg=document.getElementById('sit-msg');
   if(!idcard||!first||!surname){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Fill in ID card, first name and surname.</div>';return;}
+  const sitedFor=val('sit-for');
+  if(!sitedFor){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Choose what the patient is being sited for.</div>';return;}
   if(!slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a free hour for the session.</div>';return;}
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
   const surgdate=val('sit-surgdate');
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
-    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,status:'booked'};
+    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null,status:'booked'};
   try{const u=await getCurrentUserForAudit();payload.created_by=u?.name||null;}catch(e){}
-  const{error}=await SB.from('siting_sessions').insert(payload);
+  let{error}=await SB.from('siting_sessions').insert(payload);
+  if(error&&/siting_for/.test(String(error.message||''))){
+    const {siting_for,...rest}=payload; ({error}=await SB.from('siting_sessions').insert(rest));
+  }
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
     if(msg)msg.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${missing?'Run sql/add-siting-sessions.sql once in Supabase first.':'Could not book: '+htmlSafe(error.message)}</div>`;

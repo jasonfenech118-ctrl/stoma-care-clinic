@@ -73,3 +73,9 @@ CREATE POLICY operations_no_stoma_all ON public.operations_no_stoma
 SELECT 'siting_sessions' AS table, count(*) FROM public.siting_sessions
 UNION ALL
 SELECT 'operations_no_stoma', count(*) FROM public.operations_no_stoma;
+
+-- -----------------------------------------------------------------------------
+-- What the patient is being sited for (Colostomy / Ileostomy / Urostomy).
+-- Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS siting_for text;
