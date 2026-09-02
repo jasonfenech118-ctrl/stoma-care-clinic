@@ -923,10 +923,12 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .sit-ck-type label{display:inline-flex;align-items:center;gap:4px;}
 .sit-ck-other{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:5px 8px;
   border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+.sit-ck-sitesel{margin-top:6px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;background:#fff;}
 .sit-ck-ctrls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
 .sit-ck-mu{display:flex;gap:12px;}
 .sit-ck-mu label{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;}
-.sit-ck-mu .ck-met{color:#127a3e;} .sit-ck-mu .ck-unmet{color:#b45309;}
+.sit-ck-mu .ck-met{color:#127a3e;} .sit-ck-mu .ck-unmet{color:#b45309;} .sit-ck-mu .ck-noted{color:#6d28d9;}
+.sit-ck-note-wrap{margin-top:8px;}
 .sit-ck-ctrls input[type=date]{padding:4px 7px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 .sit-ck-init{flex:1;min-width:120px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 
@@ -2316,7 +2318,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-175';
+const APP_BUILD='2026.09.02-177';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9573,6 +9575,7 @@ function openSitingBooking(presetDate,presetSlot,edit){
       <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate" value="${htmlSafe(e.surgery_date||'')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Being sited for *</label><select id="sit-for">
         ${opt('','— stoma —')}${opt('Colostomy','Colostomy')}${opt('Ileostomy','Ileostomy')}${opt('Urostomy','Urostomy')}${opt('Bilateral (Colostomy & Ileostomy)','Bilateral (Colostomy & Ileostomy)')}</select></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Proposed operation</label><input type="text" id="sit-operation" placeholder="e.g. Abdominoperineal resection" value="${htmlSafe(e.proposed_operation||'')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Siting date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}" onchange="refreshSitingSlotAvail()"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Pick a free hour *</label><div id="sit-slot-avail"><div class="ap-hint">Choose a date to see the free hours.</div></div></div>
     </div>
@@ -9700,7 +9703,8 @@ async function saveSitingSession(){
   const surgdate=val('sit-surgdate');
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
-    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null};
+    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null,
+    proposed_operation:val('sit-operation')||null};
   // A new booking starts booked; an edit keeps whatever status it already has.
   if(!sitingEditId)payload.status='booked';
   else payload.updated_at=new Date().toISOString();
@@ -9709,12 +9713,17 @@ async function saveSitingSession(){
   try{const{data:existing}=await SB.from('patients').select('id').eq('id_card',idcard).maybeSingle();
     if(existing&&existing.id)payload.patient_id=existing.id;}catch(e){}
   try{const u=await getCurrentUserForAudit();if(!sitingEditId)payload.created_by=u?.name||null;}catch(e){}
-  const run=body=>sitingEditId
-    ? SB.from('siting_sessions').update(body).eq('id',sitingEditId)
-    : SB.from('siting_sessions').insert(body);
-  let{error}=await run(payload);
-  if(error&&/siting_for/.test(String(error.message||''))){
-    const {siting_for,...rest}=payload; ({error}=await run(rest));
+  const run=b=>sitingEditId
+    ? SB.from('siting_sessions').update(b).eq('id',sitingEditId)
+    : SB.from('siting_sessions').insert(b);
+  // Drop any column the database does not have yet (siting_for, proposed_operation…)
+  // rather than losing the whole booking.
+  let body={...payload};
+  let{error}=await run(body);
+  for(let i=0;i<4&&error;i++){
+    const bad=missingColumnFromError(error);
+    if(!bad||!(bad in body))break;
+    delete body[bad];({error}=await run(body));
   }
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
@@ -9747,7 +9756,7 @@ const SITING_CHECKLIST_ITEMS=[
   'Figure of stoma and appliance shown',
   'Opportunity to discuss implications of stoma on lifestyle',
   'Waistband noted and marked',
-  'Creases, dips or scars noted',
+  'Creases, dips or scars noted — umbilicus, groin area, possible incision site and hip bone',
   'Site agreed and visible to patient',
   'Stoma site marked',
   'Other issues discussed'
@@ -9785,16 +9794,25 @@ async function openSitingSeen(id){
         ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="radio" name="ck-type" value="${t}" ${stomaType===t?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
     const specify=(n===10)?`<input type="text" id="ck-other" class="sit-ck-other" placeholder="Specify" value="${htmlSafe((existing&&existing.other)||'')}"/>`:'';
+    const sitePick=(n===8||n===9)?`<select id="ck-site-${n}" class="sit-ck-sitesel">
+        <option value="">— site —</option>
+        <option value="RIF" ${it.site==='RIF'?'selected':''}>RIF</option>
+        <option value="LIF" ${it.site==='LIF'?'selected':''}>LIF</option>
+      </select>`:'';
+    const noted=it.status==='noted';
     return `<div class="sit-ck-item">
-      <div class="sit-ck-text"><span class="sit-ck-n">${n}.</span> ${htmlSafe(label)}${typePick}${specify}</div>
+      <div class="sit-ck-text"><span class="sit-ck-n">${n}.</span> ${htmlSafe(label)}${typePick}${specify}${sitePick}</div>
       <div class="sit-ck-ctrls">
         <div class="sit-ck-mu">
-          <label class="ck-met"><input type="radio" name="ck-status-${n}" value="met" ${met?'checked':''}/> Met</label>
-          <label class="ck-unmet"><input type="radio" name="ck-status-${n}" value="unmet" ${unmet?'checked':''}/> Unmet</label>
+          <label class="ck-met"><input type="radio" name="ck-status-${n}" value="met" ${met?'checked':''} onchange="toggleCkNote(${n})"/> Met</label>
+          <label class="ck-unmet"><input type="radio" name="ck-status-${n}" value="unmet" ${unmet?'checked':''} onchange="toggleCkNote(${n})"/> Unmet</label>
+          <label class="ck-noted"><input type="radio" name="ck-status-${n}" value="noted" ${noted?'checked':''} onchange="toggleCkNote(${n})"/> Noted</label>
         </div>
         <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
         <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Name" value="${htmlSafe(ival)}" title="Name"/>
       </div>
+      <div id="ck-note-wrap-${n}" class="sit-ck-note-wrap"${noted?'':' hidden'}>
+        <input type="text" id="ck-note-${n}" class="sit-ck-other" placeholder="Notes" value="${htmlSafe(it.note||'')}"/></div>
     </div>`;
   }).join('');
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
@@ -9810,6 +9828,12 @@ async function openSitingSeen(id){
       </div></div>`;
   openMo();
 }
+// Show the per-item notes field only when that item is marked "Noted".
+function toggleCkNote(n){
+  const noted=(document.querySelector(`input[name="ck-status-${n}"]:checked`)||{}).value==='noted';
+  const w=document.getElementById('ck-note-wrap-'+n);
+  if(w)w.hidden=!noted;
+}
 // Read the checklist from the open modal into a plain object for saving/printing.
 function readSitingChecklist(){
   const items=SITING_CHECKLIST_ITEMS.map((label,i)=>{
@@ -9817,7 +9841,9 @@ function readSitingChecklist(){
     const status=(document.querySelector(`input[name="ck-status-${n}"]:checked`)||{}).value||'';
     return {n,label,status,
       date:document.getElementById('ck-date-'+n)?.value||'',
-      initials:document.getElementById('ck-init-'+n)?.value.trim()||''};
+      initials:document.getElementById('ck-init-'+n)?.value.trim()||'',
+      site:document.getElementById('ck-site-'+n)?.value||'',
+      note:document.getElementById('ck-note-'+n)?.value.trim()||''};
   });
   const stoma_type=(document.querySelector('input[name="ck-type"]:checked')||{}).value||'';
   const other=document.getElementById('ck-other')?.value.trim()||'';
@@ -9849,6 +9875,8 @@ function printSitingChecklist(){
     const it=c.items[i]||{};
     let text=htmlSafe(label);
     if(i===2&&c.stoma_type)text+=` <b>(${htmlSafe(c.stoma_type)})</b>`;
+    if((i===7||i===8)&&it.site)text+=` <b>(${htmlSafe(it.site)})</b>`;
+    if(it.note)text+=` — <i>${htmlSafe(it.note)}</i>`;
     if(i===9&&c.other)text+=` — <i>${htmlSafe(c.other)}</i>`;
     return `<tr><td class="cl">${i+1}. ${text}</td>
       <td class="cc">${mark(it,'met')}</td><td class="cc">${mark(it,'unmet')}</td>
