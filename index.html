@@ -2325,7 +2325,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-182';
+const APP_BUILD='2026.09.02-183';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5766,15 +5766,20 @@ let sitingReminders={items:[],total:0,today:0};
    reminders no longer drive the bell or the pop-up. */
 async function getSitingReminders(){
   try{
-    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen']);
+    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen','did_not_attend']);
     if(error)return {items:[],total:0,today:0};
     const items=[];
     (data||[]).forEach(r=>{
       const sd=String(r.session_date||''), surg=String(r.surgery_date||'');
       // The siting appointment day — until the patient has been seen.
       if(r.status==='booked'&&sd&&sd<=TODAY)items.push({...r,kind:'siting',eff:sd});
-      // The surgery day — until the post-op outcome is recorded.
+      // The surgery day — until the outcome is recorded. A no-show still counts:
+      // the operation can go ahead even when the siting appointment was missed.
       if(surg&&surg<=TODAY&&r.surgery_performed!==true)items.push({...r,kind:'postop',eff:surg});
+      // Seen (or missed) with no surgery date at all. Without this nothing would
+      // ever chase them again and they would sit in the list unnoticed.
+      if(!surg&&sd&&sd<=TODAY&&(r.status==='seen'||r.status==='did_not_attend'))
+        items.push({...r,kind:'nodate',eff:sd});
     });
     items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
     return {items,total:items.length,today:items.filter(r=>r.eff===TODAY).length};
@@ -5786,15 +5791,23 @@ function renderSitingReminderList(items){
     const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'—';
     const eff=String(r.eff||r.surgery_date||r.session_date||'');
     const today=eff===TODAY;
-    const tag=today
+    const tag=r.kind==='nodate'?''
+      :today
       ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
       : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
+    const missed=r.status==='did_not_attend';
     const kindTag=r.kind==='postop'
       ? '<span style="font-size:9px;font-weight:800;background:#ffe0b2;color:#8a4b00;padding:1px 6px;border-radius:5px;margin-left:6px;">SURGERY</span>'
+      : r.kind==='nodate'
+      ? `<span style="font-size:9px;font-weight:800;background:#fde68a;color:#8a5a00;padding:1px 6px;border-radius:5px;margin-left:6px;">${missed?'DID NOT ATTEND':'NO SURGERY DATE'}</span>`
       : '<span style="font-size:9px;font-weight:800;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:5px;margin-left:6px;">SITING</span>';
-    const when=r.kind==='postop'?('surgery '+fmtShortDate(r.surgery_date)):('siting '+fmtShortDate(r.session_date));
+    const when=r.kind==='postop'?('surgery '+fmtShortDate(r.surgery_date))
+      :r.kind==='nodate'?(missed?'missed the siting on '+fmtShortDate(r.session_date):'sited '+fmtShortDate(r.session_date)+' — no surgery date')
+      :('siting '+fmtShortDate(r.session_date));
     const btn=r.kind==='postop'
       ? `<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="closeReminderPanel();closeModal();openSitingPostop('${r.id}')">Record post-op</button>`
+      : r.kind==='nodate'
+      ? `<button class="ncb-btn" style="background:#fef3c7;color:#8a5a00;" onclick="closeReminderPanel();closeModal();openSitingEdit('${r.id}')">${missed?'Rebook / edit':'Add surgery date'}</button>`
       : `<button class="ncb-btn" style="background:#ede9fe;color:#6d28d9;" onclick="closeReminderPanel();closeModal();openSitingSeen('${r.id}')">Open assessment</button>`;
     return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
       <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}${kindTag}</div>
@@ -6009,8 +6022,11 @@ async function openDailyReminderModal(force){
   const nSit=todayItems.filter(r=>r.kind==='siting').length;
   const nOp=todayItems.filter(r=>r.kind==='postop').length;
   const bits=[];
+  const nNo=todayItems.filter(r=>r.kind==='nodate').length;
   if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
   if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
+  if(nNo)bits.push(`${nNo} without a surgery date`);
+  if(!bits.length)bits.push(`${todayItems.length} siting reminder${todayItems.length!==1?'s':''}`);
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🔔 Siting reminders today</h2>
     <div class="msub"><strong>${htmlSafe(fmtLabel(TODAY))}</strong><br/>
@@ -9339,7 +9355,9 @@ function handoverRowHTML(p,cls,flangeDue){
    resolved) — these ride at the top of the handover as "awaiting surgery". */
 async function handoverAwaitingSitings(){
   try{
-    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen']);
+    // A missed siting appointment does not stop the operation, so no-shows stay
+    // on the surgery-day watch alongside booked and seen sessions.
+    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen','did_not_attend']);
     if(error)return [];
     return (data||[]).filter(s=>{
       const sd=String(s.surgery_date||'');
@@ -9529,9 +9547,9 @@ function addHour(hhmm){
 }
 function sitingStatusLabel(r){
   if(r.surgery_performed===true)return r.stoma_formed?'Stoma formed':'Operated — no stoma';
+  if(r.status==='did_not_attend')return r.surgery_date?'Did not attend':'Did not attend — rebook';
+  if(r.status==='seen')return r.surgery_date?'Seen':'Seen — awaiting date';
   if(r.surgery_performed===false)return 'No surgery';
-  if(r.status==='did_not_attend')return 'Did not attend';
-  if(r.status==='seen')return 'Seen';
   return 'Booked';
 }
 /* The Siting view on a patient record. A patient's siting sessions are matched
@@ -9850,17 +9868,19 @@ async function openSitingSeen(id){
         <input type="text" id="ck-note-${n}" class="sit-ck-other" placeholder="Notes" value="${htmlSafe(it.note||'')}"/></div>
     </div>`;
   }).join('');
-  sitingStomaMark=(existing&&existing.stoma_mark&&typeof existing.stoma_mark==='object')?existing.stoma_mark:null;
+  stomaMarkCap=stomaCapacityFor(ss.siting_for);
+  const savedMarks=(existing&&Array.isArray(existing.stoma_marks))?existing.stoma_marks
+    :((existing&&existing.stoma_mark&&typeof existing.stoma_mark==='object')?[existing.stoma_mark]:[]);
+  sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,stomaMarkCap);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📍 Pre-operative Assessment</h2>
     <div class="msub"><strong>${htmlSafe(nm||'—')}</strong> · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</div>
     <div class="sit-ck-wrap">${rows}</div>
     <div class="sit-bodymap-sec">
-      <div class="sit-bodymap-label">Stoma site — tap the diagram to place the marker, drag to adjust
+      <div class="sit-bodymap-label">${stomaMarkCap===2?'Stoma sites — tap the diagram to place both markers, drag to adjust':'Stoma site — tap the diagram to place the marker, drag to adjust'}
         <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear</button></div>
       <div class="sit-bodymap" id="sit-bodymap" onclick="placeStomaMark(event)">
         <img src="${htmlSafe(preopBodyMapSrc())}" alt="Abdomen diagram" draggable="false"/>
-        <div class="sit-stoma-mark" id="sit-stoma-mark" hidden onpointerdown="startStomaDrag(event)">${STOMA_MARK_SVG}</div>
       </div>
     </div>
     <div class="mact" style="flex-wrap:wrap;gap:8px;">
@@ -9870,18 +9890,25 @@ async function openSitingSeen(id){
         <button class="btn-save" onclick="saveSitingSeen('${ss.id}',true)">Save &amp; mark seen</button>
       </div></div>`;
   openMo();
-  positionStomaMark();
+  renderStomaMarks();
 }
 // The draggable "stoma site" marker on the abdomen diagram.
 const STOMA_MARK_SVG='<svg viewBox="0 0 34 34" width="34" height="34"><circle cx="17" cy="17" r="14" fill="none" stroke="#e11" stroke-width="2.5"/><line x1="8" y1="8" x2="26" y2="26" stroke="#e11" stroke-width="2.5"/><line x1="26" y1="8" x2="8" y2="26" stroke="#e11" stroke-width="2.5"/></svg>';
-let sitingStomaMark=null, stomaDragging=false, stomaMoved=false;
+let sitingStomaMarks=[], stomaDragging=false, stomaMoved=false, stomaMarkCap=1;
 function preopBodyMapSrc(){return new URL('assets/preop-abdomen.jpg',location.href).href;}
-function positionStomaMark(){
-  const m=document.getElementById('sit-stoma-mark');if(!m)return;
-  if(!sitingStomaMark){m.hidden=true;return;}
-  m.hidden=false;
-  m.style.left=(sitingStomaMark.x*100)+'%';
-  m.style.top=(sitingStomaMark.y*100)+'%';
+/* A bilateral siting marks two sites; everything else marks one. */
+function stomaCapacityFor(sitedFor){return /bilateral|&|\+/i.test(String(sitedFor||''))?2:1;}
+function renderStomaMarks(){
+  const box=document.getElementById('sit-bodymap');if(!box)return;
+  box.querySelectorAll('.sit-stoma-mark').forEach(el=>el.remove());
+  sitingStomaMarks.forEach((m,i)=>{
+    const d=document.createElement('div');
+    d.className='sit-stoma-mark';
+    d.style.left=(m.x*100)+'%';d.style.top=(m.y*100)+'%';
+    d.innerHTML=STOMA_MARK_SVG;
+    d.addEventListener('pointerdown',ev=>startStomaDrag(ev,i));
+    box.appendChild(d);
+  });
 }
 function stomaFractionFromEvent(e){
   const box=document.getElementById('sit-bodymap');if(!box)return null;
@@ -9892,17 +9919,25 @@ function stomaFractionFromEvent(e){
 function placeStomaMark(e){
   if(stomaMoved){stomaMoved=false;return;}   // a click right after a drag is ignored
   const f=stomaFractionFromEvent(e);if(!f)return;
-  sitingStomaMark=f;positionStomaMark();
+  if(sitingStomaMarks.length<stomaMarkCap)sitingStomaMarks.push(f);
+  else{
+    // Already at capacity, so the tap moves whichever marker is nearest to it.
+    let best=0,bd=Infinity;
+    sitingStomaMarks.forEach((m,i)=>{const d=(m.x-f.x)**2+(m.y-f.y)**2;if(d<bd){bd=d;best=i;}});
+    sitingStomaMarks[best]=f;
+  }
+  renderStomaMarks();
 }
-function startStomaDrag(e){
+function startStomaDrag(e,idx){
   e.preventDefault();e.stopPropagation();
   stomaDragging=true;stomaMoved=false;
-  const move=ev=>{if(!stomaDragging)return;const f=stomaFractionFromEvent(ev);if(f){sitingStomaMark=f;stomaMoved=true;positionStomaMark();}};
+  const move=ev=>{if(!stomaDragging)return;const f=stomaFractionFromEvent(ev);
+    if(f){sitingStomaMarks[idx]=f;stomaMoved=true;renderStomaMarks();}};
   const up=()=>{stomaDragging=false;document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);};
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 }
-function clearStomaMark(){sitingStomaMark=null;positionStomaMark();}
+function clearStomaMark(){sitingStomaMarks=[];renderStomaMarks();}
 // Show the per-item notes field only when that item is marked "Noted".
 function toggleCkNote(n){
   const noted=(document.querySelector(`input[name="ck-status-${n}"]:checked`)||{}).value==='noted';
@@ -9922,7 +9957,9 @@ function readSitingChecklist(){
   });
   const stoma_type=(document.querySelector('input[name="ck-type"]:checked')||{}).value||'';
   const other=document.getElementById('ck-other')?.value.trim()||'';
-  return {items,stoma_type,other,stoma_mark:sitingStomaMark||null};
+  return {items,stoma_type,other,
+    stoma_marks:sitingStomaMarks.slice(),
+    stoma_mark:sitingStomaMarks[0]||null};   // kept so older saved forms still read
 }
 /* Saving the assessment on its own keeps the session booked — the patient is
    only flagged "seen" when the nurse chooses "Save & mark seen". */
@@ -9944,6 +9981,7 @@ async function saveSitingSeen(id,markSeen){
 function printSitingChecklist(){
   const ss=sitingSeenCtx&&sitingSeenCtx.ss; if(!ss)return;
   const c=readSitingChecklist();
+  const printMarks=(Array.isArray(c.stoma_marks)&&c.stoma_marks.length)?c.stoma_marks:(c.stoma_mark?[c.stoma_mark]:[]);
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const mark=(it,k)=>it.status===k?'✔':'';
   const body=SITING_CHECKLIST_ITEMS.map((label,i)=>{
@@ -9983,9 +10021,9 @@ function printSitingChecklist(){
     <div class="pt">Surgery date: <span>${ss.surgery_date?htmlSafe(fmtShortDate(ss.surgery_date)):''}</span></div>
     <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Name</th></tr></thead>
     <tbody>${body}</tbody></table>
-    ${c.stoma_mark?`<div style="margin-top:12px;font-weight:bold;">Stoma site</div>
+    ${printMarks.length?`<div style="margin-top:12px;font-weight:bold;">Stoma site${printMarks.length>1?'s':''}</div>
       <div class="bodymap"><img src="${htmlSafe(preopBodyMapSrc())}"/>
-        <div class="mk" style="left:${(c.stoma_mark.x*100).toFixed(2)}%;top:${(c.stoma_mark.y*100).toFixed(2)}%;">${STOMA_MARK_SVG}</div></div>`:''}
+        ${printMarks.map(m=>`<div class="mk" style="left:${(m.x*100).toFixed(2)}%;top:${(m.y*100).toFixed(2)}%;">${STOMA_MARK_SVG}</div>`).join('')}</div>`:''}
   </body></html>`);
   w.document.close();
   setTimeout(()=>{try{w.print();}catch(e){}},250);
@@ -10022,7 +10060,8 @@ async function openSitingPostop(id){
 }
 function sitingPostopPerformed(done){
   const branch=document.getElementById('sop-branch');if(!branch)return;
-  if(!done){branch.innerHTML=`<div class="ap-hint" style="margin:8px 0 0;">The session stays booked; you can record the outcome after the operation.</div>
+  if(!done){branch.innerHTML=`<div class="ap-hint" style="margin:8px 0 0;">Not operated yet. Put in the new expected surgery date — the reminder then waits for that day instead of asking every day. Leave it blank if no date is known and it will be chased as <strong>awaiting a surgery date</strong>.</div>
+    <div class="edit-seen-grid"><div class="fg"><label>New expected surgery date</label><input type="date" id="sop-newdate"/></div></div>
     <div class="mact" style="margin-top:10px;"><button class="btn-save" onclick="saveSitingNoSurgery()">Save — not operated yet</button></div>`;return;}
   branch.innerHTML=`<div class="edit-seen-section">Was a stoma formed?</div>
     <div class="iv-sys-row">
@@ -10042,12 +10081,16 @@ function sitingPostopStoma(formed){
     </div>
     <div class="mact"><button class="btn-save" onclick="saveSitingNoStoma()">Save to the no-stoma list</button></div>`;
 }
+/* "Not operated yet" is a postponement, not an outcome. Clearing the pending
+   flag and moving the date stops the old behaviour where surgery_performed=false
+   still satisfied the reminder test and fired every day for ever. */
 async function saveSitingNoSurgery(){
   const ss=sitingPostopCtx&&sitingPostopCtx.session;if(!ss)return;
-  const surg=document.getElementById('sop-surgdate')?.value||null;
-  const{error}=await SB.from('siting_sessions').update({surgery_performed:false,surgery_date:surg,updated_at:new Date().toISOString()}).eq('id',ss.id);
+  const nd=document.getElementById('sop-newdate')?.value||null;
+  const{error}=await SB.from('siting_sessions')
+    .update({surgery_performed:null,surgery_date:nd||null,updated_at:new Date().toISOString()}).eq('id',ss.id);
   if(error){alert('Could not save: '+error.message);return;}
-  closeModal();refreshSitingViews();
+  closeModal();refreshSitingViews();refreshReminders();
 }
 async function saveSitingNoStoma(){
   const ss=sitingPostopCtx&&sitingPostopCtx.session;if(!ss)return;
