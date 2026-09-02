@@ -86,3 +86,9 @@ ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS siting_for text;
 -- Added later; safe to re-run.
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS checklist jsonb;
+
+-- -----------------------------------------------------------------------------
+-- The proposed operation, entered when booking the siting session.
+-- Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS proposed_operation text;
