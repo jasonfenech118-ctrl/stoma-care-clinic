@@ -2325,7 +2325,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-180';
+const APP_BUILD='2026.09.02-181';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7342,8 +7342,23 @@ async function loadLocalities(){
     if(data.length)localityList=data.map(r=>r.name).filter(Boolean);
   }catch(e){localitiesAvailable=false;localitiesError=String(e&&e.message||e);}
 }
+/* Legacy / variant locality spellings that should resolve to a canonical list
+   entry, so an old stored value like "St. John's (San Ġwann)" picks the proper
+   "San Ġwann" option instead of showing as its own odd extra choice. */
+const LOCALITY_ALIASES={
+  'san gwann':'San Ġwann',
+  "st johns (san ġwann)":'San Ġwann',
+  "st. johns (san ġwann)":'San Ġwann',
+  "st john's (san ġwann)":'San Ġwann',
+  "st. john's (san ġwann)":'San Ġwann'
+};
+function normaliseLocality(v){
+  if(!v)return v;
+  const key=String(v).trim().replace(/[’‘]/g,"'").toLowerCase();
+  return LOCALITY_ALIASES[key]||v;
+}
 function localityOptions(cur){
-  const c=(cur==null?'':String(cur)).trim();
+  const c=normaliseLocality((cur==null?'':String(cur)).trim());
   const opts=localityList.slice();
   if(c&&!opts.includes(c))opts.push(c);   // keep an existing value not in the list
   return '<option value="">— locality —</option>'
