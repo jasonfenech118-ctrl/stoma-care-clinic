@@ -2303,7 +2303,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-165';
+const APP_BUILD='2026.09.02-166';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3245,14 +3245,22 @@ async function loadAppts(){
       if(sitingHost[slot]===String(n.id)){
         const ss=sitingByStart[slot];
         const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
-        html+=`<td rowspan="2" class="appt-cell-card booked" style="padding:8px 10px;background:#f3effe;border-left:2px solid #d9c9f5;vertical-align:top;">
+        const dntu=ss.status==='did_not_attend';
+        const seen=ss.status==='seen';
+        const boxBg=dntu?'#fff3cd':seen?'#e3f6ec':'#f3effe';
+        const boxBar=dntu?'#e6c34a':seen?'#8fd6ad':'#d9c9f5';
+        const state=dntu?'<span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:800;background:rgba(0,0,0,.08);">DID NOT ATTEND</span>'
+          :seen?'<span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:800;background:rgba(0,0,0,.08);">SEEN</span>':'';
+        html+=`<td rowspan="2" class="appt-cell-card booked" style="padding:8px 10px;background:${boxBg};border-left:2px solid ${boxBar};vertical-align:top;">
           <div style="font-size:10px;font-weight:800;color:#6d28d9;">📍 SITING · ${htmlSafe(sitingSlotLabel(ss.session_slot))}</div>
           <div class="appt-patient-name">${htmlSafe(nm||'—')}</div>
           <div style="font-size:11px;color:#5a6b7b;font-family:monospace;">${htmlSafe(ss.id_card||'')}</div>
           ${ss.consultant?`<div style="font-size:11px;color:#5a6b7b;">${htmlSafe(ss.consultant)}</div>`:''}
+          ${state?`<div style="margin-top:4px;">${state}</div>`:''}
           <div class="appt-action-row">
-            <button onclick="openSitingPostop('${ss.id}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#ede9fe;color:#6d28d9;">Post-op</button>
-            <button onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
+            <button title="Seen" onclick="openSitingSeen('${ss.id}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">Seen</button>
+            ${dntu?'':`<button title="Did not attend" onclick="sitingDNTU('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`}
+            <button title="Cancel" onclick="cancelSitingSession('${ss.id}','${jsSafe(nm)}')" style="padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">Cancel</button>
           </div>
         </td>`;
         return;
@@ -5723,7 +5731,7 @@ let sitingReminders={items:[],total:0,today:0};
    reminders no longer drive the bell or the pop-up. */
 async function getSitingReminders(){
   try{
-    const{data,error}=await SB.from('siting_sessions').select('*').eq('status','booked');
+    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen']);
     if(error)return {items:[],total:0,today:0};
     const eff=r=>String(r.surgery_date||r.session_date||'');
     const items=(data||[]).filter(r=>eff(r)&&eff(r)<=TODAY).sort((a,b)=>eff(a).localeCompare(eff(b)));
@@ -9267,7 +9275,7 @@ function handoverRowHTML(p,cls,flangeDue){
    resolved) — these ride at the top of the handover as "awaiting surgery". */
 async function handoverAwaitingSitings(){
   try{
-    const{data,error}=await SB.from('siting_sessions').select('*').eq('status','booked');
+    const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen']);
     if(error)return [];
     return (data||[]).filter(s=>{
       const sd=String(s.surgery_date||'');
@@ -9458,6 +9466,8 @@ function addHour(hhmm){
 function sitingStatusLabel(r){
   if(r.surgery_performed===true)return r.stoma_formed?'Stoma formed':'Operated — no stoma';
   if(r.surgery_performed===false)return 'No surgery';
+  if(r.status==='did_not_attend')return 'Did not attend';
+  if(r.status==='seen')return 'Seen';
   return 'Booked';
 }
 /* The Siting view on a patient record. A patient's siting sessions are matched
@@ -9687,6 +9697,39 @@ async function cancelSitingSession(id,name){
 function refreshSitingViews(){
   if(document.getElementById('siting-body'))loadSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+/* The siting appointment's own outcome buttons (in the Daily Clinic box) work
+   differently from a follow-up: "Seen" opens a blank checklist form (the
+   checklist itself is added later), "DNTU" marks a no-show, "Cancel" cancels. */
+async function openSitingSeen(id){
+  const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
+  if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
+  const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>📍 Siting session — seen</h2>
+    <div class="msub">${htmlSafe(nm||'—')} · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}${ss.siting_for?' · sited for '+htmlSafe(ss.siting_for):''}</div>
+    <div class="ap-hint" style="margin:8px 0;">The siting checklist will be added here. For now, mark the session as seen and jot any notes.</div>
+    <div class="fg" style="margin-top:6px;"><label>Notes</label>
+      <textarea id="sit-seen-notes" rows="5" style="width:100%;box-sizing:border-box;">${htmlSafe(ss.notes||'')}</textarea></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button class="btn-save" onclick="saveSitingSeen('${ss.id}')">Save — seen</button></div>`;
+  openMo();
+}
+async function saveSitingSeen(id){
+  const notes=document.getElementById('sit-seen-notes')?.value.trim()||null;
+  const patch={status:'seen',notes,updated_at:new Date().toISOString()};
+  let{error}=await SB.from('siting_sessions').update(patch).eq('id',id);
+  if(error&&/notes/.test(String(error.message||''))){
+    delete patch.notes; ({error}=await SB.from('siting_sessions').update(patch).eq('id',id));
+  }
+  if(error){alert('Could not save: '+error.message);return;}
+  closeModal();refreshSitingViews();
+}
+async function sitingDNTU(id,name){
+  if(!confirm(`Mark ${name||'this patient'} as did not attend the siting session?`))return;
+  const{error}=await SB.from('siting_sessions').update({status:'did_not_attend',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){alert('Could not update: '+error.message);return;}
+  refreshSitingViews();
 }
 /* The post-operative step of a siting session:
      surgery performed?  no  → keep the session, nothing else
