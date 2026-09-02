@@ -2320,7 +2320,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-169';
+const APP_BUILD='2026.09.02-170';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9633,33 +9633,30 @@ async function refreshSitingSlotAvail(){
     const lbl=bookingCellHTML(`${x.first_name||''} ${x.surname||''}`.trim(),x.id_card,true);
     if(hostN){busy[hostN.id].add(st);busy[hostN.id].add(h);setCell(st,hostN.id,lbl);setCell(h,hostN.id,lbl);}
   });
-  const freeCount=sl=>nurses.filter(n=>!(cell[sl]&&cell[sl][n.id])).length;
-  const slotFull=sl=>nurses.length>0&&freeCount(sl)<=0;
-  const hourFull=sl=>{const i=SLOTS.indexOf(sl);return slotFull(sl)||(SLOTS[i+1]&&slotFull(SLOTS[i+1]));};
-  const canStart=sl=>{const i=SLOTS.indexOf(sl);return !!SLOTS[i+2];};
-  if(sitingChosenSlot&&(!canStart(sitingChosenSlot)||hourFull(sitingChosenSlot)))sitingChosenSlot='';
-  const selSet=new Set();
-  if(sitingChosenSlot){const i=SLOTS.indexOf(sitingChosenSlot);selSet.add(sitingChosenSlot);if(SLOTS[i+1])selSet.add(SLOTS[i+1]);}
+  // A siting is a whole hour, so the picker shows one row per hour (each hour is
+  // two 30-min slots), not two half-hour rows.
+  const nurseHasHour=(n,sl,h)=>!!(cell[sl]&&cell[sl][n.id])||!!(cell[h]&&cell[h][n.id]);
+  const hourFreeCount=(sl,h)=>nurses.filter(n=>!nurseHasHour(n,sl,h)).length;
+  const hourFull=(sl,h)=>nurses.length>0&&hourFreeCount(sl,h)<=0;
+  const hourStarts=SLOTS.map((s,i)=>i).filter(i=>i%2===0&&SLOTS[i+1]);
+  if(sitingChosenSlot){const i=SLOTS.indexOf(sitingChosenSlot);
+    if(i<0||i%2!==0||!SLOTS[i+1]||hourFull(sitingChosenSlot,SLOTS[i+1]))sitingChosenSlot='';}
   let anyFree=false;
   const head=`<tr>
     <th style="position:sticky;left:0;background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;text-align:left;">Time</th>
     ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}</th>`).join('')}
     <th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;">Hour</th></tr>`;
-  const body=SLOTS.map(sl=>{
-    const inSel=selSet.has(sl), isStartSel=sitingChosenSlot===sl, start=canStart(sl), full=hourFull(sl);
-    const coveredBySel=inSel&&!isStartSel;   // the 2nd half-hour of the chosen hour
-    if(start&&!full)anyFree=true;
-    const cells=nurses.map(n=>{const c=cell[sl]&&cell[sl][n.id];const isSit=!!c&&String(c).indexOf('📍')>=0;
+  const body=hourStarts.map(i=>{
+    const sl=SLOTS[i], h=SLOTS[i+1];
+    const isSel=sitingChosenSlot===sl, full=hourFull(sl,h);
+    if(!full)anyFree=true;
+    const cells=nurses.map(n=>{const c=(cell[sl]&&cell[sl][n.id])||(cell[h]&&cell[h][n.id]);const isSit=!!c&&String(c).indexOf('📍')>=0;
       return `<td style="padding:4px 6px;border-top:1px solid var(--border);white-space:nowrap;text-align:left;color:${c?'#1a2e4a':'#b6c0cc'};background:${c?(isSit?'#f3effe':'#fff'):'#f7fbf7'};">${c||'<div style=\'text-align:center;color:#b6c0cc;\'>·</div>'}</td>`;}).join('');
-    // The chosen hour's second half is part of that hour, so it offers no Pick.
-    const pick=coveredBySel
-      ? '<span style="font-size:10px;font-weight:700;color:#0d7377;">↳ within</span>'
-      : (start
-        ? (full?'<span style="font-size:10px;font-weight:800;color:#b91c1c;">full</span>'
-               :`<button type="button" onclick="pickSitingSlot('${sl}')" style="padding:4px 8px;border-radius:6px;border:1.5px solid #0d7377;background:${isStartSel?'#0d7377':'#fff'};color:${isStartSel?'#fff':'#0d7377'};font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;">${isStartSel?'✓ '+htmlSafe(sitingSlotLabel(sl)):'Pick'}</button>`)
-        : '');
-    return `<tr style="${inSel?'background:#e8f5f4;':''}">
-      <td style="position:sticky;left:0;padding:5px 8px;border-top:1px solid var(--border);font-weight:800;color:#0d7377;font-size:11px;background:${inSel?'#e8f5f4':'#fafafa'};">${htmlSafe(sl)}</td>
+    const pick=full
+      ? '<span style="font-size:10px;font-weight:800;color:#b91c1c;">full</span>'
+      : `<button type="button" onclick="pickSitingSlot('${sl}')" style="padding:4px 8px;border-radius:6px;border:1.5px solid #0d7377;background:${isSel?'#0d7377':'#fff'};color:${isSel?'#fff':'#0d7377'};font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;">${isSel?'✓ '+htmlSafe(sitingSlotLabel(sl)):'Pick'}</button>`;
+    return `<tr style="${isSel?'background:#e8f5f4;':''}">
+      <td style="position:sticky;left:0;padding:5px 8px;border-top:1px solid var(--border);font-weight:800;color:#0d7377;font-size:11px;white-space:nowrap;background:${isSel?'#e8f5f4':'#fafafa'};">${htmlSafe(sitingSlotLabel(sl))}</td>
       ${cells}
       <td style="padding:5px 7px;border-top:1px solid var(--border);text-align:center;">${pick}</td></tr>`;
   }).join('');
@@ -9937,7 +9934,9 @@ let sitingStomaCtx=null;
 function beginSitingStomaPatient(session,surgeryDate){
   sitingStomaCtx={sessionId:session.id,surgery_date:surgeryDate||null,
     prefill:{id_card:session.id_card,first_name:session.first_name,surname:session.surname,
-      consultant:session.consultant,surgery_date:surgeryDate||null}};
+      consultant:session.consultant,surgery_date:surgeryDate||null,
+      // Carry the "being sited for" choice into the post-op stoma type.
+      stoma_type:session.siting_for||''}};
   closeModal();
   // Show the Siting page without reloading its list, then render the form into it.
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
