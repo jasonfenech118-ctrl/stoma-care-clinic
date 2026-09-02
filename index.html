@@ -907,6 +907,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .hv-flange-soon{background:#fff6e0;color:#8a5a00;border-color:#e8c579;}
 .hv-flange-due{background:#fff1c9;color:#7a4a00;border-color:#e0a83a;}
 .hv-flange-over{background:#fdecea;color:#a3241a;border-color:#e39a92;}
+/* A siting patient due for surgery today sits at the top of the handover as an
+   "awaiting surgery" row, tinted amber, until the outcome is recorded. */
+#hv-table tr.hv-awaiting td{background:#fff5e6;}
+.hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
+  color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
 
 /* --- Phone: the handover grid becomes a stack of cards --- */
 @media(max-width:640px){
@@ -2298,7 +2303,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-164';
+const APP_BUILD='2026.09.02-165';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9137,12 +9142,19 @@ async function loadHandover(){
     return;
   }
   const rows=(data||[]).slice().sort(handoverByWard);
+  // Siting patients whose surgery day has arrived show at the top as "awaiting
+  // surgery", automatically, until the outcome is recorded from the handover.
+  const awaiting=await handoverAwaitingSitings();
   const dueBy=await handoverFlangeDue(rows.map(r=>r.id));
-  const countTxt=rows.length?`${rows.length} inpatient${rows.length===1?'':'s'}`:'';
-  if(!rows.length){
+  const parts=[];
+  if(rows.length)parts.push(`${rows.length} inpatient${rows.length===1?'':'s'}`);
+  if(awaiting.length)parts.push(`${awaiting.length} awaiting surgery`);
+  const countTxt=parts.join(' · ');
+  if(!rows.length&&!awaiting.length){
     body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
     return;
   }
+  const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('');
   // One shade per ward, flipping at each new ward — the same blocks the print uses.
   let pw=null,wg=0;
   const trs=rows.map(p=>{
@@ -9160,7 +9172,7 @@ async function loadHandover(){
       <tr>
       <th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
       <th class="icon">✉ Discharge letter</th><th class="icon">📄 Schedule 5 permit</th><th></th>
-    </tr></thead><tbody>${trs}</tbody></table></div>`;
+    </tr></thead><tbody>${awaitingTrs}${trs}</tbody></table></div>`;
   fitAllWardBed();
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
@@ -9250,6 +9262,60 @@ function handoverRowHTML(p,cls,flangeDue){
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge (old case)</button>
     </div></td>
   </tr>`;
+}
+/* Booked siting sessions whose surgery day has arrived (and are not yet
+   resolved) — these ride at the top of the handover as "awaiting surgery". */
+async function handoverAwaitingSitings(){
+  try{
+    const{data,error}=await SB.from('siting_sessions').select('*').eq('status','booked');
+    if(error)return [];
+    return (data||[]).filter(s=>{
+      const sd=String(s.surgery_date||'');
+      return sd&&sd<=TODAY&&s.surgery_performed!==true;
+    }).sort((a,b)=>String(a.surgery_date).localeCompare(String(b.surgery_date))
+      ||String(a.surname||'').localeCompare(String(b.surname||'')));
+  }catch(e){return [];}
+}
+/* An awaiting-surgery row: no ward yet, an amber badge, and the two outcome
+   buttons that carry the patient forward from theatre. */
+function handoverAwaitingRowHTML(s){
+  const nm=`${s.first_name||''} ${s.surname||''}`.trim();
+  const note=`Awaiting surgery · sited for ${htmlSafe(s.siting_for||'stoma')}`
+    +(s.surgery_date?' · surgery '+htmlSafe(fmtShortDate(s.surgery_date)):'');
+  return `<tr class="hv-awaiting">
+    <td data-label="Ward"><span class="hv-await-badge">Awaiting surgery</span></td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(s.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(s.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(s.first_name||'')}</td>
+    <td data-label="Appliance + notes">${note}</td>
+    <td data-label="Discharge letter">—</td>
+    <td data-label="Schedule 5 permit">—</td>
+    <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#e8f5ee;color:#127a3e;" onclick="handoverSitingStoma('${s.id}')">Stoma performed</button>
+      <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="handoverSitingNoStoma('${s.id}','${jsSafe(nm)}')">No stoma performed</button>
+    </div></td>
+  </tr>`;
+}
+/* Stoma performed → continue into the siting-stoma patient form, which creates
+   the patient as an inpatient and puts them on the handover proper. */
+async function handoverSitingStoma(id){
+  const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
+  if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
+  beginSitingStomaPatient(ss,ss.surgery_date||TODAY);
+}
+/* No stoma performed → file to the No-stoma Ops list and take the row off the
+   handover. Details can be added later on that list. */
+async function handoverSitingNoStoma(id,name){
+  if(!confirm(`Record that NO stoma was performed for ${name||'this patient'}?\n\nThey are saved to the No-stoma Ops list and come off the handover.`))return;
+  const{data:ss,error:e0}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
+  if(e0||!ss){alert('Could not open this session: '+(e0?e0.message:'not found'));return;}
+  const rec={siting_session_id:ss.id,id_card:ss.id_card,first_name:ss.first_name,surname:ss.surname,
+    consultant:ss.consultant,surgery_date:ss.surgery_date||TODAY,operation:null,findings:null};
+  try{const u=await getCurrentUserForAudit();rec.created_by=u?.name||null;}catch(e){}
+  const{error}=await SB.from('operations_no_stoma').insert(rec);
+  if(error){alert('Could not save to the no-stoma list: '+error.message+'\n\nRun sql/add-siting-sessions.sql once in Supabase if you have not.');return;}
+  await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:false,status:'done',updated_at:new Date().toISOString()}).eq('id',ss.id);
+  loadHandover();refreshReminders();
 }
 /* How many days from today — negative once the date has gone by. */
 function daysUntilDate(d){
