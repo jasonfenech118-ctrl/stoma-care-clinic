@@ -2298,7 +2298,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.01-157';
+const APP_BUILD='2026.09.01-158';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9444,7 +9444,11 @@ async function nurseListForDate(date){
   return out;
 }
 function firstNameOf(n){return String(n||'').trim().split(/\s+/)[0]||n;}
-function surnameOf(p){return (p&&p.surname)?p.surname:((`${p?.first_name||''}`.trim())||'Booked');}
+function bookingCellHTML(nm,id,siting){
+  const name=String(nm||'').trim()||'Booked';
+  const idl=id?`<div style="font-family:monospace;font-size:9px;color:#5a6b7b;line-height:1.1;">${htmlSafe(id)}</div>`:'';
+  return `<div style="font-weight:700;font-size:10.5px;line-height:1.15;">${siting?'📍 ':''}${htmlSafe(name)}</div>${idl}`;
+}
 async function refreshSitingSlotAvail(){
   const host=document.getElementById('sit-slot-avail'); if(!host)return;
   const date=document.getElementById('sit-date')?.value;
@@ -9453,7 +9457,7 @@ async function refreshSitingSlotAvail(){
   const nurses=await nurseListForDate(date);
   let sit=[],ap=[];
   try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
-  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
   // cell[slot][nurseId] = who that nurse has in that half-hour.
   const cell={};
   const setCell=(sl,nid,label)=>{if(!nid)return;(cell[sl]=cell[sl]||{});if(!cell[sl][nid])cell[sl][nid]=label;};
@@ -9462,7 +9466,7 @@ async function refreshSitingSlotAvail(){
     if(!nid&&a.bank_staff_id){const core=findCoreStaffByName(a.bank_staff?.full_name);nid=core?String(core.id):String(a.bank_staff_id);}
     if(!nid&&!a.assigned_to&&!a.bank_staff_id)nid='common';
     if(!nurses.some(n=>n.id===nid)){const spare=nurses.find(n=>!(cell[sl]&&cell[sl][n.id]));nid=spare?spare.id:nid;}
-    setCell(sl,nid,surnameOf(a.patients));});
+    setCell(sl,nid,bookingCellHTML(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim(),a.patients?.id_card,false));});
   // Existing sitings take the first nurse free for their whole hour.
   const busy={}; nurses.forEach(n=>busy[n.id]=new Set());
   Object.keys(cell).forEach(sl=>Object.keys(cell[sl]).forEach(nid=>{if(busy[nid])busy[nid].add(sl);}));
@@ -9470,7 +9474,7 @@ async function refreshSitingSlotAvail(){
     const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0||!SLOTS[i+1])return;
     const h=SLOTS[i+1];
     const hostN=nurses.find(n=>!busy[n.id].has(st)&&!busy[n.id].has(h));
-    const lbl='📍 '+surnameOf({surname:x.surname,first_name:x.first_name});
+    const lbl=bookingCellHTML(`${x.first_name||''} ${x.surname||''}`.trim(),x.id_card,true);
     if(hostN){busy[hostN.id].add(st);busy[hostN.id].add(h);setCell(st,hostN.id,lbl);setCell(h,hostN.id,lbl);}
   });
   const freeCount=sl=>nurses.filter(n=>!(cell[sl]&&cell[sl][n.id])).length;
@@ -9489,8 +9493,8 @@ async function refreshSitingSlotAvail(){
     const inSel=selSet.has(sl), isStartSel=sitingChosenSlot===sl, start=canStart(sl), full=hourFull(sl);
     const coveredBySel=inSel&&!isStartSel;   // the 2nd half-hour of the chosen hour
     if(start&&!full)anyFree=true;
-    const cells=nurses.map(n=>{const c=cell[sl]&&cell[sl][n.id];
-      return `<td style="padding:5px 7px;border-top:1px solid var(--border);font-size:11px;white-space:nowrap;text-align:center;color:${c?'#1a2e4a':'#b6c0cc'};background:${c?(String(c).startsWith('📍')?'#f3effe':'#fff'):'#f7fbf7'};">${c?htmlSafe(c):'·'}</td>`;}).join('');
+    const cells=nurses.map(n=>{const c=cell[sl]&&cell[sl][n.id];const isSit=!!c&&String(c).indexOf('📍')>=0;
+      return `<td style="padding:4px 6px;border-top:1px solid var(--border);white-space:nowrap;text-align:left;color:${c?'#1a2e4a':'#b6c0cc'};background:${c?(isSit?'#f3effe':'#fff'):'#f7fbf7'};">${c||'<div style=\'text-align:center;color:#b6c0cc;\'>·</div>'}</td>`;}).join('');
     // The chosen hour's second half is part of that hour, so it offers no Pick.
     const pick=coveredBySel
       ? '<span style="font-size:10px;font-weight:700;color:#0d7377;">↳ within</span>'
