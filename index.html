@@ -928,7 +928,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .sit-ck-mu label{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;}
 .sit-ck-mu .ck-met{color:#127a3e;} .sit-ck-mu .ck-unmet{color:#b45309;}
 .sit-ck-ctrls input[type=date]{padding:4px 7px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
-.sit-ck-init{width:88px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+.sit-ck-init{flex:1;min-width:120px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 
 /* --- Phone: the handover grid becomes a stack of cards --- */
 @media(max-width:640px){
@@ -1845,7 +1845,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
 
     <div class="page" id="page-siting">
       <div class="phdr">
-        <div><h2>📍 Siting Session</h2><p>Book a pre-operative stoma siting session — an hour long — and follow it through to surgery</p></div>
+        <div><h2>📍 Siting Session</h2></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-add" onclick="openSitingBooking()" style="background:#1baf7a;">＋ Book siting session</button>
           <button class="btn-add" onclick="loadSitingSessions()">Refresh</button>
@@ -2320,7 +2320,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-171';
+const APP_BUILD='2026.09.02-172';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9736,11 +9736,6 @@ function sitingTypeFromFor(f){
   if(s.includes('uro'))return 'urostomy';
   return '';
 }
-// The logged-in user's initials, for the checklist's Initials column.
-function userInitials(name){
-  return String(name||'').trim().split(/\s+/).filter(Boolean)
-    .map(w=>w[0].toUpperCase()).join('').slice(0,4);
-}
 async function openSitingSeen(id){
   const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
   if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
@@ -9753,7 +9748,7 @@ async function openSitingSeen(id){
   // Date defaults to today and initials to the signed-in user — filled in
   // automatically, still editable per row.
   let who=null;try{who=await getCurrentUserForAudit();}catch(e){}
-  const ini=userInitials(who&&who.name);
+  const ini=(who&&who.name)?String(who.name).trim():'';
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const items=(existing&&existing.items)||[];
   const stomaType=(existing&&existing.stoma_type)||sitingTypeFromFor(ss.siting_for);
@@ -9773,7 +9768,7 @@ async function openSitingSeen(id){
           <label class="ck-unmet"><input type="radio" name="ck-status-${n}" value="unmet" ${unmet?'checked':''}/> Unmet</label>
         </div>
         <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
-        <input type="text" id="ck-init-${n}" class="sit-ck-init" maxlength="6" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials"/>
+        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Name" value="${htmlSafe(ival)}" title="Name"/>
       </div>
     </div>`;
   }).join('');
@@ -9785,7 +9780,8 @@ async function openSitingSeen(id){
       <button class="btn-cancel" onclick="printSitingChecklist()">🖨 Print form</button>
       <div style="display:flex;gap:8px;margin-left:auto;">
         <button class="btn-cancel" onclick="closeModal()">Close</button>
-        <button class="btn-save" onclick="saveSitingSeen('${ss.id}')">Save — seen</button>
+        <button class="btn-cancel" onclick="saveSitingSeen('${ss.id}',false)">Save</button>
+        <button class="btn-save" onclick="saveSitingSeen('${ss.id}',true)">Save &amp; mark seen</button>
       </div></div>`;
   openMo();
 }
@@ -9802,9 +9798,12 @@ function readSitingChecklist(){
   const other=document.getElementById('ck-other')?.value.trim()||'';
   return {items,stoma_type,other};
 }
-async function saveSitingSeen(id){
+/* Saving the assessment on its own keeps the session booked — the patient is
+   only flagged "seen" when the nurse chooses "Save & mark seen". */
+async function saveSitingSeen(id,markSeen){
   const checklist=readSitingChecklist();
-  const patch={status:'seen',checklist,updated_at:new Date().toISOString()};
+  const patch={checklist,updated_at:new Date().toISOString()};
+  if(markSeen)patch.status='seen';
   let{error}=await SB.from('siting_sessions').update(patch).eq('id',id);
   if(error&&/checklist/.test(String(error.message||''))){
     // Column not added yet: stash the checklist as JSON in notes so nothing is lost.
@@ -9828,7 +9827,7 @@ function printSitingChecklist(){
     if(i===9&&c.other)text+=` — <i>${htmlSafe(c.other)}</i>`;
     return `<tr><td class="cl">${i+1}. ${text}</td>
       <td class="cc">${mark(it,'met')}</td><td class="cc">${mark(it,'unmet')}</td>
-      <td class="cc">${it.date?htmlSafe(fmtShortDate(it.date)):''}</td><td class="cc">${htmlSafe(it.initials||'')}</td></tr>`;
+      <td class="cc">${it.date?htmlSafe(fmtShortDate(it.date)):''}</td><td class="cn">${htmlSafe(it.initials||'')}</td></tr>`;
   }).join('');
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
@@ -9842,13 +9841,14 @@ function printSitingChecklist(){
     table{width:100%;border-collapse:collapse;margin-top:12px;}
     th,td{border:1px solid #000;padding:7px 8px;vertical-align:top;}
     th{font-weight:bold;} td.cc,th.cc{text-align:center;width:56px;} td.cl{width:auto;}
+    td.cn,th.cn{width:120px;text-align:left;}
   </style></head><body>
     <div class="hdr"><h1>MATER DEI HOSPITAL</h1><h2>STOMA CARE CLINIC</h2></div>
     <div class="title">PRE-OPERATIVE ASSESSMENT</div>
     <div class="pt">Patient's Name and Surname: <span>${htmlSafe(nm)}</span></div>
     <div class="pt">ID Card Number: <span>${htmlSafe(ss.id_card||'')}</span></div>
     <div class="pt">Consultant: <span>${htmlSafe(ss.consultant||'')}</span></div>
-    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cc">Initials</th></tr></thead>
+    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Name</th></tr></thead>
     <tbody>${body}</tbody></table>
   </body></html>`);
   w.document.close();
