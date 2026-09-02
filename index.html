@@ -1863,6 +1863,15 @@ body.pl-only .pl-wrap{padding-top:14px;}
       </div>
       <div id="nostoma-body"><div class="report-note">Loading…</div></div>
     </div>
+    <div class="page" id="page-stomaperformed">
+      <div class="phdr">
+        <div><h2>🩺 Performed Stoma</h2></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="loadStomaPerformed()">Refresh</button>
+        </div>
+      </div>
+      <div id="stomaperformed-body"><div class="report-note">Loading…</div></div>
+    </div>
 
     <div class="page" id="page-discharge">
       <div class="phdr">
@@ -2320,7 +2329,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-172';
+const APP_BUILD='2026.09.02-173';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2421,6 +2430,7 @@ const TAB_GROUPS=[
   {key:'siting',label:'Siting',icon:'📍',color:'#7c3aed',
    pages:[
      {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'},
+     {tab:'stomaperformed',label:'Performed Stoma',icon:'🩺',color:'#7c3aed'},
      {tab:'nostoma',label:'No-stoma Ops',icon:'📋',color:'#7c3aed'}
    ]}
 ];
@@ -2497,6 +2507,7 @@ function switchTab(name){
   if(name==='handover')loadHandover();
   if(name==='siting')loadSitingSessions();
   if(name==='nostoma')loadNoStomaOps();
+  if(name==='stomaperformed')loadStomaPerformed();
   if(name==='postop')loadPostopDischarges();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
@@ -9457,6 +9468,7 @@ async function loadSitingSessions(){
     <td data-label="Surgery">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</td>
     <td data-label="Status">${htmlSafe(sitingStatusLabel(r))}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openSitingEdit('${r.id}')">Edit</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="cancelSitingSession('${r.id}','${jsSafe(`${r.first_name||''} ${r.surname||''}`.trim())}')">Cancel</button>
     </div></td>
   </tr>`).join('');
@@ -9538,29 +9550,36 @@ async function openPatientSiting(patientId,idCard,name){
 }
 /* The booking modal: who it is for, the firm, and the day / hour. */
 let sitingChosenSlot='';
-function openSitingBooking(presetDate,presetSlot){
+let sitingEditId=null;
+async function openSitingEdit(id){
+  const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
+  if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
+  openSitingBooking(ss.session_date||TODAY,String(ss.session_slot||'').slice(0,5),ss);
+}
+function openSitingBooking(presetDate,presetSlot,edit){
   sitingChosenSlot=presetSlot||'';
+  sitingEditId=edit&&edit.id?edit.id:null;
+  const e=edit||{};
+  const sf=e.siting_for||'';
+  const opt=(v,l)=>`<option value="${v}" ${sf===v?'selected':''}>${l}</option>`;
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>📍 Book siting session</h2>
+  mb.innerHTML=`<h2>📍 ${sitingEditId?'Edit siting session':'Book siting session'}</h2>
     <div class="msub">A pre-operative stoma siting — one hour long, booked as a single session.</div>
     <div class="edit-seen-grid">
-      <div class="fg"><label>ID card *</label><input type="text" id="sit-idcard" placeholder="e.g. 404261M"/></div>
-      <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name"/></div>
-      <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name"/></div>
-      <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions('')}</select></div>
-      <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate"/></div>
+      <div class="fg"><label>ID card *</label><input type="text" id="sit-idcard" placeholder="e.g. 404261M" value="${htmlSafe(e.id_card||'')}"/></div>
+      <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name" value="${htmlSafe(e.first_name||'')}"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name" value="${htmlSafe(e.surname||'')}"/></div>
+      <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions(e.consultant||'')}</select></div>
+      <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate" value="${htmlSafe(e.surgery_date||'')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Being sited for *</label><select id="sit-for">
-        <option value="">— stoma —</option>
-        <option value="Colostomy">Colostomy</option>
-        <option value="Ileostomy">Ileostomy</option>
-        <option value="Urostomy">Urostomy</option></select></div>
+        ${opt('','— stoma —')}${opt('Colostomy','Colostomy')}${opt('Ileostomy','Ileostomy')}${opt('Urostomy','Urostomy')}</select></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Siting date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}" onchange="refreshSitingSlotAvail()"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Pick a free hour *</label><div id="sit-slot-avail"><div class="ap-hint">Choose a date to see the free hours.</div></div></div>
     </div>
     <div id="sit-msg"></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveSitingSession()">Book session</button></div>`;
+      <button class="btn-save" onclick="saveSitingSession()">${sitingEditId?'Save changes':'Book session'}</button></div>`;
   openMo();
   refreshSitingSlotAvail();
 }
@@ -9612,7 +9631,7 @@ async function refreshSitingSlotAvail(){
   host.innerHTML='<div class="ap-hint">Loading the day…</div>';
   const nurses=await nurseListForDate(date);
   let sit=[],ap=[];
-  try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled'&&r.id!==sitingEditId);}catch(e){}
   try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
   // cell[slot][nurseId] = who that nurse has in that half-hour.
   const cell={};
@@ -9682,21 +9701,28 @@ async function saveSitingSession(){
   const surgdate=val('sit-surgdate');
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
-    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null,status:'booked'};
+    session_date:date,session_slot:slot||null,surgery_date:surgdate||null,siting_for:sitedFor||null};
+  // A new booking starts booked; an edit keeps whatever status it already has.
+  if(!sitingEditId)payload.status='booked';
+  else payload.updated_at=new Date().toISOString();
   // If this ID already belongs to a registry patient, stamp the link so the
   // patient's Siting view finds it even before any surgery/stoma outcome.
   try{const{data:existing}=await SB.from('patients').select('id').eq('id_card',idcard).maybeSingle();
     if(existing&&existing.id)payload.patient_id=existing.id;}catch(e){}
-  try{const u=await getCurrentUserForAudit();payload.created_by=u?.name||null;}catch(e){}
-  let{error}=await SB.from('siting_sessions').insert(payload);
+  try{const u=await getCurrentUserForAudit();if(!sitingEditId)payload.created_by=u?.name||null;}catch(e){}
+  const run=body=>sitingEditId
+    ? SB.from('siting_sessions').update(body).eq('id',sitingEditId)
+    : SB.from('siting_sessions').insert(body);
+  let{error}=await run(payload);
   if(error&&/siting_for/.test(String(error.message||''))){
-    const {siting_for,...rest}=payload; ({error}=await SB.from('siting_sessions').insert(rest));
+    const {siting_for,...rest}=payload; ({error}=await run(rest));
   }
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
-    if(msg)msg.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${missing?'Run sql/add-siting-sessions.sql once in Supabase first.':'Could not book: '+htmlSafe(error.message)}</div>`;
+    if(msg)msg.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${missing?'Run sql/add-siting-sessions.sql once in Supabase first.':'Could not save: '+htmlSafe(error.message)}</div>`;
     return;
   }
+  sitingEditId=null;
   closeModal();
   if(document.getElementById('siting-body'))loadSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
@@ -10040,6 +10066,42 @@ async function loadNoStomaOps(){
     <thead>
       <tr class="hv-bannerrow"><th colspan="7"><span class="hv-date">No-stoma Operations</span><span class="hv-count">${rows.length} record${rows.length===1?'':'s'}</span></th></tr>
       <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Operation</th><th>Findings</th></tr>
+    </thead><tbody>${trs}</tbody></table></div>`;
+}
+/* Performed Stoma: siting sessions that went through to surgery with a stoma
+   formed. Each becomes an inpatient in the registry, linked by patient_id. */
+async function loadStomaPerformed(){
+  const body=document.getElementById('stomaperformed-body');
+  if(!body)return;
+  const{data,error}=await SB.from('siting_sessions').select('*').order('surgery_date',{ascending:false});
+  if(error){
+    const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.')
+      : `<div class="report-note">Could not load: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  const rows=(data||[]).filter(r=>r.stoma_formed===true);
+  if(!rows.length){
+    body.innerHTML='<div class="report-note">Nothing here yet. A record appears when a siting patient has surgery and a stoma is formed (from the handover’s <strong>Stoma performed</strong> button).</div>';
+    return;
+  }
+  const trs=rows.map(r=>`<tr>
+    <td data-label="Surgery date">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
+    <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
+    <td data-label="Stoma">${htmlSafe(r.siting_for||'—')}</td>
+    <td class="hv-actions-cell"><div class="followup-actions">
+      ${r.patient_id?`<button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openPatientDatesModal('${r.patient_id}')">Open patient</button>`:'<span style="color:var(--muted);font-size:11px;">—</span>'}
+    </div></td>
+  </tr>`).join('');
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="stomaperformed-table">
+    <colgroup><col style="width:104px"><col style="width:104px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"></colgroup>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="7"><span class="hv-date">Performed Stoma</span><span class="hv-count">${rows.length} record${rows.length===1?'':'s'}</span></th></tr>
+      <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Stoma</th><th></th></tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
 async function loadPostopDischarges(){
