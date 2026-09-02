@@ -2320,7 +2320,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-168';
+const APP_BUILD='2026.09.02-169';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9739,6 +9739,11 @@ function sitingTypeFromFor(f){
   if(s.includes('uro'))return 'urostomy';
   return '';
 }
+// The logged-in user's initials, for the checklist's Initials column.
+function userInitials(name){
+  return String(name||'').trim().split(/\s+/).filter(Boolean)
+    .map(w=>w[0].toUpperCase()).join('').slice(0,4);
+}
 async function openSitingSeen(id){
   const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
   if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
@@ -9748,12 +9753,17 @@ async function openSitingSeen(id){
     try{existing=JSON.parse(ss.notes.slice(13));}catch(e){}
   }
   sitingSeenCtx={ss,existing};
+  // Date defaults to today and initials to the signed-in user — filled in
+  // automatically, still editable per row.
+  let who=null;try{who=await getCurrentUserForAudit();}catch(e){}
+  const ini=userInitials(who&&who.name);
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const items=(existing&&existing.items)||[];
   const stomaType=(existing&&existing.stoma_type)||sitingTypeFromFor(ss.siting_for);
   const rows=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1, it=items[i]||{};
     const met=it.status==='met', unmet=it.status==='unmet';
+    const dval=it.date||TODAY, ival=it.initials||ini;
     const typePick=(n===3)?`<div class="sit-ck-type">
         ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="radio" name="ck-type" value="${t}" ${stomaType===t?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
@@ -9765,13 +9775,13 @@ async function openSitingSeen(id){
           <label class="ck-met"><input type="radio" name="ck-status-${n}" value="met" ${met?'checked':''}/> Met</label>
           <label class="ck-unmet"><input type="radio" name="ck-status-${n}" value="unmet" ${unmet?'checked':''}/> Unmet</label>
         </div>
-        <input type="date" id="ck-date-${n}" value="${htmlSafe(it.date||'')}" title="Date"/>
-        <input type="text" id="ck-init-${n}" class="sit-ck-init" maxlength="6" placeholder="Initials" value="${htmlSafe(it.initials||'')}" title="Initials"/>
+        <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
+        <input type="text" id="ck-init-${n}" class="sit-ck-init" maxlength="6" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials"/>
       </div>
     </div>`;
   }).join('');
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>📍 Pre-operative Stoma Care</h2>
+  mb.innerHTML=`<h2>📍 Pre-operative Assessment</h2>
     <div class="msub"><strong>${htmlSafe(nm||'—')}</strong> · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</div>
     <div class="sit-ck-wrap">${rows}</div>
     <div class="mact" style="flex-wrap:wrap;gap:8px;">
@@ -9825,7 +9835,7 @@ function printSitingChecklist(){
   }).join('');
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
-  w.document.write(`<!DOCTYPE html><html><head><title>Pre-operative Stoma Care ${htmlSafe(ss.id_card||'')}</title><style>
+  w.document.write(`<!DOCTYPE html><html><head><title>Pre-operative Assessment ${htmlSafe(ss.id_card||'')}</title><style>
     @page{size:A4 portrait;margin:16mm}
     body{font-family:'Times New Roman',Georgia,serif;color:#000;font-size:13px;}
     h1{font-size:15px;margin:0;} h2{font-size:14px;margin:2px 0 0;}
@@ -9837,7 +9847,7 @@ function printSitingChecklist(){
     th{font-weight:bold;} td.cc,th.cc{text-align:center;width:56px;} td.cl{width:auto;}
   </style></head><body>
     <div class="hdr"><h1>MATER DEI HOSPITAL</h1><h2>STOMA CARE CLINIC</h2></div>
-    <div class="title">PRE-OPERATIVE STOMA CARE</div>
+    <div class="title">PRE-OPERATIVE ASSESSMENT</div>
     <div class="pt">Patient's Name and Surname: <span>${htmlSafe(nm)}</span></div>
     <div class="pt">ID Card Number: <span>${htmlSafe(ss.id_card||'')}</span></div>
     <div class="pt">Consultant: <span>${htmlSafe(ss.consultant||'')}</span></div>
