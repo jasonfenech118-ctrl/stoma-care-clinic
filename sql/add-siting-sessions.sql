@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS public.siting_sessions (
   consultant        text,          -- the firm
   session_date      date,          -- the booked day
   session_slot      text,          -- start time of the 1-hour block, e.g. "09:00"
-  status            text NOT NULL DEFAULT 'booked',  -- booked / done / cancelled
+  status            text NOT NULL DEFAULT 'booked',  -- booked / seen / did_not_attend / done / cancelled
   surgery_performed boolean,       -- filled in post-operatively
   surgery_date      date,
   stoma_formed      boolean,
