@@ -79,3 +79,10 @@ SELECT 'operations_no_stoma', count(*) FROM public.operations_no_stoma;
 -- Added later; safe to re-run.
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS siting_for text;
+
+-- -----------------------------------------------------------------------------
+-- The pre-operative stoma care checklist filled in from the "Seen" step, stored
+-- as JSON (10 items, each Met/Unmet + date + initials, plus stoma type & other).
+-- Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS checklist jsonb;
