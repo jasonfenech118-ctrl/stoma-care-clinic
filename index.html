@@ -1213,7 +1213,7 @@ body.pl-only .pl-wrap{padding-top:14px;}
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
     </div>
     <div class="bell-wrap">
-      <button class="bell-btn" id="bell-btn" onclick="event.stopPropagation();toggleReminderPanel()" title="Booking reminders" aria-label="Booking reminders">🔔<span class="bell-badge" id="bell-badge">0</span></button>
+      <button class="bell-btn" id="bell-btn" onclick="event.stopPropagation();toggleReminderPanel()" title="Siting reminders" aria-label="Siting reminders">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     </div>
     <button class="btn-so" onclick="doLogout()">Sign Out</button>
   </div>
@@ -1221,11 +1221,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
   <!-- REMINDER BELL PANEL -->
   <div class="bell-panel" id="bell-panel" onclick="event.stopPropagation();">
     <div class="bell-panel-head">
-      <div><strong>🔔 Booking Reminders</strong><span class="bell-panel-sub" id="bell-panel-sub">Patients due for a follow-up appointment</span></div>
+      <div><strong>🔔 Siting Reminders</strong><span class="bell-panel-sub" id="bell-panel-sub">Siting post-op reminders</span></div>
       <button class="bell-panel-close" onclick="closeReminderPanel()" aria-label="Close">✕</button>
     </div>
     <div class="bell-panel-body" id="bell-panel-body"><div class="rem-empty">Loading reminders…</div></div>
-    <div class="bell-panel-foot"><button onclick="closeReminderPanel();switchTab('reminders')">Open the full reminders page</button></div>
+    <div class="bell-panel-foot"><button onclick="closeReminderPanel();switchTab('siting')">Open the Siting page</button></div>
   </div>
   <!-- PRIMARY NAV (four areas) and the SUB-NAV for the open area.
        Both rows are rendered from TAB_GROUPS so there is one place to edit. -->
@@ -1363,19 +1363,6 @@ body.pl-only .pl-wrap{padding-top:14px;}
     </div>
 
     <!-- BOOKING REMINDERS -->
-    <div class="page" id="page-reminders">
-      <div class="phdr"><div><h2>🔔 Booking Reminders</h2><p>Patients due for a follow-up appointment, grouped by nurse — book straight from here</p></div>
-        <button class="centre-refresh" onclick="loadRemindersPage()">↻ Refresh</button></div>
-      <div class="rem-summary-grid" id="rem-summary"></div>
-      <div class="rem-plan-card">
-        <div class="rem-plan-head">
-          <div><strong>📋 Plan a month</strong><span class="rem-plan-sub">Who still needs an appointment booked for the month you pick — worked out automatically from each patient's follow-up due date</span></div>
-          <select id="rem-plan-month" onchange="setPlanMonth(this.value)"></select>
-        </div>
-        <div id="rem-plan-body"></div>
-      </div>
-      <div id="rem-page-body"><div class="rem-empty">Loading reminders…</div></div>
-    </div>
 
     <!-- APPOINTMENT OUTCOMES -->
     <div class="page" id="page-appointment-outcomes">
@@ -2329,7 +2316,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-174';
+const APP_BUILD='2026.09.02-175';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2398,11 +2385,10 @@ const TAB_GROUPS=[
      {tab:'roster',label:'Monthly Roster',icon:'M',color:'#7c3aed'},
      {tab:'cod',label:'Change of Duty',icon:'C',color:'#e67e22'}
    ]},
-  {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',badge:'reminders',
+  {key:'appointments',label:'Appointments',icon:'P',color:'#2980b9',
    pages:[
      {tab:'appointments',label:'Daily Clinic',icon:'P',color:'#2980b9'},
      {tab:'appointment-outcomes',label:'Appointment Outcomes',icon:'A',color:'#27ae60'},
-     {tab:'reminders',label:'Reminders',icon:'🔔',color:'#d97706',badge:'reminders'},
      {tab:'staff-audit',label:'Follow-up Planning',icon:'F',color:'#0d7377'}
    ]},
   {key:'audit',label:'Audit & Reports',icon:'R',color:'#c0392b',
@@ -2462,7 +2448,7 @@ function renderPrimaryTabs(activeTab){
       ${tabIconHTML(g)}${htmlSafe(g.label)}${alertDotHTML(g)}
       <span class="tab-sub-count">${g.pages.length}</span>
     </div>`).join('');
-  updateReminderBadges(reminderData?.total||0);
+  updateReminderBadges(sitingReminders?.total||0);
 }
 function renderSubTabs(activeTab){
   const host=document.getElementById('tabs-sub');
@@ -2471,7 +2457,7 @@ function renderSubTabs(activeTab){
   host.innerHTML=`<span class="subtabs-label">${htmlSafe(group.label)}</span>`+
     group.pages.map(p=>`<div class="subtab ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
       onclick="switchTab('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</div>`).join('');
-  updateReminderBadges(reminderData?.total||0);
+  updateReminderBadges(sitingReminders?.total||0);
 }
 function renderMobileNav(activeTab){
   const host=document.getElementById('mob-drawer-nav');
@@ -2480,7 +2466,7 @@ function renderMobileNav(activeTab){
     g.pages.map(p=>`<div class="mob-nav-sub ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
       onclick="switchTabMobile('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</div>`).join('')
   ).join('');
-  updateReminderBadges(reminderData?.total||0);
+  updateReminderBadges(sitingReminders?.total||0);
 }
 // Picking an area opens its first page, unless the area is already open.
 function switchGroup(key){
@@ -2499,7 +2485,6 @@ function switchTab(name){
   renderMobileNav(name);
   const label=document.getElementById('mob-current-tab');
   if(label)label.textContent=TAB_LABELS[name]||name;
-  if(name==='reminders')loadRemindersPage();
   if(name==='staff-audit')loadStaffAudit();
   if(name==='ot-audit')loadOvertimeAudit();
   if(name==='clinic-audit')loadClinicAudit();
@@ -5733,7 +5718,7 @@ function updateReminderBadges(total){
   const bell=document.getElementById('bell-btn');
   const text=total>99?'99+':String(total);
   if(badge){badge.textContent=text;badge.classList.toggle('show',total>0);}
-  if(bell){bell.classList.toggle('has-alerts',total>0);bell.title=total?`${total} patient${total!==1?'s':''} waiting to be booked`:'No booking reminders';}
+  if(bell){bell.classList.toggle('has-alerts',total>0);bell.title=total?`${total} siting post-op reminder${total!==1?'s':''}`:'No siting reminders';}
   // The nav rows are re-rendered on every tab change, so their badges are
   // found by marker rather than by a single fixed id.
   document.querySelectorAll('[data-badge="reminders"]').forEach(el=>{
@@ -5761,37 +5746,49 @@ async function getSitingReminders(){
   try{
     const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen']);
     if(error)return {items:[],total:0,today:0};
-    const eff=r=>String(r.surgery_date||r.session_date||'');
-    const items=(data||[]).filter(r=>eff(r)&&eff(r)<=TODAY).sort((a,b)=>eff(a).localeCompare(eff(b)));
-    return {items,total:items.length,today:items.filter(r=>eff(r)===TODAY).length};
+    const items=[];
+    (data||[]).forEach(r=>{
+      const sd=String(r.session_date||''), surg=String(r.surgery_date||'');
+      // The siting appointment day — until the patient has been seen.
+      if(r.status==='booked'&&sd&&sd<=TODAY)items.push({...r,kind:'siting',eff:sd});
+      // The surgery day — until the post-op outcome is recorded.
+      if(surg&&surg<=TODAY&&r.surgery_performed!==true)items.push({...r,kind:'postop',eff:surg});
+    });
+    items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
+    return {items,total:items.length,today:items.filter(r=>r.eff===TODAY).length};
   }catch(e){return {items:[],total:0,today:0};}
 }
 function renderSitingReminderList(items){
-  if(!items||!items.length)return '<div class="rem-empty">No siting post-op reminders.</div>';
+  if(!items||!items.length)return '<div class="rem-empty">No siting reminders.</div>';
   return items.map(r=>{
     const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'—';
-    const eff=String(r.surgery_date||r.session_date||'');
+    const eff=String(r.eff||r.surgery_date||r.session_date||'');
     const today=eff===TODAY;
     const tag=today
       ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
       : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
-    const when=r.surgery_date?('surgery '+fmtShortDate(r.surgery_date)):('siting '+fmtShortDate(r.session_date));
+    const kindTag=r.kind==='postop'
+      ? '<span style="font-size:9px;font-weight:800;background:#ffe0b2;color:#8a4b00;padding:1px 6px;border-radius:5px;margin-left:6px;">SURGERY</span>'
+      : '<span style="font-size:9px;font-weight:800;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:5px;margin-left:6px;">SITING</span>';
+    const when=r.kind==='postop'?('surgery '+fmtShortDate(r.surgery_date)):('siting '+fmtShortDate(r.session_date));
+    const btn=r.kind==='postop'
+      ? `<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="closeReminderPanel();closeModal();openSitingPostop('${r.id}')">Record post-op</button>`
+      : `<button class="ncb-btn" style="background:#ede9fe;color:#6d28d9;" onclick="closeReminderPanel();closeModal();openSitingSeen('${r.id}')">Open assessment</button>`;
     return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
-      <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}</div>
+      <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}${kindTag}</div>
       <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${r.consultant?' · '+htmlSafe(r.consultant):''} · ${htmlSafe(when)}</div>
-      <div style="margin-top:5px;"><button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="closeReminderPanel();closeModal();openSitingPostop('${r.id}')">Record post-op</button></div>
+      <div style="margin-top:5px;">${btn}</div>
     </div>`;
   }).join('');
 }
 async function refreshReminders(){
-  try{reminderData=await getReminderData();}catch(e){reminderData=null;}
+  // Siting post-op reminders are the only reminders kept.
   sitingReminders=await getSitingReminders();
   updateReminderBadges(sitingReminders.total);
   const bbody=document.getElementById('bell-panel-body');
   if(bbody)bbody.innerHTML=renderSitingReminderList(sitingReminders.items);
   const bsub=document.getElementById('bell-panel-sub');
   if(bsub)bsub.textContent=sitingReminders.total?`${sitingReminders.total} siting post-op reminder${sitingReminders.total!==1?'s':''}`:'No siting reminders';
-  if(document.getElementById('page-reminders')?.classList.contains('active'))renderRemindersPage();
   return sitingReminders;
 }
 async function refreshRemindersOLD(){
@@ -5980,20 +5977,22 @@ async function markReminderSeenToday(){
 async function openDailyReminderModal(force){
   // Chrome-free pinned views never get a pop-up.
   if(document.body.classList.contains('ho-only')||document.body.classList.contains('pl-only'))return;
-  // Only siting sessions due for surgery TODAY raise the pop-up — nothing today
-  // means no pop-up at all, so it is no longer a daily reminder.
-  // The pop-up fires on the surgery day (falling back to the siting date when no
-  // surgery date is set) — the same effective date the reminder list uses.
-  const eff=r=>String(r.surgery_date||r.session_date||'');
-  const todayItems=(sitingReminders.items||[]).filter(r=>eff(r)===TODAY);
+  // Siting reminders due TODAY raise the pop-up — a siting appointment day or a
+  // surgery day. Nothing today means no pop-up at all.
+  const todayItems=(sitingReminders.items||[]).filter(r=>String(r.eff)===TODAY);
   if(!todayItems.length)return;
   if(!force&&await reminderSeenToday())return;
   const mb=document.getElementById('mb');
   if(!mb)return;
+  const nSit=todayItems.filter(r=>r.kind==='siting').length;
+  const nOp=todayItems.filter(r=>r.kind==='postop').length;
+  const bits=[];
+  if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
+  if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>🔔 Siting — post-op today</h2>
+  mb.innerHTML=`<h2>🔔 Siting reminders today</h2>
     <div class="msub"><strong>${htmlSafe(fmtLabel(TODAY))}</strong><br/>
-      ${todayItems.length} siting patient${todayItems.length!==1?'s are':' is'} down for surgery today. Record the post-op outcome once the operation is done.</div>
+      ${bits.join(' and ')} due today.</div>
     <div class="rem-popup-scroll">${renderSitingReminderList(todayItems)}</div>
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Remind me again later today</button>
