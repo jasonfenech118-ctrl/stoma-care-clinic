@@ -918,6 +918,24 @@ body.pl-only .pl-wrap{padding-top:14px;}
 /* The picked appliance and the typed note always sit one above the other, on
    the phone card as well as in the desktop grid. */
 .hv-applwrap{display:flex;flex-direction:column;align-items:stretch;}
+/* The lock and the profile shortcut belong to the phone card only — the desktop
+   grid is a wide worksheet and is left exactly as it was. */
+.hv-mob-only{display:none;}
+.hv-prof{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:13px;margin:10px 0 4px;}
+.hv-prof>span:nth-child(odd){color:var(--muted);font-weight:700;font-size:11px;
+  text-transform:uppercase;letter-spacing:.4px;align-self:center;}
+.hv-prof>span:nth-child(even){color:var(--navy);font-weight:600;}
+@media(max-width:640px){
+  .hv-mob-only{display:inline-flex;}
+  .hv-xl tbody tr[data-locked="1"] .hv-appl{opacity:.75;cursor:default;}
+  /* Edit and Profile are what the card is for when it is locked, so they lead
+     the row and the discharge actions follow underneath. */
+  .hv-lock,.hv-profile{order:-1;flex:1 1 44%;justify-content:center;font-weight:800;}
+  .hv-lock{background:#e8f1fb;color:#0b5aa2;}
+  .hv-lock.is-editing{background:#d4edda;color:#155724;}
+  .hv-profile{background:#f3effe;color:#6d28d9;}
+  .hv-xl .followup-actions{flex-wrap:wrap;}
+}
 .hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
   color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
 /* The pre-operative stoma care checklist inside the "Seen" modal. */
@@ -2333,7 +2351,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-184';
+const APP_BUILD='2026.09.03-185';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4177,6 +4195,26 @@ function applianceChkHTML(name,checked,coupling){
   const cpl=coupling?` data-coupling="${coupling}"`:'';
   return `<label class="ap-chk" data-find="${htmlSafe(name.toLowerCase())}"${cpl}><input type="checkbox" class="ap-box" value="${htmlSafe(name)}" ${checked?'checked':''} onchange="onApplianceChange(this)"/><span>${htmlSafe(name)}</span></label>`;
 }
+/* A flange is chosen by product, not by size: Stomahesive, Deep Convexity and
+   Microporous each come in several couplings, so the picker groups by family
+   and lists the sizes inside it. Bags stay grouped by coupling — a bag only
+   fits the flange it clicks onto, so the size is the thing that matters. */
+function applianceFamily(name){
+  const v=String(name||'').trim();
+  const m=v.match(/^(.*?)\s*(?:Flange\s*)?\d+(?:\/\d+)?\s*mm/i);
+  return (m&&m[1].trim())||v;
+}
+function applianceFamilies(part){
+  const out=[];
+  APPLIANCE_CATALOGUE.filter(a=>a.part===part).forEach(a=>{
+    const f=applianceFamily(a.name); if(!out.includes(f))out.push(f);});
+  return out;
+}
+function applianceFamilyGroupsHTML(part,all,selected){
+  return applianceFamilies(part).map(f=>applianceGroupHTML(f,
+    all.filter(a=>a.part===part&&applianceFamily(a.name)===f)
+       .sort((x,y)=>(x.coupling||0)-(y.coupling||0)),selected)).join('');
+}
 function applianceGroupHTML(title,items,selected){
   if(!items.length)return '';
   return `<div class="ap-group"><div class="ap-group-h">${htmlSafe(title)}</div>${items.map(a=>applianceChkHTML(a.name,selected.includes(a.name),a.coupling)).join('')}</div>`;
@@ -4207,8 +4245,7 @@ function applianceSectionHTML(appliances,accessories){
   const extraAcc=selAcc.filter(n=>!ACCESSORIES.includes(n));
   const one=APPLIANCE_ONEPIECE_GROUPS.concat(extraApp.length?['Also on this record']:[]).map(g=>
     applianceGroupHTML(g,APPLIANCE_CATALOGUE.concat(extraApp).filter(a=>a.system==='one'&&a.group===g),selApp)).join('');
-  const flanges=applianceCouplings().map(c=>
-    applianceGroupHTML(`${c} mm coupling`,APPLIANCE_CATALOGUE.filter(a=>a.part==='flange'&&a.coupling===c),selApp)).join('');
+  const flanges=applianceFamilyGroupsHTML('flange',APPLIANCE_CATALOGUE,selApp);
   const bags=applianceCouplings().map(c=>
     applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selApp)).join('');
   return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
@@ -4625,10 +4662,22 @@ function renderVisitStep(){
 /* Only a two-piece has a flange due date: the flange stays on for days, so the
    ward has to be reminded when it is due. A one-piece is changed every day and
    needs no date, so the field is never shown for one. */
+/* Add days to an ISO date, staying on local calendar days. */
+function isoPlusDays(iso,n){
+  const d=new Date(String(iso||'').slice(0,10)+'T00:00:00');
+  if(isNaN(d))return '';
+  d.setDate(d.getDate()+n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+/* A flange put on today is next due on a later day, so the date starts at
+   tomorrow rather than blank or today. A date already set further ahead is kept,
+   and either way it can be typed over. */
 function flangeDueFieldHTML(due){
+  const cur=String(due||'').slice(0,10);
+  const v=(cur&&cur>TODAY)?cur:isoPlusDays(TODAY,1);
   return `<div class="fg" style="grid-column:1 / -1;"><label for="of-flange-due">Flange due to be changed on</label>
-    <input type="date" id="of-flange-due" value="${htmlSafe(String(due||'').slice(0,10))}"/>
-    <div class="ap-hint" style="margin:6px 0 0;">The handover shows a reminder as this date comes up, and it prints on the ward sheet. Leave it empty if it is not decided yet.</div></div>`;
+    <input type="date" id="of-flange-due" value="${htmlSafe(v)}"/>
+    <div class="ap-hint" style="margin:6px 0 0;">Set to <strong>tomorrow</strong> by default, because a flange changed today is next due another day. Change it to whatever date you need.</div></div>`;
 }
 function visitChooseSystem(sys){
   if(!visitWizard)return;
@@ -4801,8 +4850,8 @@ function visitPanelHTML(part,selected){
   if(part==='one')
     return APPLIANCE_ONEPIECE_GROUPS.concat(extra.length?['Also on this record']:[]).map(g=>
       applianceGroupHTML(g,all.filter(a=>a.system==='one'&&a.group===g),selected)).join('');
-  return applianceCouplings().map(c=>applianceGroupHTML(
-    part==='flange'?`${c} mm coupling`:`Fits a ${c} mm flange`,
+  if(part==='flange')return applianceFamilyGroupsHTML('flange',all,selected);
+  return applianceCouplings().map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,
     all.filter(a=>a.part===part&&a.coupling===c),selected)).join('');
 }
 async function saveOutcomeFollowup(apptId,patientId){
@@ -9278,6 +9327,8 @@ async function loadHandover(){
       <th class="icon">✉ Discharge letter</th><th class="icon">📄 Schedule 5 permit</th><th></th>
     </tr></thead><tbody>${awaitingTrs}${trs}</tbody></table></div>`;
   fitAllWardBed();
+  handoverWasPhone=handoverIsPhone();
+  applyHandoverLocks();
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
 const HANDOVER_FONT_PX=13;
@@ -9348,7 +9399,7 @@ async function handoverFlangeDue(ids){
   return out;
 }
 function handoverRowHTML(p,cls,flangeDue){
-  return `<tr class="${cls||''}">
+  return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
       class="hv-dash">-</span><input type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
@@ -9371,6 +9422,8 @@ function handoverRowHTML(p,cls,flangeDue){
       <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverAppliance('${p.id}')">Set appliance</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Postop discharge</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge (old case)</button>
+      <button class="ncb-btn hv-mob-only hv-lock" onclick="toggleHandoverLock('${p.id}')">✏️ Edit</button>
+      <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Patient profile (read-only)">🪪 Profile</button>
     </div></td>
   </tr>`;
 }
@@ -9429,6 +9482,78 @@ async function handoverSitingNoStoma(id,name){
   if(error){alert('Could not save to the no-stoma list: '+error.message+'\n\nRun sql/add-siting-sessions.sql once in Supabase if you have not.');return;}
   await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:false,status:'done',updated_at:new Date().toISOString()}).eq('id',ss.id);
   loadHandover();refreshReminders();
+}
+/* On the phone the handover is a stack of cards a nurse thumbs through on the
+   ward, so each card starts locked: a stray tap cannot change a ward, a note or
+   an appliance. "Edit" unlocks it, "Save" commits and locks it again. The
+   read-only profile is only offered while the card is locked. None of this
+   applies to the desktop grid, which stays a straight worksheet. */
+function handoverIsPhone(){
+  try{return window.matchMedia('(max-width:640px)').matches;}catch(e){return false;}
+}
+function setHandoverRowLocked(tr,locked){
+  if(!tr)return;
+  tr.dataset.locked=locked?'1':'';
+  tr.querySelectorAll('input,select,textarea,button').forEach(el=>{
+    if(el.classList.contains('hv-lock')||el.classList.contains('hv-profile'))return;
+    el.disabled=!!locked;
+  });
+  const btn=tr.querySelector('.hv-lock');
+  if(btn){btn.textContent=locked?'✏️ Edit':'✓ Save';btn.classList.toggle('is-editing',!locked);}
+  const prof=tr.querySelector('.hv-profile');
+  if(prof)prof.hidden=!locked;
+}
+function toggleHandoverLock(pid){
+  const tr=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(pid))}"]`);
+  if(!tr)return;
+  const locked=tr.dataset.locked==='1';
+  // Saving commits whatever field is still focused before the row is locked.
+  if(!locked&&document.activeElement&&tr.contains(document.activeElement))document.activeElement.blur();
+  setHandoverRowLocked(tr,!locked);
+}
+function applyHandoverLocks(){
+  const phone=handoverIsPhone();
+  document.querySelectorAll('#hv-table tbody tr[data-pid]').forEach(tr=>setHandoverRowLocked(tr,phone));
+}
+/* Re-apply only when the layout actually crosses the phone breakpoint, so a
+   card left open for editing is not slammed shut by an address-bar resize. */
+let handoverWasPhone=null;
+window.addEventListener('resize',()=>{
+  const now=handoverIsPhone();
+  if(now===handoverWasPhone)return;
+  handoverWasPhone=now;
+  if(document.getElementById('hv-table'))applyHandoverLocks();
+});
+/* A read-only look at the patient behind the card. Deliberately has no inputs
+   at all — it is for checking, never for changing. */
+async function openHandoverProfile(patientId){
+  const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  if(error||!p){alert('Could not open this profile: '+(error?error.message:'they are no longer in the registry'));return;}
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  const row=(l,v)=>v?`<span>${htmlSafe(l)}</span><span>${htmlSafe(v)}</span>`:'';
+  const d=v=>v?fmtShortDate(v):'';
+  const mb=document.getElementById('mb');mb.className='mb';
+  mb.innerHTML=`<h2>🪪 ${htmlSafe(nm)}</h2>
+    <div class="msub">Read-only — nothing on this screen can be changed.</div>
+    <div class="hv-prof">
+      ${row('ID card',p.id_card)}
+      ${row('Born',d(p.date_of_birth))}
+      ${row('Sex',p.sex)}
+      ${row('Phone',p.phone_number)}
+      ${row('Locality',p.locality)}
+      ${row('Firm',p.consultant)}
+      ${row('Ward',[p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' - '))}
+      ${row('Inpatient since',d(p.inpatient_since))}
+      ${row('Stoma',p.stoma_type)}
+      ${row('Site',p.stoma_location)}
+      ${row('Surgery',d(p.surgery_date))}
+      ${row('Operation',p.procedure_performed)}
+      ${row('Findings',p.findings)}
+      ${row('Appliance',p.inpatient_notes)}
+      ${row('Ward note',p.inpatient_nurse_notes)}
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
 }
 /* How many days from today — negative once the date has gone by. */
 function daysUntilDate(d){
