@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-200';
+const APP_BUILD='2026.09.03-201';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4838,14 +4838,17 @@ async function createInpatientEpisodeFor(pid,recordDate){
     // insert, so no episode would ever be created. The insert body is still
     // pruned column by column on error.
     const r=await SB.from('clinical_records').insert(body).select('*').single();
-    if(!r.error)return r.data||null;
+    if(!r.error)return {data:r.data||null,error:null};
     // Two admissions opened at the same moment can land on the same reference.
     if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
     const bad=missingColumnFromError(r.error);
     if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
-    return null;
+    console.error('createInpatientEpisodeFor: clinical_records insert failed',r.error,body);
+    return {data:null,error:r.error};
   }
-  return null;
+  const err={message:'Too many missing columns to open the inpatient episode.'};
+  console.error('createInpatientEpisodeFor: gave up',err);
+  return {data:null,error:err};
 }
 /* The admission the patient is on right now. What is set on the ward is
    written here, so it belongs to this episode rather than floating loose. */
@@ -4873,7 +4876,11 @@ async function commitEpisodeAppliances(pending,rows){
   // An admission must exist for the change to belong to, so one is opened rather
   // than letting the entry fall on the floor with only a ward note to show.
   let ep=await currentInpatientEpisode(pending.patientId);
-  if(!ep)ep=await createInpatientEpisodeFor(pending.patientId);
+  if(!ep){
+    const made=await createInpatientEpisodeFor(pending.patientId);
+    ep=made.data;
+    if(made.error){reportEpisodeError('commitEpisodeAppliances: could not open an episode',made.error);return;}
+  }
   // The ward note has to show every stoma the patient has an appliance on, not
   // only the one just set: a second stoma or a mucus fistula set on another day
   // stays on the sheet. So the note is built from the latest entry for each
@@ -4884,15 +4891,19 @@ async function commitEpisodeAppliances(pending,rows){
       .filter(e=>!entries.some(n=>n.stoma_uid===e.stoma_uid&&String(e.changed_on||'')===stamp));
     const merged=kept.concat(entries);
     const{error}=await SB.from('clinical_records').update({appliances:merged}).eq('id',ep.id);
-    if(error){alert('Could not record what was set: '+error.message);return;}
+    if(error){console.error('commitEpisodeAppliances: appliances update failed',error);
+      alert('Could not record what was set: '+error.message);return;}
     noteRows=latestApplianceRowsPerStoma({appliances:merged}).map(x=>x.row);
   }
   const note=episodeApplianceNote(noteRows);
   const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
-  if(pe){alert('The appliance was recorded, but the ward note could not be updated: '+pe.message);}
+  if(pe){console.error('commitEpisodeAppliances: ward note update failed',pe);
+    alert('The appliance was recorded, but the ward note could not be updated: '+pe.message);}
+  // Read the saved state back before the modal closes, so what is on screen is
+  // what the database actually holds rather than what was hoped for.
+  if(clrState.patientId===pending.patientId){await loadClinicalRecords(pending.patientId);renderClinicalPanel();}
+  if(document.getElementById('hv-body'))await loadHandover();
   closeModal();
-  if(!ep)alert('Recorded on the ward note, but an admission could not be opened on the clinical record, so this change is not in the stoma history. Open the patient in the Registry and start an inpatient episode.');
-  if(document.getElementById('hv-body'))loadHandover();
 }
 /* How an appliance is written on the ward sheet. The picker keeps the full
    supplier name and code so it can still be found by either; what gets written
@@ -8940,6 +8951,7 @@ async function saveInpatientVisit(){
       if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
       const bad=missingColumnFromError(r.error);
       if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
+      console.error('saveInpatientVisit: clinical_records insert failed',r.error,body);
       epErr=r.error;break;
     }
   }
@@ -8961,8 +8973,9 @@ async function saveInpatientVisit(){
   const onHandover=!res.dropped.includes('is_inpatient');
   const epi=(clrState.rows||[]).find(r=>r.kind==='episode');
   const code=recCode(epi)||'';
-  if(epErr && !clrStateMissing(epErr))
-    alert('The patient is on the Handover list, but the Inpatient episode could not be recorded: '+epErr.message);
+  // Any failure is said out loud now. It used to be hidden whenever the message
+  // merely named the table, which is true of permission and constraint errors.
+  if(epErr)reportEpisodeError('saveInpatientVisit: the episode was not recorded',epErr);
   ivWizard=null;
   renderInpatientDone(pat,ward,bed,code,onHandover);
 }
@@ -8975,7 +8988,10 @@ async function admitThenSetAppliances(){
   const w=ivWizard; if(!w)return;
   const pid=w.pid, pat=w.patient, ward=w.ward, bed=w.bed;
   if(!ward){alert('Please choose the ward.');return;}
-  if(clrState.available)await createInpatientEpisodeFor(pid,TODAY);
+  if(clrState.available){
+    const made=await createInpatientEpisodeFor(pid,TODAY);
+    if(made.error){reportEpisodeError('admitThenSetAppliances: could not open the episode',made.error);return;}
+  }
   const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null};
   if(!pat?.inpatient_since)patch.inpatient_since=TODAY;
   const res=await updatePatientTolerant(pid,patch);
@@ -9007,9 +9023,31 @@ function renderInpatientDone(pat,ward,bed,code,onHandover){
       ${onHandover?`<button class="btn-save" onclick="closeModal();switchTab('handover')">Go to Handover</button>`:''}</div>`;
   openMo();
 }
+/* True only when the table genuinely is not there yet. It used to return true
+   for any error that merely named the table or said "relation", so a permission,
+   row-level-security or constraint failure was mistaken for "not installed yet"
+   and silently hidden — which is what made failed episode inserts look like
+   successful saves. */
 function clrStateMissing(error){
   const m=String(error&&error.message||'').toLowerCase();
-  return m.includes('clinical_records')||m.includes('does not exist')||m.includes('relation')||m.includes('schema cache');
+  if(!m)return false;
+  if(m.includes('column'))return false;              // a missing column is not a missing table
+  if(m.includes('permission denied')||m.includes('row-level security')||m.includes('violates'))return false;
+  return /relation\s+"?(public\.)?clinical_records"?\s+does not exist/.test(m)
+      || m.includes('could not find the table')
+      || (m.includes('schema cache')&&m.includes('clinical_records'));
+}
+/* One place to report a failed episode write: it is logged, and said out loud
+   rather than dropped, with the likely remedy when the database refuses it. */
+function reportEpisodeError(where,error){
+  if(!error)return false;
+  console.error(where,error);
+  const msg=String(error.message||error);
+  alert(clrStateMissing(error)
+    ? 'The clinical_records table is not in the database yet. Run sql/add-clinical-records.sql once in Supabase to record inpatient episodes.'
+    : 'The inpatient episode could not be saved:\n\n'+msg+
+      '\n\nIf that mentions permission or row-level security, run sql/add-clinical-records.sql once in Supabase — it grants the app access to this table.');
+  return true;
 }
 function openClinicalRecordForm(kind,recordId){
   const host=document.getElementById('psm-clinical');
@@ -9173,7 +9211,9 @@ async function openPatientRecord(patientId){
   // the two stay in step.
   if(pat.is_inpatient&&clrState.available&&!openEpisodeIn(clrState.rows)){
     const made=await createInpatientEpisodeFor(patientId,pat.inpatient_since||TODAY);
-    if(made)await loadClinicalRecords(patientId);
+    // Viewing a record must never nag, but the reason still belongs in the log.
+    if(made.error)console.error('openPatientRecord: could not reconcile the open episode',made.error);
+    if(made.data)await loadClinicalRecords(patientId);
   }
   const clrCount=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(pat).length;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
@@ -9481,6 +9521,7 @@ async function cycleHandoverDoc(patientId,kind){
 async function saveHandoverField(patientId,field,value){
   const{error}=await SB.from('patients').update({[field]:value===''?null:value}).eq('id',patientId);
   if(error){
+    console.error('saveHandoverField: patients update failed',field,error);
     const bad=missingColumnFromError(error);
     alert(bad
       ? `The “${bad}” column is not in the database yet — run sql/add-inpatients.sql once in Supabase.`
@@ -10700,7 +10741,9 @@ async function saveSitingStomaPatient(){
   switchTab('handover');
 }
 async function createSitingInpatientEpisode(pid,surgeryDate){
-  await createInpatientEpisodeFor(pid,surgeryDate);
+  const made=await createInpatientEpisodeFor(pid,surgeryDate);
+  if(made.error)reportEpisodeError('createSitingInpatientEpisode: could not open the episode',made.error);
+  return made.data;
 }
 
 async function loadNoStomaOps(){
