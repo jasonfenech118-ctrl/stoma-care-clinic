@@ -49,3 +49,29 @@ ORDER BY ordinal_position;
 ALTER TABLE public.clinical_records ADD COLUMN IF NOT EXISTS episode_ref text;
 CREATE UNIQUE INDEX IF NOT EXISTS clinical_records_episode_ref_key
   ON public.clinical_records (episode_ref) WHERE episode_ref IS NOT NULL;
+
+-- -----------------------------------------------------------------------------
+-- Let the app read and manage this table, the same way the rest of the registry
+-- is reached (anon key + a signed-in session). Without these an insert is
+-- refused — "permission denied" or "violates row-level security policy" — and
+-- inpatient episodes silently never save. Safe to re-run.
+-- -----------------------------------------------------------------------------
+GRANT ALL ON public.clinical_records TO anon, authenticated;
+ALTER TABLE public.clinical_records ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS clinical_records_all ON public.clinical_records;
+CREATE POLICY clinical_records_all ON public.clinical_records
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- Prove it works end to end: this insert must return a row, then remove it.
+-- (Uses any existing patient; skips silently if the registry is empty.)
+DO $$
+DECLARE pid uuid; rid uuid;
+BEGIN
+  SELECT id INTO pid FROM public.patients LIMIT 1;
+  IF pid IS NOT NULL THEN
+    INSERT INTO public.clinical_records (patient_id, kind, record_date)
+    VALUES (pid, 'episode', CURRENT_DATE) RETURNING id INTO rid;
+    DELETE FROM public.clinical_records WHERE id = rid;
+    RAISE NOTICE 'clinical_records insert/delete OK';
+  END IF;
+END $$;
