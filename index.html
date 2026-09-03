@@ -936,6 +936,8 @@ body.pl-only .pl-wrap{padding-top:14px;}
   .hv-profile{background:#f3effe;color:#6d28d9;}
   .hv-xl .followup-actions{flex-wrap:wrap;}
 }
+.hv-rev-badge{background:#dbeafe!important;color:#1d4ed8!important;}
+#hv-table tr.hv-reversal td{background:#eef4ff;}
 .hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
   color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
 /* The pre-operative stoma care checklist inside the "Seen" modal. */
@@ -2351,7 +2353,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-188';
+const APP_BUILD='2026.09.03-189';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5897,12 +5899,28 @@ async function getSitingReminders(){
       if(!surg&&sd&&sd<=TODAY&&(r.status==='seen'||r.status==='did_not_attend'))
         items.push({...r,kind:'nodate',eff:sd});
     });
+    items.push(...await getReversalDueReminders());
     items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
     return {items,total:items.length,today:items.filter(r=>r.eff===TODAY).length};
   }catch(e){return {items:[],total:0,today:0};}
 }
+/* Planned reversal surgery whose day has come. Only patients who may still have
+   one are chased — a reversal already done, a death, or a move away takes the
+   plan with it. */
+async function getReversalDueReminders(){
+  try{
+    // lte never matches a null, so patients with no planned date drop out here.
+    const{data,error}=await SB.from('patients')
+      .select('id,first_name,surname,id_card,consultant,followup_status,extra_statuses,proposed_reversal_date')
+      .lte('proposed_reversal_date',TODAY);
+    if(error)return [];   // the column is not in the database yet
+    return (data||[])
+      .filter(p=>p.proposed_reversal_date&&canPlanReversal(p))
+      .map(p=>({...p,kind:'reversal',eff:String(p.proposed_reversal_date)}));
+  }catch(e){return [];}
+}
 function renderSitingReminderList(items){
-  if(!items||!items.length)return '<div class="rem-empty">No siting reminders.</div>';
+  if(!items||!items.length)return '<div class="rem-empty">No reminders.</div>';
   return items.map(r=>{
     const nm=`${r.first_name||''} ${r.surname||''}`.trim()||'—';
     const eff=String(r.eff||r.surgery_date||r.session_date||'');
@@ -5912,6 +5930,12 @@ function renderSitingReminderList(items){
       ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
       : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
     const missed=r.status==='did_not_attend';
+    if(r.kind==='reversal')
+      return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}<span style="font-size:9px;font-weight:800;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:5px;margin-left:6px;">REVERSAL</span></div>
+        <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${r.consultant?' · '+htmlSafe(r.consultant):''} · reversal surgery ${htmlSafe(fmtShortDate(r.proposed_reversal_date))}</div>
+        <div style="margin-top:5px;"><button class="ncb-btn" style="background:#dbeafe;color:#1d4ed8;" onclick="closeReminderPanel();closeModal();openPatientDatesModal('${r.id}')">Open record</button></div>
+      </div>`;
     const kindTag=r.kind==='postop'
       ? '<span style="font-size:9px;font-weight:800;background:#ffe0b2;color:#8a4b00;padding:1px 6px;border-radius:5px;margin-left:6px;">SURGERY</span>'
       : r.kind==='nodate'
@@ -5939,7 +5963,7 @@ async function refreshReminders(){
   const bbody=document.getElementById('bell-panel-body');
   if(bbody)bbody.innerHTML=renderSitingReminderList(sitingReminders.items);
   const bsub=document.getElementById('bell-panel-sub');
-  if(bsub)bsub.textContent=sitingReminders.total?`${sitingReminders.total} siting post-op reminder${sitingReminders.total!==1?'s':''}`:'No siting reminders';
+  if(bsub)bsub.textContent=sitingReminders.total?`${sitingReminders.total} reminder${sitingReminders.total!==1?'s':''}`:'No reminders';
   return sitingReminders;
 }
 async function refreshRemindersOLD(){
@@ -6139,12 +6163,14 @@ async function openDailyReminderModal(force){
   const nOp=todayItems.filter(r=>r.kind==='postop').length;
   const bits=[];
   const nNo=todayItems.filter(r=>r.kind==='nodate').length;
+  const nRev=todayItems.filter(r=>r.kind==='reversal').length;
   if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
   if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
   if(nNo)bits.push(`${nNo} without a surgery date`);
-  if(!bits.length)bits.push(`${todayItems.length} siting reminder${todayItems.length!==1?'s':''}`);
+  if(nRev)bits.push(`${nRev} reversal${nRev!==1?'s':''}`);
+  if(!bits.length)bits.push(`${todayItems.length} reminder${todayItems.length!==1?'s':''}`);
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>🔔 Siting reminders today</h2>
+  mb.innerHTML=`<h2>🔔 Reminders today</h2>
     <div class="msub"><strong>${htmlSafe(fmtLabel(TODAY))}</strong><br/>
       ${bits.join(' and ')} due today.</div>
     <div class="rem-popup-scroll">${renderSitingReminderList(todayItems)}</div>
@@ -6382,6 +6408,16 @@ function followupStatusOptionsHTML(selected){
 // e.g. discharged to Gozo and later deceased. Held as a JSON array. The main
 // status still drives recall and the row colour; these are shown alongside.
 const SECONDARY_STATUSES=['discharged_gozo','relocated_overseas','reversed','deceased'];
+/* A reversal can only be planned for someone who still has a stoma and is still
+   ours to operate on. These four outcomes each rule it out — the stoma is
+   already closed, the patient has died, or their care has moved away — and they
+   count whether they are the main status or one of the extra ones. */
+const NO_REVERSAL_PLAN_STATUSES=['reversed','deceased','relocated_overseas','discharged_gozo'];
+function canPlanReversal(p){
+  if(!p)return false;
+  if(NO_REVERSAL_PLAN_STATUSES.includes(normaliseFollowupStatus(p.followup_status)))return false;
+  return !parseExtraStatuses(p).some(st=>NO_REVERSAL_PLAN_STATUSES.includes(st));
+}
 function crOutClass(status){
   const st=normaliseFollowupStatus(status);
   return {deceased:'cr-out-deceased',reversed:'cr-out-reversed',discharged_gozo:'cr-out-gozo',
@@ -7276,7 +7312,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -7676,7 +7712,9 @@ function parseStomas(p){
   if(typeof arr==='string'){try{arr=JSON.parse(arr);}catch(e){arr=null;}}
   if(!Array.isArray(arr))arr=[];
   if(!arr.length&&(p?.newstoma_formed_date||p?.newstoma_findings||p?.newstoma_location||p?.newstoma_closure_date))
-    arr=[{formed_date:p.newstoma_formed_date||null,location:p.newstoma_location||null,closure_date:p.newstoma_closure_date||null,findings:p.newstoma_findings||null}];
+    arr=[{formed_date:p.newstoma_formed_date||null,location:p.newstoma_location||null,
+      closure_date:p.newstoma_closure_date||null,reversal_date:p.newstoma_closure_date||null,
+      findings:p.newstoma_findings||null,legacy:true}];
   return arr;
 }
 // A new stoma formed on or after the reversal date means the first stoma was
@@ -7805,7 +7843,7 @@ function stomaEvents(p){
   if(p&&(p.surgery_date||String(p.stoma_type||'').trim()))
     out.push({formed:p.surgery_date||null,ended:p.reversal_date||null});
   parseRefashionings(p).forEach(r=>out.push({formed:r.formed_date||null,ended:r.closure_date||null}));
-  parseStomas(p).forEach(s=>out.push({formed:s.formed_date||null,ended:s.reversal_date||null}));
+  parseStomas(p).forEach(s=>out.push({formed:s.formed_date||null,ended:s.reversal_date||null,legacy:!!s.legacy}));
   out.sort((a,b)=>String(a.formed||'9999-99-99').localeCompare(String(b.formed||'9999-99-99')));
   return out;
 }
@@ -7819,9 +7857,12 @@ function hasStomaNow(p){
   if(!ev.length)return false;
   const last=ev[ev.length-1];
   if(last.ended)return false;
-  // Records written before each stoma carried its own end date: a patient-level
-  // reversal dated strictly after the newest stoma closed that one too.
-  if(p&&p.reversal_date&&last.formed&&String(p.reversal_date)>String(last.formed))return false;
+  /* Records written before each stoma carried its own end date: there a
+     patient-level reversal dated after the newest stoma closed that one too.
+     It only applies to those legacy rows — a stoma entered on the form with its
+     reversal date deliberately left blank is still present, even when an
+     earlier stoma was reversed later on. */
+  if(last.legacy&&p&&p.reversal_date&&last.formed&&String(p.reversal_date)>String(last.formed))return false;
   return true;
 }
 // Kept under its old name: true when the patient still has a stoma even though
@@ -8062,6 +8103,8 @@ function patientFormHTML(p,prefix){
       ${followupStatusOptionsHTML(p?.followup_status||'active')}</select></div>
     <div class="fg"><label>Date of RIP (death)</label>
       <input type="date" id="${prefix}-rip" value="${v('deceased_date')}" onchange="onPatientFormDate('${prefix}','deceased')"/></div>
+    <div class="fg" id="${prefix}-proprevwrap"><label>Proposed date for reversal surgery <span style="font-weight:400;color:var(--muted);">(leave blank if none is planned)</span></label>
+      <input type="date" id="${prefix}-proprev" value="${v('proposed_reversal_date')}"/></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Other statuses that also apply</label>
       <div class="pf-xstatus">${SECONDARY_STATUSES.map(st=>`<label class="pf-xchk"><input type="checkbox" id="${prefix}-xs-${st}" value="${st}" ${xstat.includes(st)?'checked':''} onchange="onPatientFormOutcome('${prefix}')"/> ${htmlSafe(followupStatusText(st))}</label>`).join('')}</div></div>
     <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
@@ -8136,6 +8179,11 @@ function onPatientFormOutcome(prefix){
     const sel=document.getElementById(`${prefix}-status`);
     if(sel&&[...sel.options].some(o=>o.value===derived)){sel.value=derived;p.followup_status=derived;}
   }
+  // A planned reversal only makes sense while the four ruling-out outcomes are
+  // all absent, so the field appears and disappears with them.
+  const prw=document.getElementById(`${prefix}-proprevwrap`);
+  if(prw){const ok=canPlanReversal(p);prw.hidden=!ok;
+    if(!ok){const f=document.getElementById(`${prefix}-proprev`);if(f)f.value='';}}
   const[text,cls]=patientOutcome(p);
   note.innerHTML=`<span class="cr-out ${cls}">${htmlSafe(text)}</span>`+extraStatusChipsHTML(p);
 }
@@ -8188,6 +8236,9 @@ function readPatientForm(prefix){
   // A reversal with a later new stoma means the patient has a stoma again, so
   // never save them as "reversed".
   out.followup_status=derivedFollowupStatus(out);
+  // A proposed reversal date is only kept while the patient is still eligible
+  // for one — being reversed, dying, or moving away clears the plan.
+  out.proposed_reversal_date=canPlanReversal(out)?(val('proprev')||null):null;
   return out;
 }
 // Turn a save failure into something a nurse can act on.
@@ -9371,16 +9422,21 @@ async function loadHandover(){
   // Siting patients whose surgery day has arrived show at the top as "awaiting
   // surgery", automatically, until the outcome is recorded from the handover.
   const awaiting=await handoverAwaitingSitings();
+  // Patients whose proposed reversal day has arrived ride at the top too, so the
+  // ward sees them on the morning of the operation without anyone adding them.
+  const revDue=await handoverAwaitingReversals(rows.map(r=>r.id));
   const dueBy=await handoverFlangeDue(rows.map(r=>r.id));
   const parts=[];
   if(rows.length)parts.push(`${rows.length} inpatient${rows.length===1?'':'s'}`);
   if(awaiting.length)parts.push(`${awaiting.length} awaiting surgery`);
+  if(revDue.length)parts.push(`${revDue.length} awaiting reversal`);
   const countTxt=parts.join(' · ');
-  if(!rows.length&&!awaiting.length){
+  if(!rows.length&&!awaiting.length&&!revDue.length){
     body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
     return;
   }
-  const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('');
+  const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('')
+    +revDue.map(handoverReversalRowHTML).join('');
   // One shade per ward, flipping at each new ward — the same blocks the print uses.
   let pw=null,wg=0;
   const trs=rows.map(p=>{
@@ -9513,6 +9569,59 @@ async function handoverAwaitingSitings(){
     }).sort((a,b)=>String(a.surgery_date).localeCompare(String(b.surgery_date))
       ||String(a.surname||'').localeCompare(String(b.surname||'')));
   }catch(e){return [];}
+}
+/* Registry patients with a proposed reversal date that has come round, and who
+   are still eligible for one. A patient already admitted is skipped — they are
+   on the sheet as an ordinary inpatient row already. */
+async function handoverAwaitingReversals(onSheetIds){
+  try{
+    // lte on a null date matches nothing, so patients with no plan drop out here.
+    const{data,error}=await SB.from('patients')
+      .select('id,first_name,surname,id_card,consultant,stoma_type,followup_status,extra_statuses,proposed_reversal_date')
+      .lte('proposed_reversal_date',TODAY);
+    // Before the column exists there is simply nothing to show.
+    if(error)return [];
+    const on=new Set(onSheetIds||[]);
+    return (data||[])
+      .filter(p=>p.proposed_reversal_date&&!on.has(p.id)&&canPlanReversal(p))
+      .sort((a,b)=>String(a.proposed_reversal_date).localeCompare(String(b.proposed_reversal_date))
+        ||String(a.surname||'').localeCompare(String(b.surname||'')));
+  }catch(e){return [];}
+}
+/* An awaiting-reversal row: the same shape as an awaiting-surgery one, with the
+   patient's record a click away to write the reversal up or move the date. */
+function handoverReversalRowHTML(p){
+  const late=String(p.proposed_reversal_date||'')<TODAY;
+  const note=`Awaiting reversal surgery${p.stoma_type?' · '+htmlSafe(p.stoma_type):''}`
+    +` · planned ${htmlSafe(fmtShortDate(p.proposed_reversal_date))}${late?' (overdue)':''}`;
+  return `<tr class="hv-awaiting hv-reversal">
+    <td data-label="Ward"><span class="hv-await-badge hv-rev-badge">Awaiting reversal</span></td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
+    <td data-label="Appliance + notes">${note}</td>
+    <td data-label="Discharge letter">—</td>
+    <td data-label="Schedule 5 permit">—</td>
+    <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#e8f5ee;color:#127a3e;" onclick="openPatientDatesModal('${p.id}')">Record reversal</button>
+      <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="handoverReversalPostpone('${p.id}')">Not done</button>
+    </div></td>
+  </tr>`;
+}
+/* "Not done" moves the plan rather than losing it: a new date keeps the patient
+   on the watch for that day, and a blank one takes the plan off altogether. */
+async function handoverReversalPostpone(patientId){
+  const{data:pat}=await SB.from('patients').select('id,first_name,surname,proposed_reversal_date').eq('id',patientId).maybeSingle();
+  const nm=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'this patient';
+  const ans=prompt(`New proposed date for ${nm}'s reversal surgery (YYYY-MM-DD).\nLeave it empty to take the plan off.`,
+    pat?.proposed_reversal_date||'');
+  if(ans===null)return;
+  const next=String(ans).trim();
+  if(next&&!/^\d{4}-\d{2}-\d{2}$/.test(next)){alert('Please write the date as YYYY-MM-DD, for example 2026-11-04.');return;}
+  const{error}=await updatePatientTolerant(patientId,{proposed_reversal_date:next||null});
+  if(error){alert('Could not change the proposed date: '+error.message);return;}
+  await loadHandover();
+  refreshReminders();
 }
 /* An awaiting-surgery row: no ward yet, an amber badge, and the two outcome
    buttons that carry the patient forward from theatre. */

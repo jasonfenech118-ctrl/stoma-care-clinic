@@ -147,3 +147,13 @@ WHERE table_schema = 'public'
   AND column_name IN ('date_of_birth','surgery_date','discharge_date','reversal_date','deceased_date',
                       'stoma_type','sex','procedure_performed','findings','locality')
 ORDER BY column_name;
+
+-- -----------------------------------------------------------------------------
+-- Proposed date for reversal surgery. Only offered to patients who have not had
+-- their stoma reversed, have not died, and have not been discharged abroad or to
+-- Gozo. On that date the patient shows on the handover sheet and raises a
+-- reminder. Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS proposed_reversal_date date;
+CREATE INDEX IF NOT EXISTS patients_proposed_reversal_idx
+  ON public.patients (proposed_reversal_date) WHERE proposed_reversal_date IS NOT NULL;
