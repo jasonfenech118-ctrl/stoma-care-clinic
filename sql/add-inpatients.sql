@@ -84,3 +84,10 @@ ORDER BY column_name;
 -- Added later; safe to re-run.
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_nurse_notes text;
+
+-- -----------------------------------------------------------------------------
+-- The next date a two-piece flange is due to be changed, editable inline on the
+-- handover. A plain date on the patient so it always saves, whatever way the
+-- appliance was recorded. Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS flange_due date;
