@@ -910,6 +910,13 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .hv-flange-soon{background:#fff6e0;color:#8a5a00;border-color:#e8c579;}
 .hv-flange-due{background:#fff1c9;color:#7a4a00;border-color:#e0a83a;}
 .hv-flange-over{background:#fdecea;color:#a3241a;border-color:#e39a92;}
+.hv-flangebox{display:flex;align-items:center;gap:6px;margin-top:4px;padding:2px 7px;border-radius:8px;
+  border:1px solid;font-size:11px;font-weight:800;flex-wrap:wrap;}
+.hv-flangebox .hv-flange-cap{font-weight:800;opacity:.85;}
+.hv-flangebox .hv-flange-date{width:130px;max-width:100%;font-size:11px;font-weight:700;padding:1px 4px;
+  border:1px solid rgba(0,0,0,.18);border-radius:6px;background:#fff;color:inherit;font-family:inherit;}
+.hv-flangebox .hv-flange-note{font-size:10px;font-weight:800;opacity:.9;}
+.hv-flangebox.hv-flange-set{background:#fff;color:var(--muted);border-style:dashed;border-color:#c3d0dc;}
 /* A siting patient due for surgery today sits at the top of the handover as an
    "awaiting surgery" row, tinted amber, until the outcome is recorded. */
 #hv-table tr.hv-awaiting td{background:#fff5e6;}
@@ -2356,7 +2363,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-191';
+const APP_BUILD='2026.09.03-192';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9545,14 +9552,17 @@ async function handoverFlangeDue(ids){
   const out={};
   if(!ids.length)return out;
   try{
-    const{data,error}=await SB.from('clinical_records').select('patient_id,appliances')
+    const{data,error}=await SB.from('clinical_records').select('id,patient_id,appliances')
       .in('patient_id',ids).eq('kind','episode').eq('is_current',true);
     if(error)return out;
     (data||[]).forEach(ep=>{
       latestApplianceRowsPerStoma(ep).forEach(({row:r})=>{
         if(!applianceRowIsTwoPiece(r))return;
-        const cur=out[ep.patient_id]||(out[ep.patient_id]={due:'',two:false});
-        cur.two=true;
+        const cur=out[ep.patient_id]||(out[ep.patient_id]={due:'',two:false,count:0,epId:ep.id,uid:'',stoma:''});
+        cur.two=true;cur.count++;
+        // When there is only one two-piece stoma its date can be edited inline;
+        // this remembers which stoma to write to without another lookup.
+        cur.uid=r.stoma_uid||'';cur.stoma=r.stoma_short||r.stoma_code||'';
         if(r.flange_due&&(!cur.due||String(r.flange_due)<String(cur.due)))cur.due=String(r.flange_due);
       });
     });
@@ -9786,24 +9796,74 @@ function daysUntilDate(d){
   if(isNaN(b))return null;
   return Math.round((b-a)/86400000);
 }
-/* A two-piece flange stays on for days, so the handover carries the reminder —
-   and it is a button, because the ward is where the date actually changes. A
-   one-piece is changed daily and never has a date, so it shows nothing at all.
-   A two-piece with no date yet still offers somewhere to set one. */
-function flangeDueChipHTML(info,pid){
-  const due=info&&info.due?String(info.due):'';
-  const two=!!(info&&info.two);
-  if(!due&&!two)return '';
+/* The colour and the short relative note for a flange date, shared by the inline
+   editor and the multi-stoma button. */
+function flangeDueMeta(due){
   const n=daysUntilDate(due);
-  let cls='set',txt='Set flange due';
-  if(n!==null){
-    cls='ok';txt='Flange due '+fmtShortDate(due);
-    if(n<0)       {cls='over';txt='Flange overdue by '+Math.abs(n)+' day'+(Math.abs(n)===1?'':'s');}
-    else if(n===0){cls='due'; txt='Flange due today';}
-    else if(n<=2) {cls='soon';txt='Flange due in '+n+' day'+(n===1?'':'s');}
+  if(n===null)return {cls:'set',note:'Set next change'};
+  if(n<0)     return {cls:'over',note:'Overdue by '+Math.abs(n)+' day'+(Math.abs(n)===1?'':'s')};
+  if(n===0)   return {cls:'due', note:'Due today'};
+  if(n<=2)    return {cls:'soon',note:'Due in '+n+' day'+(n===1?'':'s')};
+  return {cls:'ok',note:'Due '+fmtShortDate(due)};
+}
+/* A two-piece flange stays on for days, so the handover carries the next change
+   date — and it is edited right here in the table. A one-piece is changed daily
+   and shows nothing. When a patient has more than one two-piece stoma a single
+   box cannot say which, so that (rare) case keeps the per-stoma pop-up. */
+function flangeDueChipHTML(info,pid){
+  const two=!!(info&&info.two);
+  if(!two)return '';
+  const due=info.due?String(info.due):'';
+  const m=flangeDueMeta(due);
+  if((info.count||1)>1){
+    return `<button type="button" class="hv-flange hv-flange-${m.cls}" title="Set each stoma's next flange change date"
+      onclick="openFlangeDueModal('${pid}')">Flange dates · ${info.count} stomas</button>`;
   }
-  return `<button type="button" class="hv-flange hv-flange-${cls}" title="Change the next flange change date"
-    onclick="openFlangeDueModal('${pid}')">${htmlSafe(txt)}</button>`;
+  return `<label class="hv-flangebox hv-flange-${m.cls}" title="Next flange change — type or pick a date">
+    <span class="hv-flange-cap">Flange due</span>
+    <input type="date" class="hv-inp hv-flange-date" value="${htmlSafe(due)}"
+      data-ep="${htmlSafe(info.epId||'')}" data-uid="${htmlSafe(info.uid||'')}"
+      onchange="saveFlangeDueInline(this)"/>
+    <span class="hv-flange-note">${htmlSafe(m.note)}</span>
+  </label>`;
+}
+/* Edit the next flange date straight from the table row. It is written onto the
+   appliance already recorded against the stoma, and the ward note is rebuilt so
+   the printed sheet shows the same date. */
+async function saveFlangeDueInline(el){
+  const epId=el.getAttribute('data-ep'), uid=el.getAttribute('data-uid'), val=el.value||'';
+  const box=el.closest('.hv-flangebox');
+  if(!epId){alert('This admission has no clinical record to hold the date. Set the appliance first.');return;}
+  const{data:ep,error}=await SB.from('clinical_records').select('id,appliances').eq('id',epId).maybeSingle();
+  if(error||!ep){alert('Could not save the flange date: '+(error?error.message:'the admission was not found'));return;}
+  const rows=parseEpisodeApplianceRows(ep);
+  // The latest entry for this stoma is the one on now, so its date is the one set.
+  let idx=-1,best='';
+  rows.forEach((r,i)=>{if((r.stoma_uid||'')===uid&&String(r.changed_on||'')>=best){best=String(r.changed_on||'');idx=i;}});
+  if(idx<0){alert('Could not find the appliance to attach the date to. Set the appliance first.');return;}
+  rows[idx].flange_due=val;
+  const{error:e2}=await SB.from('clinical_records').update({appliances:rows}).eq('id',epId);
+  if(e2){alert('Could not save the flange date: '+e2.message);return;}
+  await syncWardNoteFromEpisode(ep.id,rows);
+  // Reflect the new urgency without a full reload, so focus and scroll are kept.
+  if(box){const m=flangeDueMeta(val);
+    box.className='hv-flangebox hv-flange-'+m.cls;
+    const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
+}
+/* Keep the ward note (what prints, and what the appliance line shows) in step
+   with the episode's appliances after a flange date changes. */
+async function syncWardNoteFromEpisode(epId,rows){
+  try{
+    const noteRows=latestApplianceRowsPerStoma({appliances:rows}).map(x=>x.row);
+    const note=episodeApplianceNote(noteRows);
+    const{data:ep}=await SB.from('clinical_records').select('patient_id').eq('id',epId).maybeSingle();
+    if(ep&&ep.patient_id){
+      await SB.from('patients').update({inpatient_notes:note}).eq('id',ep.patient_id);
+      const btn=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(ep.patient_id))}"] .hv-appl`);
+      if(btn){btn.dataset.appliance=note;btn.textContent=note||'';
+        if(!note)btn.innerHTML='<span class="hv-appl-empty">Tap to set appliance</span>';}
+    }
+  }catch(e){}
 }
 /* Changing the next flange date from the handover. It is written onto the
    appliance already recorded against the stoma, so the date stays part of that
@@ -9861,6 +9921,7 @@ async function saveFlangeDue(){
   });
   const{error}=await SB.from('clinical_records').update({appliances:rows}).eq('id',st.epId);
   if(error){alert('Could not save the flange date: '+error.message);return;}
+  await syncWardNoteFromEpisode(st.epId,rows);
   flangeDueState=null;
   closeModal();
   if(document.getElementById('hv-body'))loadHandover();
