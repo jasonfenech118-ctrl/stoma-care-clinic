@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-195';
+const APP_BUILD='2026.09.03-196';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7346,6 +7346,7 @@ const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date
 const PATIENT_REQUIRED_FIELDS=[
   ['first_name','First name'],['surname','Surname'],['sex','Sex'],
   ['locality','Locality'],['date_of_birth','Date of birth'],
+  ['consultant','Firm (consultant)'],['surgery_date','Date of surgery'],
   ['stoma_type','Stoma type'],['findings','Operation and findings']];
 function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!String(p?.[k]??'').trim()).map(([,label])=>label);}
 function patientIsIncomplete(p){return PATIENT_REQUIRED_FIELDS.some(([k])=>!String(p?.[k]??'').trim());}
@@ -8082,14 +8083,14 @@ function patientFormHTML(p,prefix){
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
     <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)">${localityOptions(p?.locality)}</select></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
-    <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)">${firmOptions(p?.consultant)}</select></div>
+    <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)">${firmOptions(p?.consultant)}</select></div>
   </div>
 
   <h3 class="pf-head">Stoma 1 · formed at the first operation</h3>
   <div class="stoma-row">
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type *</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
-      <div class="fg"><label>Date of surgery</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
+      <div class="fg"><label>Date of surgery *</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
@@ -9817,9 +9818,10 @@ const TWO_PIECE_NAMES=(typeof APPLIANCE_CATALOGUE!=='undefined'?APPLIANCE_CATALO
 function applianceLineIsTwoPiece(text){
   const t=String(text||'');
   if(!t.trim())return false;
-  // A flange, or a Lentell (which is a two-piece flange), is the clear signal.
+  // A flange (Stomahesive, Deep Convexity, Microporous) is the clear two-piece
+  // signal. Lentell is a one-piece and never carries a flange due date.
   if(/flange/i.test(t))return true;
-  if(/lentell|deep\s*convex|microporous|stomahesive\s*flange/i.test(t))return true;
+  if(/deep\s*convex|microporous|stomahesive\s*flange/i.test(t))return true;
   return TWO_PIECE_NAMES.some(n=>n&&t.includes(n));
 }
 /* The colour and the short relative note for a flange date. */
