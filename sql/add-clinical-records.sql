@@ -39,3 +39,13 @@ SELECT column_name, data_type
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'clinical_records'
 ORDER BY ordinal_position;
+
+-- -----------------------------------------------------------------------------
+-- A clinic-wide reference for each admission, e.g. EP-2026-0042, generated when
+-- the episode is opened. The partial unique index keeps them from repeating
+-- while leaving older episodes (which have none) alone.
+-- Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.clinical_records ADD COLUMN IF NOT EXISTS episode_ref text;
+CREATE UNIQUE INDEX IF NOT EXISTS clinical_records_episode_ref_key
+  ON public.clinical_records (episode_ref) WHERE episode_ref IS NOT NULL;

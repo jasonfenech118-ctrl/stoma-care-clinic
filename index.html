@@ -2351,7 +2351,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-187';
+const APP_BUILD='2026.09.03-188';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4779,6 +4779,24 @@ async function commitVisitFromWizard(){
   if(pending&&pending.mode==='episode'){await commitEpisodeAppliances(pending,rows);return;}
   await commitOutcomeFollowup(pending,rows);
 }
+/* Every admission gets a clinic-wide reference of its own, EP-<year>-<seq>,
+   worked out from the highest one already issued this year. The max is taken in
+   JavaScript rather than leaned on the server's ordering, so it is right even
+   when a reference was entered out of sequence. */
+async function nextEpisodeRef(){
+  const yr=String(TODAY).slice(0,4);
+  let max=0;
+  try{
+    const{data}=await SB.from('clinical_records').select('episode_ref')
+      .eq('kind','episode').like('episode_ref',`EP-${yr}-%`);
+    (data||[]).forEach(r=>{
+      const n=parseInt(String(r.episode_ref||'').slice(-4),10);
+      if(Number.isFinite(n)&&n>max)max=n;
+    });
+  }catch(e){}
+  return `EP-${yr}-${String(max+1).padStart(4,'0')}`;
+}
+function isDuplicateRefError(err){return /duplicate key|already exists|unique/i.test(String(err&&err.message||''));}
 /* Open an admission for this patient and hand it back, so whatever is being
    recorded has an episode to belong to. Tolerates a database missing any of the
    newer columns. */
@@ -4786,10 +4804,13 @@ async function createInpatientEpisodeFor(pid,recordDate){
   const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:'',status:'Inpatient',
     record_date:recordDate||TODAY,is_current:true,appliances:[]};
   try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
+  try{base.episode_ref=await nextEpisodeRef();}catch(e){}
   let body={...base};
-  for(let i=0;i<5;i++){
-    const r=await SB.from('clinical_records').insert(body).select('id,appliances,record_date').single();
+  for(let i=0;i<6;i++){
+    const r=await SB.from('clinical_records').insert(body).select('id,appliances,record_date,episode_ref').single();
     if(!r.error)return r.data||null;
+    // Two admissions opened at the same moment can land on the same reference.
+    if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
     const bad=missingColumnFromError(r.error);
     if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
     return null;
@@ -8327,7 +8348,8 @@ function stomaCode(rec){return (rec&&rec.kind==='stoma'&&rec.id)?'STO-'+String(r
 function recCode(rec){
   if(!rec||!rec.id)return '';
   if(rec.kind==='stoma')return stomaCode(rec);
-  if(rec.kind==='episode')return 'EPI-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase();
+  // Admissions opened before references existed still show their derived code.
+  if(rec.kind==='episode')return rec.episode_ref||('EPI-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase());
   return '';
 }
 let clrState={patientId:null,patient:null,rows:[],available:true,expanded:{}};
@@ -8513,8 +8535,17 @@ function stomaCategoryHTML(meta,open){
     ${open?`<div class="clr-list">${blocks}</div>`:''}
   </div>`;
 }
+/* Which admission this is for this patient — counted over their own episodes,
+   oldest first, so it stays right if one is removed. */
+function episodeAdmissionNo(rec){
+  const eps=(clrState.rows||[]).filter(x=>x.kind==='episode').slice()
+    .sort((a,b)=>String(a.record_date||a.created_at||'').localeCompare(String(b.record_date||b.created_at||'')));
+  const i=eps.findIndex(e=>String(e.id)===String(rec.id));
+  return i<0?0:i+1;
+}
 function clrMetaHTML(r){
   const parts=[];
+  if(r.kind==='episode'){const n=episodeAdmissionNo(r);if(n)parts.push('admission '+n);}
   if(r.detail)parts.push(htmlSafe(r.detail));
   if(r.record_date)parts.push((r.kind==='episode'?'Admitted ':'')+htmlSafe(fmtShortDate(r.record_date)));
   if(r.kind==='episode'&&r.discharge_date)parts.push('Discharged '+htmlSafe(fmtShortDate(r.discharge_date)));
@@ -8781,10 +8812,12 @@ async function saveInpatientVisit(){
     const applianceData={stoma_type:inpatientStomaType(pat),appliances:app,accessories:(w.accessories||[])};
     const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:TODAY,is_current:true,notes:summary||null,appliances:applianceData};
     try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
+    try{base.episode_ref=await nextEpisodeRef();}catch(e){}
     let body={...base};
-    for(let i=0;i<4;i++){
+    for(let i=0;i<6;i++){
       const r=await SB.from('clinical_records').insert(body);
       if(!r.error){epErr=null;break;}
+      if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
       const bad=missingColumnFromError(r.error);
       if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
       epErr=r.error;break;
@@ -9568,6 +9601,16 @@ window.addEventListener('resize',()=>{
 async function openHandoverProfile(patientId){
   const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
   if(error||!p){alert('Could not open this profile: '+(error?error.message:'they are no longer in the registry'));return;}
+  // The admission they are on, so its reference can be quoted from the ward.
+  let ep=null;
+  try{
+    let q=await SB.from('clinical_records').select('id,record_date,episode_ref')
+      .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).limit(1);
+    if(q.error&&/episode_ref/.test(String(q.error.message||'')))
+      q=await SB.from('clinical_records').select('id,record_date')
+        .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).limit(1);
+    ep=(q.data||[])[0]||null;
+  }catch(e){}
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const row=(l,v)=>v?`<span>${htmlSafe(l)}</span><span>${htmlSafe(v)}</span>`:'';
   const d=v=>v?fmtShortDate(v):'';
@@ -9581,6 +9624,7 @@ async function openHandoverProfile(patientId){
       ${row('Phone',p.phone_number)}
       ${row('Locality',p.locality)}
       ${row('Firm',p.consultant)}
+      ${row('Episode',ep&&ep.episode_ref?ep.episode_ref:'')}
       ${row('Ward',[p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' - '))}
       ${row('Inpatient since',d(p.inpatient_since))}
       ${row('Stoma',p.stoma_type)}
