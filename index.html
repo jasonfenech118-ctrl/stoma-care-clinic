@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-199';
+const APP_BUILD='2026.09.03-200';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8069,7 +8069,10 @@ function addRefashionRow(prefix){
 function parseInitialStomas(p){let a=p?.initial_stomas;if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}return Array.isArray(a)?a:[];}
 function initialStomaRowHTML(d){
   d=d||{};
-  return `<div class="stoma-row"><div class="edit-seen-grid">
+  // An automatic id of its own, so appliances filed against this stoma stay
+  // with it even when its type or location is edited.
+  const uid=d.uid||newStomaUid();
+  return `<div class="stoma-row" data-uid="${htmlSafe(uid)}"><div class="edit-seen-grid">
       <div class="fg"><label>Type</label><input type="text" class="ist-type" value="${htmlSafe(d.type||'')}" placeholder="e.g. Mucus fistula, End colostomy"/></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
     </div>
@@ -8249,6 +8252,7 @@ function readPatientForm(prefix){
     stoma_type:val('stoma')||null,
     stoma_location:loc(val('stomaloc')),
     initial_stomas:[...document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`)].map(r=>({
+      uid:r.dataset.uid||newStomaUid(),
       type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:loc(r.querySelector('.ist-loc')?.value)
     })).filter(s=>s.type||s.location),
     findings:val('findings')||null,
@@ -9655,7 +9659,9 @@ function handoverStomaLine(patient,epRows){
   (epRows||[]).forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
     if(!latest[u]||String(r.changed_on||'')>=String(latest[u].changed_on||''))latest[u]=r;});
   return stomas.map(st=>{
-    const tag=st.shortLabel||st.code||'';
+    // The stoma's own number leads, so every stoma on the row is identified even
+    // when two are the same type and no quadrant was recorded.
+    const tag=[st.code,st.shortLabel].filter(Boolean).join(' ');
     const r=latest[st.uid];
     const appl=r?shortApplianceList(r.appliances).join(', '):'';
     const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
