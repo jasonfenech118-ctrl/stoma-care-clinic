@@ -910,6 +910,9 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .hv-flange-soon{background:#fff6e0;color:#8a5a00;border-color:#e8c579;}
 .hv-flange-due{background:#fff1c9;color:#7a4a00;border-color:#e0a83a;}
 .hv-flange-over{background:#fdecea;color:#a3241a;border-color:#e39a92;}
+.clr-head-open{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#0d7377;
+  background:#e8f5f4;border:1px solid #b5e0dd;border-radius:8px;padding:6px 10px;}
+.clr-head-open svg{width:15px;height:15px;}
 .hv-flangebox{display:flex;align-items:center;gap:6px;margin-top:4px;padding:2px 7px;border-radius:8px;
   border:1px solid;font-size:11px;font-weight:800;flex-wrap:wrap;}
 .hv-flangebox .hv-flange-cap{font-weight:800;opacity:.85;}
@@ -2363,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-192';
+const APP_BUILD='2026.09.03-193';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8459,6 +8462,12 @@ async function loadClinicalRecords(patientId){
     clrState.rows=[];
   }else{clrState.available=true;clrState.rows=data||[];}
 }
+/* The patient's open inpatient episode, if any: the one marked current that has
+   not been discharged. This is what "the patient is admitted" means on the
+   record, and it must match their being on the Handover. */
+function openEpisodeIn(rows){
+  return (rows||[]).find(r=>r&&r.kind==='episode'&&r.is_current&&!r.discharge_date)||null;
+}
 function clrBadgeCls(kind,rec){
   if(!rec?.status)return '';
   return rec.is_current?'':'past';
@@ -8666,8 +8675,15 @@ function renderClinicalPanel(){
       ${open?`<div class="clr-list">${listRows}</div>`:''}
     </div>`;
   }).join('');
+  // Only one inpatient visit is open at a time: while an episode is open the
+  // button is replaced by a note, so a second admission cannot be started over
+  // the first — the open one is continued from the Handover and closed there.
+  const openEp=openEpisodeIn(clrState.rows);
+  const headAction=openEp
+    ? `<span class="clr-head-open">${psmIc('folder')} Inpatient visit open${recCode(openEp)?' · '+htmlSafe(recCode(openEp)):''} — set appliances or discharge from the Handover</span>`
+    : `<button class="psm-btn psm-btn-primary" onclick="openInpatientVisit()">${psmIc('plus')} Open inpatient visit</button>`;
   host.innerHTML=`<div class="clr-head"><h3>Clinical records</h3>
-      <button class="psm-btn psm-btn-primary" onclick="openInpatientVisit()">${psmIc('plus')} Open inpatient visit</button></div>
+      ${headAction}</div>
     <div class="clr-cats">${cats}</div>
     ${newest?`<div class="psm-audit">${psmIc('clock')} Last updated ${htmlSafe(fmtShortDate(String(newest.updated_at||newest.created_at||'').slice(0,10)))}${newest.created_by?' by '+htmlSafe(newest.created_by):''}</div>`:''}`;
 }
@@ -8733,6 +8749,11 @@ async function previousInpatientAppliances(pid){
 async function openInpatientVisit(){
   const pid=clrState.patientId, pat=clrState.patient;
   if(!pid)return;
+  // A patient can only have one inpatient visit open at a time.
+  if(openEpisodeIn(clrState.rows)){
+    alert('This patient already has an inpatient visit open. Set appliances or discharge them from the Handover before opening another.');
+    return;
+  }
   // If the patient already has appliances on record, a readmission only needs
   // the ward and bed — the appliance and accessory pages are skipped.
   const prev=await previousInpatientAppliances(pid);
@@ -9093,6 +9114,14 @@ async function openPatientRecord(patientId){
   await loadClinicalRecords(patientId);
   clrState.patient=pat;
   clrState.appts=appts;
+  // Being on the Handover (an inpatient) and having an open episode are the same
+  // thing. If a patient is on the Handover with no open episode — admitted before
+  // episodes were recorded, say — one is opened now so it shows on the record and
+  // the two stay in step.
+  if(pat.is_inpatient&&clrState.available&&!openEpisodeIn(clrState.rows)){
+    const made=await createInpatientEpisodeFor(patientId,pat.inpatient_since||TODAY);
+    if(made)await loadClinicalRecords(patientId);
+  }
   const clrCount=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(pat).length;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const[outText,outCls]=patientOutcome(pat);
