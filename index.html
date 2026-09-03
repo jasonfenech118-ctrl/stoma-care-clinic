@@ -2351,7 +2351,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-186';
+const APP_BUILD='2026.09.03-187';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4530,18 +4530,38 @@ async function openVisitApplianceWizard(pending,patient){
     .order('appt_date',{ascending:false}).limit(25);
   const previous=previousStomaRecords(hist||[],pending.apptId,list);
   const mine=stomaRecordsFor((hist||[]).find(a=>String(a.id)===String(pending.apptId)));
+  /* Set from the handover, this belongs to the admission the patient is on, so
+     what that episode already holds for the same stoma is what carries forward —
+     every change during the stay stacks under the one episode and the one stoma,
+     rather than starting blank off an old clinic appointment. */
+  const epPrev={}, epToday={};
+  if(pending.mode==='episode'){
+    const ep=await currentInpatientEpisode(pending.patientId);
+    if(ep)parseEpisodeApplianceRows(ep).forEach(r=>{
+      const uid=r.stoma_uid||''; if(!uid)return;
+      if(!epPrev[uid]||String(r.changed_on||'')>=String(epPrev[uid].changed_on||''))epPrev[uid]=r;
+    });
+    Object.keys(epPrev).forEach(uid=>{if(String(epPrev[uid].changed_on||'')===TODAY)epToday[uid]=epPrev[uid];});
+  }
   const prev={};
   list.forEach(st=>{
-    const own=mine[st.uid], p=previous[st.uid];
-    const src=(own&&(own.appliances?.length||own.accessories?.length))?own:p;
+    const own=mine[st.uid], p=previous[st.uid], e=epPrev[st.uid];
+    const src=e||((own&&(own.appliances?.length||own.accessories?.length))?own:p);
     prev[st.uid]={appliances:parseNameList(src?.appliances),accessories:parseNameList(src?.accessories),
                   flange_due:src?.flange_due||'',
-                  carriedFrom:(!own||!(own.appliances?.length||own.accessories?.length))&&p?p.appt_date:null};
+                  carriedFrom:e?(String(e.changed_on||'')!==TODAY?(e.changed_on||null):null)
+                    :((!own||!(own.appliances?.length||own.accessories?.length))&&p?p.appt_date:null)};
   });
   visitWizard={pending,patient,stomas:list,prev,rows:{},chosen:null,step:'stoma',system:'',work:{appliances:[],accessories:[],flange_due:'',carriedFrom:null}};
   // Rows already recorded on this appointment stay editable / kept.
   Object.keys(mine).forEach(uid=>{const st=list.find(x=>x.uid===uid);if(st&&(mine[uid].appliances?.length||mine[uid].accessories?.length))
     visitWizard.rows[uid]={uid,code:st.code,short:st.shortLabel||'',label:visitStomaLabel(st),stoma_type:st.typeLabel||'',appliances:parseNameList(mine[uid].appliances),accessories:parseNameList(mine[uid].accessories),flange_due:mine[uid].flange_due||''};});
+  // Anything already set on this episode today is shown as it stands, so a
+  // second visit to the same stoma edits that entry instead of starting over.
+  Object.keys(epToday).forEach(uid=>{const st=list.find(x=>x.uid===uid);if(!st)return;
+    visitWizard.rows[uid]={uid,code:st.code,short:st.shortLabel||'',label:visitStomaLabel(st),stoma_type:st.typeLabel||'',
+      appliances:parseNameList(epToday[uid].appliances),accessories:parseNameList(epToday[uid].accessories),
+      flange_due:epToday[uid].flange_due||''};});
   if(list.length===1){startVisitStoma(list[0].uid);} else {renderVisitStep();}
 }
 function stomaRecordsFor(appt){
@@ -4759,6 +4779,23 @@ async function commitVisitFromWizard(){
   if(pending&&pending.mode==='episode'){await commitEpisodeAppliances(pending,rows);return;}
   await commitOutcomeFollowup(pending,rows);
 }
+/* Open an admission for this patient and hand it back, so whatever is being
+   recorded has an episode to belong to. Tolerates a database missing any of the
+   newer columns. */
+async function createInpatientEpisodeFor(pid,recordDate){
+  const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:'',status:'Inpatient',
+    record_date:recordDate||TODAY,is_current:true,appliances:[]};
+  try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
+  let body={...base};
+  for(let i=0;i<5;i++){
+    const r=await SB.from('clinical_records').insert(body).select('id,appliances,record_date').single();
+    if(!r.error)return r.data||null;
+    const bad=missingColumnFromError(r.error);
+    if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
+    return null;
+  }
+  return null;
+}
 /* The admission the patient is on right now. What is set on the ward is
    written here, so it belongs to this episode rather than floating loose. */
 async function currentInpatientEpisode(pid){
@@ -4782,7 +4819,10 @@ async function commitEpisodeAppliances(pending,rows){
     // Where the change was made, so the history says the ward and not just
     // "inpatient" — the patient may move ward before the episode closes.
     ward:pending.ward||'',bed:pending.bed||''}));
-  const ep=await currentInpatientEpisode(pending.patientId);
+  // An admission must exist for the change to belong to, so one is opened rather
+  // than letting the entry fall on the floor with only a ward note to show.
+  let ep=await currentInpatientEpisode(pending.patientId);
+  if(!ep)ep=await createInpatientEpisodeFor(pending.patientId);
   if(ep){
     const kept=parseEpisodeApplianceRows(ep)
       .filter(e=>!entries.some(n=>n.stoma_uid===e.stoma_uid&&String(e.changed_on||'')===stamp));
@@ -4793,7 +4833,7 @@ async function commitEpisodeAppliances(pending,rows){
   const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
   if(pe){alert('The appliance was recorded, but the ward note could not be updated: '+pe.message);}
   closeModal();
-  if(!ep)alert('Recorded on the ward note. This patient has no open admission on their clinical record, so it could not be filed against an episode — open them in the Registry and start an inpatient episode to keep the full history.');
+  if(!ep)alert('Recorded on the ward note, but an admission could not be opened on the clinical record, so this change is not in the stoma history. Open the patient in the Registry and start an inpatient episode.');
   if(document.getElementById('hv-body'))loadHandover();
 }
 /* How an appliance is written on the ward sheet. The picker keeps the full
@@ -10323,17 +10363,7 @@ async function saveSitingStomaPatient(){
   switchTab('handover');
 }
 async function createSitingInpatientEpisode(pid,surgeryDate){
-  const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:'',status:'Inpatient',
-    record_date:surgeryDate||TODAY,is_current:true,appliances:[]};
-  try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
-  let body={...base};
-  for(let i=0;i<5;i++){
-    const r=await SB.from('clinical_records').insert(body);
-    if(!r.error)return;
-    const bad=missingColumnFromError(r.error);
-    if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
-    return;
-  }
+  await createInpatientEpisodeFor(pid,surgeryDate);
 }
 
 async function loadNoStomaOps(){
