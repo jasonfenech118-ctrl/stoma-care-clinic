@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-193';
+const APP_BUILD='2026.09.03-195';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4174,13 +4174,13 @@ const APPLIANCE_CATALOGUE=[
   /* Two-piece bags, by the coupling they fit. */
   {name:'Closed Bag 45mm',system:'two',part:'bag',coupling:45},
   {name:'Drainable Bag 45mm',system:'two',part:'bag',coupling:45},
-  {name:'Urostomy Bag 45mm',system:'two',part:'bag',coupling:45},
+  {name:'Uro/transparent Bag 45mm',system:'two',part:'bag',coupling:45},
   {name:'Closed Bag 57mm',system:'two',part:'bag',coupling:57},
   {name:'Drainable Bag 57mm',system:'two',part:'bag',coupling:57},
-  {name:'Urostomy Bag 57mm',system:'two',part:'bag',coupling:57},
+  {name:'Uro/transparent Bag 57mm',system:'two',part:'bag',coupling:57},
   {name:'Closed Bag 70mm',system:'two',part:'bag',coupling:70},
   {name:'Drainable Bag 70mm',system:'two',part:'bag',coupling:70},
-  {name:'Urostomy Bag 70mm',system:'two',part:'bag',coupling:70},
+  {name:'Uro/transparent Bag 70mm',system:'two',part:'bag',coupling:70},
   {name:'Drainable Bag 100mm',system:'two',part:'bag',coupling:100}
 ];
 const APPLIANCES=APPLIANCE_CATALOGUE.map(a=>a.name);
@@ -4822,7 +4822,11 @@ async function createInpatientEpisodeFor(pid,recordDate){
   try{base.episode_ref=await nextEpisodeRef();}catch(e){}
   let body={...base};
   for(let i=0;i<6;i++){
-    const r=await SB.from('clinical_records').insert(body).select('id,appliances,record_date,episode_ref').single();
+    // Select '*' rather than a named list: a named column that the database does
+    // not have yet (episode_ref before its migration) would fail the whole
+    // insert, so no episode would ever be created. The insert body is still
+    // pruned column by column on error.
+    const r=await SB.from('clinical_records').insert(body).select('*').single();
     if(!r.error)return r.data||null;
     // Two admissions opened at the same moment can land on the same reference.
     if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
@@ -9450,12 +9454,16 @@ function openDischargeFull(){window.open('discharge-letter.html','_blank');}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,inpatient_since,discharge_letter,schedule_five_permit';
-  let{data,error}=await SB.from('patients').select(HV_COLS).eq('is_inpatient',true);
-  // The nurse-note column is newer than the rest; without it the sheet still works.
-  if(error&&/inpatient_nurse_notes/.test(String(error.message||''))){
-    ({data,error}=await SB.from('patients')
-      .select(HV_COLS.replace(',inpatient_nurse_notes','')).eq('is_inpatient',true));
+  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit';
+  let cols=HV_COLS,data,error;
+  // The nurse-note and flange-due columns are newer than the rest; drop whichever
+  // the database does not have yet so the sheet still loads.
+  for(let i=0;i<3;i++){
+    ({data,error}=await SB.from('patients').select(cols).eq('is_inpatient',true));
+    if(!error)break;
+    const bad=missingColumnFromError(error);
+    if(bad&&new RegExp(',?'+bad).test(cols)){cols=cols.replace(new RegExp(',?'+bad),'');continue;}
+    break;
   }
   if(error){
     const missing=/is_inpatient|column/i.test(String(error.message||''));
@@ -9471,7 +9479,6 @@ async function loadHandover(){
   // Patients whose proposed reversal day has arrived ride at the top too, so the
   // ward sees them on the morning of the operation without anyone adding them.
   const revDue=await handoverAwaitingReversals(rows.map(r=>r.id));
-  const dueBy=await handoverFlangeDue(rows.map(r=>r.id));
   const parts=[];
   if(rows.length)parts.push(`${rows.length} inpatient${rows.length===1?'':'s'}`);
   if(awaiting.length)parts.push(`${awaiting.length} awaiting surgery`);
@@ -9488,7 +9495,7 @@ async function loadHandover(){
   const trs=rows.map(p=>{
     const w=String(p.inpatient_ward||'').toUpperCase();
     if(pw===null||w!==pw){wg++;pw=w;}
-    return handoverRowHTML(p,(wg%2)?'wg-odd':'wg-even',dueBy[p.id]||null);
+    return handoverRowHTML(p,(wg%2)?'wg-odd':'wg-even');
   }).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="hv-table">
     <colgroup>
@@ -9573,32 +9580,7 @@ function latestApplianceRowsPerStoma(ep){
   });
   return Object.values(best);
 }
-/* The soonest flange due date on each patient's open admission, and whether they
-   are on a two-piece at all, read in one go for the whole list. A patient on a
-   two-piece with no date yet still gets somewhere to set one.
-   A missing episode table simply means no reminders. */
-async function handoverFlangeDue(ids){
-  const out={};
-  if(!ids.length)return out;
-  try{
-    const{data,error}=await SB.from('clinical_records').select('id,patient_id,appliances')
-      .in('patient_id',ids).eq('kind','episode').eq('is_current',true);
-    if(error)return out;
-    (data||[]).forEach(ep=>{
-      latestApplianceRowsPerStoma(ep).forEach(({row:r})=>{
-        if(!applianceRowIsTwoPiece(r))return;
-        const cur=out[ep.patient_id]||(out[ep.patient_id]={due:'',two:false,count:0,epId:ep.id,uid:'',stoma:''});
-        cur.two=true;cur.count++;
-        // When there is only one two-piece stoma its date can be edited inline;
-        // this remembers which stoma to write to without another lookup.
-        cur.uid=r.stoma_uid||'';cur.stoma=r.stoma_short||r.stoma_code||'';
-        if(r.flange_due&&(!cur.due||String(r.flange_due)<String(cur.due)))cur.due=String(r.flange_due);
-      });
-    });
-  }catch(e){}
-  return out;
-}
-function handoverRowHTML(p,cls,flangeDue){
+function handoverRowHTML(p,cls){
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
@@ -9614,7 +9596,7 @@ function handoverRowHTML(p,cls,flangeDue){
             ?htmlSafe(p.inpatient_notes)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(flangeDue,p.id)}
+          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p)}
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
@@ -9825,8 +9807,22 @@ function daysUntilDate(d){
   if(isNaN(b))return null;
   return Math.round((b-a)/86400000);
 }
-/* The colour and the short relative note for a flange date, shared by the inline
-   editor and the multi-stoma button. */
+/* A two-piece system has a flange that stays on for days, so it carries a "next
+   change" date; a one-piece is changed daily and has none. What tells them apart
+   on the handover is the appliance line itself — a flange (or a known two-piece
+   appliance) means two-piece. Read off the text, this works for every patient on
+   the ward, however their appliance was recorded. */
+const TWO_PIECE_NAMES=(typeof APPLIANCE_CATALOGUE!=='undefined'?APPLIANCE_CATALOGUE:[])
+  .filter(a=>a.system==='two').map(a=>a.name);
+function applianceLineIsTwoPiece(text){
+  const t=String(text||'');
+  if(!t.trim())return false;
+  // A flange, or a Lentell (which is a two-piece flange), is the clear signal.
+  if(/flange/i.test(t))return true;
+  if(/lentell|deep\s*convex|microporous|stomahesive\s*flange/i.test(t))return true;
+  return TWO_PIECE_NAMES.some(n=>n&&t.includes(n));
+}
+/* The colour and the short relative note for a flange date. */
 function flangeDueMeta(due){
   const n=daysUntilDate(due);
   if(n===null)return {cls:'set',note:'Set next change'};
@@ -9835,125 +9831,30 @@ function flangeDueMeta(due){
   if(n<=2)    return {cls:'soon',note:'Due in '+n+' day'+(n===1?'':'s')};
   return {cls:'ok',note:'Due '+fmtShortDate(due)};
 }
-/* A two-piece flange stays on for days, so the handover carries the next change
-   date — and it is edited right here in the table. A one-piece is changed daily
-   and shows nothing. When a patient has more than one two-piece stoma a single
-   box cannot say which, so that (rare) case keeps the per-stoma pop-up. */
-function flangeDueChipHTML(info,pid){
-  const two=!!(info&&info.two);
-  if(!two)return '';
-  const due=info.due?String(info.due):'';
+/* A two-piece patient carries a "next flange change" date, edited right here in
+   the table. It is a plain date on the patient, so it always saves — no matter
+   how the appliance was recorded. A one-piece shows nothing. */
+function flangeDueChipHTML(p){
+  if(!applianceLineIsTwoPiece(p&&p.inpatient_notes))return '';
+  const due=p&&p.flange_due?String(p.flange_due).slice(0,10):'';
   const m=flangeDueMeta(due);
-  if((info.count||1)>1){
-    return `<button type="button" class="hv-flange hv-flange-${m.cls}" title="Set each stoma's next flange change date"
-      onclick="openFlangeDueModal('${pid}')">Flange dates · ${info.count} stomas</button>`;
-  }
   return `<label class="hv-flangebox hv-flange-${m.cls}" title="Next flange change — type or pick a date">
     <span class="hv-flange-cap">Flange due</span>
     <input type="date" class="hv-inp hv-flange-date" value="${htmlSafe(due)}"
-      data-ep="${htmlSafe(info.epId||'')}" data-uid="${htmlSafe(info.uid||'')}"
-      onchange="saveFlangeDueInline(this)"/>
+      onchange="saveFlangeDueInline('${p.id}',this)"/>
     <span class="hv-flange-note">${htmlSafe(m.note)}</span>
   </label>`;
 }
-/* Edit the next flange date straight from the table row. It is written onto the
-   appliance already recorded against the stoma, and the ward note is rebuilt so
-   the printed sheet shows the same date. */
-async function saveFlangeDueInline(el){
-  const epId=el.getAttribute('data-ep'), uid=el.getAttribute('data-uid'), val=el.value||'';
+/* Save the next flange date straight from the table row. It recolours in place,
+   so focus and scroll are kept and there is no reload. */
+async function saveFlangeDueInline(pid,el){
+  const val=el.value||'';
   const box=el.closest('.hv-flangebox');
-  if(!epId){alert('This admission has no clinical record to hold the date. Set the appliance first.');return;}
-  const{data:ep,error}=await SB.from('clinical_records').select('id,appliances').eq('id',epId).maybeSingle();
-  if(error||!ep){alert('Could not save the flange date: '+(error?error.message:'the admission was not found'));return;}
-  const rows=parseEpisodeApplianceRows(ep);
-  // The latest entry for this stoma is the one on now, so its date is the one set.
-  let idx=-1,best='';
-  rows.forEach((r,i)=>{if((r.stoma_uid||'')===uid&&String(r.changed_on||'')>=best){best=String(r.changed_on||'');idx=i;}});
-  if(idx<0){alert('Could not find the appliance to attach the date to. Set the appliance first.');return;}
-  rows[idx].flange_due=val;
-  const{error:e2}=await SB.from('clinical_records').update({appliances:rows}).eq('id',epId);
-  if(e2){alert('Could not save the flange date: '+e2.message);return;}
-  await syncWardNoteFromEpisode(ep.id,rows);
-  // Reflect the new urgency without a full reload, so focus and scroll are kept.
+  const ok=await saveHandoverField(pid,'flange_due',val);
+  if(!ok)return;
   if(box){const m=flangeDueMeta(val);
     box.className='hv-flangebox hv-flange-'+m.cls;
     const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
-}
-/* Keep the ward note (what prints, and what the appliance line shows) in step
-   with the episode's appliances after a flange date changes. */
-async function syncWardNoteFromEpisode(epId,rows){
-  try{
-    const noteRows=latestApplianceRowsPerStoma({appliances:rows}).map(x=>x.row);
-    const note=episodeApplianceNote(noteRows);
-    const{data:ep}=await SB.from('clinical_records').select('patient_id').eq('id',epId).maybeSingle();
-    if(ep&&ep.patient_id){
-      await SB.from('patients').update({inpatient_notes:note}).eq('id',ep.patient_id);
-      const btn=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(ep.patient_id))}"] .hv-appl`);
-      if(btn){btn.dataset.appliance=note;btn.textContent=note||'';
-        if(!note)btn.innerHTML='<span class="hv-appl-empty">Tap to set appliance</span>';}
-    }
-  }catch(e){}
-}
-/* Changing the next flange date from the handover. It is written onto the
-   appliance already recorded against the stoma, so the date stays part of that
-   stoma's history rather than becoming a loose ward note. */
-let flangeDueState=null;
-async function openFlangeDueModal(patientId){
-  const{data:pat}=await SB.from('patients').select('id,first_name,surname,id_card').eq('id',patientId).maybeSingle();
-  const ep=await currentInpatientEpisode(patientId);
-  const two=ep?latestApplianceRowsPerStoma(ep).filter(x=>applianceRowIsTwoPiece(x.row)):[];
-  if(!two.length){
-    alert('There is no two-piece appliance recorded for this patient on this admission, so there is no flange to give a change date to.\n\nTap the appliance on their row to set one first.');
-    return;
-  }
-  const all=parseEpisodeApplianceRows(ep);
-  flangeDueState={patientId,epId:ep.id,all,picks:two.map(x=>x.index)};
-  const nm=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'Patient';
-  const fields=two.map((x,i)=>{
-    const r=x.row;
-    const who=[r.stoma_short||r.stoma_code||'',r.stoma_type||''].filter(Boolean).join(' · ');
-    const wear=(r.appliances||[]).filter(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&it.part==='flange';});
-    return `<div class="fg" style="grid-column:1 / -1;">
-      <label for="fd-${i}">Next flange change${two.length>1&&who?' — '+htmlSafe(who):''}</label>
-      <input type="date" id="fd-${i}" class="fd-inp" value="${htmlSafe(r.flange_due||'')}"/>
-      ${wear.length?`<div class="ap-hint" style="margin:6px 0 0;">On now: ${htmlSafe(wear.map(shortAppliance).join(', '))}</div>`:''}
-    </div>`;}).join('');
-  const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2>Next flange change</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat?.id_card?' · '+htmlSafe(pat.id_card):''} — when the flange is next due to be changed. It is kept with the appliance on the stoma, and shows on the handover row.</div>
-    <div class="edit-seen-grid">${fields}</div>
-    <div class="ap-hint" style="margin:2px 0 0;">Quick set:
-      <button type="button" class="clr-mini" onclick="flangeDueQuick(1)">Tomorrow</button>
-      <button type="button" class="clr-mini" onclick="flangeDueQuick(2)">In 2 days</button>
-      <button type="button" class="clr-mini" onclick="flangeDueQuick(3)">In 3 days</button>
-      <button type="button" class="clr-mini" onclick="flangeDueQuick(5)">In 5 days</button>
-      <button type="button" class="clr-mini danger" onclick="flangeDueQuick(null)">Clear</button></div>
-    <div class="mact">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveFlangeDue()">Save date</button>
-    </div>`;
-  openMo();
-}
-// The quick buttons count from today, and fill every date on the form at once.
-function flangeDueQuick(days){
-  const v=days===null?'':isoPlusDays(TODAY,days);
-  document.querySelectorAll('#mb .fd-inp').forEach(el=>{el.value=v;});
-}
-async function saveFlangeDue(){
-  const st=flangeDueState;
-  if(!st)return;
-  const rows=st.all.map(r=>({...r}));
-  st.picks.forEach((idx,i)=>{
-    const el=document.getElementById('fd-'+i);
-    if(rows[idx])rows[idx].flange_due=el?(el.value||''):'';
-  });
-  const{error}=await SB.from('clinical_records').update({appliances:rows}).eq('id',st.epId);
-  if(error){alert('Could not save the flange date: '+error.message);return;}
-  await syncWardNoteFromEpisode(st.epId,rows);
-  flangeDueState=null;
-  closeModal();
-  if(document.getElementById('hv-body'))loadHandover();
 }
 /* Setting an appliance from the handover files it against the stoma and the
    admission the patient is on now, so it lands in the stoma's history rather
@@ -10921,7 +10822,10 @@ function printHandover(){
       if(!a&&!n)return (c.innerText||'').trim();          // awaiting-surgery rows
       const av=a?String(a.dataset.appliance||'').trim():'';
       const nv=n?String(n.value||'').trim():'';
-      return [av,nv].filter(Boolean).join(' · ');
+      // The next flange change date prints with the appliance, and is bolded.
+      const fd=c.querySelector('.hv-flange-date');
+      const fv=fd&&fd.value?('flange due '+fmtShortDate(fd.value)):'';
+      return [av,nv,fv].filter(Boolean).join(' · ');
     };
     const val=i=>cell(i)?.querySelector('.hs-btn')?.dataset.value||'';
     // Ward and bed live in one cell on screen too, so read them by name.
