@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-197';
+const APP_BUILD='2026.09.03-198';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4315,6 +4315,17 @@ function selectedCouplings(){
   if(!host)return[];
   return [...new Set([...host.querySelectorAll('.ap-box:checked')].map(b=>b.closest('.ap-chk')?.dataset.coupling).filter(Boolean))];
 }
+/* The flange couplings chosen for this stoma — from the flange panel when it is
+   on the same page, and otherwise from the wizard's own state, because the
+   admission and visit wizards put the flange and the bag on separate steps. */
+function activeFlangeCouplings(){
+  const set=new Set(selectedCouplings());
+  const add=list=>(list||[]).forEach(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);
+    if(it&&it.part==='flange')set.add(String(it.coupling));});
+  if(typeof ivWizard!=='undefined'&&ivWizard)add(ivWizard.appliances);
+  if(typeof visitWizard!=='undefined'&&visitWizard)add(visitWizard.work&&visitWizard.work.appliances);
+  return [...set];
+}
 function updateApplianceSummary(){
   const el=document.getElementById('of-appliance-summary');
   if(!el)return;
@@ -4327,7 +4338,7 @@ function updateApplianceSummary(){
     parts.push(acc.length?`<strong>Accessories (${acc.length}):</strong> ${htmlSafe(acc.join(', '))}`:'Nothing ticked yet — tick None if none were used.');
   // A bag whose flange is no longer ticked is worth saying out loud rather than
   // silently removing — the nurse decides which of the two is wrong.
-  const sizes=selectedCouplings();
+  const sizes=activeFlangeCouplings();
   const odd=applianceValues('of-bags').filter(n=>{
     const item=APPLIANCE_CATALOGUE.find(a=>a.name===n);
     return item&&!sizes.includes(String(item.coupling));
