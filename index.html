@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-198';
+const APP_BUILD='2026.09.03-199';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9499,7 +9499,7 @@ function openDischargeFull(){window.open('discharge-letter.html','_blank');}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit';
+  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,surgery_date,stoma_type,stoma_location,reversal_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
   let cols=HV_COLS,data,error;
   // The nurse-note and flange-due columns are newer than the rest; drop whichever
   // the database does not have yet so the sheet still loads.
@@ -9518,6 +9518,7 @@ async function loadHandover(){
     return;
   }
   const rows=(data||[]).slice().sort(handoverByWard);
+  await attachHandoverApplianceLines(rows);
   // Siting patients whose surgery day has arrived show at the top as "awaiting
   // surgery", automatically, until the outcome is recorded from the handover.
   const awaiting=await handoverAwaitingSitings();
@@ -9625,7 +9626,46 @@ function latestApplianceRowsPerStoma(ep){
   });
   return Object.values(best);
 }
+/* Read the open episodes for the whole list at once, then give each patient a
+   handover appliance line built from the stomas they actually have. A patient
+   with more than one stoma (a mucus fistula) shows every stoma automatically —
+   each with its appliance, or a dash until one is set — so the ward always sees
+   the fistula, not only the main stoma. A single-stoma patient keeps the plain
+   ward note. */
+async function attachHandoverApplianceLines(rows){
+  const ids=rows.map(r=>r.id);
+  const byPatient={};
+  if(ids.length){
+    try{
+      const{data}=await SB.from('clinical_records').select('patient_id,appliances,record_date,is_current')
+        .in('patient_id',ids).eq('kind','episode').eq('is_current',true);
+      (data||[]).forEach(ep=>{(byPatient[ep.patient_id]=byPatient[ep.patient_id]||[]).push(...parseEpisodeApplianceRows(ep));});
+    }catch(e){}
+  }
+  rows.forEach(p=>{p._applianceLine=handoverStomaLine(p,byPatient[p.id]||[]);});
+}
+/* One line for a multi-stoma patient: each present stoma, its appliances and
+   accessories in shorthand, a dash where nothing is set yet. Returns null for a
+   single stoma, so the caller falls back to the plain ward note. */
+function handoverStomaLine(patient,epRows){
+  let stomas=[];
+  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){return null;}
+  if(stomas.length<=1)return null;
+  const latest={};
+  (epRows||[]).forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
+    if(!latest[u]||String(r.changed_on||'')>=String(latest[u].changed_on||''))latest[u]=r;});
+  return stomas.map(st=>{
+    const tag=st.shortLabel||st.code||'';
+    const r=latest[st.uid];
+    const appl=r?shortApplianceList(r.appliances).join(', '):'';
+    const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
+    const bits=[appl,acc].filter(Boolean).join('; ');
+    const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
+    return (tag?tag+': ':'')+(bits||'—')+fd;
+  }).join('  ·  ');
+}
 function handoverRowHTML(p,cls){
+  const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
@@ -9636,12 +9676,12 @@ function handoverRowHTML(p,cls){
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
     <td data-label="Appliance + notes">
       <div class="hv-applwrap">
-        <button type="button" class="hv-appl" data-appliance="${htmlSafe(p.inpatient_notes||'')}"
-          title="Set appliance" onclick="openHandoverAppliance('${p.id}')">${p.inpatient_notes
-            ?htmlSafe(p.inpatient_notes)
+        <button type="button" class="hv-appl" data-appliance="${htmlSafe(applLine)}"
+          title="Set appliance" onclick="openHandoverAppliance('${p.id}')">${applLine
+            ?htmlSafe(applLine)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p)}
+          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,applLine)}
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
@@ -9880,8 +9920,9 @@ function flangeDueMeta(due){
 /* A two-piece patient carries a "next flange change" date, edited right here in
    the table. It is a plain date on the patient, so it always saves — no matter
    how the appliance was recorded. A one-piece shows nothing. */
-function flangeDueChipHTML(p){
-  if(!applianceLineIsTwoPiece(p&&p.inpatient_notes))return '';
+function flangeDueChipHTML(p,applianceText){
+  const text=(applianceText!=null?applianceText:(p&&p.inpatient_notes))||'';
+  if(!applianceLineIsTwoPiece(text))return '';
   const due=p&&p.flange_due?String(p.flange_due).slice(0,10):'';
   const m=flangeDueMeta(due);
   return `<label class="hv-flangebox hv-flange-${m.cls}" title="Next flange change — type or pick a date">
