@@ -910,6 +910,14 @@ body.pl-only .pl-wrap{padding-top:14px;}
 /* A siting patient due for surgery today sits at the top of the handover as an
    "awaiting surgery" row, tinted amber, until the outcome is recorded. */
 #hv-table tr.hv-awaiting td{background:#fff5e6;}
+.hv-appl{display:block;width:100%;text-align:left;padding:6px 9px;border:1px solid #cfd6de;border-radius:8px;
+  background:#f4f8fb;color:#0b5aa2;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;line-height:1.3;}
+.hv-appl:hover{background:#e8f1fb;border-color:#0b5aa2;}
+.hv-appl-empty{color:#8a97a6;font-weight:600;font-style:italic;}
+.hv-note{width:100%;box-sizing:border-box;margin-top:5px;}
+/* The picked appliance and the typed note always sit one above the other, on
+   the phone card as well as in the desktop grid. */
+.hv-applwrap{display:flex;flex-direction:column;align-items:stretch;}
 .hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
   color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
 /* The pre-operative stoma care checklist inside the "Seen" modal. */
@@ -2325,7 +2333,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.02-183';
+const APP_BUILD='2026.09.03-184';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4115,8 +4123,6 @@ const APPLIANCE_CATALOGUE=[
   {name:'Stomadress',system:'one',group:'Other'},
 
   /* Two-piece flanges. The first number is the coupling the bag clicks onto. */
-  {name:'Stomahesive Flange 32mm',system:'two',part:'flange',coupling:32},
-  {name:'Stomahesive Flange 38mm',system:'two',part:'flange',coupling:38},
   {name:'Stomahesive Flange 45mm',system:'two',part:'flange',coupling:45},
   {name:'Deep Convexity 45/22mm',system:'two',part:'flange',coupling:45},
   {name:'Deep Convexity Flange 45/25mm',system:'two',part:'flange',coupling:45},
@@ -9202,7 +9208,13 @@ async function cycleHandoverDoc(patientId,kind){
 }
 async function saveHandoverField(patientId,field,value){
   const{error}=await SB.from('patients').update({[field]:value===''?null:value}).eq('id',patientId);
-  if(error){alert(`Could not save the handover change: ${error.message}`);return false;}
+  if(error){
+    const bad=missingColumnFromError(error);
+    alert(bad
+      ? `The “${bad}” column is not in the database yet — run sql/add-inpatients.sql once in Supabase.`
+      : `Could not save the handover change: ${error.message}`);
+    return false;
+  }
   return true;
 }
 function handoverMissingHTML(message){
@@ -9219,9 +9231,13 @@ function openDischargeFull(){window.open('discharge-letter.html','_blank');}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const{data,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit')
-    .eq('is_inpatient',true);
+  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,inpatient_since,discharge_letter,schedule_five_permit';
+  let{data,error}=await SB.from('patients').select(HV_COLS).eq('is_inpatient',true);
+  // The nurse-note column is newer than the rest; without it the sheet still works.
+  if(error&&/inpatient_nurse_notes/.test(String(error.message||''))){
+    ({data,error}=await SB.from('patients')
+      .select(HV_COLS.replace(',inpatient_nurse_notes','')).eq('is_inpatient',true));
+  }
   if(error){
     const missing=/is_inpatient|column/i.test(String(error.message||''));
     body.innerHTML=missing
@@ -9340,8 +9356,15 @@ function handoverRowHTML(p,cls,flangeDue){
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
-    <td data-label="Appliance + notes"><input type="text" class="hv-inp" value="${htmlSafe(p.inpatient_notes||'')}" placeholder="Appliance, size, when it is due…"
-      onchange="saveHandoverField('${p.id}','inpatient_notes',this.value.trim())"/>${flangeDueChipHTML(flangeDue)}</td>
+    <td data-label="Appliance + notes">
+      <div class="hv-applwrap">
+        <button type="button" class="hv-appl" data-appliance="${htmlSafe(p.inpatient_notes||'')}"
+          title="Set appliance" onclick="openHandoverAppliance('${p.id}')">${p.inpatient_notes
+            ?htmlSafe(p.inpatient_notes)
+            :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
+        <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
+          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(flangeDue)}
+      </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
@@ -10393,6 +10416,16 @@ function printHandover(){
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
     const txt=i=>{const c=cell(i);const inp=c&&c.querySelector('input');return (inp?inp.value:(c?c.innerText:'')).trim();};
+    /* The appliance column holds a picked appliance plus a typed note, so both
+       are read and printed as the one line the ward sheet expects. */
+    const applianceNote=()=>{
+      const c=cell(4); if(!c)return '';
+      const a=c.querySelector('.hv-appl'), n=c.querySelector('.hv-note');
+      if(!a&&!n)return (c.innerText||'').trim();          // awaiting-surgery rows
+      const av=a?String(a.dataset.appliance||'').trim():'';
+      const nv=n?String(n.value||'').trim():'';
+      return [av,nv].filter(Boolean).join(' · ');
+    };
     const val=i=>cell(i)?.querySelector('.hs-btn')?.dataset.value||'';
     // Ward and bed live in one cell on screen too, so read them by name.
     const iv=sel=>{const el=tr.querySelector(sel);return el?String(el.value||'').trim():'';};
@@ -10402,7 +10435,7 @@ function printHandover(){
     const wb=htmlSafe(ward)+(bed?' - '+htmlSafe(bed):'');
     return `<tr class="${cls}">
       <td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
-      <td>${htmlSafe(txt(2))}</td><td>${htmlSafe(txt(3))}</td><td class="capp">${notes(txt(4))}</td>
+      <td>${htmlSafe(txt(2))}</td><td>${htmlSafe(txt(3))}</td><td class="capp">${notes(applianceNote())}</td>
       <td class="cbx">${box[val(5)]||'☐'}</td><td class="cbx">${box[val(6)]||'☐'}</td></tr>`;
   }).join('');
   /* Blank writing rows so a nurse can add new/pending patients by hand, like

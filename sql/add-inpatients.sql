@@ -75,3 +75,12 @@ ORDER BY column_name;
 --   FROM public.patients
 --  WHERE is_inpatient AND inpatient_since IS NOT NULL
 --  ORDER BY inpatient_since;
+
+-- -----------------------------------------------------------------------------
+-- The nurse's own handover note, kept apart from the appliance line.
+-- inpatient_notes holds the appliance (written by the Set appliance wizard and
+-- overwritten each time it runs), so a hand-typed note needs its own column or
+-- it would be wiped the next time an appliance is set.
+-- Added later; safe to re-run.
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS inpatient_nurse_notes text;
