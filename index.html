@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-201';
+const APP_BUILD='2026.09.03-202';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7407,13 +7407,21 @@ function renderPatientDirectorySummary(){
   if(!el)return;
   const rows=patientDirectoryRows;
   const n=st=>rows.filter(p=>p.status===st).length;
+  // Paused and awaiting-feedback are real statuses with no tile of their own, so
+  // those patients used to appear in no box at all and the tiles never added up
+  // to the total. They are counted here, and the sum is checked.
+  const held=n('paused')+n('awaiting_feedback');
+  const shown=n('active')+n('reversed')+n('deceased')+n('discharged_gozo')+n('relocated_overseas')+held;
+  const unaccounted=rows.length-shown;
   el.innerHTML=`
     ${annualKpi('Total Patients',rows.length,'registered')}
     ${annualKpi('Active',n('active'),'active follow-up','#1baf7a')}
     ${annualKpi('Reversed',n('reversed'),'stoma reversed','#7c3aed')}
     ${annualKpi('Deceased',n('deceased'),'RIP','#1a1a1a')}
     ${annualKpi('Discharged to Gozo',n('discharged_gozo'),'followed up in Gozo','#1e3a8a')}
-    ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}`;
+    ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}
+    ${held?annualKpi('Paused / awaiting',held,'on file, out of recall','#64748b'):''}
+    ${unaccounted?annualKpi('Unaccounted',unaccounted,'not in any status above','#b91c1c'):''}`;
 }
 let pdPage=0,pdLastKey='';
 const PD_PAGE_SIZE=100;
@@ -7925,7 +7933,10 @@ function hasStomaAfterReversal(p){
 function derivedFollowupStatus(p){
   const st=normaliseFollowupStatus(p&&p.followup_status);
   if(st==='deceased'||st==='discharged_gozo'||st==='relocated_overseas')return st;
-  if(!stomaEvents(p).length)return st;
+  // A record with no surgery date and no stoma type has no stoma timeline to
+  // reason about, but a reversal date on it is still a reversal — without this
+  // those patients counted as "active" and the Reversed total read far too low.
+  if(!stomaEvents(p).length)return (p&&p.reversal_date)?'reversed':st;
   if(!hasStomaNow(p)&&stomaEndDates(p).length)return 'reversed';
   if(hasStomaNow(p)&&st==='reversed')return 'active';
   return st;
