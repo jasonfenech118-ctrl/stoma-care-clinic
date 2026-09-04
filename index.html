@@ -2406,7 +2406,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-229';
+const APP_BUILD='2026.09.04-230';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7931,9 +7931,12 @@ function stomaTimeline(p){
   parseInitialStomas(p).forEach((st,i)=>out.push({
     uid:st.uid||('init:'+String(st.type||'')+':'+String(st.location||'')+':'+i),origin:'initial',
     type:st.type||'',location:st.location||'',mf:!!st.mucus_fistula,
-    formed:p.surgery_date||null,ended:p.reversal_date||null,findings:''}));
+    // Its own reversal date if it has one; older records fall back to the
+    // patient-level reversal they shared.
+    formed:p.surgery_date||null,ended:st.reversal_date||p.reversal_date||null,findings:st.findings||''}));
   parseRefashionings(p).forEach((r,i)=>out.push({
     uid:r.uid||('ref:'+(r.formed_date||('#'+i))),origin:'refashion',type:r.type||'',location:r.location||'',
+    target:r.target_uid||'',
     formed:r.formed_date||null,ended:r.closure_date||null,findings:r.findings||''}));
   parseStomas(p).forEach((st,i)=>out.push({
     uid:st.uid||('new:'+(st.formed_date||('#'+i))),origin:'new',type:st.type||'',location:st.location||'',
@@ -7945,13 +7948,22 @@ function stomaTimeline(p){
      stoma's id. Without this the patient would look like they had both. */
   out.forEach((e,i)=>{
     if(e.origin!=='refashion')return;
+    // A refashioning that names its stoma closes that one; otherwise it closes
+    // the most recent stoma still open before it.
+    if(e.target){
+      const t=out.find(x=>x.uid===e.target&&x.origin!=='refashion');
+      if(t&&!t.ended){t.ended=e.formed||t.ended;t.endedBy='refashioned';}
+      return;
+    }
     for(let j=i-1;j>=0;j--){
       if(!out[j].ended){out[j].ended=e.formed||out[j].ended;out[j].endedBy='refashioned';break;}
     }
   });
-  // A refashioning that does not say what it made kept what it replaced.
+  // A refashioning that does not say what it made kept what it replaced — the
+  // stoma it named, or failing that the most recent one before it.
   out.forEach((e,i)=>{
     if(e.origin!=='refashion'||String(e.type||'').trim())return;
+    if(e.target){const t=out.find(x=>x.uid===e.target);if(t&&String(t.type||'').trim()){e.type=t.type;e.typeInherited=true;return;}}
     for(let j=i-1;j>=0;j--){if(String(out[j].type||'').trim()){e.type=out[j].type;e.typeInherited=true;break;}}
   });
   out.forEach((e,i)=>{
@@ -8173,6 +8185,42 @@ function parseRefashionings(p){
     arr=[{formed_date:p.refashion_formed_date||null,closure_date:p.refashion_closure_date||null,discharge_date:p.refashion_discharge_date||null,findings:p.refashion_findings||null}];
   return arr;
 }
+// The stomas a refashioning can be attached to — the base stoma, the second
+// stomas and the later new stomas, each by its own id. Rebuilt from the live
+// form when a refashioning row is added so a stoma typed in moments ago is
+// already selectable.
+let PF_STOMA_TARGETS=[];
+function stomaTargetLabel(type,loc,mf){
+  const t=mf?'Mucus fistula':(String(type||'').trim()||'Stoma');
+  return t+(loc&&loc!=='__add__'?' ('+loc+')':'');
+}
+function collectStomaTargetsFromPatient(p){
+  const t=[];
+  if(p&&(String(p.stoma_type||'').trim()||p.surgery_date))
+    t.push({uid:'base',label:stomaTargetLabel(p.stoma_type,p.stoma_location,false)});
+  parseInitialStomas(p).forEach(s=>{if(s.uid)t.push({uid:s.uid,label:stomaTargetLabel(s.type,s.location,s.mucus_fistula)});});
+  parseStomas(p).forEach(s=>{if(s.uid)t.push({uid:s.uid,label:stomaTargetLabel(s.type,s.location,s.mucus_fistula)});});
+  return t;
+}
+function collectStomaTargetsFromForm(prefix){
+  const t=[];
+  const bt=document.getElementById(`${prefix}-stoma`)?.value||'', bl=document.getElementById(`${prefix}-stomaloc`)?.value||'';
+  if(String(bt).trim())t.push({uid:'base',label:stomaTargetLabel(bt,bl,false)});
+  document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`).forEach(r=>{
+    const ty=r.querySelector('.ist-type')?.value||'', lo=r.querySelector('.ist-loc')?.value||'';
+    if(String(ty).trim())t.push({uid:r.dataset.uid,label:stomaTargetLabel(ty,lo,/mucus\s*fistula/i.test(ty))});});
+  document.querySelectorAll(`#${prefix}-stomalist .stoma-row`).forEach(r=>{
+    const ty=r.querySelector('.st-type')?.value||'', lo=r.querySelector('.st-loc')?.value||'';
+    if(String(ty).trim())t.push({uid:r.dataset.uid,label:stomaTargetLabel(ty,lo,!!r.querySelector('.st-mf')?.checked)});});
+  return t;
+}
+function refashionTargetOptions(cur){
+  cur=String(cur||'');
+  const known=PF_STOMA_TARGETS.some(t=>t.uid===cur);
+  return `<option value="">— the most recent stoma —</option>`
+    +PF_STOMA_TARGETS.map(t=>`<option value="${htmlSafe(t.uid)}"${t.uid===cur?' selected':''}>${htmlSafe(t.label)}</option>`).join('')
+    +(cur&&!known?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(initialStomaCode(cur))}</option>`:'');
+}
 function refashionRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
   // Its own automatic id: a refashioning is a new stoma for the record even
@@ -8181,11 +8229,12 @@ function refashionRowHTML(d){
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}">
     <div class="stoma-row-head"><span class="stoma-row-title">Stoma refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
-    <div class="ap-hint" style="margin:0 0 6px;">The same stoma, made again — its type carries over from the stoma it replaces, so there is nothing to choose here.</div>
+    <div class="ap-hint" style="margin:0 0 6px;">The same stoma, made again — its type carries over from the stoma it refashions, so there is none to choose. Say which stoma it was.</div>
     <div class="edit-seen-grid">
       <!-- The type is not asked for, but what is already on record travels with
            the row so an edit never blanks it. -->
       <input type="hidden" class="rf-type" value="${v('type')}"/>
+      <div class="fg" style="grid-column:1 / -1;"><label>Which stoma was refashioned?</label><select class="rf-target">${refashionTargetOptions(d.target_uid)}</select></div>
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
@@ -8195,6 +8244,9 @@ function refashionRowHTML(d){
 }
 function patientRefashionRows(p){return parseRefashionings(p).slice().sort(byFormedDate).map(refashionRowHTML).join('');}
 function addRefashionRow(prefix){
+  // Refresh the stoma list from what is on the form now, so a stoma just typed
+  // in is already selectable as the one refashioned.
+  PF_STOMA_TARGETS=collectStomaTargetsFromForm(prefix);
   document.getElementById(`${prefix}-reflist`)?.insertAdjacentHTML('beforeend',refashionRowHTML());
   renumberStomaRows(prefix);
 }
@@ -8231,17 +8283,23 @@ function initialStomaRowHTML(d){
   // A record saved before the dropdown carried the fistula as a separate flag;
   // it now reads as the "Mucus Fistula" type so the flag is never lost on save.
   const effType=d.mucus_fistula?'Mucus Fistula':(d.type||'');
+  const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}"><div class="edit-seen-grid">
       <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this)">${initialStomaTypeOptions(effType)}</select></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
+      <div class="fg"><label>Date of discharge</label><input type="date" class="ist-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label><input type="date" class="ist-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="ist-findings" value="${v('findings')}" placeholder="e.g. mucus fistula formed alongside the ileostomy"/></div>
       <div class="fg ist-id" style="grid-column:1 / -1;" ${effType?'':'hidden'}>
         <label>Stoma ID</label><div class="clr-code" style="display:inline-block;">${htmlSafe(code)}</div>
-        <span style="font-weight:400;color:var(--muted);font-size:11.5px;"> — this stoma's own reference, so the ward can tell it apart</span></div>
+        <span style="font-weight:400;color:var(--muted);font-size:11.5px;"> — this stoma's own reference, so the ward can tell it apart, refashion or reverse it on its own</span></div>
     </div>
     <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove</button></div>`;
 }
 function addInitialStomaRow(prefix){document.getElementById(`${prefix}-iststomalist`)?.insertAdjacentHTML('beforeend',initialStomaRowHTML());}
 function patientFormHTML(p,prefix){
+  // The stomas a refashioning can name, from the record as it stands.
+  PF_STOMA_TARGETS=collectStomaTargetsFromPatient(p);
   const v=k=>htmlSafe(p?.[k]||'');
   const hasRefash=parseRefashionings(p).length>0;
   const xstat=parseExtraStatuses(p);
@@ -8404,11 +8462,23 @@ function readPatientForm(prefix){
     return on=>{const k=String(on||'9999-99-99');let t='';
       seq.forEach(x=>{if(String(x.d||'9999-99-99')<=k&&x.t)t=x.t;});return t;};
   })();
+  // The type of the stoma a refashioning names, read live from the form — a
+  // mucus fistula or a later stoma, not only the base one.
+  const targetType=(uid)=>{
+    if(!uid)return '';
+    if(uid==='base')return val('stoma');
+    let esc; try{esc=CSS.escape(uid);}catch(e){esc=uid;}
+    const row=document.querySelector(`#${prefix}-iststomalist .stoma-row[data-uid="${esc}"], #${prefix}-stomalist .stoma-row[data-uid="${esc}"]`);
+    if(!row)return '';
+    return (row.querySelector('.ist-type')?.value||row.querySelector('.st-type')?.value||'').trim();
+  };
   const refRows=[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)].map(r=>{
     const g=c=>r.querySelector(c);
     const formed=g('.rf-formed')?.value||null;
+    const target=g('.rf-target')?.value||null;
     return{uid:r.dataset.uid||newStomaUid(),
-      type:typeAsAt(formed)||(g('.rf-type')?.value||'').trim()||null,
+      target_uid:target,
+      type:(target?targetType(target):'')||typeAsAt(formed)||(g('.rf-type')?.value||'').trim()||null,
       formed_date:formed,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
   }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings||s.type);
@@ -8430,8 +8500,12 @@ function readPatientForm(prefix){
       uid:r.dataset.uid||newStomaUid(),
       type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:loc(r.querySelector('.ist-loc')?.value),
       // The mucus-fistula flag is the chosen type now — no separate tickbox.
-      mucus_fistula:/mucus\s*fistula/i.test(r.querySelector('.ist-type')?.value||'')
-    })).filter(s=>s.type||s.location),
+      mucus_fistula:/mucus\s*fistula/i.test(r.querySelector('.ist-type')?.value||''),
+      // Each secondary stoma carries its own lifecycle, like a new-stoma row.
+      discharge_date:r.querySelector('.ist-discharge')?.value||null,
+      reversal_date:r.querySelector('.ist-reversal')?.value||null,
+      findings:(r.querySelector('.ist-findings')?.value||'').trim()||null
+    })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.findings),
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
     refashion_formed_date:refRows[0]?.formed_date||null,
@@ -8639,9 +8713,11 @@ function derivedStomaRecords(pat){
   if(pat.stoma_type||pat.stoma_location)
     add({title:pat.stoma_type,detail:pat.stoma_location,record_date:pat.surgery_date,
       is_current:!reversed,status:reversed?'Reversed':'Active'});
-  // Extra stomas / mucus fistulas formed at the same first operation.
-  parseInitialStomas(pat).forEach(s=>add({title:s.type,detail:s.location,record_date:pat.surgery_date,
-    is_current:!reversed,status:reversed?'Reversed':'Active'}));
+  // Extra stomas / mucus fistulas formed at the same first operation, each with
+  // its own reversal date (older records fall back to the patient-level one).
+  parseInitialStomas(pat).forEach(s=>{const rev=s.reversal_date||(reversed?pat.reversal_date:null);
+    add({title:s.type,detail:s.location,record_date:pat.surgery_date,
+      is_current:!rev,status:rev?'Reversed':'Active',notes:s.findings||''});});
   // A refashioning — old stoma closed and a new one formed.
   if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location)
     add({title:'Refashioned stoma',detail:pat.refashion_location,record_date:pat.refashion_formed_date,
@@ -9596,7 +9672,7 @@ async function openPatientRecord(patientId){
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
           ${dItem('Stoma type',pat.stoma_type)}
           ${dItem('Stoma location',pat.stoma_location)}
-          ${parseInitialStomas(pat).map(s=>dItem('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}`)).join('')}
+          ${parseInitialStomas(pat).map(s=>dItem('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}${s.reversal_date?' · reversed '+htmlSafe(fmtShortDate(s.reversal_date)):''}`)).join('')}
           ${dDate('Surgery date',pat.surgery_date)}
           ${dDischarge('Discharge date',pat.discharge_date)}
           ${dItem('Operation and findings',pat.findings,true)}
@@ -13573,7 +13649,7 @@ function plOpen(id){
       <h3>Stoma 1 · first operation</h3>
       ${f('Stoma type',p.stoma_type)}
       ${f('Stoma location',p.stoma_location)}
-      ${parseInitialStomas(p).map(s=>f('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}`)).join('')}
+      ${parseInitialStomas(p).map(s=>f('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}${s.reversal_date?' · reversed '+fmtShortDate(s.reversal_date):''}`)).join('')}
       ${d('Surgery date',p.surgery_date)}
       ${disc('Discharge date',p.discharge_date)}
       ${rflags.first?'':d('Reversed on',p.reversal_date)}
