@@ -751,6 +751,23 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-src{display:inline-block;margin-left:4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;padding:1px 5px;vertical-align:middle;}
 .clr-src.inpatient{background:#fff3cd;color:#8a6100;}
 .clr-src.followup{background:#e6f0ff;color:#1d4ed8;}
+/* The dated appliance history: one line per change, whether it was made on the
+   ward or at a follow-up clinic. */
+.clr-ev-list{display:flex;flex-direction:column;gap:0;}
+.clr-ev{display:flex;gap:10px;padding:6px 0;border-top:1px dashed var(--border);}
+.clr-ev:first-child{border-top:0;}
+.clr-ev-when{flex:none;width:82px;font-size:11.5px;font-weight:800;color:var(--navy);line-height:1.5;}
+.clr-ev-body{flex:1;min-width:0;}
+.clr-ev-head{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:10.5px;color:var(--muted);font-weight:700;}
+.clr-ev-head .clr-src{margin-left:0;}
+.clr-ev-tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;border-radius:5px;padding:1px 5px;background:#f1f5f9;color:#64748b;}
+.clr-ev-tag.chg{background:#fde8e8;color:#b91c1c;}
+.clr-ev-tag.same{background:#f1f5f9;color:#64748b;}
+.clr-ev-pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;}
+.clr-ev-pill{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;background:#e8f5f4;color:var(--teal);}
+.clr-ev-pill.accessory{background:#eef2ff;color:#4338ca;}
+.clr-ev-pill.new{outline:1.5px solid #b91c1c;outline-offset:-1.5px;}
+.clr-ev-off{font-size:10.5px;font-weight:700;color:var(--muted);margin-top:3px;}
 .va-stoma-list{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px;}
 .va-stoma{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;font-family:inherit;}
 .va-stoma:hover{border-color:var(--teal);background:#f2fbfa;}
@@ -2374,7 +2391,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-218';
+const APP_BUILD='2026.09.04-219';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8644,6 +8661,87 @@ function applianceTimelineByStomaType(){
   });
   return groups;
 }
+/* Every dated appliance change, one entry per time something was set: a change
+   made on the ward during an admission (which remembers the ward and who made
+   it) or one recorded at an attended follow-up. Grouped by stoma type exactly
+   the way the in-use list is, so a change lands under the stoma it was made on. */
+function applianceEventsByStomaType(){
+  const groups=new Map();
+  const push=(typeKey,ev)=>{
+    if(!ev.appliances.length&&!ev.accessories.length)return;
+    const k=typeKey||'__unassigned__';
+    let a=groups.get(k); if(!a){a=[];groups.set(k,a);}
+    a.push(ev);
+  };
+  (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
+    parseEpisodeApplianceRows(ep).forEach(a=>{
+      const ward=a.ward||(ep.is_current&&!ep.discharge_date
+        ?((clrState.patient&&clrState.patient.inpatient_ward)||''):'');
+      const base={date:a.changed_on||ep.record_date||null,source:'inpatient',ward,
+        by:a.changed_by||'',flange_due:a.flange_due||'',ref:recCode(ep)};
+      const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
+      (types.length?types:['__unassigned__']).forEach(tk=>push(tk,
+        {...base,appliances:a.appliances.slice(),accessories:a.accessories.slice()}));
+    });
+  });
+  // An appliance typed straight onto the record is a change too, not a stray note.
+  (clrState.rows||[]).filter(r=>r.kind==='appliance').forEach(r=>
+    push('__unassigned__',{date:r.record_date||null,source:'inpatient',ward:'',by:'',
+      flange_due:'',ref:'',appliances:parseNameList(r.title),accessories:[]}));
+  (clrState.appts||[]).filter(a=>a.status==='attended').forEach(v=>{
+    const d=v.appt_date||null;
+    let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
+    if(Array.isArray(rows)&&rows.length){
+      rows.forEach(r=>push(_normType(r.stoma_type)||'__unassigned__',
+        {date:d,source:'followup',ward:'',by:'',flange_due:r.flange_due||'',ref:'',
+         appliances:parseNameList(r.appliances),accessories:parseNameList(r.accessories)}));
+    }else{
+      push('__unassigned__',{date:d,source:'followup',ward:'',by:'',flange_due:'',ref:'',
+        appliances:parseNameList(v.appliances),accessories:parseNameList(v.accessories)});
+    }
+  });
+  return groups;
+}
+/* One stoma's changes, newest first, each read against the one before it so the
+   history says what actually changed rather than repeating the same list. */
+function applianceEventsForStoma(groups,stomaTitle,includeUnassigned){
+  const out=(groups.get(_normType(stomaTitle))||[]).slice();
+  if(includeUnassigned)(groups.get('__unassigned__')||[]).forEach(e=>out.push(e));
+  out.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const lc=x=>String(x||'').trim().toLowerCase();
+  return out.map((e,i)=>{
+    const prev=out[i+1];
+    const now=e.appliances.concat(e.accessories);
+    const was=prev?prev.appliances.concat(prev.accessories):[];
+    return {...e,first:!prev,
+      added:prev?now.filter(n=>!was.some(w=>lc(w)===lc(n))):now.slice(),
+      stopped:prev?was.filter(w=>!now.some(n=>lc(n)===lc(w))):[]};
+  });
+}
+function applianceEventRowHTML(e){
+  const lc=x=>String(x||'').trim().toLowerCase();
+  const isNew=n=>!e.first&&e.added.some(a=>lc(a)===lc(n));
+  const pill=(n,k)=>`<span class="clr-ev-pill ${k}${isNew(n)?' new':''}">${htmlSafe(n)}</span>`;
+  const pills=e.appliances.map(n=>pill(n,'appliance'))
+    .concat(e.accessories.map(n=>pill(n,'accessory'))).join('');
+  const where=e.source==='inpatient'
+    ? 'Inpatient'+(e.ward?' · '+htmlSafe(e.ward):'')
+    : 'Follow-up';
+  const tag=e.first?'<span class="clr-ev-tag">First recorded</span>'
+    :((e.added.length||e.stopped.length)?'<span class="clr-ev-tag chg">Changed</span>'
+      :'<span class="clr-ev-tag same">Unchanged</span>');
+  const by=e.by?`<span>${htmlSafe(e.by)}</span>`:'';
+  const ref=e.ref?`<span class="clr-code">${htmlSafe(e.ref)}</span>`:'';
+  const stopped=e.stopped.length?`<div class="clr-ev-off">Stopped: ${htmlSafe(e.stopped.join(', '))}</div>`:'';
+  const flange=e.flange_due?`<div class="clr-ev-off">Flange due ${htmlSafe(fmtShortDate(e.flange_due))}</div>`:'';
+  return `<div class="clr-ev">
+    <div class="clr-ev-when">${e.date?htmlSafe(fmtShortDate(e.date)):'No date'}</div>
+    <div class="clr-ev-body">
+      <div class="clr-ev-head"><span class="clr-src ${e.source}">${where}</span>${tag}${by}${ref}</div>
+      <div class="clr-ev-pills">${pills}</div>${stopped}${flange}
+    </div>
+  </div>`;
+}
 /* The merged, sorted appliance list for one stoma. When the patient has a
    single stoma, appliances recorded without a stoma type are shown under it. */
 function applianceListForStoma(groups,stomaTitle,includeUnassigned){
@@ -8696,10 +8794,16 @@ function stomaCategoryHTML(meta,open){
   const curCode=recCode(cur);
   const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
   const groups=applianceTimelineByStomaType();
+  const evGroups=applianceEventsByStomaType();
   const single=recs.length===1;
   const blocks=recs.length?recs.map(r=>{
     const appl=applianceListForStoma(groups,r.title,single);
     const applHTML=appl.length?appl.map(applianceRowHTML).join(''):'<div class="clr-empty">No appliance recorded for this stoma yet — they are saved from an inpatient visit or a seen appointment.</div>';
+    /* Every change that was ever made on this stoma, on the ward and at clinic,
+       kept as its own dated line so the history is a record and not a summary. */
+    const evs=applianceEventsForStoma(evGroups,r.title,single);
+    const evHTML=evs.length?`<div class="clr-appl-h">Appliance changes <span class="clr-count">${evs.length}</span></div>
+      <div class="clr-ev-list">${evs.map(applianceEventRowHTML).join('')}</div>`:'';
     return `<div class="clr-stoma-block">
       <div class="clr-rec">
         <div class="clr-rec-copy">
@@ -8709,7 +8813,7 @@ function stomaCategoryHTML(meta,open){
         <div class="clr-rec-actions">${r.derived?'<span class="clr-rec-tag">From patient record</span>':`<button class="clr-mini" onclick="openClinicalRecordForm('stoma','${r.id}')">Edit</button>
           <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}</div>
       </div>
-      <div class="clr-appl-list"><div class="clr-appl-h">Appliances &amp; accessories on ${recCode(r)?htmlSafe(recCode(r)):'this stoma'}</div>${applHTML}</div>
+      <div class="clr-appl-list"><div class="clr-appl-h">Appliances &amp; accessories on ${recCode(r)?htmlSafe(recCode(r)):'this stoma'}</div>${applHTML}${evHTML}</div>
     </div>`;
   }).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
   return `<div class="clr-cat">
