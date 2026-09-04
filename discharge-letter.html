@@ -553,13 +553,145 @@
     if(/\blif\b|\bllq\b|left\s*(iliac|lower)/i.test(t))  return "Left Lower Quadrant (LLQ)";
     return t;
   }
+  /* Matching what the clinic's register calls an appliance onto what this
+     letter's catalogue calls it. The two vocabularies overlap but do not agree
+     word for word ("Uro/transparent Bag 45mm" here is "Urostomy bag 45mm"
+     there), so the match is made on brand codes, sizes and outlet rather than
+     on the whole label. Anything that cannot be matched is simply left for the
+     nurse to pick — the composed sentence on the letter still carries it. */
+  function _nrm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+  function _toks(s){ return _nrm(s).split(' ').filter(Boolean); }
+  // A brand code, not a size: "27420" counts, "57mm" does not — otherwise a
+  // drainable bag would match a closed one purely because both are 57mm.
+  function _codes(s){ return _toks(s).filter(function(t){ return t.length>=3 && /\d/.test(t) && !/^\d+mm$/.test(t); }); }
+  function _nums(s){ return String(s||'').match(/\d+/g) || []; }
+  function _has(s,w){ return _nrm(s).indexOf(w)>=0; }
+  function _pickOnePiece(name){
+    var list=CAT.onePiece||[], nCodes=_codes(name), brand=_toks(name)[0]||'';
+    var byCode=-1, byBrand=-1;
+    for(var i=0;i<list.length;i++){
+      var lab=list[i].label||'', lCodes=_codes(lab);
+      var shared=lCodes.some(function(c){ return nCodes.indexOf(c)>=0; });
+      if(shared && byCode<0) byCode=i;
+      // A brand-only match is only safe when the catalogue entry carries no code
+      // of its own — otherwise "Welland 201148" would land on "Welland 202248".
+      if(byBrand<0 && brand && !lCodes.length && _toks(lab).indexOf(brand)>=0) byBrand=i;
+    }
+    var idx = byCode>=0 ? byCode : byBrand;
+    if(idx<0) return null;
+    var item=list[idx], size='';
+    (item.sizes||[]).forEach(function(sz){ if(!size && _nums(name).indexOf(String(sz))>=0) size=String(sz); });
+    return {idx:idx, size:size};
+  }
+  function _pickBaseplate(name){
+    var list=CAT.baseplates||[], n=_nrm(name), ns=_nums(name);
+    var kind = _has(n,'stomahesive') ? 'stomahesive'
+      : _has(n,'microporous') ? 'microporous'
+      : (_has(n,'deep') || _has(n,'convex')) ? 'deep'
+      : _has(n,'hollister') ? 'hollister' : '';
+    var best=-1, size='';
+    for(var i=0;i<list.length;i++){
+      var it=list[i], lk=it.kind||'', lab=it.label||'';
+      if(kind && lk!==kind && !_has(lab,kind)) continue;
+      var sizes=it.sizes||[], hit='';
+      sizes.forEach(function(sz){
+        var parts=String(sz).split('/');
+        if(parts.length===2){
+          // The register writes coupling/aperture, the letter aperture/coupling.
+          if(ns.indexOf(parts[0])>=0 && ns.indexOf(parts[1])>=0) hit=String(sz);
+        }else if(ns.indexOf(String(sz))>=0) hit=String(sz);
+      });
+      if(hit){ return {idx:i, size:(sizes.length>1?hit:'')}; }
+      if(best<0 && kind) best=i;
+    }
+    return best<0 ? null : {idx:best, size:size};
+  }
+  function _pickBag(name){
+    var list=CAT.bags||[], n=_nrm(name), ns=_nums(name), nCodes=_codes(name);
+    var outlet = _has(n,'uro') ? 'urostomy' : _has(n,'drainable') ? 'drainable' : _has(n,'closed') ? 'closed' : '';
+    for(var i=0;i<list.length;i++){
+      var it=list[i];
+      if(nCodes.length && _codes(it.label||'').some(function(c){ return nCodes.indexOf(c)>=0; })) return {idx:i};
+      if(!outlet) continue;
+      if((it.outlet||'')!==outlet) continue;
+      var sizes=it.sizes||[];
+      if(!sizes.length) continue;
+      if(sizes.some(function(sz){ return ns.indexOf(String(sz))>=0; })) return {idx:i};
+    }
+    return null;
+  }
+  // The register's accessory names in this letter's words.
+  var _ACC_ALIAS={
+    'powder':'Stoma powder', 'stoma powder':'Stoma powder',
+    'protective wipes':'Protective skin wipe', 'protective wipe':'Protective skin wipe',
+    'stoma seals':'Stoma seal', 'stoma seal':'Stoma seal',
+    'stoma belt':'Stoma belt', 'filler paste':'Filler paste',
+    'adhesive removal spray':'Adhesive removal spray'
+  };
+  function _pickAccessory(name){
+    var n=_nrm(name);
+    if(_ACC_ALIAS[n]) return _ACC_ALIAS[n];
+    for(var i=0;i<ACCESSORIES.length;i++){ if(_nrm(ACCESSORIES[i])===n) return ACCESSORIES[i]; }
+    return '';
+  }
+  function _prefillAppliances(applList, accList){
+    var apps=String(applList||'').split('|').map(function(x){return x.trim();}).filter(Boolean);
+    var accs=String(accList||'').split('|').map(function(x){return x.trim();}).filter(Boolean);
+    apps.forEach(function(name){
+      var n=_nrm(name);
+      if(_has(n,'flange') || _has(n,'stomahesive') || _has(n,'microporous') || _has(n,'convex')){
+        var b=_pickBaseplate(name);
+        if(b){ WZ.system='two'; WZ.baseplateIdx=String(b.idx); if(b.size) WZ.baseplateSize=b.size; }
+        return;
+      }
+      if(/\bbag\b/.test(n)){
+        var g=_pickBag(name);
+        if(g){ WZ.system='two'; WZ.bagIdx=String(g.idx); }
+        return;
+      }
+      // A dressing is not an appliance this letter can offer — it stays in the
+      // composed sentence rather than being forced onto a pouch.
+      if(_has(n,'dressing')) return;
+      var o=_pickOnePiece(name);
+      if(o && WZ.system!=='two'){ WZ.system='one'; WZ.onePieceIdx=String(o.idx); if(o.size) WZ.onePieceSize=o.size; }
+    });
+    accs.forEach(function(name){
+      var a=_pickAccessory(name);
+      if(a && WZ.accessories.indexOf(a)<0) WZ.accessories.push(a);
+    });
+  }
+  /* Where the wizard should open when the record already answered the early
+     pages: on the first question still unanswered, so nothing known is asked
+     for again and Back still shows what was filled in. */
+  function _firstUnansweredStep(){
+    var steps=stepsForWizard();
+    var answered={
+      type:      function(){ return !!WZ.type; },
+      subtype:   function(){ return !!WZ.subtype; },
+      patient:   function(){ return !!(WZ.fname||WZ.sname||WZ.id); },
+      surgery:   function(){ return !!WZ.opdate; },
+      system:    function(){ return !!WZ.system; },
+      appliance: function(){ return WZ.onePieceIdx!==''; },
+      onePieceSize: function(){ return !!WZ.onePieceSize; },
+      baseplate: function(){ return WZ.baseplateIdx!==''; },
+      flangeSize:function(){ return !!WZ.baseplateSize; },
+      bag:       function(){ return WZ.bagIdx!==''; }
+    };
+    for(var i=0;i<steps.length;i++){
+      var f=answered[steps[i]];
+      if(!f || !f()) return i;
+    }
+    return 0;
+  }
   function prefillFromQuery(){
     var q;
     try{ q = new URLSearchParams(location.search); }catch(e){ return false; }
     var fn=q.get('fn'), sn=q.get('sn'), id=q.get('id'), title=q.get('title');
     var type=q.get('type'), opdate=q.get('opdate'), procedure=q.get('procedure');
+    var consultant=q.get('consultant');
     var appliance=q.get('appliance'), mucus=q.get('mucus');
-    if(!(fn||sn||id||type||appliance||mucus!=null)) return false;
+    var applList=q.get('appl'), accList=q.get('acc');
+    if(!(fn||sn||id||type||appliance||applList||accList||mucus!=null)) return false;
 
     // Patient fields on the letter
     var setFld=function(sel,v){ var el=document.querySelector(sel); if(el&&v!=null&&v!=='') el.value=v; };
@@ -573,7 +705,7 @@
 
     // Feed the same WZ the wizard uses, so subtypeLabel()/pronouns behave
     WZ.title=title||''; WZ.fname=fn||''; WZ.sname=sn||''; WZ.id=id||'';
-    WZ.procedure=procedure||''; WZ.opdate=opdate||''; WZ.consultant='';
+    WZ.procedure=procedure||''; WZ.opdate=opdate||''; WZ.consultant=consultant||'';
     WZ.type=_mapStomaType(type); WZ.subtype=_mapSubtype(type);
 
     // Body wording, through the letter's own template + filler
@@ -591,7 +723,7 @@
         a: _an(typeWord),
         formation: mentionsStoma ? '' : (' with formation of ' + _an(typeWord) + ' ' + typeWord),
         date: _fmtDate(WZ.opdate) || '[date of operation]',
-        consultant: '[consultant]',
+        consultant: WZ.consultant || '[consultant]',
         retracted: '', colour: '[stoma colour]', 'function': '[function]', skin: '[peristomal skin]',
         mucoSep: '', teaching: '', rod: '', stents: ''
       };
@@ -624,6 +756,9 @@
 
     // The appliance/accessory in use — already composed in house style upstream
     if(appliance) setApplianceSlot(appliance);
+    // …and the same items matched onto the letter's own catalogue, so the
+    // wizard's system, appliance and accessory pages open already answered.
+    _prefillAppliances(applList, accList);
 
     if(typeof autosizePatientFlds==='function') autosizePatientFlds();
     if(typeof updateRibbon==='function') updateRibbon();
@@ -2765,7 +2900,10 @@
     if(t) t.addEventListener('change', updatePatientPrint);
   })();
   autosizePatientFlds();
-  if(!prefillFromQuery()) openWizard();
+  /* The form is always shown. When the record filled the early pages in, the
+     wizard simply opens on the first question it could not answer. */
+  if(prefillFromQuery()){ wzStep=_firstUnansweredStep(); renderWizard(); document.getElementById('wizard').classList.add('open'); }
+  else openWizard();
 </script>
 </body>
 </html>
