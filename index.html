@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-211';
+const APP_BUILD='2026.09.04-212';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9742,11 +9742,43 @@ function openHandoverInNewTab(){
    Green, Blue, then the A/B/C blocks — so the handover reads the way the wards
    are walked, from the orange block round to the blue block. A ward not on the
    plan sorts after these, alphabetically. */
-const WARD_ORDER=['MAU1','MAU2','MAU3','SAU1','IDU','SAU2','MW1','MW2','MW3','MW4','MW5','ITU','SSU','SW1','SW2','SW3','SW4','GYNEA','SW5','URO1','URO2','SHDU','MW7','MW8','NPICU','MIU1','MIU3','MIU4'];
+/* The handover follows the hospital's own ward plan rather than a hand-kept
+   list: each ward is placed by the floor it is on and the foyer or block it
+   sits in, and the sheet is then walked floor by floor from the top down,
+   crossing each floor in the order the plan runs — Orange, Red, Brown, Yellow,
+   Green, Blue, then Blocks A, B and C. */
+const WARD_BLOCKS=['ORANGE','RED','BROWN','YELLOW','GREEN','BLUE','BLOCKA','BLOCKB','BLOCKC'];
+const WARD_MAP={
+  // Orange Foyer (D0)
+  MAU1:{b:'ORANGE',l:0},  MAU2:{b:'ORANGE',l:0},
+  // Red Foyer (D1)
+  MAU3:{b:'RED',l:0},     SAU1:{b:'RED',l:0},
+  // Brown Foyer (D2)
+  MW5:{b:'BROWN',l:3},    MW4:{b:'BROWN',l:3},
+  IDU:{b:'BROWN',l:2},    MW2:{b:'BROWN',l:2},
+  SAU2:{b:'BROWN',l:1},   MW9:{b:'BROWN',l:1},
+  MW1:{b:'BROWN',l:1},    MW3:{b:'BROWN',l:1},
+  ITU:{b:'BROWN',l:-1},
+  // Yellow Foyer (D3)
+  SW2:{b:'YELLOW',l:2},   SW1:{b:'YELLOW',l:1},   MW6:{b:'YELLOW',l:0},
+  // Green Foyer (D3)
+  SW3:{b:'GREEN',l:3},    SW4:{b:'GREEN',l:3},    GYNEA:{b:'GREEN',l:2},
+  // Blue Foyer (D4)
+  SW5:{b:'BLUE',l:3},     URO1:{b:'BLUE',l:2},    URO2:{b:'BLUE',l:2},
+  MW7:{b:'BLUE',l:1},     MW8:{b:'BLUE',l:1},
+  NPICU:{b:'BLUE',l:0},   SHDU:{b:'BLUE',l:-1},
+  // Blocks A and C
+  MIU4:{b:'BLOCKA',l:0},  MIU3:{b:'BLOCKC',l:0}
+  /* Not on the ward plan yet: BURNS, SSU, MIU1. They sort after everything that
+     is placed, by name, until a floor and block are given for them. */
+};
 function wardRank(ward){
   const w=String(ward||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const i=WARD_ORDER.indexOf(w);
-  return i<0?WARD_ORDER.length:i;
+  const m=WARD_MAP[w];
+  // Top floor first, then across the floor in the plan's own left-to-right run.
+  // A ward with no place on the plan sorts after everything that has one.
+  if(!m)return 99999;
+  return (9-m.l)*100+WARD_BLOCKS.indexOf(m.b);
 }
 // The bed's number, so beds run 1, 2, 10 rather than 1, 10, 2. Beds with no
 // number sort after the numbered ones.
