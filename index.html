@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-214';
+const APP_BUILD='2026.09.04-215';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7890,13 +7890,14 @@ function stomaTimeline(p){
      and without them a two-stoma patient offers only one to set. */
   parseInitialStomas(p).forEach((st,i)=>out.push({
     uid:st.uid||('init:'+String(st.type||'')+':'+String(st.location||'')+':'+i),origin:'initial',
-    type:st.type||'',location:st.location||'',
+    type:st.type||'',location:st.location||'',mf:!!st.mucus_fistula,
     formed:p.surgery_date||null,ended:p.reversal_date||null,findings:''}));
   parseRefashionings(p).forEach((r,i)=>out.push({
     uid:r.uid||('ref:'+(r.formed_date||('#'+i))),origin:'refashion',type:r.type||'',location:r.location||'',
     formed:r.formed_date||null,ended:r.closure_date||null,findings:r.findings||''}));
   parseStomas(p).forEach((st,i)=>out.push({
     uid:st.uid||('new:'+(st.formed_date||('#'+i))),origin:'new',type:st.type||'',location:st.location||'',
+    mf:!!st.mucus_fistula,
     formed:st.formed_date||null,ended:st.reversal_date||null,findings:st.findings||''}));
   out.sort((a,b)=>String(a.formed||'9999-99-99').localeCompare(String(b.formed||'9999-99-99')));
   /* A refashioning replaces the stoma that was there: the old one ends the day
@@ -7918,6 +7919,9 @@ function stomaTimeline(p){
     const kind=e.origin==='refashion'?'refashioned':e.origin==='new'?'new stoma':'first stoma';
     e.kind=kind;
     e.typeLabel=String(e.type||'').trim()||'Stoma type not recorded';
+    // A mucus fistula is often an ileostomy or colostomy by name, so the role is
+    // carried by its own tick rather than read out of the type.
+    if(e.mf&&!/muc\w*\s*fistula/i.test(e.typeLabel))e.typeLabel+=' · mucus fistula';
     const meta=[];
     if(e.location)meta.push(e.location);
     meta.push(kind);
@@ -7935,6 +7939,8 @@ function stomaTimeline(p){
   });
   out.forEach(e=>{
     e.shortLabel=e.short?((shortCounts[e.short]>1&&e.quad)?e.short+' '+e.quad:e.short):(e.quad||'');
+    // Two ileostomies where one is the fistula must never read the same.
+    if(e.mf&&!/\bMF\b/.test(e.shortLabel))e.shortLabel=e.shortLabel?e.shortLabel+' MF':'MF';
   });
   return out;
 }
@@ -8009,6 +8015,8 @@ function newStomaRowHTML(d){
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg st-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label class="pf-xchk" style="font-weight:600;">
+        <input type="checkbox" class="st-mf" ${d.mucus_fistula?'checked':''}/> This one is a <strong>mucus fistula</strong></label></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
   </div>`;
@@ -8156,6 +8164,9 @@ function initialStomaRowHTML(d){
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}"><div class="edit-seen-grid">
       <div class="fg"><label>Type</label><input type="text" class="ist-type" value="${htmlSafe(d.type||'')}" placeholder="e.g. Mucus fistula, End colostomy"/></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
+      <div class="fg" style="grid-column:1 / -1;"><label class="pf-xchk" style="font-weight:600;">
+        <input type="checkbox" class="ist-mf" ${d.mucus_fistula?'checked':''}/> This one is a <strong>mucus fistula</strong>
+        <span style="font-weight:400;color:var(--muted);">— tick it whatever the stoma is called, so the ward can tell the two apart</span></label></div>
     </div>
     <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove</button></div>`;
 }
@@ -8334,7 +8345,8 @@ function readPatientForm(prefix){
     stoma_location:loc(val('stomaloc')),
     initial_stomas:[...document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`)].map(r=>({
       uid:r.dataset.uid||newStomaUid(),
-      type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:loc(r.querySelector('.ist-loc')?.value)
+      type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:loc(r.querySelector('.ist-loc')?.value),
+      mucus_fistula:!!r.querySelector('.ist-mf')?.checked
     })).filter(s=>s.type||s.location),
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
@@ -8344,7 +8356,7 @@ function readPatientForm(prefix){
     extra_refashionings:refRows,
     extra_stomas:[...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>{
       const g=c=>r.querySelector(c);
-      return{uid:r.dataset.uid||newStomaUid(),
+      return{uid:r.dataset.uid||newStomaUid(),mucus_fistula:!!g('.st-mf')?.checked,
         type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
@@ -9269,7 +9281,7 @@ async function openDischargeLetterFor(patientId){
        so the care plan says how to dress it without anyone being asked. An empty
        location still counts — it means one fistula whose site is not recorded. */
     try{
-      const mf=stomasPresentOn(p,TODAY).filter(e=>/mucus\s*fistula/i.test(String(e.typeLabel||e.type||'')));
+      const mf=stomasPresentOn(p,TODAY).filter(e=>e.mf||/mucus\s*fistula/i.test(String(e.typeLabel||e.type||'')));
       if(mf.length)q.set('mucus',mf.map(e=>String(e.location||'').trim()).join('|'));
     }catch(e){}
     // The appliance and accessory in use — the most recent seen visit.
