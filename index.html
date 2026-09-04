@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-209';
+const APP_BUILD='2026.09.04-210';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8468,6 +8468,9 @@ async function savePatientDates(patientId){
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
+  // The handover reads straight off the patient record, so it has to be rebuilt
+  // as well or it keeps showing the patient that was just changed.
+  if(document.getElementById('hv-body'))loadHandover();
 }
 
 /* ---- patient clinical record page (card summary + appointments tab) ---- */
@@ -9893,10 +9896,50 @@ function handoverReversalRowHTML(p){
     <td data-label="Discharge letter">—</td>
     <td data-label="Schedule 5 permit">—</td>
     <td class="hv-actions-cell"><div class="followup-actions">
-      <button class="ncb-btn" style="background:#e8f5ee;color:#127a3e;" onclick="openPatientDatesModal('${p.id}')">Record reversal</button>
+      <button class="ncb-btn" style="background:#e8f5ee;color:#127a3e;" onclick="handoverReversalDone('${p.id}')">Record reversal</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="handoverReversalPostpone('${p.id}')">Not done</button>
     </div></td>
   </tr>`;
+}
+/* "Record reversal" records it: the day is written onto the stoma that was
+   closed, the plan is taken off, the status follows, and the patient leaves the
+   handover there and then. It only falls back to opening the record when more
+   than one stoma is open, because then which one was reversed is a question
+   only the nurse can answer. */
+async function handoverReversalDone(patientId){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient';
+  const open=stomasPresentOn(pat,TODAY);
+  if(open.length>1){
+    alert(`${nm} has ${open.length} stomas open, so the record has to say which one was reversed.\n\nFill in the reversal date on the right stoma and save.`);
+    openPatientDatesModal(patientId);
+    return;
+  }
+  const when=String(pat.proposed_reversal_date||'').slice(0,10)||TODAY;
+  if(!confirm(`Record ${nm}'s reversal as done on ${fmtShortDate(when)}?\n\nThey come off the handover and their record reads as reversed.`))return;
+  const patch={proposed_reversal_date:null};
+  const st=open[0];
+  if(st&&st.origin==='new'){
+    const rows=parseStomas(pat).map(x=>({...x}));
+    const i=rows.findIndex(x=>String(x.uid||'')===String(st.uid));
+    if(i>=0)rows[i].reversal_date=when; else if(rows.length)rows[rows.length-1].reversal_date=when;
+    patch.extra_stomas=rows;
+  }else if(st&&st.origin==='refashion'){
+    const rows=parseRefashionings(pat).map(x=>({...x}));
+    const i=rows.findIndex(x=>String(x.uid||'')===String(st.uid));
+    if(i>=0)rows[i].closure_date=when; else if(rows.length)rows[rows.length-1].closure_date=when;
+    patch.extra_refashionings=rows;
+  }else{
+    // The first stoma, and anything formed alongside it, end on the same date.
+    patch.reversal_date=when;
+  }
+  patch.followup_status=derivedFollowupStatus({...pat,...patch});
+  const{error:e2,dropped}=await updatePatientTolerant(patientId,patch);
+  if(e2){alert('Could not record the reversal: '+e2.message);return;}
+  if(dropped.length)alert(`Recorded, except for: ${dropped.join(', ')}.\n\nRun the matching file in sql/ once in Supabase.`);
+  if(document.getElementById('hv-body'))await loadHandover();
+  refreshReminders();
 }
 /* "Not done" moves the plan rather than losing it: a new date keeps the patient
    on the watch for that day, and a blank one takes the plan off altogether. */
