@@ -2406,7 +2406,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-228';
+const APP_BUILD='2026.09.04-229';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8201,17 +8201,42 @@ function addRefashionRow(prefix){
 // Additional outputs formed at the SAME first operation — a second stoma, a
 // mucus fistula, etc. Held as a JSON array (initial_stomas), each {type,location}.
 function parseInitialStomas(p){let a=p?.initial_stomas;if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}return Array.isArray(a)?a:[];}
+// A short, stable id for a second stoma / mucus fistula formed at the first
+// operation, derived from its own uid so it never changes and needs no
+// coordination — shown once a type is chosen so the ward can refer to it.
+function initialStomaCode(uid){
+  const s=String(uid||'').replace(/[^a-z0-9]/gi,'');
+  return s?'STO-'+s.slice(-8).toUpperCase():'';
+}
+const INITIAL_STOMA_TYPES=['Colostomy','Ileostomy','Mucus Fistula'];
+function initialStomaTypeOptions(cur){
+  cur=String(cur||'').trim();
+  const inList=INITIAL_STOMA_TYPES.some(t=>t.toLowerCase()===cur.toLowerCase());
+  // A legacy free-text type that is none of the three is kept so nothing is lost.
+  return `<option value="">— select —</option>`
+    +(cur&&!inList?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(cur)}</option>`:'')
+    +INITIAL_STOMA_TYPES.map(t=>`<option${cur.toLowerCase()===t.toLowerCase()?' selected':''}>${t}</option>`).join('');
+}
+// Show or hide the stoma-ID line as a type is chosen or cleared.
+function onInitialStomaType(sel){
+  const row=sel.closest('.stoma-row'); if(!row)return;
+  const idl=row.querySelector('.ist-id'); if(idl)idl.hidden=!sel.value;
+}
 function initialStomaRowHTML(d){
   d=d||{};
   // An automatic id of its own, so appliances filed against this stoma stay
   // with it even when its type or location is edited.
   const uid=d.uid||newStomaUid();
+  const code=initialStomaCode(uid);
+  // A record saved before the dropdown carried the fistula as a separate flag;
+  // it now reads as the "Mucus Fistula" type so the flag is never lost on save.
+  const effType=d.mucus_fistula?'Mucus Fistula':(d.type||'');
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}"><div class="edit-seen-grid">
-      <div class="fg"><label>Type</label><input type="text" class="ist-type" value="${htmlSafe(d.type||'')}" placeholder="e.g. Mucus fistula, End colostomy"/></div>
+      <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this)">${initialStomaTypeOptions(effType)}</select></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label class="pf-xchk" style="font-weight:600;">
-        <input type="checkbox" class="ist-mf" ${d.mucus_fistula?'checked':''}/> This one is a <strong>mucus fistula</strong>
-        <span style="font-weight:400;color:var(--muted);">— tick it whatever the stoma is called, so the ward can tell the two apart</span></label></div>
+      <div class="fg ist-id" style="grid-column:1 / -1;" ${effType?'':'hidden'}>
+        <label>Stoma ID</label><div class="clr-code" style="display:inline-block;">${htmlSafe(code)}</div>
+        <span style="font-weight:400;color:var(--muted);font-size:11.5px;"> — this stoma's own reference, so the ward can tell it apart</span></div>
     </div>
     <button type="button" class="clr-mini danger" onclick="this.closest('.stoma-row').remove()">Remove</button></div>`;
 }
@@ -8404,7 +8429,8 @@ function readPatientForm(prefix){
     initial_stomas:[...document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`)].map(r=>({
       uid:r.dataset.uid||newStomaUid(),
       type:(r.querySelector('.ist-type')?.value||'').trim()||null,location:loc(r.querySelector('.ist-loc')?.value),
-      mucus_fistula:!!r.querySelector('.ist-mf')?.checked
+      // The mucus-fistula flag is the chosen type now — no separate tickbox.
+      mucus_fistula:/mucus\s*fistula/i.test(r.querySelector('.ist-type')?.value||'')
     })).filter(s=>s.type||s.location),
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
