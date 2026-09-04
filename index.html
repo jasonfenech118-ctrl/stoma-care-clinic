@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-216';
+const APP_BUILD='2026.09.04-217';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11024,30 +11024,58 @@ async function loadPostopDischarges(){
       : `<div class="report-note">Could not load the postop discharge list: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const eps=(data||[]).filter(r=>r.discharge_date);
-  if(!eps.length){
-    postopState.rows=[];
-    body.innerHTML=emptyStateHTML('📤','No postop discharges yet',
-      'A patient joins this list when you press <strong>Postop discharge</strong> on their handover row. Their admission is closed with today\u2019s date and everything on their record is kept.');
-    return;
-  }
+  const discharged=(data||[]).filter(r=>r.discharge_date);
   // Names come from the patients table, fetched in one read.
-  const ids=[...new Set(eps.map(e=>e.patient_id).filter(Boolean))];
+  const ids=[...new Set(discharged.map(e=>e.patient_id).filter(Boolean))];
   const byId={};
   if(ids.length){
     const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant').in('id',ids);
     (pats||[]).forEach(p=>{byId[p.id]=p;});
   }
+  /* This is a worklist: everyone discharged after their operation who has not
+     been given a follow-up appointment yet. An appointment booked on or after
+     the discharge takes them off it, so the list empties itself as they are
+     booked and nobody has to remember to strike a name out. */
+  const booked={};
+  if(ids.length){
+    try{
+      const{data:appts}=await SB.from('appointments').select('patient_id,appt_date,status').in('patient_id',ids);
+      (appts||[]).forEach(a=>{
+        if(!a||!a.patient_id||!a.appt_date)return;
+        if(String(a.status||'')==='cancelled')return;
+        const cur=booked[a.patient_id];
+        if(!cur||String(a.appt_date)>String(cur))booked[a.patient_id]=String(a.appt_date);
+      });
+    }catch(e){}
+  }
+  const eps=discharged.filter(ep=>{
+    const seen=booked[ep.patient_id];
+    return !(seen&&seen>=String(ep.discharge_date));
+  });
+  // Longest wait first: the patient discharged earliest still needs booking most.
+  eps.sort((a,b)=>String(a.discharge_date).localeCompare(String(b.discharge_date)));
+  const waiting=discharged.length-eps.length;
+  if(!eps.length){
+    postopState.rows=[];
+    body.innerHTML=emptyStateHTML('📤',
+      discharged.length?'Everyone discharged has an appointment':'No postop discharges yet',
+      discharged.length
+        ? `All ${discharged.length} postop discharge${discharged.length===1?'':'s'} have a follow-up appointment booked, so there is nobody left to book.`
+        : 'A patient joins this list when you press <strong>Postop discharge</strong> on their handover row. They come off it again as soon as a follow-up appointment is booked for them.');
+    return;
+  }
   const rows=eps.map(ep=>{
     const pt=byId[ep.patient_id]||{};
     return {discharge_date:ep.discharge_date,record_date:ep.record_date,
+      waited:Math.max(0,-(daysUntilDate(ep.discharge_date)||0)),
       wardbed:episodeWardBed(ep),id_card:pt.id_card||'',surname:pt.surname||'',
       first_name:pt.first_name||'',consultant:pt.consultant||'',
       appliance:episodeApplianceSummaryLine(ep)};
   });
   postopState.rows=rows;
   const trs=rows.map(r=>`<tr>
-    <td data-label="Date of discharge">${htmlSafe(fmtShortDate(r.discharge_date))}</td>
+    <td data-label="Date of discharge"><strong>${htmlSafe(fmtShortDate(r.discharge_date))}</strong>${
+      r.waited>0?`<div style="font-size:10px;color:var(--muted);font-weight:700;">${r.waited} day${r.waited===1?'':'s'} ago</div>`:''}</td>
     <td data-label="Ward" class="hv-wb"><div class="hv-wbin" style="font-weight:800;">${htmlSafe(r.wardbed||'—')}</div></td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(r.surname)}</strong></td>
@@ -11062,9 +11090,9 @@ async function loadPostopDischarges(){
       <col style="width:110px"><col style="width:96px"><col><col style="width:92px">
     </colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} discharge${rows.length===1?'':'s'}</span></th></tr>
+      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} awaiting an appointment${waiting?` · ${waiting} already booked`:''}</span></th></tr>
       <tr>
-        <th>Date of discharge</th><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th>
+        <th>Date of discharge ↑</th><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th>
       </tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
