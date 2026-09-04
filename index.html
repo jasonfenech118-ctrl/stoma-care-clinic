@@ -775,6 +775,12 @@ table.inc-list th{position:sticky;top:0;background:var(--navy);color:#fff;text-a
   font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:7px 9px;z-index:1;}
 table.inc-list td{border-top:1px solid var(--border);padding:7px 9px;vertical-align:top;}
 table.inc-list tbody tr:hover td{background:#fffbeb;}
+/* A row already opened is dimmed, so a long list can be worked through
+   without losing your place. */
+table.inc-list tbody tr.is-opened td{background:#f1f5f9;color:var(--muted);}
+table.inc-list tbody tr.is-opened .inc-miss{opacity:.6;}
+a.inc-link{color:var(--navy);text-decoration:none;border-bottom:1px solid transparent;}
+a.inc-link:hover{border-bottom-color:var(--teal);}
 .inc-miss{display:inline-block;font-size:10.5px;font-weight:700;background:#fef3c7;color:#92400e;
   border-radius:5px;padding:1px 6px;margin:1px 2px 1px 0;white-space:nowrap;}
 .va-stoma-list{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px;}
@@ -2400,7 +2406,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-223';
+const APP_BUILD='2026.09.04-224';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -2439,8 +2445,12 @@ async function startApp(){
   await refreshReminders();
   // Pinned to a phone's home screen as .../#lookup, the app opens straight
   // into the read-only patient search instead of the roster.
+  const deepPatient=/^#patient=(.+)$/.exec(location.hash||'');
   if(/^#(lookup|phone)$/.test(location.hash||'')){switchTab('phone');}
   else if(/^#handover$/.test(location.hash||'')){openHandoverStandalone();}
+  // Opened from a worklist in its own tab: go straight to that record, and no
+  // reminder popup over the top of it.
+  else if(deepPatient){openPatientRecord(decodeURIComponent(deepPatient[1]));}
   else openDailyReminderModal(false);
   startDateRolloverWatch();
 }
@@ -11938,6 +11948,16 @@ function sortIncomplete(list){
     return String(a.surname||'').localeCompare(String(b.surname||''));
   });
 }
+/* A patient record in its own tab, so a worklist stays open behind it and the
+   next patient is one click away. The link is a real href as well as a click,
+   so ctrl-click, middle-click and "open in new tab" all behave. */
+function patientTabHref(id){
+  return location.pathname+location.search+'#patient='+encodeURIComponent(id);
+}
+function openPatientTab(id,el){
+  if(el&&el.closest)el.closest('tr')?.classList.add('is-opened');
+  window.open(patientTabHref(id),'_blank','noopener');
+}
 let incompleteListState={kind:'all',value:'',rows:[]};
 function openIncompleteList(kind,value){
   const mb=document.getElementById('mb'); if(!mb)return;
@@ -11957,8 +11977,9 @@ function openIncompleteList(kind,value){
   const shown=rows.slice(0,CAP);
   const trs=shown.map(p=>{
     const missing=patientMissingFields(p);
-    return `<tr class="pd-click-row" onclick="closeModal();openPatientRecord('${p.id}')" title="Open this patient's record">
-      <td><strong>${htmlSafe(p.surname||'—')}</strong></td>
+    return `<tr class="pd-click-row" onclick="openPatientTab('${p.id}',this)" title="Open this patient's record in a new tab">
+      <td><a class="inc-link" href="${htmlSafe(patientTabHref(p.id))}" target="_blank" rel="noopener"
+        onclick="event.stopPropagation();this.closest('tr').classList.add('is-opened');"><strong>${htmlSafe(p.surname||'—')}</strong></a></td>
       <td>${htmlSafe(p.first_name||'—')}</td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.consultant||'—')}</td>
@@ -11969,7 +11990,8 @@ function openIncompleteList(kind,value){
   mb.innerHTML=`<h2>${htmlSafe(title)}</h2>
     <div class="msub"><strong>${rows.length}</strong> patient${rows.length===1?'':'s'} still to fill in${
       rows.length>CAP?` · showing the first ${CAP}, oldest surgery first — print for the full list`:', oldest surgery first'}.
-      Click a row to open the record, then <strong>Edit patient</strong>.</div>
+      Each row opens in a <strong>new tab</strong>, so this list stays put while you fill them in — press
+      <strong>Edit patient</strong> there, then come back for the next one.</div>
     <div class="inc-list-scroll"><table class="inc-list"><thead><tr>
         <th>Surname</th><th>First name</th><th>ID number</th><th>Firm</th><th>Surgery</th><th>Still missing</th>
       </tr></thead><tbody>${trs}</tbody></table></div>
