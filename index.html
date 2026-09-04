@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-203';
+const APP_BUILD='2026.09.03-204';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9223,6 +9223,13 @@ async function openDischargeLetterFor(patientId){
     if(p.stoma_type)q.set('type',p.stoma_type);
     if(p.surgery_date)q.set('opdate',p.surgery_date);
     if(p.procedure_performed)q.set('procedure',p.procedure_performed);
+    /* A mucus fistula on the record travels with the letter, with its location,
+       so the care plan says how to dress it without anyone being asked. An empty
+       location still counts — it means one fistula whose site is not recorded. */
+    try{
+      const mf=stomasPresentOn(p,TODAY).filter(e=>/mucus\s*fistula/i.test(String(e.typeLabel||e.type||'')));
+      if(mf.length)q.set('mucus',mf.map(e=>String(e.location||'').trim()).join('|'));
+    }catch(e){}
     // The appliance and accessory in use — the most recent seen visit.
     try{
       const{data:appts}=await SB.from('appointments')
