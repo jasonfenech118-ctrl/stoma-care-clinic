@@ -484,6 +484,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-card.wide{grid-column:span 2;}
 .report-card h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
 .report-card canvas{width:100%!important;max-height:260px!important;}
+.empty-state{max-width:560px;margin:26px auto;padding:30px 26px;text-align:center;
+  background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.empty-state-ic{font-size:30px;line-height:1;margin-bottom:10px;}
+.empty-state-title{font-size:15px;font-weight:800;color:var(--navy);margin-bottom:6px;}
+.empty-state-body{font-size:12.5px;color:var(--muted);line-height:1.6;}
+.empty-state-act{margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
 .chart-empty{display:flex;align-items:center;justify-content:center;text-align:center;min-height:170px;
   padding:18px;color:var(--muted);font-size:12.5px;font-weight:600;line-height:1.5;
   border:1px dashed var(--border);border-radius:10px;background:#fafbfc;}
@@ -1131,7 +1137,6 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .cell-time-badge{display:inline-flex;align-items:center;justify-content:center;min-width:46px;padding:2px 8px;margin-bottom:5px;border-radius:999px;background:#e8f5f4;color:var(--teal);font-size:10px;font-weight:900;letter-spacing:.2px;line-height:1.2;}
 .cell-time-badge.muted{background:#f3f6f8;color:#5f7286;border:1px solid #dde3ea;}
 .cell-time-badge.warning{background:#fff3cd;color:#856404;}
-.book-cell-time{display:block;font-weight:900;color:var(--teal);font-size:11px;margin-bottom:3px;}
 .appt-cell-empty{border:1px dashed #d6dee8!important;border-radius:10px!important;background:#fbfcfd!important;}
 .cancel-history-box{margin:8px 0 4px 0;padding:9px 10px;border-radius:10px;background:#fff7f3;border:1px solid #e9b5ad;box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);}
 .cancel-history-title{font-size:9px;font-weight:900;letter-spacing:.45px;color:#7f1d1d;text-transform:uppercase;margin-bottom:5px;}
@@ -2369,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-206';
+const APP_BUILD='2026.09.04-208';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3376,7 +3381,7 @@ async function loadAppts(){
         html+=`<td class="appt-cell-empty" style="padding:8px;background:${cellBg};vertical-align:top;">
           <div class="cell-time-badge muted">${slot}</div>
           ${cancelledSlotHistoryHTML(cancelledHere)}
-          <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" class="${cancelledHere.length?'book-replacement-btn':''}" style="width:100%;padding:6px;margin-top:${cancelledHere.length?'7px':'0'};border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;"><span class="book-cell-time">${slot}</span>${cancelledHere.length?'+ Book new patient in this slot':'+ Book'}</button>
+          <button onclick="bookSlot('${slot}','${date}','${jsSafe(n.id)}','${jsSafe(n.name)}','${jsSafe(n.type)}')" class="${cancelledHere.length?'book-replacement-btn':''}" style="width:100%;padding:6px;margin-top:${cancelledHere.length?'7px':'0'};border:2px dashed #dde3ea;border-radius:7px;background:none;color:#7a8fa6;font-size:11px;cursor:pointer;">${cancelledHere.length?'+ Book new patient in this slot':'+ Book'}</button>
         </td>`;
       }
     });
@@ -8788,7 +8793,7 @@ function toggleClinicalCategory(kind){clrState.expanded[kind]=!clrState.expanded
 /* The wards, as the ward clerks name them. A ward already on a patient that is
    not in this list is kept so an older free-text value is never lost. */
 const WARDS=['SW1','SW2','SW3','SW4','SW5','SHDU','SAU1','SAU2','ITU','URO1','URO2',
-             'NPICU','GYNEA','MW1','MW2','MW3','MW4','MW5','MW7','MW8','IDU',
+             'NPICU','GYNEA','MW1','MW2','MW3','MW4','MW5','MW6','MW7','MW8','MW9','IDU',
              'MAU1','MAU2','MAU3','SSU','MIU1','MIU3','MIU4','BURNS'];
 function wardOptions(selected){
   const sel=String(selected||'').trim();
@@ -9617,6 +9622,17 @@ async function saveHandoverField(patientId,field,value){
   }
   return true;
 }
+/* A list with nothing in it deserves more than a grey sentence on a blank page:
+   an icon, what the list is, and how something gets onto it. One shape, so every
+   empty page in the app reads the same. */
+function emptyStateHTML(icon,title,body,action){
+  return `<div class="empty-state">
+    <div class="empty-state-ic" aria-hidden="true">${icon||'📋'}</div>
+    <div class="empty-state-title">${title||''}</div>
+    <div class="empty-state-body">${body||''}</div>
+    ${action?`<div class="empty-state-act">${action}</div>`:''}
+  </div>`;
+}
 function handoverMissingHTML(message){
   return `<div class="psm-missing">${psmIc('records')}<div>${message}</div></div>`;
 }
@@ -9663,7 +9679,9 @@ async function loadHandover(){
   if(revDue.length)parts.push(`${revDue.length} awaiting reversal`);
   const countTxt=parts.join(' · ');
   if(!rows.length&&!awaiting.length&&!revDue.length){
-    body.innerHTML='<div class="report-note">Nobody is on the handover list. A patient joins it by being ticked as an <strong>inpatient</strong> on their record — open them in the Registry and set it there.</div>';
+    body.innerHTML=emptyStateHTML('🏥','Nobody is on the ward right now',
+      'A patient joins the handover when an inpatient visit is opened on their record. Open them in the Registry and press <strong>＋ Open inpatient visit</strong>.',
+      `<button class="btn-save" onclick="switchTab('patients')">Go to the Registry</button>`);
     return;
   }
   const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('')
@@ -10160,7 +10178,9 @@ async function loadSitingSessions(){
   const rows=(data||[]).filter(r=>r.status!=='cancelled');
   sitingState.rows=rows;
   if(!rows.length){
-    body.innerHTML='<div class="report-note">No siting sessions booked yet. Press <strong>＋ Book siting session</strong> to add one.</div>';
+    body.innerHTML=emptyStateHTML('📍','No siting sessions booked',
+      'A siting session is an hour with the patient before surgery, to mark where the stoma will sit.',
+      `<button class="btn-save" onclick="openSitingBooking()">＋ Book siting session</button>`);
     return;
   }
   const trs=rows.map(r=>`<tr>
@@ -10846,7 +10866,8 @@ async function loadNoStomaOps(){
   }
   const rows=data||[];
   if(!rows.length){
-    body.innerHTML='<div class="report-note">Nothing here yet. A record is added from a siting session\u2019s Post-op step when the surgery was performed but no stoma was formed.</div>';
+    body.innerHTML=emptyStateHTML('📋','No no-stoma operations recorded',
+      'A record appears here when a sited patient goes to theatre and no stoma is formed — recorded from the siting session\u2019s Post-op step, or from the handover.');
     return;
   }
   const trs=rows.map(r=>`<tr>
@@ -10880,7 +10901,8 @@ async function loadStomaPerformed(){
   }
   const rows=(data||[]).filter(r=>r.stoma_formed===true);
   if(!rows.length){
-    body.innerHTML='<div class="report-note">Nothing here yet. A record appears when a siting patient has surgery and a stoma is formed (from the handover’s <strong>Stoma performed</strong> button).</div>';
+    body.innerHTML=emptyStateHTML('🩺','No stomas performed yet',
+      'A record appears here when a sited patient has surgery and a stoma is formed — press <strong>Stoma performed</strong> on their handover row on the day.');
     return;
   }
   const trs=rows.map(r=>`<tr>
@@ -10917,7 +10939,8 @@ async function loadPostopDischarges(){
   const eps=(data||[]).filter(r=>r.discharge_date);
   if(!eps.length){
     postopState.rows=[];
-    body.innerHTML='<div class="report-note">Nobody has been postop discharged yet. A patient joins this list when you press <strong>Postop discharge</strong> on the handover.</div>';
+    body.innerHTML=emptyStateHTML('📤','No postop discharges yet',
+      'A patient joins this list when you press <strong>Postop discharge</strong> on their handover row. Their admission is closed with today\u2019s date and everything on their record is kept.');
     return;
   }
   // Names come from the patients table, fetched in one read.
