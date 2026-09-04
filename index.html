@@ -2366,7 +2366,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-202';
+const APP_BUILD='2026.09.03-203';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4181,7 +4181,14 @@ const APPLIANCE_CATALOGUE=[
   {name:'Closed Bag 70mm',system:'two',part:'bag',coupling:70},
   {name:'Drainable Bag 70mm',system:'two',part:'bag',coupling:70},
   {name:'Uro/transparent Bag 70mm',system:'two',part:'bag',coupling:70},
-  {name:'Drainable Bag 100mm',system:'two',part:'bag',coupling:100}
+  {name:'Drainable Bag 100mm',system:'two',part:'bag',coupling:100},
+  /* Dressings. A stoma is not always bagged: a freshly formed mucus fistula is
+     usually just covered, so these are a system of their own — no flange, no
+     bag and no flange-change date. */
+  {name:'Paraffin Gauze Dressing',system:'dressing',part:'dressing',group:'Dressings'},
+  {name:'Gauze Dressing',system:'dressing',part:'dressing',group:'Dressings'},
+  {name:'Foam Dressing',system:'dressing',part:'dressing',group:'Dressings'},
+  {name:'Absorbent Dressing',system:'dressing',part:'dressing',group:'Dressings'}
 ];
 const APPLIANCES=APPLIANCE_CATALOGUE.map(a=>a.name);
 const ACCESSORIES=['Deodorant','Dilators','Filler Paste','Flange Extenders','Gelling Agents','Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes','Stoma Belt','Stoma Seals','None'];
@@ -4307,7 +4314,8 @@ function applianceValues(hostId){
   return host?[...host.querySelectorAll('.ap-box:checked')].map(b=>b.value):[];
 }
 function selectedAppliances(){
-  return applianceValues('of-onepiece').concat(applianceValues('of-flanges'),applianceValues('of-bags'));
+  return applianceValues('of-onepiece').concat(applianceValues('of-flanges'),
+    applianceValues('of-bags'),applianceValues('of-dressings'));
 }
 // The coupling sizes the chosen flanges use — what step 2 is allowed to offer.
 function selectedCouplings(){
@@ -4354,7 +4362,7 @@ function filterApplianceList(){
   // visit wizard). When the bag list is a page of its own it has already been
   // limited to the chosen flange's couplings, so no further filtering applies.
   const sizes=document.getElementById('of-flanges')?selectedCouplings():null;
-  ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
+  ['of-onepiece','of-flanges','of-bags','of-dressings','of-accessories'].forEach(id=>{
     const host=document.getElementById(id);
     if(!host)return;
     let shown=0;
@@ -4674,15 +4682,16 @@ function renderVisitStep(){
   if(w.step==='system'){
     title='Appliance system';
     const sysBtn=(sys,label,note)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="visitChooseSystem('${sys}')"><span class="iv-sys-t">${label}</span><span class="iv-sys-s">${note}</span></button>`;
-    body=`${banner}${carry}<div class="iv-sys-row">${sysBtn('one','One-piece system','Bag and flange in one')}${sysBtn('two','Two-piece system','Flange, then bag')}</div>
+    body=`${banner}${carry}<div class="iv-sys-row">${sysBtn('one','One-piece system','Bag and flange in one')}${sysBtn('two','Two-piece system','Flange, then bag')}${sysBtn('dressing','Dressing only','Not bagged — e.g. a fresh mucus fistula')}</div>
       <div class="ap-hint" style="margin:2px 0 0;">Pick a system to choose the appliance.</div>`;
     foot=`<button class="btn-save" onclick="visitNext()" ${w.system?'':'disabled'}>Next</button>`;
-  }else if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'){
+  }else if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'||w.step==='dressing'){
     const search=`<div class="fg" style="grid-column:1 / -1;"><label>Find an appliance</label><input type="search" class="ap-search" id="of-appliance-search" placeholder="Type a size, brand or code — e.g. 57mm, Welland, urostomy" oninput="filterApplianceList()"/></div>`;
     const panel=(id,inner)=>`<div class="fg" style="grid-column:1 / -1;"><div class="ap-panel" id="${id}">${inner}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
-    title=w.step==='onepiece'?'One-piece appliance':(w.step==='flange'?'Two-piece — flange':'Two-piece — bag');
+    title=w.step==='onepiece'?'One-piece appliance':(w.step==='dressing'?'Dressing':(w.step==='flange'?'Two-piece — flange':'Two-piece — bag'));
     let pick;
     if(w.step==='onepiece')pick=`${search}${panel('of-onepiece',visitPanelHTML('one',w.work.appliances))}`;
+    else if(w.step==='dressing')pick=`${search}${panel('of-dressings',visitPanelHTML('dressing',w.work.appliances))}`;
     else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`+flangeDueFieldHTML(w.work.flange_due);
     else pick=`${search}${panel('of-bags',vaBagPanelHTML(w.work.appliances))}`;
     body=`${banner}${carry}<div class="edit-seen-grid">${pick}<div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
@@ -4702,7 +4711,7 @@ function renderVisitStep(){
     ${body}
     <div class="mact"><button class="btn-cancel" onclick="visitBack()">${backLabel}</button>${foot}</div>`;
   openMo();
-  if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
+  if(w.step==='onepiece'||w.step==='flange'||w.step==='bag'||w.step==='dressing'){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
   if(w.step==='accessory')updateApplianceSummary();
 }
 /* Only a two-piece has a flange due date: the flange stays on for days, so the
@@ -4729,29 +4738,38 @@ function visitChooseSystem(sys){
   if(!visitWizard)return;
   const w=visitWizard;
   w.system=sys;
-  w.work.appliances=(w.work.appliances||[]).filter(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(sys==='one'?it.system==='one':(it.part==='flange'||it.part==='bag'));});
-  w.step=(sys==='one')?'onepiece':'flange';
-  if(sys==='one')w.work.flange_due='';   // a one-piece is changed daily
+  w.work.appliances=(w.work.appliances||[]).filter(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);
+    if(!it)return false;
+    if(sys==='one')return it.system==='one';
+    if(sys==='dressing')return it.system==='dressing';
+    return it.part==='flange'||it.part==='bag';});
+  w.step=(sys==='one')?'onepiece':(sys==='dressing'?'dressing':'flange');
+  // Only a two-piece flange has a change date.
+  if(sys!=='two')w.work.flange_due='';
   renderVisitStep();
 }
 function captureVisitStep(){
   if(!visitWizard)return;
   const w=visitWizard, vis=selectedAppliances();
-  if(w.step==='onepiece')w.work.appliances=vis;
+  if(w.step==='onepiece'||w.step==='dressing')w.work.appliances=vis;
   else if(w.step==='flange'){const bags=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='bag');w.work.appliances=vis.concat(bags);
     w.work.flange_due=document.getElementById('of-flange-due')?.value||'';}
   else if(w.step==='bag'){const fl=w.work.appliances.filter(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)?.part==='flange');w.work.appliances=fl.concat(vis);}
   else if(w.step==='accessory')w.work.accessories=applianceValues('of-accessories');
 }
 function visitSubSteps(){
-  return visitWizard.system==='two'?['system','flange','bag','accessory']:['system','onepiece','accessory'];
+  const sys=visitWizard.system;
+  if(sys==='two')return ['system','flange','bag','accessory'];
+  if(sys==='dressing')return ['system','dressing','accessory'];
+  return ['system','onepiece','accessory'];
 }
 function visitNext(){
   if(!visitWizard)return;
   const w=visitWizard;
   captureVisitStep();
-  if(w.step==='system'&&!w.system){alert('Please choose one-piece or two-piece.');return;}
+  if(w.step==='system'&&!w.system){alert('Please choose one-piece, two-piece or dressing.');return;}
   if((w.step==='onepiece'||w.step==='bag')&&!w.work.appliances.length){alert('Record at least one appliance for this stoma. If it is unchanged it is already ticked — just continue.');return;}
+  if(w.step==='dressing'&&!w.work.appliances.length){alert('Record at least one dressing for this stoma.');return;}
   if(w.step==='accessory'){
     if(!w.work.accessories.length){alert('Record the accessories for this stoma. If none were used, tick None.');return;}
     // store this stoma and either return to the list or save the visit
@@ -4945,7 +4963,7 @@ function episodeApplianceNote(entries){
 }
 // A carried-over selection should be visible without scrolling.
 function scrollPanelsToTicked(){
-  ['of-onepiece','of-flanges','of-bags','of-accessories'].forEach(id=>{
+  ['of-onepiece','of-flanges','of-bags','of-dressings','of-accessories'].forEach(id=>{
     const host=document.getElementById(id);
     if(!host)return;
     const first=host.querySelector('.ap-box:checked');
@@ -4960,6 +4978,8 @@ function visitPanelHTML(part,selected){
     return APPLIANCE_ONEPIECE_GROUPS.concat(extra.length?['Also on this record']:[]).map(g=>
       applianceGroupHTML(g,all.filter(a=>a.system==='one'&&a.group===g),selected)).join('');
   if(part==='flange')return applianceFamilyGroupsHTML('flange',all,selected);
+  if(part==='dressing')
+    return applianceGroupHTML('Dressings',all.filter(a=>a.system==='dressing'),selected);
   return applianceCouplings().map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,
     all.filter(a=>a.part===part&&a.coupling===c),selected)).join('');
 }
@@ -8818,9 +8838,10 @@ function ivSteps(){
   if(w.reuse)return ['ward'];
   if(w.system==='one')return ['ward','system','onepiece','accessory'];
   if(w.system==='two')return ['ward','system','flange','bag','accessory'];
+  if(w.system==='dressing')return ['ward','system','dressing','accessory'];
   return ['ward','system'];
 }
-const IV_TITLES={ward:'Where on the ward',system:'Appliance system',onepiece:'One-piece appliance',flange:'Two-piece system — flange',bag:'Two-piece system — bag',accessory:'Accessories'};
+const IV_TITLES={ward:'Where on the ward',system:'Appliance system',onepiece:'One-piece appliance',flange:'Two-piece system — flange',bag:'Two-piece system — bag',dressing:'Dressing',accessory:'Accessories'};
 // The coupling sizes of the flanges already chosen — what the bag page offers.
 function ivFlangeCouplings(){
   return [...new Set((ivWizard.appliances||[]).map(ivCat).filter(it=>it&&it.part==='flange').map(it=>it.coupling))];
@@ -8852,12 +8873,17 @@ function renderInpatientStep(){
   }else if(w.step==='system'){
     const sysBtn=(sys,label,sub)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="ivChooseSystem('${sys}')">
         <span class="iv-sys-t">${label}</span><span class="iv-sys-s">${sub}</span></button>`;
-    body=`<div class="iv-sys-row">
+    body=`${ivStomaBanner()}<div class="iv-sys-row">
       ${sysBtn('one','One-piece system','Bag and flange in one')}
       ${sysBtn('two','Two-piece system','Flange, then bag')}
+      ${sysBtn('dressing','Dressing only','Not bagged — e.g. a fresh mucus fistula')}
     </div><div class="ap-hint" style="margin:2px 0 0;">Pick a system to choose the appliance.</div>`;
   }else if(w.step==='onepiece'){
-    body=`<div class="edit-seen-grid">${search}${panel('of-onepiece',visitPanelHTML('one',w.appliances))}
+    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-onepiece',visitPanelHTML('one',w.appliances))}
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
+  }else if(w.step==='dressing'){
+    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-dressings',visitPanelHTML('dressing',w.appliances))}
+      <div class="fg" style="grid-column:1 / -1;"><div class="ap-hint" style="margin:0;">A stoma that is not bagged — a freshly formed mucus fistula, say — is just covered. No flange, and no flange-change date.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else if(w.step==='flange'){
     body=`<div class="edit-seen-grid">${search}${panel('of-flanges',visitPanelHTML('flange',w.appliances))}
@@ -8866,7 +8892,7 @@ function renderInpatientStep(){
     body=`<div class="edit-seen-grid">${search}${panel('of-bags',ivBagPanelHTML(w.appliances))}
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else{
-    body=`<div class="edit-seen-grid">
+    body=`${ivStomaBanner()}<div class="edit-seen-grid">
       <div class="fg" style="grid-column:1 / -1;"><label>Accessories</label>
         <div class="ap-panel ap-panel-short" id="of-accessories"><div class="ap-group">${ACCESSORIES.map(n=>applianceChkHTML(n,w.accessories.includes(n))).join('')}</div></div>
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
@@ -8885,8 +8911,15 @@ function renderInpatientStep(){
     <div class="mact"><button class="btn-cancel" onclick="ivBack()">${w.step==='ward'?'Cancel':'Back'}</button>
       <button class="btn-save" onclick="ivNext()"${w.step==='system'&&!w.system?' disabled':''}>${w.multi?'Admit, then set appliances':(isLast&&w.step!=='system')?'Open inpatient visit':'Next'}</button></div>`;
   openMo();
-  if(['onepiece','flange','bag'].includes(w.step)){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
+  if(['onepiece','flange','bag','dressing'].includes(w.step)){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
   if(w.step==='accessory')updateApplianceSummary();
+}
+/* Which stoma is being set, named by its own number, so a patient with a mucus
+   fistula is never in doubt about which one the appliance belongs to. */
+function ivStomaBanner(){
+  const list=(ivWizard&&ivWizard.stomas)||[];
+  if(!list.length)return '';
+  return list.map(visitStomaBannerHTML).join('');
 }
 /* Choosing a system drops anything ticked from the other system, then goes
    straight to that system's first appliance page. */
@@ -8894,14 +8927,18 @@ function ivChooseSystem(sys){
   if(!ivWizard)return;
   const w=ivWizard;
   w.system=sys;
-  w.appliances=(w.appliances||[]).filter(n=>{const it=ivCat(n);return it&&(sys==='one'?it.system==='one':(it.part==='flange'||it.part==='bag'));});
-  w.step=(sys==='one')?'onepiece':'flange';
+  w.appliances=(w.appliances||[]).filter(n=>{const it=ivCat(n);
+    if(!it)return false;
+    if(sys==='one')return it.system==='one';
+    if(sys==='dressing')return it.system==='dressing';
+    return it.part==='flange'||it.part==='bag';});
+  w.step=(sys==='one')?'onepiece':(sys==='dressing'?'dressing':'flange');
   renderInpatientStep();
 }
 // Capture only the part the current appliance page owns, keeping the rest.
 function captureAppliancePage(){
   const w=ivWizard, visible=selectedAppliances();
-  if(w.step==='onepiece'){w.appliances=visible;}
+  if(w.step==='onepiece'||w.step==='dressing'){w.appliances=visible;}
   else if(w.step==='flange'){const bags=w.appliances.filter(n=>ivCat(n)?.part==='bag');w.appliances=visible.concat(bags);}
   else if(w.step==='bag'){const flanges=w.appliances.filter(n=>ivCat(n)?.part==='flange');w.appliances=flanges.concat(visible);}
 }
@@ -8909,7 +8946,7 @@ function captureInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard;
   if(w.step==='ward'){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();}
-  else if(['onepiece','flange','bag'].includes(w.step)){captureAppliancePage();}
+  else if(['onepiece','flange','bag','dressing'].includes(w.step)){captureAppliancePage();}
   else if(w.step==='accessory'){w.accessories=applianceValues('of-accessories');w.notes=String(document.getElementById('iv-notes')?.value||'').trim();}
 }
 function ivBack(){
@@ -8926,7 +8963,8 @@ function ivNext(){
   const w=ivWizard;
   if(w.step==='ward'&&!w.ward){alert('Please choose the ward.');return;}
   if(w.multi&&w.step==='ward'){admitThenSetAppliances();return;}
-  if(w.step==='system'&&!w.system){alert('Please choose one-piece or two-piece.');return;}
+  if(w.step==='system'&&!w.system){alert('Please choose one-piece, two-piece or dressing.');return;}
+  if(w.step==='dressing'&&!(w.appliances||[]).length){alert('Record at least one dressing.');return;}
   const steps=ivSteps(), i=steps.indexOf(w.step);
   if(i>=steps.length-1){saveInpatientVisit();return;}
   w.step=steps[i+1];
