@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-210';
+const APP_BUILD='2026.09.04-211';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8125,7 +8125,10 @@ function parseRefashionings(p){
 }
 function refashionRowHTML(d){
   d=d||{};const v=x=>htmlSafe(d[x]||'');
-  return `<div class="stoma-row" data-uid="${htmlSafe(d.uid||'')}">
+  // Its own automatic id: a refashioning is a new stoma for the record even
+  // though it replaces the one before it.
+  const uid=d.uid||newStomaUid();
+  return `<div class="stoma-row" data-uid="${htmlSafe(uid)}">
     <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
     <div class="edit-seen-grid">
@@ -8546,7 +8549,7 @@ function derivedStomaRecords(pat){
   // A refashioning — old stoma closed and a new one formed.
   if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location)
     add({title:'Refashioned stoma',detail:pat.refashion_location,record_date:pat.refashion_formed_date,
-      status:pat.refashion_closure_date?'Previous stoma reversed':'Two stomas present',notes:pat.refashion_findings});
+      status:pat.refashion_closure_date?'Reversed':'Stoma present',notes:pat.refashion_findings});
   // Later new stoma formations.
   parseStomas(pat).forEach(s=>add({title:s.type||'New stoma',detail:s.location,record_date:s.formed_date,
     status:pat.reversal_date?'Previous stoma reversed':'Two stomas present',notes:s.findings}));
@@ -9389,13 +9392,13 @@ async function openPatientRecord(patientId){
         return evs.map((e,i)=>{
           const n=i+2, r=e.r;
           if(e.kind==='ref')return `<div>
-        <div class="psm-sec-head"><h3>Stoma ${n} · refashioning</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Previous stoma reversed':'Two stomas present'}</span>`:''}</div>
+        <div class="psm-sec-head"><h3>Stoma ${n} · refashioning</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Reversed':'Stoma present'}</span>`:''}</div>
         <div class="psm-card">${r.formed_date?`<div class="psm-audit" style="margin-bottom:8px;font-weight:700;color:var(--navy);">${psmIc('stoma')} Stoma refashioned on ${htmlSafe(fmtShortDate(r.formed_date))}</div>`:''}<dl class="psm-dgrid" style="margin:0;">
           ${dDate('Stoma refashioned on',r.formed_date)}
           ${dDate('Stoma reversal date',r.closure_date)}
           ${dDischarge('Date of discharge',r.discharge_date)}
           ${dItem('Operation and findings',r.findings,true)}
-        </dl>${(r.formed_date&&!r.closure_date)?`<div class="psm-audit">${psmIc('stoma')} No reversal date — the previous stoma is still present, so this patient has two stomas.</div>`:''}</div>
+        </dl>${r.formed_date?`<div class="psm-audit">${psmIc('stoma')} A refashioning remakes the same stoma: the earlier one ended on ${htmlSafe(fmtShortDate(r.formed_date))}, so the patient has one stoma, under this new number.</div>`:''}</div>
       </div>`;
           return `<div>
         <div class="psm-sec-head"><h3>Stoma ${n} · new stoma</h3><span class="clr-badge ${(r.reversal_date||e.refashioned)?'past':''}">${e.refashioned?'Refashioned':r.reversal_date?'Reversed':'Stoma present'}</span></div>
