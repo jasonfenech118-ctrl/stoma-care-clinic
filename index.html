@@ -2391,7 +2391,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-219';
+const APP_BUILD='2026.09.04-220';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4920,7 +4920,10 @@ async function commitEpisodeAppliances(pending,rows){
   // than letting the entry fall on the floor with only a ward note to show.
   let ep=await currentInpatientEpisode(pending.patientId);
   if(!ep){
-    const made=await createInpatientEpisodeFor(pending.patientId);
+    // Dated from when the patient actually came in, not from the day the ward
+    // happened to set an appliance on them.
+    const since=(clrState.patient&&clrState.patient.id===pending.patientId&&clrState.patient.inpatient_since)||null;
+    const made=await createInpatientEpisodeFor(pending.patientId,since||undefined);
     ep=made.data;
     if(made.error){reportEpisodeError('commitEpisodeAppliances: could not open an episode',made.error);return;}
   }
@@ -8982,6 +8985,9 @@ async function openInpatientVisit(){
   // only needs the ward and bed — the appliance and accessory pages are skipped.
   const prev=multi?null:await previousInpatientAppliances(pid);
   ivWizard={pid,patient:pat,step:'ward',ward:pat?.inpatient_ward||'',bed:pat?.inpatient_bed||'',
+    // A patient is often entered a day or two after they came in, so the date of
+    // admission is asked for rather than assumed to be today.
+    admitted:pat?.inpatient_since||TODAY,
     system:'',appliances:prev?prev.appliances:[],accessories:prev?prev.accessories:[],notes:'',
     reuse:!!prev,multi,stomas};
   renderInpatientStep();
@@ -9025,6 +9031,9 @@ function renderInpatientStep(){
     body=`<div class="edit-seen-grid">${carry}
       <div class="fg"><label>Ward *</label><select id="iv-ward">${wardOptions(w.ward)}</select></div>
       <div class="fg"><label>Bed number</label><input type="text" id="iv-bed" value="${htmlSafe(w.bed||'')}" placeholder="e.g. 15"/></div>
+      <div class="fg"><label>Date of admission *</label>
+        <input type="date" id="iv-admitted" value="${htmlSafe(w.admitted||TODAY)}" max="${htmlSafe(TODAY)}"/>
+        <div class="ap-hint" style="margin:3px 0 0;">The day the patient came in, not today — it dates the admission everywhere it is shown.</div></div>
     </div>`;
   }else if(w.step==='system'){
     const sysBtn=(sys,label,sub)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="ivChooseSystem('${sys}')">
@@ -9101,7 +9110,8 @@ function captureAppliancePage(){
 function captureInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard;
-  if(w.step==='ward'){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();}
+  if(w.step==='ward'){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();
+    w.admitted=String(document.getElementById('iv-admitted')?.value||'').trim()||w.admitted||TODAY;}
   else if(['onepiece','flange','bag','dressing'].includes(w.step)){captureAppliancePage();}
   else if(w.step==='accessory'){w.accessories=applianceValues('of-accessories');w.notes=String(document.getElementById('iv-notes')?.value||'').trim();}
 }
@@ -9118,6 +9128,8 @@ function ivNext(){
   captureInpatientStep();
   const w=ivWizard;
   if(w.step==='ward'&&!w.ward){alert('Please choose the ward.');return;}
+  if(w.step==='ward'&&!w.admitted){alert('Please give the date of admission.');return;}
+  if(w.step==='ward'&&w.admitted>TODAY){alert('The date of admission cannot be in the future.');return;}
   if(w.multi&&w.step==='ward'){admitThenSetAppliances();return;}
   if(w.step==='system'&&!w.system){alert('Please choose one-piece, two-piece or dressing.');return;}
   if(w.step==='dressing'&&!(w.appliances||[]).length){alert('Record at least one dressing.');return;}
@@ -9130,7 +9142,7 @@ async function saveInpatientVisit(){
   const w=ivWizard;
   if(!w)return;
   const pid=w.pid, pat=w.patient;
-  const ward=w.ward, bed=w.bed;
+  const ward=w.ward, bed=w.bed, admitted=w.admitted||TODAY;
   if(!ward){alert('Please choose the ward.');return;}
   const app=w.appliances, acc=(w.accessories||[]).filter(a=>a!=='None');
   const parts=[];
@@ -9146,7 +9158,7 @@ async function saveInpatientVisit(){
   if(clrState.available){
     const detail=`Ward ${ward}${bed?', Bed '+bed:''}`;
     const applianceData={stoma_type:inpatientStomaType(pat),appliances:app,accessories:(w.accessories||[])};
-    const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:TODAY,is_current:true,notes:summary||null,appliances:applianceData};
+    const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,notes:summary||null,appliances:applianceData};
     try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
     try{base.episode_ref=await nextEpisodeRef();}catch(e){}
     let body={...base};
@@ -9161,11 +9173,11 @@ async function saveInpatientVisit(){
     }
   }
 
-  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null};
-  if(!pat?.inpatient_since)patch.inpatient_since=TODAY;
+  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,
+    inpatient_since:admitted};
   const res=await updatePatientTolerant(pid,patch);
   if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
-  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,inpatient_since:pat.inpatient_since||TODAY});
+  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,inpatient_since:admitted});
 
   // Refresh the record behind the modal, then finish on a confirmation page.
   await loadClinicalRecords(pid);
@@ -9191,17 +9203,16 @@ async function saveInpatientVisit(){
    stoma, on the Handover. */
 async function admitThenSetAppliances(){
   const w=ivWizard; if(!w)return;
-  const pid=w.pid, pat=w.patient, ward=w.ward, bed=w.bed;
+  const pid=w.pid, pat=w.patient, ward=w.ward, bed=w.bed, admitted=w.admitted||TODAY;
   if(!ward){alert('Please choose the ward.');return;}
   if(clrState.available){
-    const made=await createInpatientEpisodeFor(pid,TODAY);
+    const made=await createInpatientEpisodeFor(pid,admitted);
     if(made.error){reportEpisodeError('admitThenSetAppliances: could not open the episode',made.error);return;}
   }
-  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null};
-  if(!pat?.inpatient_since)patch.inpatient_since=TODAY;
+  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:admitted};
   const res=await updatePatientTolerant(pid,patch);
   if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
-  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:pat.inpatient_since||TODAY});
+  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:admitted});
   await loadClinicalRecords(pid);
   clrState.expanded.episode=true;
   ivWizard=null;
@@ -9379,6 +9390,7 @@ async function openDischargeLetterFor(patientId){
     if(p.stoma_type)q.set('type',p.stoma_type);
     if(p.surgery_date)q.set('opdate',p.surgery_date);
     if(p.procedure_performed)q.set('procedure',p.procedure_performed);
+    if(p.consultant)q.set('consultant',p.consultant);
     /* A mucus fistula on the record travels with the letter, with its location,
        so the care plan says how to dress it without anyone being asked. An empty
        location still counts — it means one fistula whose site is not recorded. */
@@ -9386,18 +9398,50 @@ async function openDischargeLetterFor(patientId){
       const mf=stomasPresentOn(p,TODAY).filter(e=>e.mf||/mucus\s*fistula/i.test(String(e.typeLabel||e.type||'')));
       if(mf.length)q.set('mucus',mf.map(e=>String(e.location||'').trim()).join('|'));
     }catch(e){}
-    // The appliance and accessory in use — the most recent seen visit.
+    /* The appliance and accessories in use, taken from whichever is the more
+       recent: what was last set on the ward during an admission, or what was
+       recorded at the last attended appointment. A patient going home straight
+       from the ward has no attended appointment yet, so the ward entry is the
+       only record there is — reading only appointments left the letter blank.
+       Everything set on the same day is taken together, so a patient with a
+       mucus fistula carries both stomas' appliances into the letter. */
+    const byDate=new Map();
+    const take=(date,ap,ac)=>{
+      const a=parseNameList(ap), b=parseNameList(ac).filter(x=>x!=='None');
+      if(!a.length&&!b.length)return;
+      const k=String(date||'');
+      const e=byDate.get(k)||{appliances:[],accessories:[]};
+      a.forEach(n=>{if(!e.appliances.includes(n))e.appliances.push(n);});
+      b.forEach(n=>{if(!e.accessories.includes(n))e.accessories.push(n);});
+      byDate.set(k,e);
+    };
+    try{
+      const{data:eps}=await SB.from('clinical_records')
+        .select('record_date,appliances').eq('patient_id',patientId).eq('kind','episode');
+      (eps||[]).forEach(ep=>parseEpisodeApplianceRows(ep)
+        .forEach(r=>take(r.changed_on||ep.record_date,r.appliances,r.accessories)));
+    }catch(e){}
     try{
       const{data:appts}=await SB.from('appointments')
-        .select('appt_date,status,appliances,accessories')
+        .select('appt_date,status,appliances,accessories,stoma_appliances')
         .eq('patient_id',patientId).eq('status','attended')
-        .order('appt_date',{ascending:false}).limit(1);
-      const last=(appts||[])[0];
-      if(last){
-        const sentence=composeApplianceSentence(last.appliances,last.accessories);
-        if(sentence)q.set('appliance',sentence);
-      }
+        .order('appt_date',{ascending:false}).limit(5);
+      (appts||[]).forEach(v=>{
+        let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
+        if(Array.isArray(rows)&&rows.length)rows.forEach(r=>take(v.appt_date,r.appliances,r.accessories));
+        else take(v.appt_date,v.appliances,v.accessories);
+      });
     }catch(e){}
+    const dates=[...byDate.keys()].sort();
+    const last=dates.length?byDate.get(dates[dates.length-1]):null;
+    if(last){
+      const sentence=composeApplianceSentence(last.appliances,last.accessories);
+      if(sentence)q.set('appliance',sentence);
+      // The names as well as the sentence: the letter matches them onto its own
+      // catalogue so its appliance and accessory pages open already answered.
+      if(last.appliances.length)q.set('appl',last.appliances.join('|'));
+      if(last.accessories.length)q.set('acc',last.accessories.join('|'));
+    }
   }
   const qs=q.toString();
   window.open('discharge-letter.html'+(qs?'?'+qs:''),'_blank');
