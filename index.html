@@ -484,6 +484,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .report-card.wide{grid-column:span 2;}
 .report-card h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
 .report-card canvas{width:100%!important;max-height:260px!important;}
+.chart-empty{display:flex;align-items:center;justify-content:center;text-align:center;min-height:170px;
+  padding:18px;color:var(--muted);font-size:12.5px;font-weight:600;line-height:1.5;
+  border:1px dashed var(--border);border-radius:10px;background:#fafbfc;}
 .report-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.4;}
 
 /* ANNUAL REPORT */
@@ -2366,7 +2369,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.03-204';
+const APP_BUILD='2026.09.04-205';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7054,15 +7057,43 @@ function chartDataCount(items,keyFn,labels){
   return labels.map(l=>counts[l]||0);
 }
 function destroyChart(id){if(reportCharts[id]){reportCharts[id].destroy();delete reportCharts[id];}}
+/* An empty chart is a blank box the reader cannot interpret, and a chart library
+   that failed to load leaves the whole page blank with no reason given. Either
+   way the card now says what happened instead of showing nothing. */
+function chartHasData(data){return Array.isArray(data)&&data.some(v=>Number(v)>0);}
+function chartMessage(id,text){
+  const ctx=document.getElementById(id);
+  if(!ctx||!ctx.parentNode)return;
+  destroyChart(id);
+  ctx.hidden=true;
+  let note=ctx.parentNode.querySelector('.chart-empty');
+  if(!note){note=document.createElement('div');note.className='chart-empty';
+    ctx.parentNode.insertBefore(note,ctx.nextSibling);}
+  note.textContent=text;note.hidden=false;
+}
+function chartClearMessage(id){
+  const ctx=document.getElementById(id);
+  if(!ctx||!ctx.parentNode)return;
+  ctx.hidden=false;
+  const note=ctx.parentNode.querySelector('.chart-empty');
+  if(note)note.hidden=true;
+}
+const CHART_NO_LIB='The charts could not be loaded. Check the connection and refresh the page.';
 function makeChart(id,type,labels,data,label,extra={}){
   const ctx=document.getElementById(id);
-  if(!ctx||typeof Chart==='undefined')return;
+  if(!ctx)return;
+  if(typeof Chart==='undefined'){chartMessage(id,CHART_NO_LIB);return;}
+  if(!chartHasData(data)){chartMessage(id,'Nothing recorded for this period.');return;}
+  chartClearMessage(id);
   destroyChart(id);
   reportCharts[id]=new Chart(ctx,{type, data:{labels,datasets:[{label,data,borderWidth:2,tension:.35,fill:false}]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:type==='doughnut'||type==='pie'}},scales:type==='doughnut'||type==='pie'?{}:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}});
 }
 function makeMultiChart(id,type,labels,datasets,extra={}){
   const ctx=document.getElementById(id);
-  if(!ctx||typeof Chart==='undefined')return;
+  if(!ctx)return;
+  if(typeof Chart==='undefined'){chartMessage(id,CHART_NO_LIB);return;}
+  if(!(datasets||[]).some(ds=>chartHasData(ds&&ds.data))){chartMessage(id,'Nothing recorded for this period.');return;}
+  chartClearMessage(id);
   destroyChart(id);
   reportCharts[id]=new Chart(ctx,{
     type,
