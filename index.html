@@ -2391,7 +2391,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-221';
+const APP_BUILD='2026.09.04-222';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8072,10 +8072,10 @@ function byFormedDate(a,b){
    sequence, so they are numbered together across both — Stoma 1 is the one
    made at the first operation, so the rest run from 2. */
 function renumberStomaRows(prefix){
-  const lists=[[`${prefix}-reflist`,'.rf-formed',' · refashioning'],
-               [`${prefix}-stomalist`,'.st-formed','']];
+  const lists=[[`${prefix}-reflist`,'.rf-formed',true],
+               [`${prefix}-stomalist`,'.st-formed',false]];
   const all=[];
-  lists.forEach(([id,sel,suffix])=>{
+  lists.forEach(([id,sel,ref])=>{
     const list=document.getElementById(id);
     if(!list)return;
     // Rows are not moved while the form is open — a row jumping away the moment
@@ -8083,12 +8083,16 @@ function renumberStomaRows(prefix){
     // in date order when the form opens and stored in date order on save; only
     // the numbering follows the dates live.
     [...list.querySelectorAll(':scope > .stoma-row')]
-      .forEach(r=>all.push({row:r,d:r.querySelector(sel)?.value||'9999-99-99',suffix}));
+      .forEach(r=>all.push({row:r,d:r.querySelector(sel)?.value||'9999-99-99',ref}));
   });
   all.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
-  all.forEach((x,i)=>{
+  /* A refashioning remakes the stoma the patient already has, so it takes no
+     number of its own — numbering it would read as a stoma they do not have.
+     Only a genuinely new stoma moves the count on from Stoma 1. */
+  let n=1;
+  all.forEach(x=>{
     const t=x.row.querySelector('.stoma-row-title');
-    if(t)t.textContent='Stoma '+(i+2)+x.suffix;
+    if(t)t.textContent=x.ref?'Stoma refashioning':('Stoma '+(++n));
   });
   refreshReversalFields(prefix);
 }
@@ -8155,10 +8159,13 @@ function refashionRowHTML(d){
   // though it replaces the one before it.
   const uid=d.uid||newStomaUid();
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}">
-    <div class="stoma-row-head"><span class="stoma-row-title">Refashioning</span>
+    <div class="stoma-row-head"><span class="stoma-row-title">Stoma refashioning</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this refashioning</button></div>
+    <div class="ap-hint" style="margin:0 0 6px;">The same stoma, made again — its type carries over from the stoma it replaces, so there is nothing to choose here.</div>
     <div class="edit-seen-grid">
-      <div class="fg"><label>Stoma type</label><input type="text" class="rf-type" value="${v('type')}" placeholder="e.g. End colostomy, Loop ileostomy"/></div>
+      <!-- The type is not asked for, but what is already on record travels with
+           the row so an edit never blanks it. -->
+      <input type="hidden" class="rf-type" value="${v('type')}"/>
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
@@ -8340,11 +8347,24 @@ function onPatientFormOutcome(prefix){
 function readPatientForm(prefix){
   const val=k=>String(document.getElementById(`${prefix}-${k}`)?.value||'').trim();
   const loc=v=>{v=(v||'').trim();return v&&v!=='__add__'?v:null;};   // ignore the "Add location…" sentinel
+  /* A refashioning is the same stoma made again, so its type is not asked for:
+     it is taken from the stoma it replaces — the most recent one formed on or
+     before it — falling back to whatever the record already held. */
+  const typeAsAt=(()=>{
+    const seq=[{d:val('surgery'),t:val('stoma')}]
+      .concat([...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({
+        d:r.querySelector('.st-formed')?.value||'',
+        t:(r.querySelector('.st-type')?.value||'').trim()})));
+    seq.sort((a,b)=>String(a.d||'9999-99-99').localeCompare(String(b.d||'9999-99-99')));
+    return on=>{const k=String(on||'9999-99-99');let t='';
+      seq.forEach(x=>{if(String(x.d||'9999-99-99')<=k&&x.t)t=x.t;});return t;};
+  })();
   const refRows=[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)].map(r=>{
     const g=c=>r.querySelector(c);
+    const formed=g('.rf-formed')?.value||null;
     return{uid:r.dataset.uid||newStomaUid(),
-      type:(g('.rf-type')?.value||'').trim()||null,
-      formed_date:g('.rf-formed')?.value||null,closure_date:g('.rf-closure')?.value||null,
+      type:typeAsAt(formed)||(g('.rf-type')?.value||'').trim()||null,
+      formed_date:formed,closure_date:g('.rf-closure')?.value||null,
       discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
   }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings||s.type);
   refRows.sort(byFormedDate);
@@ -9540,26 +9560,28 @@ async function openPatientRecord(patientId){
       </div>
       ${(function(){
         /* Refashionings and later stomas are two lists but one story, so they
-           are merged and shown oldest first — Stoma 1 is the one made at the
-           first operation, so the rest are numbered from 2. */
+           are merged and shown oldest first. Stoma 1 is the one made at the
+           first operation; only a genuinely new stoma moves the count on, since
+           a refashioning remakes the stoma the patient already has. */
         const rflags=refashionedStomaFlags(pat);
         const evs=parseRefashionings(pat).map(r=>({kind:'ref',d:r.formed_date,r}))
           .concat(parseStomas(pat).slice().sort(byFormedDate)
             .map((s,i)=>({kind:'new',d:s.formed_date,r:s,refashioned:!!rflags.extras[i]})));
         evs.sort((a,b)=>String(a.d||'9999-99-99').localeCompare(String(b.d||'9999-99-99')));
+        let num=1;
         return evs.map((e,i)=>{
-          const n=i+2, r=e.r;
+          const r=e.r;
           if(e.kind==='ref')return `<div>
-        <div class="psm-sec-head"><h3>Stoma ${n} · refashioning</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Reversed':'Stoma present'}</span>`:''}</div>
+        <div class="psm-sec-head"><h3>Stoma refashioning</h3>${r.formed_date?`<span class="clr-badge ${r.closure_date?'past':''}">${r.closure_date?'Reversed':'Stoma present'}</span>`:''}</div>
         <div class="psm-card">${r.formed_date?`<div class="psm-audit" style="margin-bottom:8px;font-weight:700;color:var(--navy);">${psmIc('stoma')} Stoma refashioned on ${htmlSafe(fmtShortDate(r.formed_date))}</div>`:''}<dl class="psm-dgrid" style="margin:0;">
           ${dDate('Stoma refashioned on',r.formed_date)}
           ${dDate('Stoma reversal date',r.closure_date)}
           ${dDischarge('Date of discharge',r.discharge_date)}
           ${dItem('Operation and findings',r.findings,true)}
-        </dl>${r.formed_date?`<div class="psm-audit">${psmIc('stoma')} A refashioning remakes the same stoma: the earlier one ended on ${htmlSafe(fmtShortDate(r.formed_date))}, so the patient has one stoma, under this new number.</div>`:''}</div>
+        </dl>${r.formed_date?`<div class="psm-audit">${psmIc('stoma')} A refashioning remakes the same stoma: the earlier one ended on ${htmlSafe(fmtShortDate(r.formed_date))}, so the patient still has the one stoma — under a new stoma ID, but not a new number.</div>`:''}</div>
       </div>`;
           return `<div>
-        <div class="psm-sec-head"><h3>Stoma ${n} · new stoma</h3><span class="clr-badge ${(r.reversal_date||e.refashioned)?'past':''}">${e.refashioned?'Refashioned':r.reversal_date?'Reversed':'Stoma present'}</span></div>
+        <div class="psm-sec-head"><h3>Stoma ${++num} · new stoma</h3><span class="clr-badge ${(r.reversal_date||e.refashioned)?'past':''}">${e.refashioned?'Refashioned':r.reversal_date?'Reversed':'Stoma present'}</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
           ${dItem('Stoma type',r.type)}
           ${dDate('New stoma formed',r.formed_date)}
@@ -13336,12 +13358,12 @@ function plOpen(id){
       ${rflags.first?'':d('Reversed on',p.reversal_date)}
       ${f('Operation and findings',p.findings,true)}
     </div>
-    ${evs.map((e,i)=>{const r=e.r;return `<div class="pl-sec">
-      <h3>Stoma ${i+2} · ${e.kind==='ref'?'refashioning':'new stoma'}</h3>
+    ${(()=>{let num=1;return evs.map((e,i)=>{const r=e.r;return `<div class="pl-sec">
+      <h3>${e.kind==='ref'?'Stoma refashioning':'Stoma '+(++num)+' · new stoma'}</h3>
       ${e.kind==='ref'
         ? `${d('Refashioned on',r.formed_date)}${d('Stoma reversal date',r.closure_date)}${disc('Discharge date',r.discharge_date)}${f('Operation and findings',r.findings,true)}`
         : `${f('Stoma type',r.type)}${d('Formed on',r.formed_date)}${f('Stoma location',r.location)}${disc('Discharge date',r.discharge_date)}${e.refashioned?'':d('Reversed on',r.reversal_date)}${f('Operation and findings',r.findings,true)}`}
-    </div>`;}).join('')}
+    </div>`;}).join('');})()}
     <div class="pl-sec">
       <h3>Follow-up</h3>
       ${f('Status',outText)}
