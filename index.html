@@ -768,6 +768,15 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .clr-ev-pill.accessory{background:#eef2ff;color:#4338ca;}
 .clr-ev-pill.new{outline:1.5px solid #b91c1c;outline-offset:-1.5px;}
 .clr-ev-off{font-size:10.5px;font-weight:700;color:var(--muted);margin-top:3px;}
+/* The "who is still to be filled in" list behind an incomplete-records chart. */
+.inc-list-scroll{max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:10px;margin:8px 0 4px;}
+table.inc-list{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.inc-list th{position:sticky;top:0;background:var(--navy);color:#fff;text-align:left;
+  font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:7px 9px;z-index:1;}
+table.inc-list td{border-top:1px solid var(--border);padding:7px 9px;vertical-align:top;}
+table.inc-list tbody tr:hover td{background:#fffbeb;}
+.inc-miss{display:inline-block;font-size:10.5px;font-weight:700;background:#fef3c7;color:#92400e;
+  border-radius:5px;padding:1px 6px;margin:1px 2px 1px 0;white-space:nowrap;}
 .va-stoma-list{display:flex;flex-direction:column;gap:10px;margin:6px 0 4px;}
 .va-stoma{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;cursor:pointer;font-family:inherit;}
 .va-stoma:hover{border-color:var(--teal);background:#f2fbfa;}
@@ -2391,7 +2400,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-222';
+const APP_BUILD='2026.09.04-223';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11853,35 +11862,159 @@ function renderDataAnalysisRegistry(){
       ${annualKpi('Complete',complete,'all required fields filled','#1baf7a')}
       ${annualKpi('Incomplete',incomplete.length,`${pctInc}% of the registry`,'#e6a817')}
     </div>
+    ${incomplete.length?`<div class="report-note" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 12px;">
+      <span><strong>${incomplete.length}</strong> record${incomplete.length===1?'':'s'} still to fill in. Click any bar or slice below to see exactly who they are.</span>
+      <button class="clr-mini" onclick="openIncompleteList('all','')">Show all ${incomplete.length}</button>
+    </div>`:''}
     <div class="report-grid">
       ${daCard('reg-pie','Complete vs incomplete records',
         `Required fields: ${PATIENT_REQUIRED_FIELDS.map(f=>f[1]).join(', ')}.`,
-        '<div style="height:250px;"><canvas id="da-reg-pie"></canvas></div>')}
+        `<div style="height:250px;"><canvas id="da-reg-pie"></canvas></div>
+         <div class="ap-hint" style="margin:6px 0 0;">Click the amber slice to list every incomplete record.</div>`)}
       ${daCard('reg-year','Incomplete records by year',
         'Counted by the year of the surgery date.',
         `<div class="da-controls" style="margin:0 0 8px;"><div class="da-control-row">
            <span class="da-control-label">From</span><select class="da-year-select" onchange="setDaRegFrom(this.value)">${yearOpts(daRegFrom)}</select>
            <span class="da-control-label">to</span><select class="da-year-select" onchange="setDaRegTo(this.value)">${yearOpts(daRegTo)}</select>
          </div></div>
-         <div style="height:260px;"><canvas id="da-reg-year"></canvas></div>`,true)}
+         <div style="height:260px;"><canvas id="da-reg-year"></canvas></div>
+         <div class="ap-hint" style="margin:6px 0 0;">Click a year to list the patients behind it.</div>`,true)}
       ${daCard('reg-month',`Incomplete records by month`,
         'Months of the chosen year, by surgery date.',
         `<div class="da-controls" style="margin:0 0 8px;"><div class="da-control-row">
            <span class="da-control-label">Year</span><select class="da-year-select" onchange="setDaRegYear(this.value)">${yearOpts(daRegYear)}</select>
          </div></div>
-         <div style="height:260px;"><canvas id="da-reg-month"></canvas></div>`,true)}
+         <div style="height:260px;"><canvas id="da-reg-month"></canvas></div>
+         <div class="ap-hint" style="margin:6px 0 0;">Click a month to list the patients behind it.</div>`,true)}
     </div>`;
 
   if(typeof Chart==='undefined')return;
+  const clickable={onClick:null,onHover:(e,els)=>{
+    if(e.native&&e.native.target)e.native.target.style.cursor=els.length?'pointer':'default';}};
   makeMultiChart('da-reg-pie','doughnut',['Complete','Incomplete'],
     [{data:[complete,incomplete.length],backgroundColor:['#1baf7a','#e6a817'],borderWidth:2}],
-    {scales:{},plugins:{legend:{position:'right'}}});
+    {scales:{},plugins:{legend:{position:'right'}},...clickable,
+      onClick:daIncompleteClick('pie',['Complete','Incomplete'])});
   makeMultiChart('da-reg-year','bar',yearLabels,
     [{label:'Incomplete',data:yearData,backgroundColor:'#e6a817',borderWidth:0}],
-    {plugins:{legend:{display:false}}});
+    {plugins:{legend:{display:false}},...clickable,onClick:daIncompleteClick('year',yearLabels)});
   makeMultiChart('da-reg-month','bar',MONTHS,
     [{label:'Incomplete',data:incByMonth,backgroundColor:'#e6a817',borderWidth:0}],
-    {plugins:{legend:{display:false}}});
+    {plugins:{legend:{display:false}},...clickable,onClick:daIncompleteClick('month',MONTHS)});
+}
+/* ── WHO IS STILL TO BE FILLED IN ────────────────────────────────────────
+   A count on a chart says how many records are incomplete; it does not say
+   who. Clicking a slice, a bar or the "Show who" button under a chart opens
+   the patients behind that number, each with the fields still missing, and
+   opens the record straight from the row. */
+const DA_MONTH_NAMES=['January','February','March','April','May','June',
+  'July','August','September','October','November','December'];
+function incompletePatientsFor(kind,value){
+  const inc=(dataAnalysisRows||[]).filter(patientIsIncomplete);
+  if(kind==='year'){
+    if(String(value)==='Unknown')return inc.filter(p=>!daYear(p.surgery_date));
+    return inc.filter(p=>daYear(p.surgery_date)===Number(value));
+  }
+  if(kind==='month'){
+    const m=Number(value)+1;
+    return inc.filter(p=>daYear(p.surgery_date)===daRegYear
+      && Number(String(p.surgery_date).slice(5,7))===m);
+  }
+  return inc;   // 'all'
+}
+function incompleteListTitle(kind,value){
+  if(kind==='year')return String(value)==='Unknown'
+    ? 'Incomplete records with no surgery date'
+    : `Incomplete records · ${value}`;
+  if(kind==='month')return `Incomplete records · ${DA_MONTH_NAMES[Number(value)]} ${daRegYear}`;
+  return 'Every incomplete record';
+}
+// Sorted so the oldest surgery — the record that has waited longest to be
+// finished — is at the top, with undated ones last.
+function sortIncomplete(list){
+  return list.slice().sort((a,b)=>{
+    const da=String(a.surgery_date||'9999-99-99'), db=String(b.surgery_date||'9999-99-99');
+    if(da!==db)return da.localeCompare(db);
+    return String(a.surname||'').localeCompare(String(b.surname||''));
+  });
+}
+let incompleteListState={kind:'all',value:'',rows:[]};
+function openIncompleteList(kind,value){
+  const mb=document.getElementById('mb'); if(!mb)return;
+  const rows=sortIncomplete(incompletePatientsFor(kind,value));
+  incompleteListState={kind,value,rows};
+  const title=incompleteListTitle(kind,value);
+  if(!rows.length){
+    mb.className='mb mb-wide';
+    mb.innerHTML=`<h2>${htmlSafe(title)}</h2>
+      <div class="msub">Nothing to fill in here — every record in this period has all its required fields.</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    openMo();return;
+  }
+  // A whole-registry list can run to thousands; the screen shows the first of
+  // them and the print carries the lot, so the modal never becomes unusable.
+  const CAP=400;
+  const shown=rows.slice(0,CAP);
+  const trs=shown.map(p=>{
+    const missing=patientMissingFields(p);
+    return `<tr class="pd-click-row" onclick="closeModal();openPatientRecord('${p.id}')" title="Open this patient's record">
+      <td><strong>${htmlSafe(p.surname||'—')}</strong></td>
+      <td>${htmlSafe(p.first_name||'—')}</td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${htmlSafe(p.consultant||'—')}</td>
+      <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span style="color:var(--muted);">no date</span>'}</td>
+      <td>${missing.map(m=>`<span class="inc-miss">${htmlSafe(m)}</span>`).join(' ')}</td>
+    </tr>`;}).join('');
+  mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>${htmlSafe(title)}</h2>
+    <div class="msub"><strong>${rows.length}</strong> patient${rows.length===1?'':'s'} still to fill in${
+      rows.length>CAP?` · showing the first ${CAP}, oldest surgery first — print for the full list`:', oldest surgery first'}.
+      Click a row to open the record, then <strong>Edit patient</strong>.</div>
+    <div class="inc-list-scroll"><table class="inc-list"><thead><tr>
+        <th>Surname</th><th>First name</th><th>ID number</th><th>Firm</th><th>Surgery</th><th>Still missing</th>
+      </tr></thead><tbody>${trs}</tbody></table></div>
+    <div class="mact">
+      <button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button class="btn-save" onclick="printIncompleteList()">🖨 Print the list</button>
+    </div>`;
+  openMo();
+}
+function printIncompleteList(){
+  const{kind,value,rows}=incompleteListState;
+  if(!rows.length)return;
+  const w=window.open('','_blank');
+  if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
+  const body=rows.map((p,i)=>`<tr class="${i%2?'zeb':''}">
+    <td>${htmlSafe(p.surname||'')}</td><td>${htmlSafe(p.first_name||'')}</td>
+    <td>${htmlSafe(p.id_card||'')}</td><td>${htmlSafe(p.consultant||'')}</td>
+    <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):''}</td>
+    <td>${htmlSafe(patientMissingFields(p).join(', '))}</td></tr>`).join('');
+  w.document.write(`<!DOCTYPE html><html><head><title>${htmlSafe(incompleteListTitle(kind,value))}</title><style>
+    @page{size:A4 landscape;margin:8mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:5mm 4mm;}
+    h1{font-size:15px;font-weight:800;margin:0 0 2px;}
+    p.sub{font-size:11px;margin:0 0 8px;color:#333;}
+    table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}
+    th,td{border:0.75pt solid #000;padding:4px 5px;text-align:left;vertical-align:top;overflow-wrap:break-word;}
+    thead th{background:#000;color:#fff;font-weight:800;}
+    tbody tr.zeb td{background:#e8e8e8;}
+  </style></head><body>
+    <h1>MDH Nursing Stoma Care — ${htmlSafe(incompleteListTitle(kind,value))}</h1>
+    <p class="sub">${rows.length} patient${rows.length===1?'':'s'} still to fill in, oldest surgery first · ${htmlSafe(fmtLabel(TODAY))}</p>
+    <table><colgroup><col style="width:14%"><col style="width:13%"><col style="width:11%"><col style="width:14%"><col style="width:10%"><col></colgroup>
+      <thead><tr><th>Surname</th><th>First Name</th><th>ID: Number</th><th>Firm</th><th>Surgery</th><th>Still missing</th></tr></thead>
+      <tbody>${body}</tbody></table>
+  </body></html>`);
+  w.document.close();w.focus();setTimeout(()=>w.print(),250);
+}
+/* Clicking a bar or slice opens the patients behind it. */
+function daIncompleteClick(kind,labels){
+  return (evt,els)=>{
+    if(!els||!els.length)return;
+    const label=labels[els[0].index];
+    if(kind==='pie'){if(String(label)!=='Incomplete')return;openIncompleteList('all','');return;}
+    openIncompleteList(kind,kind==='month'?els[0].index:label);
+  };
 }
 function daPie(id,list){
   if(!list.length)return;
