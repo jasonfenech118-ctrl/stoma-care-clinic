@@ -2374,7 +2374,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-217';
+const APP_BUILD='2026.09.04-218';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11052,8 +11052,9 @@ async function loadPostopDischarges(){
     const seen=booked[ep.patient_id];
     return !(seen&&seen>=String(ep.discharge_date));
   });
-  // Longest wait first: the patient discharged earliest still needs booking most.
-  eps.sort((a,b)=>String(a.discharge_date).localeCompare(String(b.discharge_date)));
+  // Most recent discharge first: the ward you have just heard about is the one
+  // you are looking for when you open this page.
+  eps.sort((a,b)=>String(b.discharge_date).localeCompare(String(a.discharge_date)));
   const waiting=discharged.length-eps.length;
   if(!eps.length){
     postopState.rows=[];
@@ -11066,7 +11067,7 @@ async function loadPostopDischarges(){
   }
   const rows=eps.map(ep=>{
     const pt=byId[ep.patient_id]||{};
-    return {discharge_date:ep.discharge_date,record_date:ep.record_date,
+    return {discharge_date:ep.discharge_date,
       waited:Math.max(0,-(daysUntilDate(ep.discharge_date)||0)),
       wardbed:episodeWardBed(ep),id_card:pt.id_card||'',surname:pt.surname||'',
       first_name:pt.first_name||'',consultant:pt.consultant||'',
@@ -11082,17 +11083,16 @@ async function loadPostopDischarges(){
     <td data-label="First name">${htmlSafe(r.first_name)}</td>
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
     <td data-label="Appliance + notes">${htmlSafe(r.appliance)}</td>
-    <td data-label="Admitted">${r.record_date?htmlSafe(fmtShortDate(r.record_date)):'—'}</td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="postop-table">
     <colgroup>
-      <col style="width:104px"><col style="width:96px"><col style="width:104px"><col style="width:110px">
-      <col style="width:110px"><col style="width:96px"><col><col style="width:92px">
+      <col style="width:112px"><col style="width:96px"><col style="width:104px"><col style="width:110px">
+      <col style="width:110px"><col style="width:96px"><col>
     </colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} awaiting an appointment${waiting?` · ${waiting} already booked`:''}</span></th></tr>
+      <tr class="hv-bannerrow"><th colspan="7"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} awaiting an appointment${waiting?` · ${waiting} already booked`:''}</span></th></tr>
       <tr>
-        <th>Date of discharge ↑</th><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th>
+        <th>Date of discharge ↓</th><th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Appliance + notes</th>
       </tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
@@ -11109,8 +11109,7 @@ function printPostopDischarges(){
     <td>${htmlSafe(r.surname||'')}</td>
     <td>${htmlSafe(r.first_name||'')}</td>
     <td>${htmlSafe(r.consultant||'')}</td>
-    <td class="capp">${htmlSafe(r.appliance||'')}</td>
-    <td>${r.record_date?htmlSafe(fmtShortDate(r.record_date)):''}</td></tr>`).join('');
+    <td class="capp">${htmlSafe(r.appliance||'')}</td></tr>`).join('');
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
   w.document.write(`<!DOCTYPE html><html><head><title>Postop Discharges ${htmlSafe(TODAY)}</title><style>
@@ -11125,14 +11124,14 @@ function printPostopDischarges(){
     thead .cols th{background:#000;color:#fff;font-weight:800;}
     td.capp{white-space:normal;}
     tbody tr.zeb td{background:#eef2f6;}
-    .cdd{width:9%}.cwb{width:9%}.cid{width:11%}.csur{width:12%}.cfn{width:12%}.cfm{width:10%}.cadm{width:9%}
+    .cdd{width:11%}.cwb{width:9%}.cid{width:11%}.csur{width:12%}.cfn{width:12%}.cfm{width:10%}
   </style></head><body>
     <h1>MDH Nursing Stoma Care — Postop Discharges</h1>
     <table>
-      <colgroup><col class="cdd"><col class="cwb"><col class="cid"><col class="csur"><col class="cfn"><col class="cfm"><col><col class="cadm"></colgroup>
+      <colgroup><col class="cdd"><col class="cwb"><col class="cid"><col class="csur"><col class="cfn"><col class="cfm"><col></colgroup>
       <thead>
-        <tr class="hdate"><td colspan="8">${htmlSafe(fmtLabel(TODAY))}</td></tr>
-        <tr class="cols"><th>Date of discharge</th><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th><th>Firm</th><th>Appliance + notes</th><th>Admitted</th></tr>
+        <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
+        <tr class="cols"><th>Date of discharge</th><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th><th>Firm</th><th>Appliance + notes</th></tr>
       </thead>
       <tbody>${body}</tbody>
     </table>
@@ -11225,7 +11224,10 @@ function printHandover(){
     tbody td{height:34px;padding-top:5px;padding-bottom:5px;}
     thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:${fpx+4}px;border-color:#000;}
     thead .cols th{background:#000;color:#fff;text-align:left;font-weight:800;}
-    thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;font-size:${fpx+5}px;}
+    /* An emoji prints faint and thin on a mono laser printer, so the two
+       document columns are headed with bold letters the legend spells out. */
+    thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;
+      font-size:${fpx+2}px;font-weight:800;letter-spacing:0.5px;}
     td.cbx{text-align:center;font-size:${fpx+9}px;font-weight:700;line-height:1;}
     td.capp b{font-weight:800;}
     /* Widths live in the colgroup above; these classes carry the other styling. */
@@ -11239,20 +11241,20 @@ function printHandover(){
            column widths have to come from a colgroup, not from the header cells. -->
       <colgroup>
         <col style="width:7.5%"><col style="width:8.5%"><col style="width:8%"><col style="width:8.5%">
-        <col style="width:60%"><col style="width:3.75%"><col style="width:3.75%">
+        <col style="width:58%"><col style="width:4.75%"><col style="width:4.75%">
       </colgroup>
       <thead>
         <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
         <tr class="cols">
           <th class="cwb">Ward</th><th class="cid">ID: Number</th>
           <th class="csur">Surname</th><th class="cfn">First Name</th><th class="capp">Appliance + notes</th>
-          <th class="icon cdoc" title="Care discharge letter">✉</th><th class="icon cdoc" title="Schedule 5 permit">📄</th>
+          <th class="icon cdoc" title="Care discharge letter">DL</th><th class="icon cdoc" title="Schedule 5 permit">S5</th>
         </tr>
       </thead>
       <tbody>${rows}${blanks}</tbody>
     </table>
     <div style="margin-top:6px;font-size:${Math.max(8,fpx-2)}px;color:#333;">
-      ✉ Care discharge letter &nbsp;&nbsp; 📄 Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done / signed &nbsp; ■ permit left in ward &nbsp; ☐ not done
+      <b>DL</b> = care discharge letter &nbsp;&nbsp; <b>S5</b> = Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done / signed &nbsp; ■ permit left in ward &nbsp; ☐ not done
     </div>
   </body></html>`);
   w.document.close();w.focus();setTimeout(()=>w.print(),250);
