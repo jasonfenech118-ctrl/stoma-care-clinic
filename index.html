@@ -2411,7 +2411,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-231';
+const APP_BUILD='2026.09.04-232';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4302,7 +4302,7 @@ function visitApplianceSummaryHTML(appt,patient){
   }
   const stomaCount=stomasPresentOn(patient,appt&&appt.appt_date).length;
   const body=rows.length?rows.map(r=>`<div class="vw-recap">
-      <div class="vw-recap-h">${htmlSafe(r.code?`${r.code} · ${r.label||''}`:(r.label||'This visit'))}</div>
+      <div class="vw-recap-h">${htmlSafe(r.label||'This visit')}</div>
       <div>${appliancePillsHTML(r.appliances,r.accessories)}</div></div>`).join('')
     :`<div class="ap-hint" style="margin:0;">Nothing recorded yet. Saving this appointment as <strong>Seen</strong> asks for the appliances and accessories${stomaCount>1?`, one card for each of the ${stomaCount} stomas`:''}.</div>`;
   return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
@@ -4590,7 +4590,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
    ---------------------------------------------------------------------------- */
 let visitWizard=null;
 function visitStomaLabel(st){
-  return st.uid==='unassigned'?'Stoma not yet recorded in the Registry':`${st.code} · ${st.label}`;
+  return st.uid==='unassigned'?'Stoma not yet recorded in the Registry':st.label;
 }
 /* Which stoma this card is for, in the words a nurse checks against: the
    number, then the type, then where it is and when it was made. It sits on
@@ -5008,7 +5008,7 @@ function episodeApplianceNote(entries){
     const bits=[shortApplianceList(e.appliances).join(', ')];
     if(acc.length)bits.push(shortApplianceList(acc).join(', '));
     let line=bits.filter(Boolean).join('; ');
-    const tag=e.stoma_short||e.stoma_code;
+    const tag=e.stoma_short||'';
     if(tag)line=tag+': '+line;
     if(e.flange_due)line+=' - flange due '+fmtShortDate(e.flange_due);
     return line;
@@ -10189,9 +10189,9 @@ function handoverStomaLine(patient,epRows){
   (epRows||[]).forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
     if(!latest[u]||String(r.changed_on||'')>=String(latest[u].changed_on||''))latest[u]=r;});
   return stomas.map(st=>{
-    // The stoma's own number leads, so every stoma on the row is identified even
-    // when two are the same type and no quadrant was recorded.
-    const tag=[st.code,st.shortLabel].filter(Boolean).join(' ');
+    // The stoma is named by its type shorthand alone — Colo, Ileo, MF — with
+    // the quadrant added when two of a kind would otherwise read the same.
+    const tag=st.shortLabel||'';
     const r=latest[st.uid];
     const appl=r?shortApplianceList(r.appliances).join(', '):'';
     const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
@@ -10573,7 +10573,7 @@ function episodeApplianceSummaryLine(ep){
       const bits=[shortApplianceList(e.appliances||[]).join(', ')];
       if(acc.length)bits.push(acc.join(', '));
       let line=bits.filter(Boolean).join('; ');
-      const tag=e.stoma_short||e.stoma_code;
+      const tag=e.stoma_short||'';
       if(tag)line=tag+': '+line;
       if(e.flange_due)line+=' - flange due '+fmtShortDate(e.flange_due);
       return line;
