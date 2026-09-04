@@ -542,13 +542,24 @@
     if(/end/.test(t))         return 'end';
     return '';
   }
+  /* The registry records a site as "RIF"/"LIF"; the letter offers quadrants.
+     Anything unrecognised is kept as written rather than dropped. */
+  function _mfCanonLocation(v){
+    var t = String(v==null?'':v).trim();
+    if(!t) return '';
+    if(/\bruq\b|right\s*upper/i.test(t)) return "Right Upper Quadrant (RUQ)";
+    if(/\bluq\b|left\s*upper/i.test(t))  return "Left Upper Quadrant (LUQ)";
+    if(/\brif\b|\brlq\b|right\s*(iliac|lower)/i.test(t)) return "Right Lower Quadrant (RLQ)";
+    if(/\blif\b|\bllq\b|left\s*(iliac|lower)/i.test(t))  return "Left Lower Quadrant (LLQ)";
+    return t;
+  }
   function prefillFromQuery(){
     var q;
     try{ q = new URLSearchParams(location.search); }catch(e){ return false; }
     var fn=q.get('fn'), sn=q.get('sn'), id=q.get('id'), title=q.get('title');
     var type=q.get('type'), opdate=q.get('opdate'), procedure=q.get('procedure');
-    var appliance=q.get('appliance');
-    if(!(fn||sn||id||type||appliance)) return false;
+    var appliance=q.get('appliance'), mucus=q.get('mucus');
+    if(!(fn||sn||id||type||appliance||mucus!=null)) return false;
 
     // Patient fields on the letter
     var setFld=function(sel,v){ var el=document.querySelector(sel); if(el&&v!=null&&v!=='') el.value=v; };
@@ -588,6 +599,27 @@
       var body = document.querySelector('.body');
       if(body && body.children[0]) body.children[0].innerHTML = fillBodyTemplate(tpl.opening, bodyVars);
       if(body && body.children[1]) body.children[1].innerHTML = fillBodyTemplate(tpl.discharge, bodyVars);
+    }
+
+    /* A mucus fistula the record already knows about: the letter says it is
+       there, where it is, and how to dress it, without the nurse answering for
+       it. The wizard's own step still shows the answer, so it can be changed. */
+    if(mucus != null){
+      var mfLocs = String(mucus).split('|').map(_mfCanonLocation);
+      WZ.mucusFistula = 'yes';
+      WZ.mucusFistulaLocations = mfLocs;
+      var planUl = document.getElementById('planList');
+      if(planUl && typeof planPhrase === 'function'){
+        var known = mfLocs.filter(Boolean);
+        var lines = known.length
+          ? known.map(function(l){ return planPhrase("acc.mucusFistula", { location: " (" + l + ")" }); })
+          : [planPhrase("acc.mucusFistula", { location: "" })];
+        lines.forEach(function(txt){
+          var li = document.createElement('li');
+          li.innerHTML = txt;
+          planUl.appendChild(li);
+        });
+      }
     }
 
     // The appliance/accessory in use — already composed in house style upstream
