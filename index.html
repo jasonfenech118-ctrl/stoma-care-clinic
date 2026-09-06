@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-238';
+const APP_BUILD='2026.09.04-239';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7507,6 +7507,57 @@ async function loadPatientDirectory(){
   renderPatientDirectorySummary();
   renderPatientDirectory();
 }
+/* Records still stored as "deceased" that have a reversal on the register — the
+   status is wrong, whatever else became of the patient a reversal outranks it.
+   They already read as reversed everywhere (the derived status handles that),
+   but the stored value is corrected so the underlying data matches. */
+function patientsMarkedDeceasedButReversed(rows){
+  return (rows||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='deceased'&&patientEverReversed(p));
+}
+function correctReversedDeceased(){
+  const list=patientsMarkedDeceasedButReversed(patientDirectoryRows);
+  const mb=document.getElementById('mb'); if(!mb)return;
+  mb.className='mb mb-wide';
+  if(!list.length){
+    mb.innerHTML=`<h2>Reversed patients marked deceased</h2>
+      <div class="msub">None found — every reversed patient already reads as reversed.</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    openMo();return;
+  }
+  const rowsHTML=list.slice(0,300).map(p=>{
+    const rev=everReversedDates(p);
+    return `<tr><td><strong>${htmlSafe(p.surname||'')}</strong></td><td>${htmlSafe(p.first_name||'')}</td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${rev.length?htmlSafe(fmtShortDate(rev[rev.length-1])):'—'}</td></tr>`;}).join('');
+  mb.innerHTML=`<h2>Correct reversed patients marked deceased</h2>
+    <div class="msub"><strong>${list.length}</strong> patient${list.length===1?'':'s'} stored as <em>deceased</em>
+      ${list.length===1?'has':'have'} a reversal on record. A reversal outranks a death, so ${list.length===1?'this record is':'these records are'}
+      corrected to <strong>Reversed</strong>. The date of death stays on the record; only the status changes.
+      ${list.length>300?' Showing the first 300; all are corrected.':''}</div>
+    <div class="inc-list-scroll"><table class="inc-list"><thead><tr>
+        <th>Surname</th><th>First name</th><th>ID number</th><th>Reversed</th></tr></thead>
+      <tbody>${rowsHTML}</tbody></table></div>
+    <div class="mact">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="rdc-go" onclick="applyReversedDeceasedFix()">Correct all ${list.length} to reversed</button>
+    </div>`;
+  openMo();
+}
+async function applyReversedDeceasedFix(){
+  const btn=document.getElementById('rdc-go');
+  const list=patientsMarkedDeceasedButReversed(patientDirectoryRows);
+  if(!list.length){closeModal();return;}
+  if(btn){btn.disabled=true;btn.textContent='Correcting…';}
+  let done=0,failed=0;
+  for(const p of list){
+    const extra=parseExtraStatuses(p).filter(k=>k!=='deceased');
+    const{error}=await updatePatientTolerant(p.id,{followup_status:'reversed',extra_statuses:extra});
+    if(error){failed++;console.error('applyReversedDeceasedFix:',p.id,error);}else done++;
+  }
+  closeModal();
+  await loadPatientDirectory();
+  alert(`${done} record${done===1?'':'s'} corrected to reversed`+(failed?` · ${failed} could not be saved`:'')+'.');
+}
 function renderPatientDirectorySummary(){
   const el=document.getElementById('pd-summary');
   if(!el)return;
@@ -7536,6 +7587,15 @@ function renderPatientDirectorySummary(){
     ${annualKpi('Ever reversed',everRev,
       revElsewhere>0?`all reversals on record · ${revElsewhere} now counted under another status`
                     :'all reversals on record','#7c3aed')}`;
+  const wrong=patientsMarkedDeceasedButReversed(rows).length;
+  if(wrong){
+    const b=document.createElement('div');
+    b.className='report-note';
+    b.style.cssText='grid-column:1 / -1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#5b21b6;background:#f5f0ff;border:1px solid #ddd0ff;border-radius:8px;padding:9px 12px;';
+    b.innerHTML=`<span><strong>${wrong}</strong> patient${wrong===1?'':'s'} stored as <em>deceased</em> ${wrong===1?'has':'have'} a reversal on record — they read as reversed, but their stored status still says deceased.</span>
+      <button class="clr-mini" onclick="correctReversedDeceased()">Review &amp; correct</button>`;
+    el.appendChild(b);
+  }
 }
 let pdPage=0,pdLastKey='';
 const PD_PAGE_SIZE=100;
