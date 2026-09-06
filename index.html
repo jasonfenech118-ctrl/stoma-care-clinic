@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-240';
+const APP_BUILD='2026.09.04-241';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7817,9 +7817,19 @@ async function loadFirms(){
     firmList=data.map(r=>r.name).filter(Boolean);
   }catch(e){firmsAvailable=false;firmsError=String(e&&e.message||e);}
 }
+function firmSurnameKey(name){
+  let t=String(name||'').trim().replace(/^(mr|mrs|ms|miss|dr|prof)\.?\s*/i,'');
+  // Drop leading initials, e.g. "G." or "J." (with or without a following space).
+  while(/^[A-Za-z]\.?\s+|^[A-Za-z]\.(?=[A-Za-z])/.test(t))t=t.replace(/^[A-Za-z]\.?\s+|^[A-Za-z]\.(?=[A-Za-z])/,'');
+  return t.trim().toLowerCase()||String(name||'').trim().toLowerCase();
+}
+function firmSortBySurname(a,b){
+  return firmSurnameKey(a).localeCompare(firmSurnameKey(b))
+    ||String(a||'').localeCompare(String(b||''));
+}
 function firmOptions(cur){
   const c=(cur==null?'':String(cur)).trim();
-  const opts=firmList.slice();
+  const opts=firmList.slice().sort(firmSortBySurname);
   if(c&&!opts.includes(c))opts.push(c);
   return '<option value="">— firm —</option>'
     +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
@@ -7854,7 +7864,7 @@ async function openFirmsModal(){
 }
 function renderFirmsModal(){
   const mb=document.getElementById('mb');
-  const rows=firmList.slice().sort((a,b)=>a.localeCompare(b));
+  const rows=firmList.slice().sort(firmSortBySurname);
   mb.innerHTML=`<h2>🩺 Manage firms</h2>
     <div class="msub">Add, rename or remove the firms offered in the patient <strong>Firm</strong> dropdown. Patients already saved keep their firm even if it is removed here.</div>
     <div class="fg" style="display:flex;gap:8px;align-items:flex-end;">
