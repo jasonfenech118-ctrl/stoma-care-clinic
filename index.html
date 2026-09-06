@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-236';
+const APP_BUILD='2026.09.04-237';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6549,7 +6549,10 @@ function parseExtraStatuses(p){
   if(!Array.isArray(a))a=[];
   const prim=normaliseFollowupStatus(p&&p.followup_status);
   const seen=new Set([prim]),out=[];
+  // Deceased is off the table for a reversed patient, so it never chips either.
+  const rev=prim==='reversed'||patientEverReversed(p);
   a.forEach(s=>{const n=normaliseFollowupStatus(s);
+    if(rev&&n==='deceased')return;
     if(!seen.has(n)&&SECONDARY_STATUSES.includes(n)){seen.add(n);out.push(n);}});
   return out;
 }
@@ -8083,6 +8086,11 @@ function everReversedDates(p){
 function patientEverReversed(p){return everReversedDates(p).length>0;}
 function derivedFollowupStatus(p){
   const st=normaliseFollowupStatus(p&&p.followup_status);
+  /* A reversal is the stoma's own outcome, so it stands whatever became of the
+     patient afterwards: someone reversed before they died reads as reversed,
+     not deceased. Without this every past reversal in a deceased patient
+     disappeared from the Reversed total. */
+  if(st==='deceased'&&patientEverReversed(p))return 'reversed';
   if(st==='deceased'||st==='discharged_gozo'||st==='relocated_overseas')return st;
   // A record with no surgery date and no stoma type has no stoma timeline to
   // reason about, but a reversal date on it is still a reversal — without this
@@ -8477,6 +8485,19 @@ function onPatientFormOutcome(prefix){
     const sel=document.getElementById(`${prefix}-status`);
     if(sel&&[...sel.options].some(o=>o.value===derived)){sel.value=derived;p.followup_status=derived;}
   }
+  /* Once a stoma is reversed the patient reads as reversed, so Deceased is not
+     offered against them — neither as the main status nor as an extra. */
+  const isRev=derived==='reversed'||p.followup_status==='reversed'||extra.includes('reversed')
+    ||patientEverReversed(p);
+  const dcb=document.getElementById(`${prefix}-xs-deceased`);
+  if(dcb&&isRev){
+    dcb.checked=false;dcb.disabled=true;
+    const lbl=dcb.closest('.pf-xchk');if(lbl)lbl.classList.add('is-off');
+    p.extra_statuses=extra.filter(k=>k!=='deceased');
+  }
+  const stsel=document.getElementById(`${prefix}-status`);
+  const dopt=stsel&&[...stsel.options].find(o=>o.value==='deceased');
+  if(dopt)dopt.disabled=isRev;
   // A planned reversal only makes sense while the four ruling-out outcomes are
   // all absent, so the field appears and disappears with them.
   const prw=document.getElementById(`${prefix}-proprevwrap`);
