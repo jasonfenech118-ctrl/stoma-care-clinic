@@ -1831,6 +1831,7 @@ a.inc-link:hover{border-bottom-color:var(--teal);}
           <option value="discharged_gozo">Discharged to Gozo</option>
           <option value="deceased">Deceased</option>
           <option value="reversed">Reversed</option>
+          <option value="ever_reversed">Ever reversed (any status)</option>
         </select>
         <span class="pd-count" id="pd-count"></span>
       </div>
@@ -2411,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-234';
+const APP_BUILD='2026.09.04-235';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7514,15 +7515,24 @@ function renderPatientDirectorySummary(){
   const held=n('paused')+n('awaiting_feedback');
   const shown=n('active')+n('reversed')+n('deceased')+n('discharged_gozo')+n('relocated_overseas')+held;
   const unaccounted=rows.length-shown;
+  /* The status tiles are one bucket per patient and add up to the total, so a
+     patient reversed before they died is counted under Deceased and their
+     reversal never shows. This counts every reversal on record — it overlaps
+     the tiles above rather than adding to them. */
+  const everRev=rows.filter(patientEverReversed).length;
+  const revElsewhere=everRev-n('reversed');
   el.innerHTML=`
     ${annualKpi('Total Patients',rows.length,'registered')}
     ${annualKpi('Active',n('active'),'active follow-up','#1baf7a')}
-    ${annualKpi('Reversed',n('reversed'),'stoma reversed','#7c3aed')}
+    ${annualKpi('Reversed',n('reversed'),'still in follow-up, stoma reversed','#7c3aed')}
     ${annualKpi('Deceased',n('deceased'),'RIP','#1a1a1a')}
     ${annualKpi('Discharged to Gozo',n('discharged_gozo'),'followed up in Gozo','#1e3a8a')}
     ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}
     ${held?annualKpi('Paused / awaiting',held,'on file, out of recall','#64748b'):''}
-    ${unaccounted?annualKpi('Unaccounted',unaccounted,'not in any status above','#b91c1c'):''}`;
+    ${unaccounted?annualKpi('Unaccounted',unaccounted,'not in any status above','#b91c1c'):''}
+    ${annualKpi('Ever reversed',everRev,
+      revElsewhere>0?`all reversals on record · ${revElsewhere} now counted under another status`
+                    :'all reversals on record','#7c3aed')}`;
 }
 let pdPage=0,pdLastKey='';
 const PD_PAGE_SIZE=100;
@@ -7550,16 +7560,22 @@ function renderPatientDirectory(){
   const countEl=document.getElementById('pd-count');
   if(!tbody)return;
   const q=(document.getElementById('pd-search')?.value||'').trim().toLowerCase();
+  /* Each word is matched on its own, so the order they are typed in does not
+     matter: "abela anthony" finds Anthony Abela just as "anthony abela" does,
+     and a surname with an ID card or a locality works too. */
+  const terms=q.split(/\s+/).filter(Boolean);
   const owner=document.getElementById('pd-owner')?.value||'all';
   const status=document.getElementById('pd-status')?.value||'all';
   const pdKey=q+'|'+owner+'|'+status;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
   let rows=patientDirectoryRows.filter(p=>{
     if(owner!=='all'&&p.owner!==owner)return false;
-    if(status!=='all'&&p.status!==status)return false;
-    if(q){
+    // "Ever reversed" cuts across the status buckets — see patientEverReversed.
+    if(status==='ever_reversed'){if(!patientEverReversed(p))return false;}
+    else if(status!=='all'&&p.status!==status)return false;
+    if(terms.length){
       const hay=fixText(`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''} ${p.locality||''} ${p.stoma_type||''} ${p.procedure_performed||''} ${p.findings||''}`).toLowerCase();
-      if(!hay.includes(q))return false;
+      if(!terms.every(t=>hay.includes(t)))return false;
     }
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
@@ -8047,6 +8063,24 @@ function hasStomaAfterReversal(p){
    reversal recorded on a refashioning moves the status without anyone setting
    it. Deceased, Gozo and overseas are decisions rather than something the
    dates can tell us, so they are left as they are. */
+/* Every reversal date anywhere on a patient's record: the patient-level one,
+   a refashioning's closure, a later stoma's reversal, and a second stoma or
+   mucus fistula formed at the first operation. */
+function everReversedDates(p){
+  const out=[];
+  if(p&&p.reversal_date)out.push(String(p.reversal_date));
+  if(p&&p.refashion_closure_date)out.push(String(p.refashion_closure_date));
+  parseRefashionings(p).forEach(r=>{if(r&&r.closure_date)out.push(String(r.closure_date));});
+  parseStomas(p).forEach(x=>{if(x&&x.reversal_date)out.push(String(x.reversal_date));});
+  parseInitialStomas(p).forEach(x=>{if(x&&x.reversal_date)out.push(String(x.reversal_date));});
+  return [...new Set(out)].sort();
+}
+/* Has this patient ever had a stoma reversed? The follow-up status cannot
+   answer that: it is one bucket per patient, and death or a move abroad takes
+   precedence over it, so a patient reversed years before they died reads as
+   "deceased" and their reversal disappears from the Reversed total. This counts
+   the reversal itself, whatever happened afterwards. */
+function patientEverReversed(p){return everReversedDates(p).length>0;}
 function derivedFollowupStatus(p){
   const st=normaliseFollowupStatus(p&&p.followup_status);
   if(st==='deceased'||st==='discharged_gozo'||st==='relocated_overseas')return st;
