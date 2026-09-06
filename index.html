@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-237';
+const APP_BUILD='2026.09.04-238';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8389,6 +8389,12 @@ function patientFormHTML(p,prefix){
     <button type="button" class="pf-add-btn" id="${prefix}-refbtn" onclick="showPfSection('${prefix}','ref')" ${hasRefash?'hidden':''}>＋ Add stoma refashioning</button>
     <button type="button" class="pf-add-btn" id="${prefix}-newbtn" onclick="showPfSection('${prefix}','new')" ${hasNewstoma?'hidden':''}>＋ Add new stoma formation</button>
   </div>
+  <div class="registry-lookup-note" id="${prefix}-reopen-note" hidden
+    style="margin:6px 0 10px;background:#eef7ff;border-color:#bcdcff;color:#1e3a8a;">
+    This patient is <strong>reversed</strong>. Are they having another stoma? Press
+    <strong>＋ Add new stoma formation</strong> above and fill in the new stoma — that
+    reopens their case and puts them back in follow-up. (Use <strong>refashioning</strong>
+    only when an existing stoma is remade, not for a new one.)</div>
   <div id="${prefix}-refwrap" ${hasRefash?'':'hidden'}>
     <h3 class="pf-head">Stoma refashioning</h3>
     <div id="${prefix}-reflist">${patientRefashionRows(p)}</div>
@@ -8485,19 +8491,26 @@ function onPatientFormOutcome(prefix){
     const sel=document.getElementById(`${prefix}-status`);
     if(sel&&[...sel.options].some(o=>o.value===derived)){sel.value=derived;p.followup_status=derived;}
   }
-  /* Once a stoma is reversed the patient reads as reversed, so Deceased is not
-     offered against them — neither as the main status nor as an extra. */
-  const isRev=derived==='reversed'||p.followup_status==='reversed'||extra.includes('reversed')
-    ||patientEverReversed(p);
-  const dcb=document.getElementById(`${prefix}-xs-deceased`);
-  if(dcb&&isRev){
-    dcb.checked=false;dcb.disabled=true;
-    const lbl=dcb.closest('.pf-xchk');if(lbl)lbl.classList.add('is-off');
-    p.extra_statuses=extra.filter(k=>k!=='deceased');
-  }
+  /* A reversal is the stoma's own outcome, so once the patient reads as
+     reversed the other outcomes are off the table: none of deceased, discharged
+     to Gozo or relocated overseas can be ticked as an extra or picked as the
+     main status. Forming another stoma reopens the case and brings them back. */
+  const isRev=derived==='reversed';
   const stsel=document.getElementById(`${prefix}-status`);
-  const dopt=stsel&&[...stsel.options].find(o=>o.value==='deceased');
-  if(dopt)dopt.disabled=isRev;
+  const OFF_WHEN_REVERSED=['deceased','discharged_gozo','relocated_overseas'];
+  OFF_WHEN_REVERSED.forEach(k=>{
+    const cb=document.getElementById(`${prefix}-xs-${k}`);
+    const opt=stsel&&[...stsel.options].find(o=>o.value===k);
+    if(isRev){
+      if(cb){cb.checked=false;cb.disabled=true;const lbl=cb.closest('.pf-xchk');if(lbl)lbl.classList.add('is-off');}
+      if(opt)opt.disabled=true;
+    }else if(opt){opt.disabled=false;}
+  });
+  if(isRev)p.extra_statuses=extra.filter(k=>!OFF_WHEN_REVERSED.includes(k));
+  // A reversed patient having another stoma: point the nurse at the new-case
+  // step, and hide the note again once a new stoma actually reopens the case.
+  const reopen=document.getElementById(`${prefix}-reopen-note`);
+  if(reopen)reopen.hidden=!isRev;
   // A planned reversal only makes sense while the four ruling-out outcomes are
   // all absent, so the field appears and disappears with them.
   const prw=document.getElementById(`${prefix}-proprevwrap`);
