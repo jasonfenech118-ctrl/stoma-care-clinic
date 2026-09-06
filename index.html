@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-241';
+const APP_BUILD='2026.09.04-242';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3909,9 +3909,9 @@ async function getMonthlyClinicAvailability(year,context){
      Capacity and consumption are both measured over the same day set, so the
      weekday Common list and the Sunday nurse clinic never borrow each other's
      bookings. */
-  const{data,error}=await SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end);
+  const{rows:apptData,error}=await fetchAllRows(()=>SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end));
   if(!error){
-    const rows=await enrichAppointments(data||[]);
+    const rows=await enrichAppointments(apptData||[]);
     rows.forEach(a=>{
       const m=Number(String(a.appt_date||'').slice(5,7));
       if(!load[m])return;
@@ -4004,8 +4004,7 @@ async function getClinicDayAvailability(dateStrs,owner){
   dates.forEach(d=>{out[d]={booked:0,capacity:0,cancelled:0};});
   const start=dates[0],end=dates[dates.length-1];
   const normOwner=normaliseFollowupOwner(owner||'Common');
-  const{data}=await SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end);
-  const rows=(data||[]);
+  const{rows}=await fetchAllRows(()=>SB.from('appointments').select('*').gte('appt_date',start).lte('appt_date',end));
   rows.forEach(a=>{
     const cell=out[a.appt_date];
     if(!cell)return;
