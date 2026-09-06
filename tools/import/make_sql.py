@@ -256,6 +256,15 @@ HEADER = """-- =================================================================
 -- Generated {when} from the register books.
 -- {subtitle}
 --
+--
+-- RUN THE FILES IN THIS ORDER. It matters: the year corrections have to land
+-- before any reversal date is filled in, or a reversal can end up sitting
+-- before the operation it closed.
+--     1.  import-5-fix-year-typos.sql   corrects 14 mistyped years
+--     2.  import-2-fill-existing.sql    fills blanks on patients you already have
+--     3.  import-1-new-patients.sql     creates the patients only the book has
+--     4.  import-6-set-reversed.sql     marks the Reversal book's patients reversed
+--
 -- SAFE TO RUN, AND SAFE TO RUN TWICE:
 --   * nothing is ever deleted
 --   * a patient already in the app is only filled in where they are BLANK —
