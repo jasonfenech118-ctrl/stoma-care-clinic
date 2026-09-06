@@ -84,6 +84,17 @@ def jsonq(obj):
     return "'" + json.dumps(obj, ensure_ascii=False).replace("'", "''") + "'::jsonb"
 
 
+# How far apart the app and the book may write the same operation and still be
+# taken to mean one operation rather than two.
+SAME_OP_DAYS = 14
+
+
+def _stoma_word(t):
+    # The stoma word alone, so "End - Colostomy" and "Colostomy" match.
+    mapped, _mf, _c, _n = stoma_types.map_type(str(t or '').strip('[]"').split('","')[0])
+    return (mapped or '').split('-')[-1].strip().lower() or None
+
+
 def stoma_entry(rec, uid):
     """One later-stoma JSON entry, in the shape the app already reads."""
     e = {'uid': uid,
@@ -124,9 +135,22 @@ def build_patient(p):
         except ValueError:
             app_date = None
     if app_date:
-        # The book row for the app's own stoma, if the book has it, is not
-        # repeated as a later stoma.
-        base_form = next((f for f in forms if f['date'] == app_date), None)
+        # The book row for the app's own stoma is not repeated as a later
+        # stoma. It is matched on a window rather than on the exact day: the
+        # same operation is routinely written a day either side in the two
+        # records, and nobody has two stoma operations of the same kind within
+        # a fortnight of each other. Matching on the exact date alone turned
+        # one operation into two for hundreds of patients.
+        def same_operation(f):
+            if not f['date']:
+                return False
+            if abs((f['date'] - app_date).days) > SAME_OP_DAYS:
+                return False
+            book, appt = _stoma_word(f.get('stoma_type')), _stoma_word(reg.get('stoma_type_raw'))
+            return not book or not appt or book == appt
+        base_form = next((f for f in forms if f['date'] == app_date), None) \
+            or next((f for f in sorted(forms, key=lambda x: abs((x['date'] - app_date).days)
+                                       if x['date'] else 99999) if same_operation(f)), None)
         later = [f for f in forms if f is not base_form]
         first = base_form or forms[0]
     else:
