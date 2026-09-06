@@ -2412,7 +2412,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-239';
+const APP_BUILD='2026.09.04-240';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6543,16 +6543,30 @@ function crOutClass(status){
   return {deceased:'cr-out-deceased',reversed:'cr-out-reversed',discharged_gozo:'cr-out-gozo',
     relocated_overseas:'cr-out-overseas',paused:'cr-out-paused',awaiting_feedback:'cr-out-paused'}[st]||'cr-out-active';
 }
-function parseExtraStatuses(p){
+// The extra statuses exactly as stored, before any of them are ruled out.
+function rawExtraStatuses(p){
   let a=p&&p.extra_statuses;
   if(typeof a==='string'){try{a=JSON.parse(a);}catch(e){a=null;}}
-  if(!Array.isArray(a))a=[];
+  return Array.isArray(a)?a.map(normaliseFollowupStatus):[];
+}
+/* A death recorded anywhere on the record — as the status, as a date of RIP, or
+   as one of the extra statuses — makes the patient deceased. It is read the
+   same way everywhere so that a death cannot be overwritten by a reversal, a
+   Gozo discharge or a move abroad, whichever field it happens to sit in. */
+function patientIsDeceased(p){
+  if(!p)return false;
+  return normaliseFollowupStatus(p.followup_status)==='deceased'
+    ||!!p.deceased_date||rawExtraStatuses(p).includes('deceased');
+}
+function parseExtraStatuses(p){
+  const a=rawExtraStatuses(p);
   const prim=normaliseFollowupStatus(p&&p.followup_status);
   const seen=new Set([prim]),out=[];
-  // Deceased is off the table for a reversed patient, so it never chips either.
-  const rev=prim==='reversed'||patientEverReversed(p);
-  a.forEach(s=>{const n=normaliseFollowupStatus(s);
-    if(rev&&n==='deceased')return;
+  /* A death is terminal, so nothing is carried alongside it: a deceased
+     patient never also chips as reversed, discharged to Gozo or relocated. */
+  const dead=patientIsDeceased(p);
+  a.forEach(n=>{
+    if(dead&&n!=='deceased')return;
     if(!seen.has(n)&&SECONDARY_STATUSES.includes(n)){seen.add(n);out.push(n);}});
   return out;
 }
@@ -7507,56 +7521,62 @@ async function loadPatientDirectory(){
   renderPatientDirectorySummary();
   renderPatientDirectory();
 }
-/* Records still stored as "deceased" that have a reversal on the register — the
-   status is wrong, whatever else became of the patient a reversal outranks it.
-   They already read as reversed everywhere (the derived status handles that),
-   but the stored value is corrected so the underlying data matches. */
-function patientsMarkedDeceasedButReversed(rows){
-  return (rows||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='deceased'&&patientEverReversed(p));
+/* Records carrying a date of death but stored under another outcome — reversed,
+   discharged to Gozo or relocated overseas. A death is terminal, so the status
+   is wrong: these patients are deceased. They already read that way everywhere
+   (the derived status handles it), but the stored value is corrected so the
+   underlying data matches, and so any record flipped to "reversed" by the
+   earlier build is put back. */
+const DEATH_OUTRANKS=['reversed','discharged_gozo','relocated_overseas'];
+function patientsMarkedOtherButDeceased(rows){
+  return (rows||[]).filter(p=>patientIsDeceased(p)
+    &&DEATH_OUTRANKS.includes(normaliseFollowupStatus(p.followup_status)));
 }
-function correctReversedDeceased(){
-  const list=patientsMarkedDeceasedButReversed(patientDirectoryRows);
+function correctDeceasedStatus(){
+  const list=patientsMarkedOtherButDeceased(patientDirectoryRows);
   const mb=document.getElementById('mb'); if(!mb)return;
   mb.className='mb mb-wide';
   if(!list.length){
-    mb.innerHTML=`<h2>Reversed patients marked deceased</h2>
-      <div class="msub">None found — every reversed patient already reads as reversed.</div>
+    mb.innerHTML=`<h2>Deceased patients marked otherwise</h2>
+      <div class="msub">None found — every patient with a date of death already reads as deceased.</div>
       <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
     openMo();return;
   }
-  const rowsHTML=list.slice(0,300).map(p=>{
-    const rev=everReversedDates(p);
-    return `<tr><td><strong>${htmlSafe(p.surname||'')}</strong></td><td>${htmlSafe(p.first_name||'')}</td>
+  const rowsHTML=list.slice(0,300).map(p=>
+    `<tr><td><strong>${htmlSafe(p.surname||'')}</strong></td><td>${htmlSafe(p.first_name||'')}</td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
-      <td>${rev.length?htmlSafe(fmtShortDate(rev[rev.length-1])):'—'}</td></tr>`;}).join('');
-  mb.innerHTML=`<h2>Correct reversed patients marked deceased</h2>
-    <div class="msub"><strong>${list.length}</strong> patient${list.length===1?'':'s'} stored as <em>deceased</em>
-      ${list.length===1?'has':'have'} a reversal on record. A reversal outranks a death, so ${list.length===1?'this record is':'these records are'}
-      corrected to <strong>Reversed</strong>. The date of death stays on the record; only the status changes.
+      <td>${htmlSafe(followupStatusText(normaliseFollowupStatus(p.followup_status)))}</td>
+      <td>${p.deceased_date?htmlSafe(fmtShortDate(p.deceased_date)):'<span class="na">not recorded</span>'}</td></tr>`).join('');
+  mb.innerHTML=`<h2>Correct deceased patients marked otherwise</h2>
+    <div class="msub"><strong>${list.length}</strong> patient${list.length===1?'':'s'} recorded as having died
+      ${list.length===1?'is':'are'} stored under another outcome. A death is the end of the record and
+      outranks all of them, so ${list.length===1?'this record is':'these records are'} corrected to
+      <strong>Deceased</strong>. Nothing else on the record changes — any stoma reversal they had
+      still stands on their operation history.
       ${list.length>300?' Showing the first 300; all are corrected.':''}</div>
     <div class="inc-list-scroll"><table class="inc-list"><thead><tr>
-        <th>Surname</th><th>First name</th><th>ID number</th><th>Reversed</th></tr></thead>
+        <th>Surname</th><th>First name</th><th>ID number</th><th>Stored as</th><th>Date of RIP</th></tr></thead>
       <tbody>${rowsHTML}</tbody></table></div>
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" id="rdc-go" onclick="applyReversedDeceasedFix()">Correct all ${list.length} to reversed</button>
+      <button class="btn-save" id="rdc-go" onclick="applyDeceasedStatusFix()">Correct all ${list.length} to deceased</button>
     </div>`;
   openMo();
 }
-async function applyReversedDeceasedFix(){
+async function applyDeceasedStatusFix(){
   const btn=document.getElementById('rdc-go');
-  const list=patientsMarkedDeceasedButReversed(patientDirectoryRows);
+  const list=patientsMarkedOtherButDeceased(patientDirectoryRows);
   if(!list.length){closeModal();return;}
   if(btn){btn.disabled=true;btn.textContent='Correcting…';}
   let done=0,failed=0;
   for(const p of list){
-    const extra=parseExtraStatuses(p).filter(k=>k!=='deceased');
-    const{error}=await updatePatientTolerant(p.id,{followup_status:'reversed',extra_statuses:extra});
-    if(error){failed++;console.error('applyReversedDeceasedFix:',p.id,error);}else done++;
+    const extra=parseExtraStatuses(p).filter(k=>!DEATH_OUTRANKS.includes(k));
+    const{error}=await updatePatientTolerant(p.id,{followup_status:'deceased',extra_statuses:extra});
+    if(error){failed++;console.error('applyDeceasedStatusFix:',p.id,error);}else done++;
   }
   closeModal();
   await loadPatientDirectory();
-  alert(`${done} record${done===1?'':'s'} corrected to reversed`+(failed?` · ${failed} could not be saved`:'')+'.');
+  alert(`${done} record${done===1?'':'s'} corrected to deceased`+(failed?` · ${failed} could not be saved`:'')+'.');
 }
 function renderPatientDirectorySummary(){
   const el=document.getElementById('pd-summary');
@@ -7569,31 +7589,32 @@ function renderPatientDirectorySummary(){
   const held=n('paused')+n('awaiting_feedback');
   const shown=n('active')+n('reversed')+n('deceased')+n('discharged_gozo')+n('relocated_overseas')+held;
   const unaccounted=rows.length-shown;
-  /* The status tiles are one bucket per patient and add up to the total, so a
-     patient reversed before they died is counted under Deceased and their
-     reversal never shows. This counts every reversal on record — it overlaps
-     the tiles above rather than adding to them. */
+  /* The status tiles are one bucket per patient and add up to the total, and a
+     death outranks everything — so a patient reversed before they died counts
+     under Deceased, and the Reversed tile is a count of living reversed
+     patients rather than of reversals. This counts every reversal on record,
+     deaths ignored; it overlaps the tiles above rather than adding to them. */
   const everRev=rows.filter(patientEverReversed).length;
   const revElsewhere=everRev-n('reversed');
   el.innerHTML=`
     ${annualKpi('Total Patients',rows.length,'registered')}
     ${annualKpi('Active',n('active'),'active follow-up','#1baf7a')}
-    ${annualKpi('Reversed',n('reversed'),'still in follow-up, stoma reversed','#7c3aed')}
+    ${annualKpi('Reversed',n('reversed'),'living patients, stoma reversed','#7c3aed')}
     ${annualKpi('Deceased',n('deceased'),'RIP','#1a1a1a')}
     ${annualKpi('Discharged to Gozo',n('discharged_gozo'),'followed up in Gozo','#1e3a8a')}
     ${annualKpi('Relocated Overseas',n('relocated_overseas'),'left Malta','#a16207')}
     ${held?annualKpi('Paused / awaiting',held,'on file, out of recall','#64748b'):''}
     ${unaccounted?annualKpi('Unaccounted',unaccounted,'not in any status above','#b91c1c'):''}
     ${annualKpi('Ever reversed',everRev,
-      revElsewhere>0?`all reversals on record · ${revElsewhere} now counted under another status`
-                    :'all reversals on record','#7c3aed')}`;
-  const wrong=patientsMarkedDeceasedButReversed(rows).length;
+      revElsewhere>0?`every reversal on record, deaths ignored · ${revElsewhere} since died or moved away`
+                    :'every reversal on record, deaths ignored','#7c3aed')}`;
+  const wrong=patientsMarkedOtherButDeceased(rows).length;
   if(wrong){
     const b=document.createElement('div');
     b.className='report-note';
-    b.style.cssText='grid-column:1 / -1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#5b21b6;background:#f5f0ff;border:1px solid #ddd0ff;border-radius:8px;padding:9px 12px;';
-    b.innerHTML=`<span><strong>${wrong}</strong> patient${wrong===1?'':'s'} stored as <em>deceased</em> ${wrong===1?'has':'have'} a reversal on record — they read as reversed, but their stored status still says deceased.</span>
-      <button class="clr-mini" onclick="correctReversedDeceased()">Review &amp; correct</button>`;
+    b.style.cssText='grid-column:1 / -1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#3f3f46;background:#f4f4f5;border:1px solid #d4d4d8;border-radius:8px;padding:9px 12px;';
+    b.innerHTML=`<span><strong>${wrong}</strong> patient${wrong===1?'':'s'} recorded as having died ${wrong===1?'is':'are'} stored as reversed, discharged to Gozo or relocated overseas — they read as deceased, but their stored status still says otherwise.</span>
+      <button class="clr-mini" onclick="correctDeceasedStatus()">Review &amp; correct</button>`;
     el.appendChild(b);
   }
 }
@@ -8139,19 +8160,21 @@ function everReversedDates(p){
   return [...new Set(out)].sort();
 }
 /* Has this patient ever had a stoma reversed? The follow-up status cannot
-   answer that: it is one bucket per patient, and death or a move abroad takes
-   precedence over it, so a patient reversed years before they died reads as
-   "deceased" and their reversal disappears from the Reversed total. This counts
-   the reversal itself, whatever happened afterwards. */
+   answer that: it is one bucket per patient, and a death takes precedence over
+   everything, so a patient reversed years before they died reads as "deceased"
+   and is not in the Reversed bucket. That is the right status for them — they
+   are dead — but it makes the Reversed total a count of living reversed
+   patients rather than of reversals. This counts the reversal itself, whatever
+   became of the patient afterwards. */
 function patientEverReversed(p){return everReversedDates(p).length>0;}
 function derivedFollowupStatus(p){
   const st=normaliseFollowupStatus(p&&p.followup_status);
-  /* A reversal is the stoma's own outcome, so it stands whatever became of the
-     patient afterwards: someone reversed before they died reads as reversed,
-     not deceased. Without this every past reversal in a deceased patient
-     disappeared from the Reversed total. */
-  if(st==='deceased'&&patientEverReversed(p))return 'reversed';
-  if(st==='deceased'||st==='discharged_gozo'||st==='relocated_overseas')return st;
+  /* A death ends the record. It outranks every other outcome, a reversal years
+     earlier included: the patient reads as deceased, not reversed, and nothing
+     is recorded over it. A date of death counts on its own, so a record still
+     stored as reversed or relocated but carrying one reads as deceased. */
+  if(patientIsDeceased(p))return 'deceased';
+  if(st==='discharged_gozo'||st==='relocated_overseas')return st;
   // A record with no surgery date and no stoma type has no stoma timeline to
   // reason about, but a reversal date on it is still a reversal — without this
   // those patients counted as "active" and the Reversed total read far too low.
@@ -8481,6 +8504,13 @@ function patientFormHTML(p,prefix){
       <div class="pf-xstatus">${SECONDARY_STATUSES.map(st=>`<label class="pf-xchk"><input type="checkbox" id="${prefix}-xs-${st}" value="${st}" ${xstat.includes(st)?'checked':''} onchange="onPatientFormOutcome('${prefix}')"/> ${htmlSafe(followupStatusText(st))}</label>`).join('')}</div></div>
     <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
       <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
+    <div class="registry-lookup-note" id="${prefix}-dead-note" hidden
+      style="grid-column:1 / -1;margin:0;background:#f4f4f5;border-color:#d4d4d8;color:#3f3f46;">
+      This patient is <strong>deceased</strong>, which is the end of the record. Reversed,
+      discharged to Gozo and relocated overseas are switched off and cannot be recorded
+      against them — any stoma reversal they had still stands on the operation history.
+      Clear the <strong>Date of RIP</strong> above, and untick <strong>Deceased</strong>,
+      if this was entered in error.</div>
   </div>
   <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Each stoma's reversal date lives with that stoma; the status follows the newest one. If a <strong>stoma was formed after a reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>`;
 }
@@ -8507,9 +8537,12 @@ function onPatientFormDate(prefix,status){
   const sel=document.getElementById(`${prefix}-status`);
   if(el?.value&&sel&&normaliseFollowupStatus(sel.value)!==status){
     let flip=true;
-    // A reversal followed by a later new stoma leaves the patient with a stoma,
-    // so don't flip them to "reversed".
-    if(status==='reversed')flip=!hasStomaNow(formStomaSnapshot(prefix));
+    /* A reversal followed by a later new stoma leaves the patient with a
+       stoma, so don't flip them to "reversed" — and a death outranks the
+       reversal outright, so a date of death holds the status at deceased. */
+    if(status==='reversed')flip=!hasStomaNow(formStomaSnapshot(prefix))
+      &&!document.getElementById(`${prefix}-rip`)?.value
+      &&!document.getElementById(`${prefix}-xs-deceased`)?.checked;
     if(flip)sel.value=status;
   }
   onPatientFormOutcome(prefix);
@@ -8551,26 +8584,28 @@ function onPatientFormOutcome(prefix){
     const sel=document.getElementById(`${prefix}-status`);
     if(sel&&[...sel.options].some(o=>o.value===derived)){sel.value=derived;p.followup_status=derived;}
   }
-  /* A reversal is the stoma's own outcome, so once the patient reads as
-     reversed the other outcomes are off the table: none of deceased, discharged
-     to Gozo or relocated overseas can be ticked as an extra or picked as the
-     main status. Forming another stoma reopens the case and brings them back. */
-  const isRev=derived==='reversed';
+  /* A death is the end of the record, so once the patient reads as deceased
+     the other outcomes are off the table: none of reversed, discharged to Gozo
+     or relocated overseas can be ticked as an extra or picked as the main
+     status. Clearing the date of death is what brings them back. */
+  const isDead=derived==='deceased';
   const stsel=document.getElementById(`${prefix}-status`);
-  const OFF_WHEN_REVERSED=['deceased','discharged_gozo','relocated_overseas'];
-  OFF_WHEN_REVERSED.forEach(k=>{
+  const OFF_WHEN_DECEASED=['reversed','discharged_gozo','relocated_overseas'];
+  OFF_WHEN_DECEASED.forEach(k=>{
     const cb=document.getElementById(`${prefix}-xs-${k}`);
     const opt=stsel&&[...stsel.options].find(o=>o.value===k);
-    if(isRev){
+    if(isDead){
       if(cb){cb.checked=false;cb.disabled=true;const lbl=cb.closest('.pf-xchk');if(lbl)lbl.classList.add('is-off');}
       if(opt)opt.disabled=true;
     }else if(opt){opt.disabled=false;}
   });
-  if(isRev)p.extra_statuses=extra.filter(k=>!OFF_WHEN_REVERSED.includes(k));
+  if(isDead)p.extra_statuses=extra.filter(k=>!OFF_WHEN_DECEASED.includes(k));
+  const deadNote=document.getElementById(`${prefix}-dead-note`);
+  if(deadNote)deadNote.hidden=!isDead;
   // A reversed patient having another stoma: point the nurse at the new-case
   // step, and hide the note again once a new stoma actually reopens the case.
   const reopen=document.getElementById(`${prefix}-reopen-note`);
-  if(reopen)reopen.hidden=!isRev;
+  if(reopen)reopen.hidden=derived!=='reversed';
   // A planned reversal only makes sense while the four ruling-out outcomes are
   // all absent, so the field appears and disappears with them.
   const prw=document.getElementById(`${prefix}-proprevwrap`);
