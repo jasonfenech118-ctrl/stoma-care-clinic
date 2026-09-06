@@ -17,6 +17,7 @@
 --   procedure_performed - the operation, e.g. "Hartmann's", "Radical cystectomy"
 --   findings       - what was found / the indication, e.g. "CA - Rectum"
 --   locality       - the patient's town or village
+--   address        - the full address as the register book writes it
 --
 -- There is no "outcome" column on purpose: the Clinical Record works it out
 -- from the status and the matching date, so it can never disagree with them.
@@ -51,6 +52,15 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex           text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS findings      text;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS locality      text;
+-- The full address as the register book writes it; locality stays separate.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS address       text;
+-- When the two "moved away" outcomes happened. Reversal and death already have
+-- their own date columns further down.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharged_gozo_date    date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS relocated_overseas_date date;
+-- What was done at the reversal of the first stoma. Later stomas keep their
+-- own note inside their JSON entry.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_notes text;
 -- Stoma refashioning: old stoma closed and a new one formed.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_closure_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_formed_date  date;
