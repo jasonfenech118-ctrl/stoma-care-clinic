@@ -883,6 +883,13 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .pf-sconfirm-act{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
 .pf-sconfirm-act .fg{flex:1 1 190px;margin:0;}
 .pf-sconfirm-act button{padding:9px 17px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--border);}
+.pf-sc-id{display:inline-block;font-family:monospace;font-size:12px;font-weight:800;color:var(--teal);
+  background:#fff;border:1px solid #b5e0dd;border-radius:7px;padding:1px 7px;letter-spacing:.3px;}
+.pf-sc-notes{margin-top:11px;}
+.pf-sc-notes label{display:block;font-size:12px;font-weight:700;color:var(--navy);margin-bottom:5px;}
+.pf-sc-notes textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);
+  border-radius:9px;font-family:inherit;font-size:13px;color:var(--navy);background:#fff;resize:vertical;}
+.pf-sc-notes textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(13,115,119,.12);}
 .pf-sc-no{background:#fff;color:var(--navy);}
 .pf-sc-yes{background:#b45309;color:#fff;border-color:#b45309;}
 .pf-sc-ok{background:#1baf7a;color:#fff;border-color:#1baf7a;}
@@ -7597,7 +7604,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -8493,6 +8500,7 @@ function newStomaRowHTML(d){
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg st-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
+      <div class="fg"><label>Reversal notes</label><input type="text" class="st-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label class="pf-xchk" style="font-weight:600;">
         <input type="checkbox" class="st-mf" ${d.mucus_fistula?'checked':''}/> This one is a <strong>mucus fistula</strong></label></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
@@ -8665,6 +8673,7 @@ function refashionRowHTML(d){
       <div class="fg" style="grid-column:1 / -1;"><label>Which stoma was refashioned?</label><select class="rf-target">${refashionTargetOptions(d.target_uid)}</select></div>
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
+      <div class="fg"><label>Reversal notes</label><input type="text" class="rf-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
     </div>
@@ -8717,6 +8726,7 @@ function initialStomaRowHTML(d){
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="ist-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label><input type="date" class="ist-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
+      <div class="fg"><label>Reversal notes</label><input type="text" class="ist-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="ist-findings" value="${v('findings')}" placeholder="e.g. mucus fistula formed alongside the ileostomy"/></div>
       <div class="fg ist-id" style="grid-column:1 / -1;" ${effType?'':'hidden'}>
         <label>Stoma ID</label><div class="clr-code" style="display:inline-block;">${htmlSafe(code)}</div>
@@ -8785,6 +8795,8 @@ function patientFormHTML(p,prefix){
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Reversal notes <span style="font-weight:400;color:var(--muted);">(what was done at the reversal)</span></label>
+        <input type="text" id="${prefix}-revnotes" value="${v('reversal_notes')}" placeholder="e.g. Reversal of Hartmann's"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
       <div class="fg" style="grid-column:1 / -1;">
         <label>Also formed at this same operation <span style="font-weight:400;color:var(--muted);">(a second stoma, a mucus fistula)</span></label>
@@ -8867,7 +8879,9 @@ function patientFormHTML(p,prefix){
    verb  - how the question reads for this outcome */
 const PF_STATUS_ACTIONS=[
   {key:'reversed',           label:'Reversed',            icon:'↩',cls:'pf-sbtn-rev',date:'reversal',
-   verb:'their stoma reversed',      dateLabel:'Date of reversal'},
+   verb:'their stoma reversed',      dateLabel:'Date of reversal',
+   notes:true, notesLabel:'Reversal notes',
+   notesPlaceholder:"e.g. Reversal of Hartmann's · Closure of Ileostomy"},
   {key:'deceased',           label:'Deceased (RIP)',      icon:'✝',cls:'pf-sbtn-dec',date:'rip',
    verb:'recorded as deceased',      dateLabel:'Date of RIP (death)'},
   {key:'discharged_gozo',    label:'Discharged to Gozo',  icon:'⛴',cls:'pf-sbtn-goz',date:'gozodate',
@@ -8878,6 +8892,18 @@ const PF_STATUS_ACTIONS=[
 function pfPatientName(prefix){
   const n=`${document.getElementById(`${prefix}-first`)?.value||''} ${document.getElementById(`${prefix}-surname`)?.value||''}`.trim();
   return n||'this patient';
+}
+/* The ID card is what identifies a patient — two people share a name often
+   enough in Malta that a name on its own is not a safe thing to confirm an
+   outcome against. Every question the outcome buttons ask names the card as
+   well, so the nurse is agreeing to a person and not to a spelling. */
+function pfPatientIdCard(prefix){
+  return String(document.getElementById(`${prefix}-idcard`)?.value||'').trim();
+}
+function pfPatientLabel(prefix){
+  const card=pfPatientIdCard(prefix);
+  return `<strong>${htmlSafe(pfPatientName(prefix))}</strong>`
+    +(card?` <span class="pf-sc-id">${htmlSafe(card)}</span>`:'');
 }
 function pfStatusButtonsHTML(p,prefix){
   const cur=derivedFollowupStatus(p);
@@ -8908,7 +8934,7 @@ function pfAskStatus(prefix,key){
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById(`${prefix}-sconfirm`); if(!box)return;
   box.hidden=false;
-  box.innerHTML=`<div class="pf-sconfirm-q">Do you want <strong>${htmlSafe(pfPatientName(prefix))}</strong>
+  box.innerHTML=`<div class="pf-sconfirm-q">Do you want ${pfPatientLabel(prefix)}
       to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?</div>
     <div class="pf-sconfirm-act">
       <button type="button" class="pf-sc-no" onclick="pfCancelStatus('${prefix}')">No, leave it</button>
@@ -8925,7 +8951,17 @@ function pfConfirmStatus(prefix,key){
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById(`${prefix}-sconfirm`); if(!box)return;
   const cur=document.getElementById(`${prefix}-${a.date}`)?.value||'';
-  box.innerHTML=`<div class="pf-sconfirm-q">${htmlSafe(pfPatientName(prefix))} → <strong>${htmlSafe(a.label)}</strong>.
+  /* A reversal is never just a date. The register book records what was done —
+     "Reversal of Hartmann's", "Closure of Ileostomy" — and for most reversals
+     that sentence is the only clinical detail there is, so the reversal asks
+     for it here rather than losing it. The note travels with the stoma being
+     reversed, not with the patient. */
+  const notes=a.notes?`<div class="pf-sc-notes">
+      <label for="${prefix}-scnotes">${htmlSafe(a.notesLabel)}
+        <span style="font-weight:400;color:var(--muted);">(optional — as the register book writes it)</span></label>
+      <textarea id="${prefix}-scnotes" rows="2" placeholder="${htmlSafe(a.notesPlaceholder||'')}">${htmlSafe(pfExistingReversalNote(prefix))}</textarea>
+    </div>`:'';
+  box.innerHTML=`<div class="pf-sconfirm-q">${pfPatientLabel(prefix)} → <strong>${htmlSafe(a.label)}</strong>.
       On what date? <span style="font-weight:400;color:var(--muted);">The status changes when you press OK.</span></div>
     <div class="pf-sconfirm-act">
       <div class="fg"><label>${htmlSafe(a.dateLabel)}</label>
@@ -8933,6 +8969,7 @@ function pfConfirmStatus(prefix,key){
       <button type="button" class="pf-sc-no" onclick="pfCancelStatus('${prefix}')">Cancel</button>
       <button type="button" class="pf-sc-ok" onclick="pfApplyStatus('${prefix}','${key}')">OK</button>
     </div>
+    ${notes}
     <div class="pf-step-err" id="${prefix}-scerr" hidden></div>`;
   document.getElementById(`${prefix}-scdate`)?.focus();
 }
@@ -8950,8 +8987,9 @@ function pfApplyStatus(prefix,key){
   if(key==='reversed'){
     // The reversal belongs to the stoma that is still there, not to the patient
     // as a whole — otherwise a patient on their third stoma has the date land
-    // on their first. The newest open stoma takes it.
-    if(!pfSetNewestOpenStomaReversal(prefix,date)){say('There is no stoma still present to reverse. Add the stoma on step 2 first.');return;}
+    // on their first. The newest open stoma takes both the date and the note.
+    const note=String(document.getElementById(`${prefix}-scnotes`)?.value||'').trim();
+    if(!pfSetNewestOpenStomaReversal(prefix,date,note)){say('There is no stoma still present to reverse. Add the stoma on step 2 first.');return;}
   }else{
     const f=document.getElementById(`${prefix}-${a.date}`);
     if(f)f.value=date;
@@ -8963,22 +9001,39 @@ function pfApplyStatus(prefix,key){
   pfRefreshStatusButtons(prefix);
   pfRenderReview(prefix);
 }
-/* Put a reversal date on the newest stoma that has not been closed yet. Returns
-   false when the patient has no open stoma at all, so the caller can say so
-   rather than writing the date somewhere it does not belong. */
-function pfSetNewestOpenStomaReversal(prefix,date){
+/* The stoma a reversal would close: the newest one with no reversal date on it
+   yet, together with the field its note belongs in. Null when the patient has
+   no open stoma at all, so the caller can say so rather than writing the date
+   somewhere it does not belong. */
+function pfNewestOpenStoma(prefix){
   const open=[];
-  const push=(formed,el)=>{if(el&&!el.value)open.push({formed:String(formed||''),el});};
-  push(document.getElementById(`${prefix}-surgery`)?.value,document.getElementById(`${prefix}-reversal`));
+  const push=(formed,dateEl,notesEl)=>{
+    if(dateEl&&!dateEl.value)open.push({formed:String(formed||''),dateEl,notesEl});
+  };
+  const surgery=document.getElementById(`${prefix}-surgery`)?.value;
+  push(surgery,document.getElementById(`${prefix}-reversal`),document.getElementById(`${prefix}-revnotes`));
   document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`).forEach(r=>
-    push(document.getElementById(`${prefix}-surgery`)?.value,r.querySelector('.ist-reversal')));
+    push(surgery,r.querySelector('.ist-reversal'),r.querySelector('.ist-revnotes')));
   document.querySelectorAll(`#${prefix}-reflist .stoma-row`).forEach(r=>
-    push(r.querySelector('.rf-formed')?.value,r.querySelector('.rf-closure')));
+    push(r.querySelector('.rf-formed')?.value,r.querySelector('.rf-closure'),r.querySelector('.rf-revnotes')));
   document.querySelectorAll(`#${prefix}-stomalist .stoma-row`).forEach(r=>
-    push(r.querySelector('.st-formed')?.value,r.querySelector('.st-reversal')));
-  if(!open.length)return false;
+    push(r.querySelector('.st-formed')?.value,r.querySelector('.st-reversal'),r.querySelector('.st-revnotes')));
+  if(!open.length)return null;
   open.sort((a,b)=>(a.formed||'').localeCompare(b.formed||''));
-  open[open.length-1].el.value=date;
+  return open[open.length-1];
+}
+/* Whatever note that stoma already carries, so reopening the reversal box
+   shows what was written last time instead of a blank one. */
+function pfExistingReversalNote(prefix){
+  return pfNewestOpenStoma(prefix)?.notesEl?.value||'';
+}
+// Kept under its old name so nothing that already calls it has to change.
+function pfSetNewestOpenStomaReversal(prefix,date,note){
+  const target=pfNewestOpenStoma(prefix);
+  if(!target)return false;
+  target.dateEl.value=date;
+  // A note is only ever added — clearing the box does not wipe what is on file.
+  if(target.notesEl&&note)target.notesEl.value=note;
   return true;
 }
 // Redraw the buttons against the outcome the form now reads, so the current
@@ -9101,13 +9156,16 @@ function pfRenderReview(prefix){
   // Every stoma this patient has, in the order they were formed, each with the
   // dates that belong to it — the history the old single row could not hold.
   const stomas=[{label:'Stoma 1 · first operation',type:p.stoma_type,formed:p.surgery_date,
-                 loc:p.stoma_location,disch:p.discharge_date,ended:p.reversal_date,find:p.findings}]
+                 loc:p.stoma_location,disch:p.discharge_date,ended:p.reversal_date,find:p.findings,
+                 note:p.reversal_notes}]
     .concat(parseInitialStomas(p).map((s,i)=>({label:`Also formed at the first operation (${i+1})`,
-      type:s.type,formed:p.surgery_date,loc:s.location,disch:s.discharge_date,ended:s.reversal_date,find:s.findings})))
+      type:s.type,formed:p.surgery_date,loc:s.location,disch:s.discharge_date,ended:s.reversal_date,
+      find:s.findings,note:s.reversal_notes})))
     .concat((p.extra_refashionings||[]).map(r=>({label:'Refashioning',type:r.type,formed:r.formed_date,
-      loc:r.location,disch:r.discharge_date,ended:r.closure_date,find:r.findings,endLabel:'Closed on'})))
+      loc:r.location,disch:r.discharge_date,ended:r.closure_date,find:r.findings,
+      note:r.reversal_notes,endLabel:'Closed on'})))
     .concat((p.extra_stomas||[]).map(s=>({label:'Later stoma',type:s.type,formed:s.formed_date,
-      loc:s.location,disch:s.discharge_date,ended:s.reversal_date,find:s.findings})));
+      loc:s.location,disch:s.discharge_date,ended:s.reversal_date,find:s.findings,note:s.reversal_notes})));
   const[outText,outCls]=patientOutcome(p);
   host.innerHTML=`
     <div class="pf-rev"><h4>Patient</h4><div class="pf-rev-grid">
@@ -9120,6 +9178,7 @@ function pfRenderReview(prefix){
         ${row('<strong>'+htmlSafe(s.label)+'</strong>',t(s.type))}
         ${row('Formed',d(s.formed))}${row('Discharged',d(s.disch))}
         ${row(s.endLabel||'Reversed',s.ended?d(s.ended):'<span style="color:var(--teal);">still present</span>')}
+        ${s.note?row('Reversal notes',t(s.note)):''}
         ${s.loc?row('Site',t(s.loc)):''}${row('Operation & findings',t(s.find))}
       </div></div>`).join('')}
     </div>
@@ -9267,8 +9326,9 @@ function readPatientForm(prefix){
       target_uid:target,
       type:(target?targetType(target):'')||typeAsAt(formed)||(g('.rf-type')?.value||'').trim()||null,
       formed_date:formed,closure_date:g('.rf-closure')?.value||null,
-      discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null};
-  }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings||s.type);
+      discharge_date:g('.rf-discharge')?.value||null,findings:(g('.rf-findings')?.value||'').trim()||null,
+      reversal_notes:(g('.rf-revnotes')?.value||'').trim()||null};
+  }).filter(s=>s.formed_date||s.closure_date||s.discharge_date||s.findings||s.type||s.reversal_notes);
   refRows.sort(byFormedDate);
   const out={
     id_card:normaliseIdCard(val('idcard')),
@@ -9292,8 +9352,9 @@ function readPatientForm(prefix){
       // Each secondary stoma carries its own lifecycle, like a new-stoma row.
       discharge_date:r.querySelector('.ist-discharge')?.value||null,
       reversal_date:r.querySelector('.ist-reversal')?.value||null,
+      reversal_notes:(r.querySelector('.ist-revnotes')?.value||'').trim()||null,
       findings:(r.querySelector('.ist-findings')?.value||'').trim()||null
-    })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.findings),
+    })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.findings||s.reversal_notes),
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
     refashion_formed_date:refRows[0]?.formed_date||null,
@@ -9305,10 +9366,13 @@ function readPatientForm(prefix){
       return{uid:r.dataset.uid||newStomaUid(),mucus_fistula:!!g('.st-mf')?.checked,
         type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
+        reversal_notes:(g('.st-revnotes')?.value||'').trim()||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date).sort(byFormedDate),
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date||s.reversal_notes)
+      .sort(byFormedDate),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
+    reversal_notes:val('revnotes')||null,
     deceased_date:val('rip')||null,
     // Set by the guarded status buttons; blank on a record that never moved.
     discharged_gozo_date:val('gozodate')||null,

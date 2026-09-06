@@ -58,6 +58,9 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS address       text;
 -- their own date columns further down.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharged_gozo_date    date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS relocated_overseas_date date;
+-- What was done at the reversal of the first stoma. Later stomas keep their
+-- own note inside their JSON entry.
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_notes text;
 -- Stoma refashioning: old stoma closed and a new one formed.
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_closure_date date;
 ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS refashion_formed_date  date;

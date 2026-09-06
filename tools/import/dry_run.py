@@ -64,8 +64,11 @@ def main(outdir='import-report'):
                          r['date'] or '', r['date_quality'], r['comments'] or '',
                          r['consultant'] or '', p['registry']['status'] if p['registry'] else '',
                          r['src_row']])
+    # The book's Comments column IS the reversal note — "Reversal of Hartmann's",
+    # "Closure of Ileostomy" — so it is named for the field it lands in rather
+    # than left as an anonymous column.
     counts['reversals-missing'] = _w(out('2-reversals-missing-from-app.csv'),
-        ['id_card', 'surname', 'first_name', 'reversal_date', 'date_quality', 'as_written',
+        ['id_card', 'surname', 'first_name', 'reversal_date', 'date_quality', 'reversal_notes',
          'consultant', 'app_status_now', 'source_row'], rows)
 
     # ---- 3. deaths the app is missing ------------------------------------
@@ -171,7 +174,8 @@ READ
   Deceased_Patients.xlsx   {len(decs):>6} deaths             (2002-2026)
   Patients.csv (live app)  {len(reg):>6} patients
 
-JOINED ON THE ID CARD
+JOINED ON THE ID CARD  (the ID number is the identity — names are only ever
+                        used to check it, never to decide who someone is)
   {len(P):>6} distinct patients in total
   {sum(1 for p in P.values() if p['registry']):>6} of them are already in the app
   {sum(1 for p in P.values() if not p['registry']):>6} are in the books only
