@@ -3436,7 +3436,7 @@ async function loadAppts(){
   let sitingToday=[];
   try{
     const{data:sd}=await SB.from('siting_sessions').select('*').eq('session_date',date).neq('status','cancelled');
-    sitingToday=sd||[];
+    sitingToday=applySitingPatches(sd||[]);
   }catch(e){}
   const sitingByStart={};
   sitingToday.forEach(ss=>{const k=String(ss.session_slot||'').slice(0,5);if(k)sitingByStart[k]=ss;});
@@ -11432,6 +11432,10 @@ const WARD_MAP={
   // Blue Foyer (D4)
   SW5:{b:'BLUE',l:3},     URO1:{b:'BLUE',l:2},    URO2:{b:'BLUE',l:2},
   MW7:{b:'BLUE',l:1},     MW8:{b:'BLUE',l:1},     DISNEYLAND:{b:'BLUE',l:1},
+  // Gynaecology — Blue block, 1st floor. Every spelling a nurse may type maps
+  // to the same place, so the ward colours whether it is written Gynae or Gyne.
+  GYNAE:{b:'BLUE',l:1},   GYNE:{b:'BLUE',l:1},    GYNEA:{b:'BLUE',l:1},
+  GYN:{b:'BLUE',l:1},     GYNAECOLOGY:{b:'BLUE',l:1}, GYNAEWARD:{b:'BLUE',l:1},
   NPICU:{b:'BLUE',l:0},   SHDU:{b:'BLUE',l:-1},
   // Blocks A and C
   MIU4:{b:'BLOCKA',l:0},  MIU3:{b:'BLOCKC',l:0}
@@ -11945,6 +11949,21 @@ function episodeApplianceSummaryLine(ep){
  * they become one only if a stoma is formed. Stage 1: book and list them.
  * ------------------------------------------------------------------------- */
 let sitingState={rows:[]};
+/* A just-saved siting status (Seen, DNTU, cancelled) held locally, so the sheet
+   shows it at once even if the re-read that follows the save comes back before
+   the write is visible — the same read-after-write lag the handover had. Each
+   patch clears itself the moment a fetched row already carries the new status,
+   so it never masks a later real change. */
+let sitingLocalPatches={};
+function applySitingPatches(rows){
+  (rows||[]).forEach(r=>{
+    const p=sitingLocalPatches[r.id];
+    if(!p)return;
+    if(Object.keys(p).every(k=>r[k]===p[k]))delete sitingLocalPatches[r.id];
+    else Object.assign(r,p);
+  });
+  return rows;
+}
 async function loadSitingSessions(){
   const body=document.getElementById('siting-body');
   if(!body)return;
@@ -11957,7 +11976,7 @@ async function loadSitingSessions(){
       : `<div class="report-note">Could not load siting sessions: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const rows=(data||[]).filter(r=>r.status!=='cancelled');
+  const rows=applySitingPatches(data||[]).filter(r=>r.status!=='cancelled');
   sitingState.rows=rows;
   if(!rows.length){
     body.innerHTML=emptyStateHTML('📍','No siting sessions booked',
@@ -12253,6 +12272,7 @@ async function cancelSitingSession(id,name){
   if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not cancel: '+error.message);return;}
+  sitingLocalPatches[id]={status:'cancelled'};
   refreshSitingViews();
 }
 function refreshSitingViews(){
@@ -12498,6 +12518,9 @@ async function saveSitingSeen(id,markSeen){
     if(error&&/notes/.test(String(error.message||''))){delete patch.notes; ({error}=await SB.from('siting_sessions').update(patch).eq('id',id));}
   }
   if(error){alert('Could not save: '+error.message);return;}
+  // Remember the new status locally so the views show it at once, before the
+  // re-read below could return the pre-save row.
+  if(markSeen)sitingLocalPatches[id]={status:'seen'};
   closeModal();refreshSitingViews();
 }
 /* Print the official Pre-operative Stoma Care form, filled from the modal. */
@@ -12580,6 +12603,7 @@ async function sitingDNTU(id,name){
   if(!confirm(`Mark ${name||'this patient'} as did not attend the siting session?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'did_not_attend',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not update: '+error.message);return;}
+  sitingLocalPatches[id]={status:'did_not_attend'};
   refreshSitingViews();
 }
 /* The post-operative step of a siting session:
@@ -12820,7 +12844,7 @@ async function loadPostopDischarges(){
   const ids=[...new Set(discharged.map(e=>e.patient_id).filter(Boolean))];
   const byId={};
   if(ids.length){
-    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant').in('id',ids);
+    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant,is_inpatient').in('id',ids);
     (pats||[]).forEach(p=>{byId[p.id]=p;});
   }
   /* This is a worklist: everyone discharged after their operation who has not
@@ -12840,6 +12864,10 @@ async function loadPostopDischarges(){
     }catch(e){}
   }
   const eps=discharged.filter(ep=>{
+    // A patient who has been re-admitted is on the ward again, so they belong
+    // on the handover, not on this discharge worklist — drop them the moment
+    // their inpatient visit is reopened, without waiting for a follow-up.
+    if((byId[ep.patient_id]||{}).is_inpatient===true)return false;
     const seen=booked[ep.patient_id];
     return !(seen&&seen>=String(ep.discharge_date));
   });
