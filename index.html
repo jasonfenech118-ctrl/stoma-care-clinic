@@ -8857,7 +8857,10 @@ function patientFormHTML(p,prefix){
   <h3 class="pf-head">Stoma 1 · formed at the first operation</h3>
   <div class="stoma-row">
     <div class="edit-seen-grid">
-      <div class="fg"><label>Stoma type *</label><input type="text" id="${prefix}-stoma" value="${v('stoma_type')}" placeholder="e.g. End - Colostomy"/></div>
+      <div class="fg"><label>Stoma type *</label>
+        <select id="${prefix}-stoma" onchange="onPfStomaType('${prefix}')">${stomaTypeOptions(p?.stoma_type)}</select></div>
+      <div class="fg" id="${prefix}-stomaotherwrap" hidden><label>Type it in full</label>
+        <input type="text" id="${prefix}-stomaother" placeholder="the stoma type as the book writes it"/></div>
       <div class="fg"><label>Date of surgery *</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
@@ -9256,6 +9259,15 @@ function pfRenderReview(prefix){
       ${p.proposed_reversal_date?row('Reversal planned for',d(p.proposed_reversal_date)):''}
     </div></div>`;
 }
+/* "Other" is the one stoma type that still needs typing. Everything else is
+   chosen, which is what stops the register growing another spelling. */
+function onPfStomaType(prefix){
+  const sel=document.getElementById(`${prefix}-stoma`);
+  const wrap=document.getElementById(`${prefix}-stomaotherwrap`);
+  if(!sel||!wrap)return;
+  wrap.hidden=sel.value!=='Other';
+  if(sel.value==='Other')document.getElementById(`${prefix}-stomaother`)?.focus();
+}
 // Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
 function showPfSection(prefix,key){
   const wrap=document.getElementById(`${prefix}-${key}wrap`);const btn=document.getElementById(`${prefix}-${key}btn`);
@@ -9295,7 +9307,7 @@ function formStomaSnapshot(prefix){
   const val=id=>document.getElementById(`${prefix}-${id}`)?.value||null;
   return{
     surgery_date:val('surgery'),reversal_date:val('reversal'),deceased_date:val('rip'),
-    stoma_type:document.getElementById(`${prefix}-stoma`)?.value||null,
+    stoma_type:document.getElementById(`${prefix}-stoma`)?.value||null,   // dropdown value is enough for the preview
     extra_refashionings:[...document.querySelectorAll(`#${prefix}-reflist .stoma-row`)]
       .map(r=>({formed_date:r.querySelector('.rf-formed')?.value||null,
                 closure_date:r.querySelector('.rf-closure')?.value||null})),
@@ -9410,7 +9422,7 @@ function readPatientForm(prefix){
     date_of_birth:val('dob')||null,
     surgery_date:val('surgery')||null,
     discharge_date:val('discharge')||null,
-    stoma_type:val('stoma')||null,
+    stoma_type:(val('stoma')==='Other'?(val('stomaother')||null):(val('stoma')||null)),
     stoma_location:loc(val('stomaloc')),
     initial_stomas:[...document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`)].map(r=>({
       uid:r.dataset.uid||newStomaUid(),
@@ -9571,6 +9583,37 @@ async function savePatientDates(patientId){
 }
 
 
+
+/* The stoma types the dropdown offers. Free text is how the register ended up
+   with 105 spellings of about a dozen things — ileosotmy, ilestomy,
+   Ilesosotomy — so the type is chosen, not typed. A value already on a record
+   that is not in this list is kept and shown as its own option, so nothing
+   already entered is lost or silently changed. */
+const STOMA_TYPE_OPTIONS=[
+  'End - Colostomy','Loop - Colostomy','Transverse Colostomy','Sigmoid Colostomy',
+  'Descending Colostomy','Double-Barrel Colostomy','Colostomy',
+  'End - Ileostomy','Loop - Ileostomy','Double-Barrel Ileostomy','Ileostomy',
+  'Urostomy','Caecostomy','Jejunostomy','Mucus Fistula','Other'
+];
+function stomaTypeOptions(cur){
+  const c=String(cur==null?'':cur).trim();
+  const known=STOMA_TYPE_OPTIONS.some(t=>t.toLowerCase()===c.toLowerCase());
+  return '<option value="">— choose the stoma type —</option>'
+    +(c&&!known?`<option value="${htmlSafe(c)}" selected>${htmlSafe(c)} (as recorded)</option>`:'')
+    +STOMA_TYPE_OPTIONS.map(t=>`<option${c.toLowerCase()===t.toLowerCase()?' selected':''}>${t}</option>`).join('');
+}
+
+/* Closing a form that has been typed into and not saved loses the work with no
+   warning, which on a ward means it is simply lost. A modal can register a
+   guard here; Cancel and the Escape key both ask it first. */
+let modalCloseGuard=null;
+function closeModalGuarded(){
+  if(modalCloseGuard&&!modalCloseGuard())return false;
+  modalCloseGuard=null;
+  closeModal();
+  return true;
+}
+
 /* ── ONE STOMA, ONE FORM ──────────────────────────────────────────────────────
    A patient's stomas are stored in four different places — the first one on
    the patient row itself, anything else formed at that same operation in
@@ -9653,33 +9696,43 @@ async function openStomaModal(patientId,slot){
   if(error||!pat){alert('Could not open this patient.');return;}
   const x=stomaBySlot(pat,slot);
   if(!x){alert('That stoma is no longer on this record.');return;}
+  // The stomas a refashioning can name, so it can say which one it remade.
+  PF_STOMA_TARGETS=collectStomaTargetsFromPatient(pat).filter(t=>t.uid!==x.uid);
   stomaModalCtx={patientId,slot,pat};
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const v=k=>htmlSafe(x[k]||'');
   const kind=STOMA_KINDS[x.kind];
-  // A refashioning done at the same admission as the stoma before it was not a
-  // separate stay, so it has no discharge of its own — the earlier one covers
-  // it. Only a refashioning on its own admission is asked for one.
-  const sameAdm=x.kind==='refashion';
-  const showDischarge=!sameAdm||x.same_admission!==true;
+  const isRef=x.kind==='refashion';
+  const showDischarge=!isRef||x.same_admission!==true;
+  /* Whether the stoma is still there is a question with the record's own answer
+     already in it, rather than something to be read off an empty box. Making it
+     explicit is the point: a nurse sees what the record currently claims and
+     changes it if it is wrong. Leaving it unanswered would force the same
+     answer again on every one of the imported stomas for no gain. */
+  const present=x.reversal_date?'no':'yes';
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide'+sexModalClass(pat);
   mb.innerHTML=`<h2>${htmlSafe(stomaTitle(x))}</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> <span class="pf-sc-id">${htmlSafe(pat.id_card||'No ID')}</span>
       · ${htmlSafe(kind.label)}${x.code?` · <span class="clr-code">${htmlSafe(x.code)}</span>`:''}</div>
-    <div class="sm-form">
+    <div class="sm-form" id="sm-form">
       <div class="edit-seen-grid">
-        ${x.kind==='refashion'
-          ? `<div class="fg" style="grid-column:1 / -1;"><label>Stoma type</label>
-               <input type="text" id="sm-type" value="${v('type')}" placeholder="carried over from the stoma this one remade"/>
-               <div class="ap-hint">A refashioning remakes the same stoma, so the type normally carries over.</div></div>`
-          : `<div class="fg"><label>Stoma type *</label><input type="text" id="sm-type" value="${v('type')}" placeholder="e.g. End - Colostomy"/></div>
-             <div class="fg"><label>Stoma location</label><select id="sm-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(x.location)}</select></div>`}
-        <div class="fg"><label>${htmlSafe(kind.dateLabel)} *</label>
+        ${isRef?`<div class="fg" style="grid-column:1 / -1;"><label>Which stoma was refashioned?</label>
+            <select id="sm-target">${refashionTargetOptions(x.target_uid)}</select>
+            <div class="ap-hint">A refashioning remakes a stoma the patient already has. Saying which one keeps the history straight when there is more than one.</div></div>`:''}
+        <div class="fg"><label>Stoma type ${isRef?'':'*'}</label>
+          <select id="sm-type" onchange="onStomaTypeChange()">${stomaTypeOptions(x.type)}</select>
+          ${isRef?'<div class="ap-hint">Normally carries over from the stoma this one remade.</div>':''}</div>
+        <div class="fg" id="sm-typeotherwrap" hidden><label>Type it in full</label>
+          <input type="text" id="sm-typeother" placeholder="the stoma type as the book writes it"/></div>
+        <div class="fg"><label>Stoma location</label>
+          <select id="sm-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(x.location)}</select></div>
+        <div class="fg"><label>${htmlSafe(kind.dateLabel)} ${x.kind==='initial'?'':'*'}</label>
           <input type="date" id="sm-formed" value="${v('formed_date')}" max="${htmlSafe(TODAY)}"
-            ${x.kind==='initial'?'disabled title="Formed at the first operation, so it shares that date"':''}/></div>
-        ${sameAdm?`<div class="fg" style="grid-column:1 / -1;">
-          <label>Was this refashioning done during the same inpatient visit as the stoma before it?</label>
+            ${x.kind==='initial'?'disabled title="Formed at the first operation, so it shares that date"':''}/>
+          ${x.kind==='initial'?'<div class="ap-hint">Formed at the first operation, so it shares that date.</div>':''}</div>
+        ${isRef?`<div class="fg" style="grid-column:1 / -1;">
+          <label>Was this refashioning done during the same inpatient visit as the stoma before it? *</label>
           <div class="sm-yn">
             <label class="pf-xchk"><input type="radio" name="sm-adm" value="yes" ${x.same_admission===true?'checked':''}
               onchange="onStomaAdmission()"/> Yes — the same admission</label>
@@ -9688,18 +9741,30 @@ async function openStomaModal(patientId,slot){
           </div>
           <div class="ap-hint">The same admission means there is only one discharge, so it is not asked for twice.</div></div>`:''}
         <div class="fg" id="sm-dischargewrap" ${showDischarge?'':'hidden'}>
-          <label>Date of discharge</label><input type="date" id="sm-discharge" value="${v('discharge_date')}"/></div>
+          <label>Date of discharge</label>
+          <input type="date" id="sm-discharge" value="${v('discharge_date')}" max="${htmlSafe(TODAY)}"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Operation performed</label>
           <input type="text" id="sm-operation" value="${v('operation')}" placeholder="e.g. Hartmann's procedure"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Findings / comments</label>
-          <textarea id="sm-comments" rows="2" placeholder="e.g. the stoma was refashioned because of a retracted stoma with mucocutaneous separation">${v('comments')}</textarea></div>
+          <textarea id="sm-comments" rows="2" placeholder="e.g. refashioned for a retracted stoma with mucocutaneous separation">${v('comments')}</textarea></div>
       </div>
 
-      <h3 class="pf-head">Reversal</h3>
+      <h3 class="pf-head">Is this stoma still there?</h3>
       <div class="edit-seen-grid">
-        <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
+        <div class="fg" style="grid-column:1 / -1;">
+          <div class="sm-yn">
+            <label class="pf-xchk"><input type="radio" name="sm-present" value="yes" ${present==='yes'?'checked':''}
+              onchange="onStomaPresent()"/> Yes — the stoma is still present</label>
+            <label class="pf-xchk"><input type="radio" name="sm-present" value="no" ${present==='no'?'checked':''}
+              onchange="onStomaPresent()"/> No — it has been reversed</label>
+          </div>
+          <div class="ap-hint">Saying it is still present clears any reversal date, so the answer and the date can never disagree.</div>
+        </div>
+        <div class="fg" id="sm-revwrap" ${present==='no'?'':'hidden'}>
+          <label>Date it was reversed *</label>
           <input type="date" id="sm-reversal" value="${v('reversal_date')}" max="${htmlSafe(TODAY)}" onchange="onStomaModalPreview()"/></div>
-        <div class="fg"><label>Reversal notes</label>
+        <div class="fg" id="sm-revnoteswrap" ${present==='no'?'':'hidden'}>
+          <label>Reversal notes</label>
           <input type="text" id="sm-revnotes" value="${v('reversal_notes')}" placeholder="e.g. Reversal of Hartmann's"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>This stoma reads as</label>
           <div class="pf-outcome" id="sm-preview"></div></div>
@@ -9710,10 +9775,47 @@ async function openStomaModal(patientId,slot){
       <button class="btn-cancel sm-remove" onclick="confirmRemoveStoma()"
         ${x.kind==='first'?'hidden':''}>🗑 Remove this stoma</button>
       <div style="display:flex;gap:8px;">
-        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-cancel" onclick="closeModalGuarded()">Cancel</button>
         <button class="btn-save" onclick="saveStomaModal()">Save this stoma</button>
       </div></div>`;
   openMo();
+  onStomaTypeChange();
+  onStomaModalPreview();
+  // Remember the form as it opened, so Cancel and Escape can tell whether
+  // anything was actually typed before they throw it away.
+  stomaModalCtx.opened=stomaModalSnapshot();
+  modalCloseGuard=()=>{
+    if(stomaModalSnapshot()===stomaModalCtx.opened)return true;
+    return confirm('This stoma has been changed and not saved.\n\nClose it and lose those changes?');
+  };
+}
+// A picture of the form as it stands, for the unsaved-changes check.
+function stomaModalSnapshot(){
+  const f=document.getElementById('sm-form');
+  if(!f)return '';
+  return [...f.querySelectorAll('input,select,textarea')]
+    .map(el=>el.type==='radio'?(el.checked?el.id+el.value:''):(el.id||el.className)+'='+el.value).join('|');
+}
+// "Other" is the one type that still needs typing, so it asks for the words.
+function onStomaTypeChange(){
+  const sel=document.getElementById('sm-type');
+  const wrap=document.getElementById('sm-typeotherwrap');
+  if(!sel||!wrap)return;
+  wrap.hidden=sel.value!=='Other';
+  if(sel.value==='Other')document.getElementById('sm-typeother')?.focus();
+}
+// Whether the stoma is still there decides whether a reversal is asked for.
+function onStomaPresent(){
+  const gone=document.querySelector('input[name="sm-present"]:checked')?.value==='no';
+  const rw=document.getElementById('sm-revwrap'),nw=document.getElementById('sm-revnoteswrap');
+  if(rw)rw.hidden=!gone;
+  if(nw)nw.hidden=!gone;
+  // Saying it is still present clears a reversal date left behind, so the
+  // answer and the date can never contradict each other.
+  if(!gone){
+    const d=document.getElementById('sm-reversal'); if(d)d.value='';
+    const n=document.getElementById('sm-revnotes'); if(n)n.value='';
+  }
   onStomaModalPreview();
 }
 function onStomaAdmission(){
@@ -9737,35 +9839,62 @@ function readStomaModal(){
   const val=id=>String(document.getElementById('sm-'+id)?.value||'').trim();
   const loc=v=>v&&v!=='__add__'?v:null;
   const same=document.querySelector('input[name="sm-adm"]:checked')?.value;
-  return{type:val('type')||null,location:loc(val('loc')),
+  const present=document.querySelector('input[name="sm-present"]:checked')?.value;
+  // "Other" is stored as the words that were typed, not as the word "Other".
+  const type=val('type')==='Other'?(val('typeother')||null):(val('type')||null);
+  return{type,location:loc(val('loc')),
     formed_date:val('formed')||null,
     discharge_date:same==='yes'?null:(val('discharge')||null),
-    reversal_date:val('reversal')||null,reversal_notes:val('revnotes')||null,
+    // Still present means no reversal, whatever is left in the boxes.
+    reversal_date:present==='no'?(val('reversal')||null):null,
+    reversal_notes:present==='no'?(val('revnotes')||null):null,
     operation:val('operation')||null,comments:val('comments')||null,
+    target_uid:val('target')||null,
+    present:present===undefined?null:present==='yes',
     same_admission:same===undefined?null:same==='yes'};
 }
 async function saveStomaModal(){
   const ctx=stomaModalCtx; if(!ctx)return;
   const err=document.getElementById('sm-err');
-  const say=m=>{if(err){err.hidden=false;err.textContent=m;}};
+  const say=m=>{if(err){err.hidden=false;err.textContent=m;err.scrollIntoView({block:'center',behavior:'smooth'});}};
   const x=stomaBySlot(ctx.pat,ctx.slot);
   if(!x){say('That stoma is no longer on this record.');return;}
   const f=readStomaModal();
-  if(x.kind!=='refashion'&&!f.type){say('A stoma type is needed.');return;}
+  const dob=ctx.pat.date_of_birth?String(ctx.pat.date_of_birth):'';
+  const rip=ctx.pat.deceased_date?String(ctx.pat.deceased_date):'';
+  const on=d=>fmtShortDate(d);
+  if(x.kind!=='refashion'&&!f.type){say('Please choose the stoma type.');return;}
   if(x.kind!=='initial'&&!f.formed_date){say(`${STOMA_KINDS[x.kind].dateLabel} is needed.`);return;}
   if(f.formed_date&&f.formed_date>TODAY){say('That date is in the future. Check it and try again.');return;}
+  if(f.discharge_date&&f.discharge_date>TODAY){say('The discharge date is in the future. Check it and try again.');return;}
+  if(dob&&f.formed_date&&f.formed_date<dob){
+    say(`That operation is before the patient was born (${on(dob)}). Check the date.`);return;}
+  if(x.kind==='refashion'&&f.same_admission===null){
+    say('Please say whether this refashioning was done during the same inpatient visit.');return;}
+  if(f.present===null){say('Please say whether this stoma is still present.');return;}
+  if(f.present===false&&!f.reversal_date){
+    say('A date of reversal is needed. If the date is not known, say the stoma is still present until it is.');return;}
   if(f.reversal_date&&f.formed_date&&f.reversal_date<f.formed_date){
     say('A stoma cannot be reversed before it was formed.');return;}
   if(f.discharge_date&&f.formed_date&&f.discharge_date<f.formed_date){
     say('The discharge is before the operation. Check the dates.');return;}
-  if(x.kind==='refashion'&&f.same_admission===null){
-    say('Please say whether this refashioning was done during the same inpatient visit.');return;}
+  if(rip&&f.formed_date&&f.formed_date>rip){
+    say(`That operation is after the patient died (${on(rip)}). Check the date.`);return;}
+  if(rip&&f.reversal_date&&f.reversal_date>rip){
+    say(`That reversal is after the patient died (${on(rip)}). Check the date.`);return;}
+  // A stoma cannot be formed before the operation that gave the patient their
+  // first one — that would put the whole timeline out of order.
+  const firstOp=ctx.pat.surgery_date?String(ctx.pat.surgery_date):'';
+  if(firstOp&&f.formed_date&&x.kind==='later'&&f.formed_date<firstOp){
+    say(`This stoma is dated before the patient's first operation (${on(firstOp)}). `
+       +`If it really came first, correct Stoma 1 instead.`);return;}
 
   const payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
   const{error,dropped}=await updatePatientTolerant(ctx.patientId,payload);
   if(error){say(patientSaveError(error));return;}
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.`);
+  modalCloseGuard=null;                       // saved, so there is nothing to lose
   closeModal();
   refreshReminders();
   await afterStomaSaved(ctx.patientId);
@@ -9791,6 +9920,7 @@ function stomaPayloadFor(pat,slot,f){
     if(String(item.uid||'')!==uid)return item;
     if(where==='refashion')
       return{...item,type:f.type,location:f.location,formed_date:f.formed_date,
+        target_uid:f.target_uid,
         closure_date:f.reversal_date,discharge_date:f.discharge_date,
         reversal_notes:f.reversal_notes,operation:f.operation,comments:f.comments,
         findings:f.operation||f.comments||item.findings||null,
@@ -14351,7 +14481,7 @@ function closeModal(){document.getElementById('mo').classList.remove('open');doc
 // Clicking the dark backdrop no longer closes the modal — an accidental click
 // used to discard a half-filled form. Close only with Cancel, the ✕, or Escape.
 function moOut(e){}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('mo')?.classList.contains('open'))closeModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('mo')?.classList.contains('open'))closeModalGuarded();});
 
 /* ── REGISTRY MAP ─────────────────────────────────────────────────────────
    A choropleth of the 68 Maltese local councils. Pick a measure and every
