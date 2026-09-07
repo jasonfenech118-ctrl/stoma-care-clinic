@@ -1168,6 +1168,13 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .sit-ck-note-wrap{margin-top:8px;}
 .sit-ck-ctrls input[type=date]{padding:4px 7px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 .sit-ck-init{flex:1;min-width:120px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+/* The "Assessment completed by" sign-off at the foot of the pre-op form. */
+.sit-signoff{margin-top:14px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafbfc;}
+.sit-signoff-h{font-size:12px;font-weight:700;color:#1a2e4a;margin-bottom:8px;}
+.sit-signoff-row{display:flex;gap:12px;flex-wrap:wrap;}
+.sit-signoff-row label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#374151;}
+.sit-signoff-row input{padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+.sit-signoff-row #ck-sign-init{max-width:90px;text-transform:uppercase;}
 
 /* --- Phone: the handover grid becomes a stack of cards --- */
 @media(max-width:640px){
@@ -3429,7 +3436,7 @@ async function loadAppts(){
   let sitingToday=[];
   try{
     const{data:sd}=await SB.from('siting_sessions').select('*').eq('session_date',date).neq('status','cancelled');
-    sitingToday=sd||[];
+    sitingToday=applySitingPatches(sd||[]);
   }catch(e){}
   const sitingByStart={};
   sitingToday.forEach(ss=>{const k=String(ss.session_slot||'').slice(0,5);if(k)sitingByStart[k]=ss;});
@@ -5143,7 +5150,24 @@ async function commitEpisodeAppliances(pending,rows){
   // what the database actually holds rather than what was hoped for.
   if(clrState.patientId===pending.patientId){await loadClinicalRecords(pending.patientId);renderClinicalPanel();}
   if(document.getElementById('hv-body'))await loadHandover();
+  // The row is then set from the note we just wrote, not from what the reload
+  // read back. A SELECT fired straight after the UPDATE can still return the old
+  // appliance — which is why the sheet used to keep the previous one until the
+  // Refresh button (a later read) was pressed. This makes the change show at
+  // once, whatever that read returned.
+  patchHandoverApplianceRow(pending.patientId,note);
   closeModal();
+}
+/* Set one handover row's appliance cell to a known line, without re-reading the
+   database. Used right after a save so the sheet never lags behind the write. */
+function patchHandoverApplianceRow(pid,line){
+  const sel=(window.CSS&&CSS.escape)?CSS.escape(String(pid)):String(pid);
+  const row=document.querySelector(`tr[data-pid="${sel}"]`);
+  if(!row)return;
+  const btn=row.querySelector('.hv-appl');
+  if(!btn)return;
+  btn.dataset.appliance=line||'';
+  btn.innerHTML=line?htmlSafe(line):'<span class="hv-appl-empty">Tap to set appliance</span>';
 }
 /* How an appliance is written on the ward sheet. The picker keeps the full
    supplier name and code so it can still be found by either; what gets written
@@ -10158,18 +10182,33 @@ function applianceTimelineByStomaType(){
     if(source&&d>=String(e.lastDate||'')){e.lastDate=d;e.lastSource=source;}
   };
   (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
-    const end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
-    parseEpisodeApplianceRows(ep).forEach(a=>{
-      // The day it was set, falling back to the admission date on older records.
-      const start=a.changed_on||ep.record_date||null;
-      /* Which ward it was set on. Entries written before the ward was kept fall
-         back to where the patient is now, but only while the episode is open —
-         a closed episode's ward is not today's ward. */
-      const ward=a.ward||(ongoing?(clrState.patient&&clrState.patient.inpatient_ward)||'':'');
-      const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
-      (types.length?types:['__unassigned__']).forEach(tk=>{
-        a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient',ward));
-        a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient',ward));
+    const epOpen=!!ep.is_current&&!ep.discharge_date;
+    const rows=parseEpisodeApplianceRows(ep);
+    // The appliance set on a stoma is only the one from that stoma's NEWEST
+    // entry. An earlier entry was replaced the day the next one was written, so
+    // it is closed on that day — "From … to …" — instead of every entry in an
+    // open admission reading "In use". Entries are grouped per stoma and read
+    // in date order to work that out.
+    const dateOf=a=>a.changed_on||ep.record_date||'';
+    const byStoma={};
+    rows.forEach(a=>{const key=a.stoma_uid||a.stoma_type||a.stoma_code||'__nokey__';
+      (byStoma[key]=byStoma[key]||[]).push(a);});
+    Object.values(byStoma).forEach(list=>{
+      list.sort((x,y)=>String(dateOf(x)).localeCompare(String(dateOf(y))));
+      list.forEach((a,i)=>{
+        const start=dateOf(a)||null;
+        const next=list[i+1];
+        const isNewest=!next;
+        // The newest entry is in use while the admission is open, otherwise it
+        // ends at discharge; an older entry ends when the next one replaced it.
+        const ongoing=epOpen&&isNewest;
+        const end=isNewest?(ep.discharge_date||null):(dateOf(next)||null);
+        const ward=a.ward||(ongoing?(clrState.patient&&clrState.patient.inpatient_ward)||'':'');
+        const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
+        (types.length?types:['__unassigned__']).forEach(tk=>{
+          a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient',ward));
+          a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient',ward));
+        });
       });
     });
   });
@@ -11408,6 +11447,10 @@ const WARD_MAP={
   // Blue Foyer (D4)
   SW5:{b:'BLUE',l:3},     URO1:{b:'BLUE',l:2},    URO2:{b:'BLUE',l:2},
   MW7:{b:'BLUE',l:1},     MW8:{b:'BLUE',l:1},     DISNEYLAND:{b:'BLUE',l:1},
+  // Gynaecology — Blue block, 1st floor. Every spelling a nurse may type maps
+  // to the same place, so the ward colours whether it is written Gynae or Gyne.
+  GYNAE:{b:'BLUE',l:1},   GYNE:{b:'BLUE',l:1},    GYNEA:{b:'BLUE',l:1},
+  GYN:{b:'BLUE',l:1},     GYNAECOLOGY:{b:'BLUE',l:1}, GYNAEWARD:{b:'BLUE',l:1},
   NPICU:{b:'BLUE',l:0},   SHDU:{b:'BLUE',l:-1},
   // Blocks A and C
   MIU4:{b:'BLOCKA',l:0},  MIU3:{b:'BLOCKC',l:0}
@@ -11921,6 +11964,21 @@ function episodeApplianceSummaryLine(ep){
  * they become one only if a stoma is formed. Stage 1: book and list them.
  * ------------------------------------------------------------------------- */
 let sitingState={rows:[]};
+/* A just-saved siting status (Seen, DNTU, cancelled) held locally, so the sheet
+   shows it at once even if the re-read that follows the save comes back before
+   the write is visible — the same read-after-write lag the handover had. Each
+   patch clears itself the moment a fetched row already carries the new status,
+   so it never masks a later real change. */
+let sitingLocalPatches={};
+function applySitingPatches(rows){
+  (rows||[]).forEach(r=>{
+    const p=sitingLocalPatches[r.id];
+    if(!p)return;
+    if(Object.keys(p).every(k=>r[k]===p[k]))delete sitingLocalPatches[r.id];
+    else Object.assign(r,p);
+  });
+  return rows;
+}
 async function loadSitingSessions(){
   const body=document.getElementById('siting-body');
   if(!body)return;
@@ -11933,7 +11991,7 @@ async function loadSitingSessions(){
       : `<div class="report-note">Could not load siting sessions: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const rows=(data||[]).filter(r=>r.status!=='cancelled');
+  const rows=applySitingPatches(data||[]).filter(r=>r.status!=='cancelled');
   sitingState.rows=rows;
   if(!rows.length){
     body.innerHTML=emptyStateHTML('📍','No siting sessions booked',
@@ -12229,6 +12287,7 @@ async function cancelSitingSession(id,name){
   if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not cancel: '+error.message);return;}
+  sitingLocalPatches[id]={status:'cancelled'};
   refreshSitingViews();
 }
 function refreshSitingViews(){
@@ -12252,6 +12311,19 @@ const SITING_CHECKLIST_ITEMS=[
   'Other issues discussed'
 ];
 let sitingSeenCtx=null;
+// A name reduced to initials — the first letter of each word, upper-cased.
+// "Jason Fenech" → "JF". Used to fill the sign-off initials from the name.
+function initialsFromName(name){
+  return String(name||'').trim().split(/\s+/).filter(Boolean).map(w=>w[0].toUpperCase()).join('');
+}
+// While the nurse types their name, keep the initials in step — but only until
+// they edit the initials by hand, after which their version is left alone.
+function syncSignInitials(){
+  const ini=document.getElementById('ck-sign-init');
+  if(ini&&ini.dataset.touched)return;
+  const nm=document.getElementById('ck-sign-name');
+  if(ini&&nm)ini.value=initialsFromName(nm.value);
+}
 // The stoma types a patient can be sited for. A patient can need more than one,
 // so every "sited for" and "stoma type" control is a set of these, not a single
 // choice, and the value is stored as the chosen names joined with " & ".
@@ -12280,6 +12352,12 @@ async function openSitingSeen(id){
   // automatically, still editable per row.
   let who=null;try{who=await getCurrentUserForAudit();}catch(e){}
   const ini=(who&&who.name)?String(who.name).trim():'';
+  // The sign-off at the foot of the form: who completed the assessment, their
+  // initials, and the date. Name and initials default to the signed-in nurse,
+  // the initials worked out from the name; all three stay editable.
+  const signName=(existing&&existing.signed_name)||ini;
+  const signInit=(existing&&existing.signed_initials)||initialsFromName(ini);
+  const signDate=(existing&&existing.signed_date)||TODAY;
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const items=(existing&&existing.items)||[];
   // The stoma types ticked at item 3. Prefer what was saved (an array, or an
@@ -12290,7 +12368,7 @@ async function openSitingSeen(id){
   const rows=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1, it=items[i]||{};
     const met=it.status==='met', unmet=it.status==='unmet';
-    const dval=it.date||TODAY, ival=it.initials||ini;
+    const dval=it.date||TODAY, ival=it.initials||initialsFromName(ini);
     const typePick=(n===3)?`<div class="sit-ck-type">
         ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="checkbox" class="ck-type" value="${t}" ${stomaTypes.includes(t)?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
@@ -12312,7 +12390,7 @@ async function openSitingSeen(id){
           <label class="ck-noted"><input type="radio" name="ck-status-${n}" value="noted" ${noted?'checked':''} onchange="toggleCkNote(${n})"/> Notes</label>
         </div>
         <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
-        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Name" value="${htmlSafe(ival)}" title="Name"/>
+        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials"/>
       </div>
       <div id="ck-note-wrap-${n}" class="sit-ck-note-wrap"${noted?'':' hidden'}>
         <input type="text" id="ck-note-${n}" class="sit-ck-other" placeholder="Notes" value="${htmlSafe(it.note||'')}"/></div>
@@ -12321,16 +12399,24 @@ async function openSitingSeen(id){
   stomaMarkCap=stomaCapacityFor(ss.siting_for);
   const savedMarks=(existing&&Array.isArray(existing.stoma_marks))?existing.stoma_marks
     :((existing&&existing.stoma_mark&&typeof existing.stoma_mark==='object')?[existing.stoma_mark]:[]);
-  sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,stomaMarkCap);
+  sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,STOMA_MARK_MAX);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📍 Pre-operative Assessment</h2>
     <div class="msub"><strong>${htmlSafe(nm||'—')}</strong> · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</div>
     <div class="sit-ck-wrap">${rows}</div>
     <div class="sit-bodymap-sec">
-      <div class="sit-bodymap-label">${stomaMarkCap===2?'Stoma sites — tap the diagram to place both markers, drag to adjust':'Stoma site — tap the diagram to place the marker, drag to adjust'}
-        <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear</button></div>
+      <div class="sit-bodymap-label">Stoma sites — tap to add a marker, drag to move it, tap a marker to remove it
+        <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear all</button></div>
       <div class="sit-bodymap" id="sit-bodymap" onclick="placeStomaMark(event)">
         <img src="${htmlSafe(preopBodyMapSrc())}" alt="Abdomen diagram" draggable="false"/>
+      </div>
+    </div>
+    <div class="sit-signoff">
+      <div class="sit-signoff-h">Assessment completed by</div>
+      <div class="sit-signoff-row">
+        <label>Name<input type="text" id="ck-sign-name" value="${htmlSafe(signName)}" placeholder="Nurse name" oninput="syncSignInitials()"/></label>
+        <label>Initials<input type="text" id="ck-sign-init" value="${htmlSafe(signInit)}" placeholder="e.g. JF" maxlength="6" oninput="this.dataset.touched=1"/></label>
+        <label>Date<input type="date" id="ck-sign-date" value="${htmlSafe(signDate)}"/></label>
       </div>
     </div>
     <div class="mact" style="flex-wrap:wrap;gap:8px;">
@@ -12344,6 +12430,11 @@ async function openSitingSeen(id){
 }
 // The draggable "stoma site" marker on the abdomen diagram.
 const STOMA_MARK_SVG='<svg viewBox="0 0 34 34" width="34" height="34"><circle cx="17" cy="17" r="14" fill="none" stroke="#e11" stroke-width="2.5"/><line x1="8" y1="8" x2="26" y2="26" stroke="#e11" stroke-width="2.5"/><line x1="26" y1="8" x2="8" y2="26" stroke="#e11" stroke-width="2.5"/></svg>';
+// As many site markers as the nurse needs — a candidate and a chosen site, a
+// marker per stoma, alternatives to discuss. The cap is only a guard against a
+// runaway of accidental taps. stomaMarkCap is how many the patient is sited for,
+// kept for the hint on the label, not as a limit.
+const STOMA_MARK_MAX=12;
 let sitingStomaMarks=[], stomaDragging=false, stomaMoved=false, stomaMarkCap=1;
 function preopBodyMapSrc(){return new URL('assets/preop-abdomen.jpg',location.href).href;}
 /* One marker per stoma the patient is sited for — two types, two sites — with
@@ -12373,13 +12464,9 @@ function stomaFractionFromEvent(e){
 function placeStomaMark(e){
   if(stomaMoved){stomaMoved=false;return;}   // a click right after a drag is ignored
   const f=stomaFractionFromEvent(e);if(!f)return;
-  if(sitingStomaMarks.length<stomaMarkCap)sitingStomaMarks.push(f);
-  else{
-    // Already at capacity, so the tap moves whichever marker is nearest to it.
-    let best=0,bd=Infinity;
-    sitingStomaMarks.forEach((m,i)=>{const d=(m.x-f.x)**2+(m.y-f.y)**2;if(d<bd){bd=d;best=i;}});
-    sitingStomaMarks[best]=f;
-  }
+  // Every tap on the diagram adds a marker. An existing marker is moved by
+  // dragging it and removed by tapping it, both handled in startStomaDrag.
+  if(sitingStomaMarks.length<STOMA_MARK_MAX)sitingStomaMarks.push(f);
   renderStomaMarks();
 }
 function startStomaDrag(e,idx){
@@ -12387,7 +12474,13 @@ function startStomaDrag(e,idx){
   stomaDragging=true;stomaMoved=false;
   const move=ev=>{if(!stomaDragging)return;const f=stomaFractionFromEvent(ev);
     if(f){sitingStomaMarks[idx]=f;stomaMoved=true;renderStomaMarks();}};
-  const up=()=>{stomaDragging=false;document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);};
+  const up=()=>{
+    stomaDragging=false;
+    document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
+    // A press that never moved is a tap on the marker: remove it. The flag is
+    // left set so the container's click handler does not then add a new one.
+    if(!stomaMoved){sitingStomaMarks.splice(idx,1);renderStomaMarks();stomaMoved=true;}
+  };
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 }
@@ -12419,6 +12512,9 @@ function readSitingChecklist(){
   const other=document.getElementById('ck-other')?.value.trim()||'';
   return {items,stoma_types,
     stoma_type:stoma_types.join(' & '),   // kept so older readers still find a value
+    signed_name:document.getElementById('ck-sign-name')?.value.trim()||'',
+    signed_initials:document.getElementById('ck-sign-init')?.value.trim()||'',
+    signed_date:document.getElementById('ck-sign-date')?.value||'',
     other,
     stoma_marks:sitingStomaMarks.slice(),
     stoma_mark:sitingStomaMarks[0]||null};   // kept so older saved forms still read
@@ -12437,6 +12533,9 @@ async function saveSitingSeen(id,markSeen){
     if(error&&/notes/.test(String(error.message||''))){delete patch.notes; ({error}=await SB.from('siting_sessions').update(patch).eq('id',id));}
   }
   if(error){alert('Could not save: '+error.message);return;}
+  // Remember the new status locally so the views show it at once, before the
+  // re-read below could return the pre-save row.
+  if(markSeen)sitingLocalPatches[id]={status:'seen'};
   closeModal();refreshSitingViews();
 }
 /* Print the official Pre-operative Stoma Care form, filled from the modal. */
@@ -12470,6 +12569,11 @@ function printSitingChecklist(){
     th,td{border:1px solid #000;padding:7px 8px;vertical-align:top;}
     th{font-weight:bold;} td.cc,th.cc{text-align:center;width:56px;} td.cl{width:auto;}
     td.cn,th.cn{width:120px;text-align:left;}
+    .signoff{margin-top:24px;}
+    .signoff .row{display:flex;gap:34px;margin-top:16px;align-items:flex-end;flex-wrap:wrap;}
+    .signoff .lab{font-weight:bold;}
+    .signoff .sig{display:inline-block;border-bottom:1px solid #000;min-width:230px;height:16px;}
+    .signoff .v{display:inline-block;border-bottom:1px solid #000;min-width:90px;padding:0 6px;}
     /* The diagram gets the back page to itself, at the full width of the text
        area. The image is 680x836, so at 178mm wide it stands 219mm tall and
        still leaves room for its heading. */
@@ -12490,8 +12594,17 @@ function printSitingChecklist(){
     <div class="pt">Consultant: <span>${htmlSafe(ss.consultant||'')}</span></div>
     <div class="pt">Proposed operation: <span>${htmlSafe(ss.proposed_operation||'')}</span></div>
     <div class="pt">Surgery date: <span>${ss.surgery_date?htmlSafe(fmtShortDate(ss.surgery_date)):''}</span></div>
-    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Name</th></tr></thead>
+    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Initials</th></tr></thead>
     <tbody>${body}</tbody></table>
+    <div class="signoff">
+      <div class="row"><span class="lab">Assessment completed by</span></div>
+      <div class="row">
+        <span>Signature: <span class="sig"></span></span>
+        <span>Name: <span class="v">${htmlSafe(c.signed_name||'')}</span></span>
+        <span>Initials: <span class="v">${htmlSafe(c.signed_initials||'')}</span></span>
+        <span>Date: <span class="v">${c.signed_date?htmlSafe(fmtShortDate(c.signed_date)):''}</span></span>
+      </div>
+    </div>
     <div class="sitepage">
       <h3>STOMA SITE${printMarks.length>1?'S':''}</h3>
       <div class="bodymap"><img src="${htmlSafe(preopBodyMapSrc())}"/>
@@ -12505,6 +12618,7 @@ async function sitingDNTU(id,name){
   if(!confirm(`Mark ${name||'this patient'} as did not attend the siting session?`))return;
   const{error}=await SB.from('siting_sessions').update({status:'did_not_attend',updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Could not update: '+error.message);return;}
+  sitingLocalPatches[id]={status:'did_not_attend'};
   refreshSitingViews();
 }
 /* The post-operative step of a siting session:
@@ -12745,7 +12859,7 @@ async function loadPostopDischarges(){
   const ids=[...new Set(discharged.map(e=>e.patient_id).filter(Boolean))];
   const byId={};
   if(ids.length){
-    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant').in('id',ids);
+    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant,is_inpatient').in('id',ids);
     (pats||[]).forEach(p=>{byId[p.id]=p;});
   }
   /* This is a worklist: everyone discharged after their operation who has not
@@ -12765,6 +12879,10 @@ async function loadPostopDischarges(){
     }catch(e){}
   }
   const eps=discharged.filter(ep=>{
+    // A patient who has been re-admitted is on the ward again, so they belong
+    // on the handover, not on this discharge worklist — drop them the moment
+    // their inpatient visit is reopened, without waiting for a follow-up.
+    if((byId[ep.patient_id]||{}).is_inpatient===true)return false;
     const seen=booked[ep.patient_id];
     return !(seen&&seen>=String(ep.discharge_date));
   });
