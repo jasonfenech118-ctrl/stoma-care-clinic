@@ -206,6 +206,7 @@ def split(path, outdir, target_kb=190):
 -- =============================================================================
 
 BEGIN;
+{make_sql.PREAMBLE}
 {chunk}
 COMMIT;
 """)

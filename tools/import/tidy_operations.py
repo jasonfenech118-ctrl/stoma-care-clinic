@@ -27,6 +27,8 @@ import datetime
 import os
 import sys
 
+from make_sql import PREAMBLE
+
 # Words that name a procedure. Anatomy and diagnoses are deliberately absent.
 OPERATION_WORDS = (
     r"hartman|laparotom|laparatom|laparoscop|laparascop|resect|colectom|"
@@ -59,8 +61,7 @@ SQL = """-- ====================================================================
 -- Safe to run twice: once moved, the operation column is no longer empty.
 -- =============================================================================
 
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS findings text;
+{preamble}
 
 -- ---------------------------------------------------------------------------
 -- PASS 1 — the operation was typed into the comments, and the operation
@@ -103,7 +104,8 @@ def main(outdir='import-report'):
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, 'import-0-tidy-operations.sql')
     with open(path, 'w', encoding='utf-8') as fh:
-        fh.write(SQL.format(when=datetime.date.today().strftime('%d %B %Y'),
+        fh.write(SQL.format(preamble=PREAMBLE,
+                            when=datetime.date.today().strftime('%d %B %Y'),
                             words=OPERATION_WORDS.replace("'", "''")))
     print(f'Written to {path}')
     return path

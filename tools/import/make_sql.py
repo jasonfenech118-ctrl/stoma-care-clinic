@@ -281,6 +281,39 @@ def build_patient(p):
     }
 
 
+# Every column the import writes to, created only if it is missing. This has to
+# come FIRST in every file and every part: a step that fills in patient_notes is
+# no use after the step that would have created it, and a part that never
+# creates it at all fails outright. That is exactly how the first run failed.
+PREAMBLE = """-- ---------------------------------------------------------------------------
+-- Columns this import writes to, created only where they are missing.
+-- Safe to re-run; nothing is dropped and nothing already there is altered.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS date_of_birth   date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS surgery_date    date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharge_date  date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date   date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date   date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_type      text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_location  text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex             text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS findings        text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS locality        text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS address         text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS consultant      text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_notes  text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS patient_notes   text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS complications   text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS proposed_reversal_date  date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharged_gozo_date    date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS relocated_overseas_date date;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS initial_stomas  jsonb DEFAULT '[]'::jsonb;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_stomas    jsonb DEFAULT '[]'::jsonb;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_refashionings jsonb DEFAULT '[]'::jsonb;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses  jsonb DEFAULT '[]'::jsonb;
+"""
+
 HEADER = """-- =============================================================================
 -- {title}
 -- =============================================================================
@@ -310,32 +343,7 @@ HEADER = """-- =================================================================
 
 BEGIN;
 
--- ---------------------------------------------------------------------------
--- Every column this import writes to, created only if it is missing. These are
--- the same statements the files in sql/ carry, repeated here so this one file
--- is enough on its own and cannot fail halfway through on a missing column.
--- ---------------------------------------------------------------------------
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS date_of_birth   date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS surgery_date    date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharge_date  date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_date   date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS deceased_date   date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_type      text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS stoma_location  text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS sex             text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS procedure_performed text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS findings        text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS locality        text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS address         text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS consultant      text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_notes  text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS patient_notes   text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS discharged_gozo_date    date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS relocated_overseas_date date;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS initial_stomas  jsonb DEFAULT '[]'::jsonb;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_stomas    jsonb DEFAULT '[]'::jsonb;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_refashionings jsonb DEFAULT '[]'::jsonb;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses  jsonb DEFAULT '[]'::jsonb;
+{preamble}
 """
 
 FOOTER = """
@@ -387,7 +395,7 @@ def emit(outdir='import-report'):
             'reversal_date', 'reversal_notes', 'followup_status', 'patient_notes']
     path = os.path.join(outdir, 'import-1-new-patients.sql')
     with open(path, 'w', encoding='utf-8') as fh:
-        fh.write(HEADER.format(title=f'Register book import - {len(new_rows)} new patients',
+        fh.write(HEADER.format(preamble=PREAMBLE, title=f'Register book import - {len(new_rows)} new patients',
                  when=when,
                  subtitle='Patients the book has and the app does not, newest surgery first.'))
         # 50 at a time so the file can be cut into evenly sized pieces later.
@@ -424,7 +432,7 @@ def emit(outdir='import-report'):
         ]) + ')')
     wrote = len(rows2)
     with open(path2, 'w', encoding='utf-8') as fh:
-        fh.write(HEADER.format(
+        fh.write(HEADER.format(preamble=PREAMBLE, 
             title=f'Register book import - filling gaps on {len(upd_rows)} existing patients',
             when=when,
             subtitle='Only blank fields are filled. Nothing already in the app is changed.'))

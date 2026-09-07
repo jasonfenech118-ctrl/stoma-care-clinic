@@ -18,7 +18,7 @@ import os
 import sys
 
 import crossref
-from make_sql import q
+from make_sql import q, PREAMBLE
 
 
 def find(d):
@@ -94,7 +94,7 @@ def main(outdir='import-report'):
 -- =============================================================================
 
 BEGIN;
-""")
+""" + PREAMBLE)
         for r in rows:
             note = (f"Date of surgery corrected from {r['app_date']:%d %b %Y} to "
                     f"{r['book_date']:%d %b %Y} on {datetime.date.today():%d %b %Y}, to match the "

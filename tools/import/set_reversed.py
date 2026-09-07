@@ -26,7 +26,7 @@ import os
 import sys
 
 import crossref
-from make_sql import q
+from make_sql import q, PREAMBLE
 
 
 def classify(p):
@@ -144,9 +144,7 @@ def main(outdir='import-report'):
 -- =============================================================================
 
 BEGIN;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS reversal_notes text;
-ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses jsonb DEFAULT '[]'::jsonb;
-""")
+""" + PREAMBLE)
         for r in rows:
             p = r['p']
             fh.write(f"\n-- {p['surname']}, {p['first_name']} — {r['action']}"
