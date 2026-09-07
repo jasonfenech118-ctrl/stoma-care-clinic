@@ -59,6 +59,19 @@ def _base_of(word):
     return BASES[hit[0]] if hit else None
 
 
+def bases(text):
+    """Every stoma named in a piece of free text, as canonical base words.
+
+    Both records write the type their own way — the app keeps a JSON array
+    (`["End _ Ileostomy"]`), the book one phrase per row (`Transverse
+    Colostomy`, `colestomy`) — so the text is reduced to the stoma itself and
+    compared on that. A patient carrying two stomas yields both, and a phrase
+    naming none (`Other`, a blank) yields an empty set, which callers read as
+    "nothing to go on" rather than as a disagreement.
+    """
+    return {b for b in (_base_of(w) for w in _words(text)) if b}
+
+
 def has_mucus_fistula(text):
     t = ' '.join(_words(text))
     if re.search(r'\bm\.?f\b', str(text or '').lower()):

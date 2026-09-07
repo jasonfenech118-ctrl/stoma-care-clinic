@@ -44,6 +44,31 @@ so each of these is handled explicitly rather than assumed away:
   `ilestomy` and `Ilesosotomy` all reach `Ileostomy`. A mucus fistula named
   alongside the stoma is returned separately, because it is a second output
   formed at the same operation and the registry models it that way.
+- **The same operation under two dates.** The app and the book were typed by
+  hand from the same page, and where they disagree about a date they disagree
+  in a few very regular ways: a day or two either side, the day and the month
+  swapped (`01/09` read as `09/01`), a mistyped year, a mistyped month, or the
+  book giving only the month so the day sits on the 1st. Each of those is one
+  operation written twice. `make_sql._date_agreement` tries them in that order
+  and `_types_agree` corroborates the further-apart ones, so the book's row is
+  recognised as the stoma the app already holds instead of being added as a
+  second one. Where none of them fits, the nearest row naming the same stoma is
+  taken anyway — the app has only ever held one stoma per patient and the book
+  is the complete record of every stoma formed, so it is the date that is wrong,
+  not the count. Only where the book names no stoma of that kind at all does the
+  app's stoma stand as one of its own. Every one of these disagreements is
+  written into the patient's notes and listed in `import-8-dates-to-check.csv`.
+- **One patient under two ID cards.** Where the book and the app spell the card
+  differently, the same person is two people here — the app's file, and a
+  book-only file that would be created beside it. `crossref` joins them where
+  the name AND the operation date match exactly, because two people of the same
+  name do not have stoma surgery on the same day. Without it the app's patient
+  keeps no firm, no address and no operation, because everything the book knows
+  is sitting on the other file.
+- **The same operation written twice in the book** — same patient, same day,
+  same words, entered again a few pages later, sometimes with the stoma type
+  corrected the second time. The repeat is dropped rather than becoming a
+  second stoma.
 - **Reversal dates** are mostly not written down. Where the comment carries
   one (`Reversal of Ileostomy 20/3/15`) it is used; otherwise the date falls
   back to the section's month, marked `month`, and sits on the 1st. A date
@@ -69,6 +94,29 @@ generated CSVs, and do not paste them into anything that leaves the hospital.
 | `5-needs-a-decision.csv` | everything the import refuses to guess at |
 | `6-full-stoma-timeline.csv` | every stoma and reversal, per patient, in order |
 | `7-in-app-not-in-book.csv` | in the app, not in the book |
+
+## What the SQL run writes
+
+| File | What it does |
+|---|---|
+| `import-0-tidy-operations.sql` | moves operations out of the Comments column |
+| `import-5-fix-year-typos.sql` | corrects operation dates whose year was typed wrong |
+| `import-2-fill-existing.sql` | fills blanks on patients the app already has |
+| `import-1-new-patients.sql` | creates the patients only the book has |
+| `import-6-set-reversed.sql` | marks the Reversal book's patients reversed |
+| `import-7-stoma-list.sql` | **puts the stoma list right — runs last** |
+| `import-8-dates-to-check.csv` | operations the two records date differently |
+| `import-9-firm-missing.csv` | patients with no firm, and why |
+
+`import-7` exists because `import-2` only ever *adds* a later stoma, and only
+to a patient who has none — right for a first run, useless for putting an
+earlier one right. An earlier version of this import wrote the book's row onto
+the patient's own stoma **and** again as a later stoma, so patients who have
+only ever had one stoma were left carrying a second that never existed. Step 7
+is the authority on that list: it throws away every later stoma carrying an
+`imp…` uid (this import's own), keeps every stoma a nurse entered, and puts
+back only the ones the book supports. It is safe on a database that ran the
+earlier import, on one that ran none, and on the same database twice.
 
 ## Files
 

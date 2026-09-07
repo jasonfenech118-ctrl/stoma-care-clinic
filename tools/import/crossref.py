@@ -129,6 +129,48 @@ def build():
                 'registry': r, 'flags': [],
             }
 
+    # ---- one patient, two ID cards ----
+    # A patient whose card was typed wrong in one of the two records appears
+    # here as two people: the app's file and a book-only file that would be
+    # created alongside it. Where the name AND the date of the operation are
+    # the same and only the card differs, it is one patient — two people of the
+    # same name do not have stoma surgery on the same day — so the book's rows
+    # are moved onto the app's file. Without this the register book's row is
+    # either filed twice or held back, and the patient in the app keeps no firm,
+    # no address and no operation, because everything the book knows is sitting
+    # on the other file.
+    merged = []
+    for key, p in list(patients.items()):
+        if p['registry'] or not p['formations']:
+            continue
+        nk = name_key(p['first_name'], p['surname'])
+        if not nk:
+            continue
+        dates = {f['date'] for f in p['formations'] if f['date']}
+        for r in reg_by_name.get(nk, []):
+            if not r.get('surgery_date') or r['id_key'] == key:
+                continue
+            try:
+                app_day = datetime.date.fromisoformat(r['surgery_date'][:10])
+            except ValueError:
+                continue
+            if app_day not in dates:
+                continue
+            host = patients.get(r['id_key'])
+            if host is None or host is p:
+                continue
+            host['formations'].extend(p['formations'])
+            host['reversals'].extend(p['reversals'])
+            host['deaths'].extend(p['deaths'])
+            host['cards'] |= p['cards']
+            host['flags'].append(
+                ('one-patient-two-cards',
+                 f"the book files them under {sorted(p['cards'])[0]} and the app under "
+                 f"{r['id_card']}; same name, same operation date, so they are one patient"))
+            merged.append((sorted(p['cards'])[0], r['id_card']))
+            del patients[key]
+            break
+
     # ---- flags a nurse has to see ----
     for p in patients.values():
         f = p['flags']
@@ -210,4 +252,4 @@ def build():
 
     return {'registry': reg, 'formations': forms, 'orphans': orphans,
             'reversals': revs, 'deceased': decs, 'patients': patients,
-            'duplicate_groups': dup_groups}
+            'duplicate_groups': dup_groups, 'merged_cards': merged}

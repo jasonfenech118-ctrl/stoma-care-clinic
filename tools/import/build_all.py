@@ -27,6 +27,11 @@ STEPS = [
     ('import-2-fill-existing.sql', 'STEP 3 - fill the gaps on patients you already have'),
     ('import-1-new-patients.sql', 'STEP 4 - create the patients only the register book has'),
     ('import-6-set-reversed.sql', 'STEP 5 - mark the Reversal book\'s patients reversed'),
+    # Last, because it is the authority on the stoma list and has to overrule
+    # anything the earlier steps put there — including an earlier run of this
+    # same import, which invented a second stoma for patients who only ever
+    # had one.
+    ('import-7-stoma-list.sql', 'STEP 6 - put the stoma list right'),
 ]
 
 
@@ -66,6 +71,9 @@ def combine(outdir):
 --   3. fills blanks on the patients you already have - never overwrites
 --   4. creates the patients only the book has
 --   5. marks the Reversal book's patients reversed, with their date
+--   6. puts the stoma list right - takes out the second stoma an earlier run
+--      of this import invented for patients who only ever had one, and keeps
+--      every stoma entered by hand
 --
 -- WHAT IT WILL NOT DO
 --   * it never deletes a patient
