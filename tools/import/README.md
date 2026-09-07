@@ -95,6 +95,28 @@ generated CSVs, and do not paste them into anything that leaves the hospital.
 | `6-full-stoma-timeline.csv` | every stoma and reversal, per patient, in order |
 | `7-in-app-not-in-book.csv` | in the app, not in the book |
 
+## Why the SQL looks encoded
+
+Every value out of the register book is written into the SQL as
+`convert_from(decode('…','base64'),'UTF8')` rather than as quoted text. What
+lands in the column is character-for-character the same; the difference is what
+the *file* contains.
+
+A SQL editor in a browser has to decide for itself where one statement ends and
+the next begins, and not all of them look inside quotes and comments before
+doing it. The register book is full of things that look like punctuation to
+such a parser: `Hartmann's procedure`, `Laparatomy; drainage of pus`,
+`? tumour mass`, and the double quotes of every JSON stoma payload. One of them
+is enough for the editor to hand Postgres a fragment starting in the middle of
+an operation, which comes back as an error naming a word out of that
+operation — `relation "abdo" does not exist`. The SQL was never wrong: it runs
+clean in Postgres, and a scan finds no unterminated literal in any of it.
+Encoding simply leaves nothing for a parser to get wrong — inside the literals
+there is now nothing but letters, digits and `+/=`.
+
+Single tokens — an ID card, a phone number, a status word, a date — stay
+readable, so the shape of the file is still legible.
+
 ## What the SQL run writes
 
 | File | What it does |
