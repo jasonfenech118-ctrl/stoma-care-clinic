@@ -39,6 +39,17 @@ def classify(p):
     reg = p['registry']
     rip = reg.get('rip_date') if reg else None
     died = bool(p['deaths'] or rip)
+    # The two stoma cases are settled first. A death does not change whether a
+    # patient still has a stoma, or whether the reversal in the book belongs to
+    # a stoma the app has never held, and deciding the death first left those
+    # patients marked reversed with no date to show for it.
+    if last and any(f['date'] and f['date'] > last for f in p['formations']):
+        return 'still-has-stoma', last, note, 'a stoma was formed after the reversal'
+    app_surg = reg.get('surgery_date') if reg else None
+    if last and app_surg and datetime.date.fromisoformat(app_surg) > last:
+        return 'earlier-stoma', last, note, (
+            f"the reversal ({last}) is before the operation on their record "
+            f"({app_surg}), so it closed an earlier stoma")
     if died:
         # This register follows the stoma, and a stoma that was reversed is
         # closed at the reversal. A patient reversed first and dying later is a
@@ -54,17 +65,6 @@ def classify(p):
         return 'set-reversed', last, note, 'reversed before they died'
     if reg and reg.get('status') in ('Discharged to Gozo', 'Relocated Overseas'):
         return 'keep-moved', last, note, f"{reg['status'].lower()} — outranks a reversal in the app"
-    if last and any(f['date'] and f['date'] > last for f in p['formations']):
-        return 'still-has-stoma', last, note, 'a stoma was formed after the reversal'
-    # The app holds the patient's newest stoma. A reversal from the book dated
-    # before it closed an EARLIER stoma, so it must not be written against the
-    # one the app is showing, and it certainly does not make the patient
-    # reversed - they still have the stoma on their record.
-    app_surg = reg.get('surgery_date') if reg else None
-    if last and app_surg and datetime.date.fromisoformat(app_surg) > last:
-        return 'earlier-stoma', last, note, (
-            f"the reversal ({last}) is before the operation on their record "
-            f"({app_surg}), so it closed an earlier stoma")
     if not last:
         return 'no-date', None, note, 'the book gives only the year'
     return 'set-reversed', last, note, ''
@@ -126,6 +126,11 @@ def main(outdir='import-report'):
 --   {n['no-date']:>3} become Reversed with no date (the book gives only the year)
 --   {n['keep-moved']:>3} keep their status and carry Reversed alongside it
 --   {n['died-before-reversal']:>3} left alone: the date of death is before the reversal, so one is wrong
+--
+-- A patient who becomes Reversed here has their DATE OF DEATH REMOVED. This
+-- register follows the stoma and its interest ends at the reversal. The date
+-- is written into the patient's notes in words before it is cleared, so it
+-- stays readable on the record and can be put back by hand if it is wanted.
 --   {n['still-has-stoma']:>3} stay in follow-up: a stoma was formed after the reversal
 --   {n['earlier-stoma']:>3} left alone: the reversal predates the operation on their record,
 --       so it closed an earlier stoma the app has never held
@@ -157,17 +162,30 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses jsonb DEFAUL
                 sets.append(f"reversal_notes = COALESCE(reversal_notes, {q(r['note'])})")
             if r['action'] in ('set-reversed', 'no-date'):
                 # Deceased is included on purpose: the reversal is the outcome
-                # this register keeps, and the date of death stays on the row.
+                # this register keeps.
                 sets.append("followup_status = CASE WHEN followup_status IN "
                             "('active','awaiting_feedback','paused','deceased') "
                             "THEN 'reversed' ELSE followup_status END")
-                # A death that has been moved off the main status is still
-                # recorded, so nothing about the patient is lost.
-                if r['p']['deaths'] or (r['p']['registry'] or {}).get('rip_date'):
-                    sets.append(
-                        "extra_statuses = CASE WHEN extra_statuses @> '[\"deceased\"]'::jsonb "
-                        "THEN extra_statuses ELSE COALESCE(extra_statuses,'[]'::jsonb) "
-                        "|| '[\"deceased\"]'::jsonb END")
+                # The register follows the stoma and its interest ends at the
+                # reversal, so a reversed patient carries no date of death.
+                # The date is written into their notes first, in words, so it
+                # is still readable on the record and can be put back by hand;
+                # it is only removed from the field that drives the status.
+                rip = (r['p']['registry'] or {}).get('rip_date')
+                if rip:
+                    moved = (f"Date of death {datetime.date.fromisoformat(rip):%d %b %Y} removed "
+                             f"from the record on {datetime.date.today():%d %b %Y}: this patient's "
+                             f"stoma was reversed, and the register follows the stoma to its "
+                             f"reversal.")
+                    # Only on the pass that actually clears the date: SET reads
+                    # the row as it was, so a re-run finds it already null and
+                    # leaves the notes alone instead of writing the line twice.
+                    sets.append("patient_notes = CASE WHEN deceased_date IS NOT NULL THEN "
+                                f"COALESCE(patient_notes || ' ', '') || {q(moved)} "
+                                "ELSE patient_notes END")
+                sets.append("deceased_date  = NULL")
+                sets.append("extra_statuses = COALESCE(extra_statuses,'[]'::jsonb) "
+                            "- 'deceased'")
             elif r['action'] == 'keep-moved':
                 sets.append("extra_statuses = CASE WHEN extra_statuses @> '[\"reversed\"]'::jsonb "
                             "THEN extra_statuses ELSE COALESCE(extra_statuses,'[]'::jsonb) "

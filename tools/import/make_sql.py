@@ -208,6 +208,14 @@ def build_patient(p):
         slot['reversal_date'] = rev['date'].isoformat() if rev['date'] else None
         slot['reversal_notes'] = rev.get('comments')
 
+    # The register follows the stoma, so a patient whose every stoma was closed
+    # is a reversal here even if the Deceased book also names them. Their death
+    # is recorded in the notes rather than as a status or a date, exactly as it
+    # is for the patients the app already holds.
+    deceased = bool(p['deaths'])
+    reversed_all = bool(slots) and all(s['reversal_date'] for _, s in slots)
+    status = 'reversed' if reversed_all else ('deceased' if deceased else 'active')
+
     # Provenance, so anyone reading the record later knows where it came from
     # and how exact the dates are.
     notes = [f'Imported from the register book on {datetime.date.today():%d %b %Y}.']
@@ -221,7 +229,9 @@ def build_patient(p):
         notes.append('A reversal is recorded with the year only, so it has no date on file.')
     if p['deaths']:
         yrs = ', '.join(str(x['year']) for x in p['deaths'] if x['year'])
-        notes.append(f'Recorded in the Deceased book for {yrs}; the book gives the year only.')
+        notes.append(f'Recorded in the Deceased book for {yrs}; the book gives the year only.'
+                     + (' Their stoma was reversed, so this register keeps them as a reversal '
+                        'and carries no date of death.' if reversed_all else ''))
     if first['date'] and first['date'] > datetime.date.today():
         notes.append(f'The book gives the date of surgery as {first["date"]:%d %b %Y}, which is in '
                      f'the future — it has been left blank. Please check the book.')
@@ -231,10 +241,6 @@ def build_patient(p):
     if first.get('name_confidence') == 'low':
         notes.append(f'Name written in the book as "{first["name_raw"]}" — '
                      f'which half is the surname was not certain. Please check.')
-
-    deceased = bool(p['deaths'])
-    reversed_all = bool(slots) and all(s['reversal_date'] for _, s in slots)
-    status = 'deceased' if deceased else ('reversed' if reversed_all else 'active')
 
     return {
         'id_card': sorted(p['cards'])[0],
