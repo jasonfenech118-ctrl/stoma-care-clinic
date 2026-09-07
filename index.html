@@ -1168,6 +1168,13 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .sit-ck-note-wrap{margin-top:8px;}
 .sit-ck-ctrls input[type=date]{padding:4px 7px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 .sit-ck-init{flex:1;min-width:120px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+/* The "Assessment completed by" sign-off at the foot of the pre-op form. */
+.sit-signoff{margin-top:14px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafbfc;}
+.sit-signoff-h{font-size:12px;font-weight:700;color:#1a2e4a;margin-bottom:8px;}
+.sit-signoff-row{display:flex;gap:12px;flex-wrap:wrap;}
+.sit-signoff-row label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:#374151;}
+.sit-signoff-row input{padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
+.sit-signoff-row #ck-sign-init{max-width:90px;text-transform:uppercase;}
 
 /* --- Phone: the handover grid becomes a stack of cards --- */
 @media(max-width:640px){
@@ -12252,6 +12259,19 @@ const SITING_CHECKLIST_ITEMS=[
   'Other issues discussed'
 ];
 let sitingSeenCtx=null;
+// A name reduced to initials — the first letter of each word, upper-cased.
+// "Jason Fenech" → "JF". Used to fill the sign-off initials from the name.
+function initialsFromName(name){
+  return String(name||'').trim().split(/\s+/).filter(Boolean).map(w=>w[0].toUpperCase()).join('');
+}
+// While the nurse types their name, keep the initials in step — but only until
+// they edit the initials by hand, after which their version is left alone.
+function syncSignInitials(){
+  const ini=document.getElementById('ck-sign-init');
+  if(ini&&ini.dataset.touched)return;
+  const nm=document.getElementById('ck-sign-name');
+  if(ini&&nm)ini.value=initialsFromName(nm.value);
+}
 // The stoma types a patient can be sited for. A patient can need more than one,
 // so every "sited for" and "stoma type" control is a set of these, not a single
 // choice, and the value is stored as the chosen names joined with " & ".
@@ -12280,6 +12300,12 @@ async function openSitingSeen(id){
   // automatically, still editable per row.
   let who=null;try{who=await getCurrentUserForAudit();}catch(e){}
   const ini=(who&&who.name)?String(who.name).trim():'';
+  // The sign-off at the foot of the form: who completed the assessment, their
+  // initials, and the date. Name and initials default to the signed-in nurse,
+  // the initials worked out from the name; all three stay editable.
+  const signName=(existing&&existing.signed_name)||ini;
+  const signInit=(existing&&existing.signed_initials)||initialsFromName(ini);
+  const signDate=(existing&&existing.signed_date)||TODAY;
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const items=(existing&&existing.items)||[];
   // The stoma types ticked at item 3. Prefer what was saved (an array, or an
@@ -12290,7 +12316,7 @@ async function openSitingSeen(id){
   const rows=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1, it=items[i]||{};
     const met=it.status==='met', unmet=it.status==='unmet';
-    const dval=it.date||TODAY, ival=it.initials||ini;
+    const dval=it.date||TODAY, ival=it.initials||initialsFromName(ini);
     const typePick=(n===3)?`<div class="sit-ck-type">
         ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="checkbox" class="ck-type" value="${t}" ${stomaTypes.includes(t)?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
@@ -12312,7 +12338,7 @@ async function openSitingSeen(id){
           <label class="ck-noted"><input type="radio" name="ck-status-${n}" value="noted" ${noted?'checked':''} onchange="toggleCkNote(${n})"/> Notes</label>
         </div>
         <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
-        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Name" value="${htmlSafe(ival)}" title="Name"/>
+        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials"/>
       </div>
       <div id="ck-note-wrap-${n}" class="sit-ck-note-wrap"${noted?'':' hidden'}>
         <input type="text" id="ck-note-${n}" class="sit-ck-other" placeholder="Notes" value="${htmlSafe(it.note||'')}"/></div>
@@ -12331,6 +12357,14 @@ async function openSitingSeen(id){
         <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear all</button></div>
       <div class="sit-bodymap" id="sit-bodymap" onclick="placeStomaMark(event)">
         <img src="${htmlSafe(preopBodyMapSrc())}" alt="Abdomen diagram" draggable="false"/>
+      </div>
+    </div>
+    <div class="sit-signoff">
+      <div class="sit-signoff-h">Assessment completed by</div>
+      <div class="sit-signoff-row">
+        <label>Name<input type="text" id="ck-sign-name" value="${htmlSafe(signName)}" placeholder="Nurse name" oninput="syncSignInitials()"/></label>
+        <label>Initials<input type="text" id="ck-sign-init" value="${htmlSafe(signInit)}" placeholder="e.g. JF" maxlength="6" oninput="this.dataset.touched=1"/></label>
+        <label>Date<input type="date" id="ck-sign-date" value="${htmlSafe(signDate)}"/></label>
       </div>
     </div>
     <div class="mact" style="flex-wrap:wrap;gap:8px;">
@@ -12426,6 +12460,9 @@ function readSitingChecklist(){
   const other=document.getElementById('ck-other')?.value.trim()||'';
   return {items,stoma_types,
     stoma_type:stoma_types.join(' & '),   // kept so older readers still find a value
+    signed_name:document.getElementById('ck-sign-name')?.value.trim()||'',
+    signed_initials:document.getElementById('ck-sign-init')?.value.trim()||'',
+    signed_date:document.getElementById('ck-sign-date')?.value||'',
     other,
     stoma_marks:sitingStomaMarks.slice(),
     stoma_mark:sitingStomaMarks[0]||null};   // kept so older saved forms still read
@@ -12477,6 +12514,11 @@ function printSitingChecklist(){
     th,td{border:1px solid #000;padding:7px 8px;vertical-align:top;}
     th{font-weight:bold;} td.cc,th.cc{text-align:center;width:56px;} td.cl{width:auto;}
     td.cn,th.cn{width:120px;text-align:left;}
+    .signoff{margin-top:24px;}
+    .signoff .row{display:flex;gap:34px;margin-top:16px;align-items:flex-end;flex-wrap:wrap;}
+    .signoff .lab{font-weight:bold;}
+    .signoff .sig{display:inline-block;border-bottom:1px solid #000;min-width:230px;height:16px;}
+    .signoff .v{display:inline-block;border-bottom:1px solid #000;min-width:90px;padding:0 6px;}
     /* The diagram gets the back page to itself, at the full width of the text
        area. The image is 680x836, so at 178mm wide it stands 219mm tall and
        still leaves room for its heading. */
@@ -12497,8 +12539,17 @@ function printSitingChecklist(){
     <div class="pt">Consultant: <span>${htmlSafe(ss.consultant||'')}</span></div>
     <div class="pt">Proposed operation: <span>${htmlSafe(ss.proposed_operation||'')}</span></div>
     <div class="pt">Surgery date: <span>${ss.surgery_date?htmlSafe(fmtShortDate(ss.surgery_date)):''}</span></div>
-    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Name</th></tr></thead>
+    <table><thead><tr><th class="cl"></th><th class="cc">Met</th><th class="cc">Unmet</th><th class="cc">Date</th><th class="cn">Initials</th></tr></thead>
     <tbody>${body}</tbody></table>
+    <div class="signoff">
+      <div class="row"><span class="lab">Assessment completed by</span></div>
+      <div class="row">
+        <span>Signature: <span class="sig"></span></span>
+        <span>Name: <span class="v">${htmlSafe(c.signed_name||'')}</span></span>
+        <span>Initials: <span class="v">${htmlSafe(c.signed_initials||'')}</span></span>
+        <span>Date: <span class="v">${c.signed_date?htmlSafe(fmtShortDate(c.signed_date)):''}</span></span>
+      </div>
+    </div>
     <div class="sitepage">
       <h3>STOMA SITE${printMarks.length>1?'S':''}</h3>
       <div class="bodymap"><img src="${htmlSafe(preopBodyMapSrc())}"/>
