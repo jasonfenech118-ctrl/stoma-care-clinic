@@ -113,9 +113,119 @@ def main(outdir='import-report'):
     set_reversed.main(outdir)
     tidy_operations.main(outdir)
     out = combine(outdir)
+    parts = split(out, outdir)
     kb = os.path.getsize(out) // 1024
-    print(f"\n{'=' * 68}\nONE FILE TO RUN:  {out}  ({kb} KB)\n{'=' * 68}")
+    print(f"\n{'=' * 68}")
+    print(f"IF YOUR SQL EDITOR TAKES A BIG FILE:  {os.path.basename(out)}  ({kb} KB)")
+    print(f"OTHERWISE RUN THESE {len(parts)} IN ORDER, ONE AT A TIME:")
+    for f in parts:
+        print(f"   {os.path.basename(f):<28} {os.path.getsize(f) // 1024:>4} KB")
+    print('=' * 68)
     return out
+
+
+def split(path, outdir, target_kb=190):
+    """Cut the combined file into pieces small enough to paste into a browser.
+
+    The Supabase SQL editor is a text box in a web page, and a megabyte of SQL
+    pasted into one is slow at best. The cut only ever falls between statements
+    — never inside one — so each piece runs on its own, and each is wrapped in
+    its own transaction. Run them in order: they are the same statements in the
+    same sequence, just handed over a few at a time.
+    """
+    text = open(path, encoding='utf-8').read()
+    body = text.split('BEGIN;', 1)[1].rsplit('COMMIT;', 1)[0]
+    # Statement boundaries: a semicolon that is not inside a string literal.
+    # Counting quotes per line is not good enough — the values are full of
+    # doubled quotes ("Hartmann''s") and one miscount merges every INSERT in
+    # the file into a single 700 KB lump that cannot be split at all.
+    # It must also skip -- comments. The prose in these files is full of
+    # apostrophes ("the Reversal book's patients"), and one of those read as
+    # the start of a string literal puts the scanner out of step for the rest
+    # of the file — which is how a cut landed in the middle of an operation.
+    stmts, start, i, n, in_str = [], 0, 0, len(body), False
+    while i < n:
+        c = body[i]
+        if in_str:
+            if c == "'":
+                if i + 1 < n and body[i + 1] == "'":
+                    i += 2          # an escaped quote inside the literal
+                    continue
+                in_str = False
+        elif c == '-' and i + 1 < n and body[i + 1] == '-':
+            nl = body.find('\n', i)
+            i = n if nl == -1 else nl
+            continue
+        elif c == '/' and i + 1 < n and body[i + 1] == '*':
+            close = body.find('*/', i + 2)
+            i = n if close == -1 else close + 2
+            continue
+        elif c == "'":
+            in_str = True
+        elif c == ';':
+            stmts.append(body[start:i + 1])
+            start = i + 1
+        i += 1
+    tail = body[start:]
+    if tail.strip():
+        stmts.append(tail)
+
+    limit, parts, cur, size = target_kb * 1024, [], [], 0
+    for st in stmts:
+        if cur and size + len(st) > limit:
+            parts.append(''.join(cur))
+            cur, size = [], 0
+        cur.append(st)
+        size += len(st)
+    if cur:
+        parts.append(''.join(cur))
+
+    written = []
+    for i, chunk in enumerate(parts, 1):
+        f = os.path.join(outdir, f'import-part-{i:02d}-of-{len(parts):02d}.sql')
+        with open(f, 'w', encoding='utf-8') as fh:
+            fh.write(f"""-- =============================================================================
+-- REGISTER BOOK IMPORT — PART {i} OF {len(parts)}
+-- =============================================================================
+-- Generated {datetime.date.today():%d %B %Y}.
+--
+-- The whole import was one file of about a megabyte, which a SQL editor in a
+-- browser will not take comfortably. It is the same import, handed over a few
+-- statements at a time.
+--
+--   * RUN THEM IN ORDER, 1 to {len(parts)}. The order matters.
+--   * Wait for each to finish before pasting the next.
+--   * Each part is one transaction: it either lands or it does not.
+--   * Running a part twice changes nothing the second time, so if you lose
+--     your place it is safe to run one again.
+--
+-- Nothing is ever deleted, and nothing already on a patient is overwritten —
+-- only blanks are filled. The one exception is spelled out in part 5: a
+-- patient whose stoma was reversed has their date of death cleared, with the
+-- date written into their notes first.
+-- =============================================================================
+
+BEGIN;
+{chunk}
+COMMIT;
+""")
+            if i == len(parts):
+                fh.write("""
+-- ---------------------------------------------------------------------------
+-- All parts are in. How the register reads now.
+-- ---------------------------------------------------------------------------
+SELECT followup_status AS status, COUNT(*) AS patients
+FROM public.patients GROUP BY 1 ORDER BY 2 DESC;
+
+-- Nothing here should return a row.
+SELECT 'operation dated in the future' AS problem, id_card, surname, surgery_date
+FROM public.patients WHERE surgery_date > CURRENT_DATE
+UNION ALL
+SELECT 'reversed before it was formed', id_card, surname, reversal_date
+FROM public.patients WHERE reversal_date < surgery_date;
+""")
+        written.append(f)
+    return written
 
 
 if __name__ == '__main__':

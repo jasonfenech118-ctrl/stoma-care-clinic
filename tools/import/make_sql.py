@@ -78,10 +78,20 @@ def q(v):
 
 
 def jsonq(obj):
+    """A jsonb literal, with the empty keys left out.
+
+    Every stoma carries the same dozen fields whether or not it has them, and
+    on 2,500 of them the nulls alone ran to pages of a file that has to be
+    pasted into a browser. Dropping them changes nothing the app reads: it
+    already treats a missing key and a null key the same way.
+    """
     import json
     if not obj:
         return "'[]'::jsonb"
-    return "'" + json.dumps(obj, ensure_ascii=False).replace("'", "''") + "'::jsonb"
+    if isinstance(obj, list):
+        obj = [{k: v for k, v in o.items() if v not in (None, '', [], False)} | {'uid': o['uid']}
+               if isinstance(o, dict) and 'uid' in o else o for o in obj]
+    return "'" + json.dumps(obj, ensure_ascii=False, separators=(',', ':')).replace("'", "''") + "'::jsonb"
 
 
 # How far apart the app and the book may write the same operation and still be
@@ -95,6 +105,20 @@ def _stoma_word(t):
     return (mapped or '').split('-')[-1].strip().lower() or None
 
 
+def _row_extras(rec, patient_address, patient_phone, patient_consultant):
+    """The register row's own address / phone / firm, but ONLY where they differ
+    from the patient's. On most patients every row repeats the same details, and
+    storing them again on every stoma was 73 KB of the import saying nothing."""
+    out = {}
+    if rec.get('address') and rec['address'] != patient_address:
+        out['row_address'] = rec['address']
+    if rec.get('phone') and rec['phone'] != patient_phone:
+        out['row_phone'] = rec['phone']
+    if rec.get('consultant') and rec['consultant'] != patient_consultant:
+        out['row_consultant'] = rec['consultant']
+    return out
+
+
 def stoma_entry(rec, uid):
     """One later-stoma JSON entry, in the shape the app already reads."""
     e = {'uid': uid,
@@ -103,15 +127,7 @@ def stoma_entry(rec, uid):
          'findings': rec.get('operation') or rec.get('comments'),
          'location': None, 'discharge_date': None,
          'reversal_date': None, 'reversal_notes': None,
-         # The address, telephone and firm written against THIS row of the
-         # book. The patient record holds one of each - their current one -
-         # but the book writes them afresh at every operation, and a patient
-         # who moved house or changed firm between two stomas has two
-         # different sets. Keeping the row's own values here lets the New
-         # Patients page print the book exactly as it stands.
-         'row_address': rec.get('address'), 'row_phone': rec.get('phone'),
-         'row_consultant': rec.get('consultant'),
-         'row_operation': rec.get('operation'), 'row_comments': rec.get('comments')}
+         'operation': rec.get('operation'), 'comments': rec.get('comments')}
     return e
 
 
@@ -164,7 +180,9 @@ def build_patient(p):
         first = base_form or forms[0]
     else:
         first, later = forms[0], forms[1:]
-    extra = [stoma_entry(r, f'imp{p["id_key"]}s{i + 2}') for i, r in enumerate(later)]
+    extra = [stoma_entry(r, f'imp{p["id_key"]}s{i + 2}')
+             | _row_extras(r, first.get('address'), first.get('phone'), first.get('consultant'))
+             for i, r in enumerate(later)]
 
     # A mucus fistula named alongside a stoma is a second output at the same
     # operation, which is what initial_stomas is for.
@@ -218,29 +236,27 @@ def build_patient(p):
 
     # Provenance, so anyone reading the record later knows where it came from
     # and how exact the dates are.
-    notes = [f'Imported from the register book on {datetime.date.today():%d %b %Y}.']
+    # Provenance, kept terse. The same long sentence on 2,300 patients was 193 KB
+    # of a file that has to be pasted into a browser, and said the same thing
+    # every time. The caveats — which are per-patient and worth reading — stay.
+    notes = [f'Register book import {datetime.date.today():%d/%m/%Y}.']
     if first['date_quality'] == 'month':
-        notes.append('Date of surgery is the month only — the day is not written in the book.')
-    for r in revs:
-        if r['date_quality'] == 'month':
-            notes.append('A reversal date is the month only — the day is not written in the book.')
-            break
+        notes.append('Surgery date: month only, day not in the book.')
+    if any(r['date_quality'] == 'month' for r in revs):
+        notes.append('Reversal date: month only, day not in the book.')
     if any(r['date_quality'] == 'year-only' for r in revs):
-        notes.append('A reversal is recorded with the year only, so it has no date on file.')
+        notes.append('A reversal has only a year in the book, so no date is on file.')
     if p['deaths']:
         yrs = ', '.join(str(x['year']) for x in p['deaths'] if x['year'])
-        notes.append(f'Recorded in the Deceased book for {yrs}; the book gives the year only.'
-                     + (' Their stoma was reversed, so this register keeps them as a reversal '
-                        'and carries no date of death.' if reversed_all else ''))
+        notes.append(f'In the Deceased book for {yrs} (year only).'
+                     + (' Reversed, so kept as a reversal with no date of death.'
+                        if reversed_all else ''))
     if first['date'] and first['date'] > datetime.date.today():
-        notes.append(f'The book gives the date of surgery as {first["date"]:%d %b %Y}, which is in '
-                     f'the future — it has been left blank. Please check the book.')
+        notes.append(f'Book gives surgery as {first["date"]:%d/%m/%Y}, in the future — left blank.')
     if first['type_confidence'] in ('unmapped', 'ambiguous', 'blank'):
-        notes.append(f'Stoma type in the book reads "{first["stoma_type_raw"] or "(blank)"}" '
-                     f'— {first["type_note"]}. Please set it by hand.')
+        notes.append(f'Stoma type reads "{first["stoma_type_raw"] or "(blank)"}" — set it by hand.')
     if first.get('name_confidence') == 'low':
-        notes.append(f'Name written in the book as "{first["name_raw"]}" — '
-                     f'which half is the surname was not certain. Please check.')
+        notes.append(f'Name in the book: "{first["name_raw"]}" — check which half is the surname.')
 
     return {
         'id_card': sorted(p['cards'])[0],
@@ -374,8 +390,9 @@ def emit(outdir='import-report'):
         fh.write(HEADER.format(title=f'Register book import - {len(new_rows)} new patients',
                  when=when,
                  subtitle='Patients the book has and the app does not, newest surgery first.'))
-        for i in range(0, len(new_rows), 100):
-            chunk = new_rows[i:i + 100]
+        # 50 at a time so the file can be cut into evenly sized pieces later.
+        for i in range(0, len(new_rows), 50):
+            chunk = new_rows[i:i + 50]
             fh.write(f"\n-- rows {i + 1}-{i + len(chunk)}\n")
             fh.write('INSERT INTO public.patients (\n  ' + ', '.join(COLS)
                      + ', initial_stomas, extra_stomas, followup_owner, followup_type\n) VALUES\n')
@@ -388,52 +405,74 @@ def emit(outdir='import-report'):
         fh.write(FOOTER)
 
     # ---- 2. fill blanks on patients already in the app -------------------
-    FILL = ['address', 'locality', 'consultant', 'phone_number', 'surgery_date', 'stoma_type',
-            'procedure_performed', 'findings', 'reversal_date', 'reversal_notes']
+    # One statement rather than 687. Each patient used to get a multi-line
+    # UPDATE naming every column, which came to half a megabyte of a file that
+    # has to be pasted into a browser. The values are a table joined on the ID
+    # card instead; COALESCE still means only blanks are filled.
+    FILL = ['address', 'locality', 'consultant', 'phone_number', 'stoma_type',
+            'procedure_performed', 'findings', 'reversal_notes']
     path2 = os.path.join(outdir, 'import-2-fill-existing.sql')
-    wrote = 0
+    rows2 = []
+    for p_, rec in upd_rows:
+        rows2.append('  (' + ', '.join([
+            q(rec['id_card']),
+            *[q(rec.get(c)) for c in FILL],
+            q(rec.get('surgery_date')), q(rec.get('reversal_date')),
+            jsonq(rec['extra_stomas']) if rec['extra_stomas'] else "NULL",
+            jsonq(rec['initial_stomas']) if rec['initial_stomas'] else "NULL",
+            'true' if p_['deaths'] else 'false',
+        ]) + ')')
+    wrote = len(rows2)
     with open(path2, 'w', encoding='utf-8') as fh:
         fh.write(HEADER.format(
             title=f'Register book import - filling gaps on {len(upd_rows)} existing patients',
             when=when,
             subtitle='Only blank fields are filled. Nothing already in the app is changed.'))
-        for p, rec in upd_rows:
-            sets = [f'{c} = COALESCE({c}, {q(rec[c])})'
-                    for c in FILL if rec.get(c) is not None and c != 'reversal_date']
-            # The reversal is the one field that can contradict what the app
-            # already holds: the app keeps the patient's newest stoma, and a
-            # reversal from the book may belong to an older one. It is only
-            # filled in when it is on or after whatever surgery date the row
-            # ends up with, so a record can never say a stoma was reversed
-            # before it was formed.
-            if rec.get('reversal_date') is not None:
-                # The reversal is carried as an ISO string (it also lives inside
-                # the stoma JSON), so it is cast before being compared with a
-                # date column.
-                rev = f"{q(rec['reversal_date'])}::date"
-                sets.append(
-                    f"reversal_date = COALESCE(reversal_date, CASE WHEN "
-                    f"{rev} >= COALESCE(surgery_date, {q(rec['surgery_date'])}) "
-                    f"THEN {rev} END)")
-            # A later stoma is only added where the patient has none recorded.
-            if rec['extra_stomas']:
-                sets.append("extra_stomas = CASE WHEN extra_stomas IS NULL "
-                            "OR jsonb_array_length(extra_stomas) = 0 "
-                            f"THEN {jsonq(rec['extra_stomas'])} ELSE extra_stomas END")
-            if rec['initial_stomas']:
-                sets.append("initial_stomas = CASE WHEN initial_stomas IS NULL "
-                            "OR jsonb_array_length(initial_stomas) = 0 "
-                            f"THEN {jsonq(rec['initial_stomas'])} ELSE initial_stomas END")
-            # A death outranks everything, so it is the one status the import
-            # will set on an existing record - and only when the app has none.
-            if p['deaths']:
-                sets.append("followup_status = CASE WHEN followup_status IS DISTINCT FROM 'deceased' "
-                            "AND deceased_date IS NULL THEN 'deceased' ELSE followup_status END")
-            if not sets:
-                continue
-            wrote += 1
-            fh.write(f"\n-- {rec['surname']}, {rec['first_name']}\nUPDATE public.patients SET\n  "
-                     + ',\n  '.join(sets) + f"\nWHERE id_card = {q(rec['id_card'])};\n")
+        # Written in batches rather than as one enormous statement: the file has
+        # to be split into pieces small enough to paste into a browser, and a
+        # split can only fall between statements.
+        for i in range(0, len(rows2), 80):
+            batch = rows2[i:i + 80]
+            fh.write(f"\n-- patients {i + 1}-{i + len(batch)} of {len(rows2)}\n")
+            fh.write("""UPDATE public.patients AS t SET
+  address             = COALESCE(t.address, v.address),
+  locality            = COALESCE(t.locality, v.locality),
+  consultant          = COALESCE(t.consultant, v.consultant),
+  phone_number        = COALESCE(t.phone_number, v.phone_number),
+  stoma_type          = COALESCE(t.stoma_type, v.stoma_type),
+  procedure_performed = COALESCE(t.procedure_performed, v.procedure_performed),
+  findings            = COALESCE(t.findings, v.findings),
+  reversal_notes      = COALESCE(t.reversal_notes, v.reversal_notes),
+  surgery_date        = COALESCE(t.surgery_date, v.surgery_date::date),
+  -- Only on or after whatever surgery date the row ends up with, so a record
+  -- can never say a stoma was reversed before it was formed.
+  reversal_date       = COALESCE(t.reversal_date,
+                          CASE WHEN v.reversal_date::date
+                                    >= COALESCE(t.surgery_date, v.surgery_date::date)
+                               THEN v.reversal_date::date END),
+  -- A later stoma is only added where the patient has none recorded.
+  extra_stomas        = CASE WHEN v.extra_stomas IS NOT NULL
+                              AND (t.extra_stomas IS NULL
+                                   OR jsonb_array_length(t.extra_stomas) = 0)
+                             THEN v.extra_stomas::jsonb ELSE t.extra_stomas END,
+  initial_stomas      = CASE WHEN v.initial_stomas IS NOT NULL
+                              AND (t.initial_stomas IS NULL
+                                   OR jsonb_array_length(t.initial_stomas) = 0)
+                             THEN v.initial_stomas::jsonb ELSE t.initial_stomas END,
+  -- A death is the one status the import sets, and only where the app has none.
+  followup_status     = CASE WHEN v.deceased
+                              AND t.followup_status IS DISTINCT FROM 'deceased'
+                              AND t.deceased_date IS NULL
+                             THEN 'deceased' ELSE t.followup_status END
+FROM (VALUES
+""")
+            fh.write(',\n'.join(batch))
+            fh.write("""
+) AS v(id_card, address, locality, consultant, phone_number, stoma_type,
+       procedure_performed, findings, reversal_notes, surgery_date, reversal_date,
+       extra_stomas, initial_stomas, deceased)
+WHERE t.id_card = v.id_card;
+""")
         fh.write(FOOTER)
 
     # ---- 3. what was deliberately left out --------------------------------
