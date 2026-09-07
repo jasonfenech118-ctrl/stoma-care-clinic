@@ -102,7 +102,16 @@ def stoma_entry(rec, uid):
          'formed_date': rec['date'].isoformat() if rec.get('date') else None,
          'findings': rec.get('operation') or rec.get('comments'),
          'location': None, 'discharge_date': None,
-         'reversal_date': None, 'reversal_notes': None}
+         'reversal_date': None, 'reversal_notes': None,
+         # The address, telephone and firm written against THIS row of the
+         # book. The patient record holds one of each - their current one -
+         # but the book writes them afresh at every operation, and a patient
+         # who moved house or changed firm between two stomas has two
+         # different sets. Keeping the row's own values here lets the New
+         # Patients page print the book exactly as it stands.
+         'row_address': rec.get('address'), 'row_phone': rec.get('phone'),
+         'row_consultant': rec.get('consultant'),
+         'row_operation': rec.get('operation'), 'row_comments': rec.get('comments')}
     return e
 
 

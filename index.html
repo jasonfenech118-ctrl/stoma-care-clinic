@@ -7673,11 +7673,22 @@ function patientFormationRows(p){
   /* A refashioning and a later stoma both record their operation in one
      "operation and findings" field, so it stands in the Operation column and
      the Comments column is left to the patient-level findings it does not
-     have. */
-  parseRefashionings(p).forEach(r=>out.push({...base,kind:'refashion',date:r.formed_date||null,
-    stoma_type:r.type||null,operation:r.findings||null,comments:null}));
-  parseStomas(p).forEach(s=>out.push({...base,kind:'later',date:s.formed_date||null,
-    stoma_type:s.type||null,operation:s.findings||null,comments:null}));
+     have.
+
+     Where a stoma carries the address, telephone or firm written against its
+     own row of the register book, those are used in preference to the ones on
+     the patient. The patient record keeps one of each — where they live now —
+     but the book writes them afresh at every operation, so a patient who moved
+     house between two stomas has two different addresses in it. Using the
+     row's own values is what makes this page a copy of the book rather than a
+     summary of it. */
+  const rowOf=(s,extra)=>({...base,
+    address:s.row_address||base.address, phone_number:s.row_phone||base.phone_number,
+    consultant:s.row_consultant||base.consultant, ...extra});
+  parseRefashionings(p).forEach(r=>out.push(rowOf(r,{kind:'refashion',date:r.formed_date||null,
+    stoma_type:r.type||null,operation:r.row_operation||r.findings||null,comments:r.row_comments||null})));
+  parseStomas(p).forEach(s=>out.push(rowOf(s,{kind:'later',date:s.formed_date||null,
+    stoma_type:s.type||null,operation:s.row_operation||s.findings||null,comments:s.row_comments||null})));
   return out.filter(r=>r.date);
 }
 async function loadNewPatients(){
@@ -7809,8 +7820,12 @@ function printNewPatients(){
    underlying data matches, and so any record flipped to "reversed" by the
    earlier build is put back. */
 const DEATH_OUTRANKS=['reversed','discharged_gozo','relocated_overseas'];
+/* Records stored under an outcome a death outranks. A patient whose stoma was
+   reversed before they died is deliberately not on this list: the reversal is
+   the outcome this register keeps for them, so offering to "correct" them to
+   deceased would undo it on every pass. */
 function patientsMarkedOtherButDeceased(rows){
-  return (rows||[]).filter(p=>patientIsDeceased(p)
+  return (rows||[]).filter(p=>patientIsDeceased(p)&&!reversedBeforeDeath(p)
     &&DEATH_OUTRANKS.includes(normaliseFollowupStatus(p.followup_status)));
 }
 function correctDeceasedStatus(){
@@ -8472,13 +8487,30 @@ function everReversedDates(p){
    patients rather than of reversals. This counts the reversal itself, whatever
    became of the patient afterwards. */
 function patientEverReversed(p){return everReversedDates(p).length>0;}
+/* Was this patient's stoma story finished by a reversal rather than by their
+   death? This register follows the stoma, and a stoma that was reversed is
+   closed at the reversal — a patient who was reversed and died some years
+   later is a reversal here, not a death, and reads that way in the Registry
+   and in the counts. The date of death stays on the record and still shows on
+   the patient; it simply no longer hides the reversal.
+
+   A patient who died while they still had a stoma is a different matter: for
+   them the stoma ended with the death, and they read as deceased. */
+function reversedBeforeDeath(p){
+  if(!p)return false;
+  const ends=stomaEndDates(p);
+  // Every stoma has to be closed — one still open means the death ended it.
+  if(!ends.length||hasStomaNow(p))return false;
+  const rip=p.deceased_date?String(p.deceased_date):'';
+  // With no date of death recorded there is nothing to say the death came
+  // first, and the reversal is the only dated outcome, so it stands.
+  return !rip||String(ends[ends.length-1])<=rip;
+}
 function derivedFollowupStatus(p){
   const st=normaliseFollowupStatus(p&&p.followup_status);
-  /* A death ends the record. It outranks every other outcome, a reversal years
-     earlier included: the patient reads as deceased, not reversed, and nothing
-     is recorded over it. A date of death counts on its own, so a record still
-     stored as reversed or relocated but carrying one reads as deceased. */
-  if(patientIsDeceased(p))return 'deceased';
+  /* A death ends the record — unless the stoma had already been reversed
+     before it, in which case the reversal is what this register records. */
+  if(patientIsDeceased(p))return reversedBeforeDeath(p)?'reversed':'deceased';
   if(st==='discharged_gozo'||st==='relocated_overseas')return st;
   // A record with no surgery date and no stoma type has no stoma timeline to
   // reason about, but a reversal date on it is still a reversal — without this

@@ -37,8 +37,21 @@ def classify(p):
                 key=lambda x: x['date'] or datetime.date(1900, 1, 1), reverse=True)
                 if r.get('comments')), None)
     reg = p['registry']
-    if p['deaths'] or (reg and reg.get('rip_date')):
-        return 'keep-deceased', last, note, 'deceased — a death outranks a reversal'
+    rip = reg.get('rip_date') if reg else None
+    died = bool(p['deaths'] or rip)
+    if died:
+        # This register follows the stoma, and a stoma that was reversed is
+        # closed at the reversal. A patient reversed first and dying later is a
+        # reversal here; the date of death stays on the record and no longer
+        # hides it. Only a death BEFORE the reversal keeps the patient
+        # deceased, and that ordering is impossible, so it is flagged instead.
+        if rip and last and datetime.date.fromisoformat(rip) < last:
+            return 'died-before-reversal', last, note, (
+                f'the date of death ({rip}) is before the reversal ({last}) — '
+                f'one of the two dates is wrong')
+        if not last:
+            return 'no-date', None, note, 'deceased, and the book gives only the year'
+        return 'set-reversed', last, note, 'reversed before they died'
     if reg and reg.get('status') in ('Discharged to Gozo', 'Relocated Overseas'):
         return 'keep-moved', last, note, f"{reg['status'].lower()} — outranks a reversal in the app"
     if last and any(f['date'] and f['date'] > last for f in p['formations']):
@@ -80,7 +93,7 @@ def main(outdir='import-report'):
             w.writerow([r['card'], p['surname'], p['first_name'],
                         p['registry']['status'] or '',
                         {'set-reversed': 'status becomes Reversed',
-                         'keep-deceased': 'stays Deceased, reversal date recorded',
+                         'died-before-reversal': 'left alone — the dates contradict each other',
                          'keep-moved': 'status kept, Reversed added alongside',
                          'still-has-stoma': 'stays in follow-up — has a stoma again',
                          'earlier-stoma': 'left alone — the reversal is of an older stoma',
@@ -89,7 +102,7 @@ def main(outdir='import-report'):
 
     path = os.path.join(outdir, 'import-6-set-reversed.sql')
     n = {k: sum(1 for r in rows if r['action'] == k) for k in
-         ('set-reversed', 'keep-deceased', 'keep-moved', 'still-has-stoma',
+         ('set-reversed', 'died-before-reversal', 'keep-moved', 'still-has-stoma',
           'earlier-stoma', 'no-date')}
     with open(path, 'w', encoding='utf-8') as fh:
         fh.write(f"""-- =============================================================================
@@ -112,7 +125,7 @@ def main(outdir='import-report'):
 --   {n['set-reversed']:>3} become Reversed, with the date from the book
 --   {n['no-date']:>3} become Reversed with no date (the book gives only the year)
 --   {n['keep-moved']:>3} keep their status and carry Reversed alongside it
---   {n['keep-deceased']:>3} stay Deceased — a death outranks a reversal — but the date is kept
+--   {n['died-before-reversal']:>3} left alone: the date of death is before the reversal, so one is wrong
 --   {n['still-has-stoma']:>3} stay in follow-up: a stoma was formed after the reversal
 --   {n['earlier-stoma']:>3} left alone: the reversal predates the operation on their record,
 --       so it closed an earlier stoma the app has never held
@@ -143,10 +156,18 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses jsonb DEFAUL
             if r['note']:
                 sets.append(f"reversal_notes = COALESCE(reversal_notes, {q(r['note'])})")
             if r['action'] in ('set-reversed', 'no-date'):
-                # Only move a patient who is still shown as being in follow-up.
+                # Deceased is included on purpose: the reversal is the outcome
+                # this register keeps, and the date of death stays on the row.
                 sets.append("followup_status = CASE WHEN followup_status IN "
-                            "('active','awaiting_feedback','paused') THEN 'reversed' "
-                            "ELSE followup_status END")
+                            "('active','awaiting_feedback','paused','deceased') "
+                            "THEN 'reversed' ELSE followup_status END")
+                # A death that has been moved off the main status is still
+                # recorded, so nothing about the patient is lost.
+                if r['p']['deaths'] or (r['p']['registry'] or {}).get('rip_date'):
+                    sets.append(
+                        "extra_statuses = CASE WHEN extra_statuses @> '[\"deceased\"]'::jsonb "
+                        "THEN extra_statuses ELSE COALESCE(extra_statuses,'[]'::jsonb) "
+                        "|| '[\"deceased\"]'::jsonb END")
             elif r['action'] == 'keep-moved':
                 sets.append("extra_statuses = CASE WHEN extra_statuses @> '[\"reversed\"]'::jsonb "
                             "THEN extra_statuses ELSE COALESCE(extra_statuses,'[]'::jsonb) "
@@ -163,7 +184,7 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS extra_statuses jsonb DEFAUL
     for k, label in [('set-reversed', 'become Reversed, with the date'),
                      ('no-date', 'become Reversed, year only so no date'),
                      ('keep-moved', 'keep their status, Reversed added alongside'),
-                     ('keep-deceased', 'stay Deceased (a death outranks it), date kept'),
+                     ('died-before-reversal', 'left alone — the dates contradict each other'),
                      ('still-has-stoma', 'stay in follow-up — a stoma was formed after'),
                      ('earlier-stoma', 'left alone — the reversal is of an older stoma')]:
         print(f"  {n[k]:>3}  {label}")
