@@ -10182,18 +10182,33 @@ function applianceTimelineByStomaType(){
     if(source&&d>=String(e.lastDate||'')){e.lastDate=d;e.lastSource=source;}
   };
   (clrState.rows||[]).filter(r=>r.kind==='episode').forEach(ep=>{
-    const end=ep.discharge_date||null,ongoing=!!ep.is_current&&!ep.discharge_date;
-    parseEpisodeApplianceRows(ep).forEach(a=>{
-      // The day it was set, falling back to the admission date on older records.
-      const start=a.changed_on||ep.record_date||null;
-      /* Which ward it was set on. Entries written before the ward was kept fall
-         back to where the patient is now, but only while the episode is open —
-         a closed episode's ward is not today's ward. */
-      const ward=a.ward||(ongoing?(clrState.patient&&clrState.patient.inpatient_ward)||'':'');
-      const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
-      (types.length?types:['__unassigned__']).forEach(tk=>{
-        a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient',ward));
-        a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient',ward));
+    const epOpen=!!ep.is_current&&!ep.discharge_date;
+    const rows=parseEpisodeApplianceRows(ep);
+    // The appliance set on a stoma is only the one from that stoma's NEWEST
+    // entry. An earlier entry was replaced the day the next one was written, so
+    // it is closed on that day — "From … to …" — instead of every entry in an
+    // open admission reading "In use". Entries are grouped per stoma and read
+    // in date order to work that out.
+    const dateOf=a=>a.changed_on||ep.record_date||'';
+    const byStoma={};
+    rows.forEach(a=>{const key=a.stoma_uid||a.stoma_type||a.stoma_code||'__nokey__';
+      (byStoma[key]=byStoma[key]||[]).push(a);});
+    Object.values(byStoma).forEach(list=>{
+      list.sort((x,y)=>String(dateOf(x)).localeCompare(String(dateOf(y))));
+      list.forEach((a,i)=>{
+        const start=dateOf(a)||null;
+        const next=list[i+1];
+        const isNewest=!next;
+        // The newest entry is in use while the admission is open, otherwise it
+        // ends at discharge; an older entry ends when the next one replaced it.
+        const ongoing=epOpen&&isNewest;
+        const end=isNewest?(ep.discharge_date||null):(dateOf(next)||null);
+        const ward=a.ward||(ongoing?(clrState.patient&&clrState.patient.inpatient_ward)||'':'');
+        const types=String(a.stoma_type||'').split(',').map(_normType).filter(Boolean);
+        (types.length?types:['__unassigned__']).forEach(tk=>{
+          a.appliances.forEach(n=>add(tk,n,'appliance',start,end,ongoing,'inpatient',ward));
+          a.accessories.forEach(n=>add(tk,n,'accessory',start,end,ongoing,'inpatient',ward));
+        });
       });
     });
   });
