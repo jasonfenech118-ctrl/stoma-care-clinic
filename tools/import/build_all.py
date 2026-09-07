@@ -112,6 +112,50 @@ FROM public.patients WHERE reversal_date < surgery_date;
     return out
 
 
+def semicolon_free_prose(path):
+    """Leave the only semicolons in the file at the ends of statements.
+
+    A SQL editor in a browser decides where one statement ends and the next
+    begins by looking for semicolons, and not all of them look inside quotes and
+    comments first. One in a sentence of the header - "Safe to re-run; nothing
+    is dropped" - is enough for such an editor to hand Postgres the second half
+    of that sentence as a statement, which comes back as an error naming a word
+    out of a comment or an operation.
+
+    The text this import writes never contains one either: make_sql.q() splices
+    those out with chr(59). So this only has to tidy the prose, which is written
+    for a person and reads the same with a dash.
+    """
+    s = open(path, encoding='utf-8').read()
+    out, i, n, instr = [], 0, len(s), False
+    while i < n:
+        c = s[i]
+        if instr:
+            out.append(c)
+            if c == "'":
+                if i + 1 < n and s[i + 1] == "'":
+                    out.append("'"); i += 2; continue
+                instr = False
+        elif c == "'":
+            instr = True; out.append(c)
+        elif s[i:i + 2] == '--':
+            j = s.find('\n', i)
+            j = n if j < 0 else j
+            out.append(s[i:j].replace(';', ' -'))
+            i = j
+            continue
+        elif s[i:i + 2] == '/*':
+            j = s.find('*/', i)
+            j = n if j < 0 else j + 2
+            out.append(s[i:j].replace(';', ' -'))
+            i = j
+            continue
+        else:
+            out.append(c)
+        i += 1
+    open(path, 'w', encoding='utf-8').write(''.join(out))
+
+
 def main(outdir='import-report'):
     os.makedirs(outdir, exist_ok=True)
     print('Reading the books…')
@@ -120,8 +164,13 @@ def main(outdir='import-report'):
     fix_year_typos.main(outdir)
     set_reversed.main(outdir)
     tidy_operations.main(outdir)
+    for name, _title in STEPS:
+        semicolon_free_prose(os.path.join(outdir, name))
     out = combine(outdir)
+    semicolon_free_prose(out)
     parts = split(out, outdir)
+    for f in parts:
+        semicolon_free_prose(f)
     kb = os.path.getsize(out) // 1024
     print(f"\n{'=' * 68}")
     print(f"IF YOUR SQL EDITOR TAKES A BIG FILE:  {os.path.basename(out)}  ({kb} KB)")

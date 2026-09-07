@@ -69,12 +69,30 @@ def locality_from(address):
 
 
 def q(v):
-    """A SQL literal. None becomes NULL; everything else is quoted text."""
+    """A SQL literal. None becomes NULL; everything else is quoted text.
+
+    A semicolon inside the text is spliced out and put back with chr(59). The
+    value that lands in the column is identical, but the file no longer has a
+    semicolon anywhere except at the end of a statement — so an editor that
+    chops a script into statements by looking for semicolons cannot cut one of
+    these operations in half. Eleven operations in the book are written with a
+    semicolon in them.
+    """
     if v is None or v == '':
         return 'NULL'
     if isinstance(v, (datetime.date, datetime.datetime)):
         return f"DATE '{v:%Y-%m-%d}'"
-    return "'" + str(v).replace("'", "''") + "'"
+    text = str(v)
+    if ';' not in text:
+        return "'" + text.replace("'", "''") + "'"
+    lit = lambda t: "'" + t.replace("'", "''") + "'"
+    out = []
+    for i, piece in enumerate(text.split(';')):
+        if i:
+            out.append('chr(59)')
+        if piece:
+            out.append(lit(piece))
+    return '(' + ' || '.join(out) + ')'
 
 
 def jsonq(obj):
@@ -91,7 +109,11 @@ def jsonq(obj):
     if isinstance(obj, list):
         obj = [{k: v for k, v in o.items() if v not in (None, '', [], False)} | {'uid': o['uid']}
                if isinstance(o, dict) and 'uid' in o else o for o in obj]
-    return "'" + json.dumps(obj, ensure_ascii=False, separators=(',', ':')).replace("'", "''") + "'::jsonb"
+    # A semicolon inside the JSON goes in as \u003b, which is the same character
+    # once Postgres parses the jsonb but is not a semicolon in the file. See q()
+    # for why that matters.
+    body = json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+    return "'" + body.replace("'", "''").replace(';', '\\u003b') + "'::jsonb"
 
 
 # How far apart the app and the book may write the same operation and still be
@@ -576,13 +598,10 @@ def emit(outdir='import-report'):
   reversal_notes      = COALESCE(t.reversal_notes, v.reversal_notes),
   patient_notes       = COALESCE(t.patient_notes, v.patient_notes),
   surgery_date        = COALESCE(t.surgery_date, v.surgery_date::date),
-  -- Only on or after whatever surgery date the row ends up with, so a record
-  -- can never say a stoma was reversed before it was formed.
   reversal_date       = COALESCE(t.reversal_date,
                           CASE WHEN v.reversal_date::date
                                     >= COALESCE(t.surgery_date, v.surgery_date::date)
                                THEN v.reversal_date::date END),
-  -- A later stoma is only added where the patient has none recorded.
   extra_stomas        = CASE WHEN v.extra_stomas IS NOT NULL
                               AND (t.extra_stomas IS NULL
                                    OR jsonb_array_length(t.extra_stomas) = 0)
@@ -591,7 +610,6 @@ def emit(outdir='import-report'):
                               AND (t.initial_stomas IS NULL
                                    OR jsonb_array_length(t.initial_stomas) = 0)
                              THEN v.initial_stomas::jsonb ELSE t.initial_stomas END,
-  -- A death is the one status the import sets, and only where the app has none.
   followup_status     = CASE WHEN v.deceased
                               AND t.followup_status IS DISTINCT FROM 'deceased'
                               AND t.deceased_date IS NULL
@@ -639,11 +657,10 @@ WHERE t.id_card = v.id_card;
             fh.write(f"\n-- patients {i + 1}-{i + len(batch)} of {len(rows7)}\n")
             fh.write("""UPDATE public.patients AS t SET
   extra_stomas = (
-      -- everything a nurse added, kept exactly as it is …
       SELECT COALESCE(jsonb_agg(e), '[]'::jsonb)
         FROM jsonb_array_elements(COALESCE(t.extra_stomas, '[]'::jsonb)) AS e
        WHERE COALESCE(e->>'uid', '') NOT LIKE 'imp%'
-    ) || v.stomas::jsonb   -- … and the ones the book actually supports
+    ) || v.stomas::jsonb
 FROM (VALUES
 """)
             fh.write(',\n'.join(batch))
