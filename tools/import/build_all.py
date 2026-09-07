@@ -207,10 +207,16 @@ def split(path, outdir, target_kb=190):
 --   * Running a part twice changes nothing the second time, so if you lose
 --     your place it is safe to run one again.
 --
--- Nothing is ever deleted, and nothing already on a patient is overwritten —
--- only blanks are filled. The one exception is spelled out in part 5: a
--- patient whose stoma was reversed has their date of death cleared, with the
--- date written into their notes first.
+-- No patient is ever deleted, and nothing already on a patient is overwritten —
+-- only blanks are filled. There are two exceptions, both deliberate:
+--
+--   * a patient whose stoma was reversed has their date of death cleared, with
+--     the date written into their notes first;
+--   * the last part puts the stoma list right. An earlier version of this
+--     import gave patients who have only ever had one stoma a second one that
+--     never existed. It takes those out, keeps every stoma entered by hand,
+--     and puts back only the ones the register book supports. If you have
+--     already run the earlier import, this is the part that repairs it.
 -- =============================================================================
 
 BEGIN;
