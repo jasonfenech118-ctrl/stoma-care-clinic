@@ -9,6 +9,7 @@ that matches none of them is left alone rather than guessed at.
 """
 import csv
 import io
+import re
 import openpyxl
 from normalise import (norm_id, id_key, clean, clean_phone, as_date,
                        month_number, year_in_text, date_from_text)
@@ -168,6 +169,39 @@ def read_deceased():
     return out
 
 
+# The app stores a date as local midnight and the export writes it in UTC, so
+# every date in it reads 22:00Z (summer) or 23:00Z (winter) on the DAY BEFORE
+# the date the nurse actually typed. Taking the first ten characters is
+# therefore wrong by one day for every single row — which made the book and the
+# app disagree about the date of the same operation, and turned one stoma into
+# two. The timestamp is converted back to Malta time before the date is read.
+try:
+    from zoneinfo import ZoneInfo
+    _MALTA = ZoneInfo('Europe/Malta')
+except Exception:                                  # pragma: no cover
+    _MALTA = None
+
+
+def export_date(value):
+    """The calendar date a UTC timestamp from the export actually means."""
+    v = clean(value)
+    if not v:
+        return None
+    import datetime as _dt
+    m = re.match(r'^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})Z?$', v)
+    if not m:
+        return v[:10] or None
+    stamp = _dt.datetime.fromisoformat(m.group(1)).replace(
+        hour=int(m.group(2)), minute=int(m.group(3)), second=int(m.group(4)),
+        tzinfo=_dt.timezone.utc)
+    if _MALTA is not None:
+        return stamp.astimezone(_MALTA).date().isoformat()
+    # No timezone database: 22:00 and 23:00 are local midnight the next day.
+    if stamp.hour >= 22:
+        return (stamp + _dt.timedelta(hours=2)).date().isoformat()
+    return stamp.date().isoformat()
+
+
 def read_registry():
     """The live registry, as exported from the app (schema line, then CSV)."""
     raw = open(F_REG, encoding='utf-8-sig').read()
@@ -176,7 +210,7 @@ def read_registry():
         card = norm_id(r.get('HospitalNumber'))
         if not card:
             continue
-        d = lambda k: (clean(r.get(k)) or '')[:10] or None
+        d = lambda k: export_date(r.get(k))
         out.append({'id_card': card, 'id_key': id_key(card),
                     'id_raw': clean(r.get('HospitalNumber')),
                     'first_name': clean(r.get('FirstName')),
