@@ -27,7 +27,7 @@ import datetime
 import os
 import sys
 
-from make_sql import PREAMBLE
+from make_sql import PREAMBLE, q
 
 # Words that name a procedure. Anatomy and diagnoses are deliberately absent.
 OPERATION_WORDS = (
@@ -72,7 +72,7 @@ UPDATE public.patients
        findings            = NULL
  WHERE COALESCE(TRIM(procedure_performed), '') = ''
    AND COALESCE(TRIM(findings), '') <> ''
-   AND findings ~* '{words}';
+   AND findings ~* {words};
 
 -- ---------------------------------------------------------------------------
 -- PASS 2 — the same text sits in both columns. Keep the operation, clear the
@@ -106,7 +106,7 @@ def main(outdir='import-report'):
     with open(path, 'w', encoding='utf-8') as fh:
         fh.write(SQL.format(preamble=PREAMBLE,
                             when=datetime.date.today().strftime('%d %B %Y'),
-                            words=OPERATION_WORDS.replace("'", "''")))
+                            words=q(OPERATION_WORDS)))
     print(f'Written to {path}')
     return path
 

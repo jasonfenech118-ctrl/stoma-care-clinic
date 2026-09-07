@@ -15,6 +15,7 @@ So the script is safe to run twice, and safe to run after people have kept
 working in the app.
 """
 import datetime
+import re
 import os
 import sys
 from collections import defaultdict
@@ -68,31 +69,46 @@ def locality_from(address):
     return None
 
 
+# Characters that a SQL editor in a browser may read as punctuation of its own
+# rather than as part of the text: quotes of either kind, a statement-ending
+# semicolon, a backslash or dollar it may take for an escape, a question mark it
+# may take for a parameter, and the two ways a comment starts. The register book
+# is full of them — an operation reads "Hartmann's procedure", another
+# "Laparatomy; drainage of pus", a third "? tumour mass" — and a value carrying
+# one is written into the file encoded instead of quoted.
+_RISKY = ("'", '"', ';', '\\', '`', '$', '?', '--', '/*')
+
+
+def _encoded(text):
+    """The text as base64 that Postgres decodes back to exactly this string.
+
+    Only letters, digits and + / = reach the file, so there is nothing left in
+    it for anything to misread. What lands in the column is unchanged.
+    """
+    import base64
+    b = base64.b64encode(text.encode('utf-8')).decode('ascii')
+    return f"convert_from(decode('{b}','base64'),'UTF8')"
+
+
 def q(v):
     """A SQL literal. None becomes NULL; everything else is quoted text.
 
-    A semicolon inside the text is spliced out and put back with chr(59). The
-    value that lands in the column is identical, but the file no longer has a
-    semicolon anywhere except at the end of a statement — so an editor that
-    chops a script into statements by looking for semicolons cannot cut one of
-    these operations in half. Eleven operations in the book are written with a
-    semicolon in them.
+    Text that carries none of the awkward characters is written plainly, so most
+    of the file still reads as itself; the rest is encoded. See _RISKY.
     """
     if v is None or v == '':
         return 'NULL'
     if isinstance(v, (datetime.date, datetime.datetime)):
         return f"DATE '{v:%Y-%m-%d}'"
     text = str(v)
-    if ';' not in text:
-        return "'" + text.replace("'", "''") + "'"
-    lit = lambda t: "'" + t.replace("'", "''") + "'"
-    out = []
-    for i, piece in enumerate(text.split(';')):
-        if i:
-            out.append('chr(59)')
-        if piece:
-            out.append(lit(piece))
-    return '(' + ' || '.join(out) + ')'
+    # A single token — an ID card, a phone number, a status word — is written
+    # plainly, because it is what keeps the file readable and it carries nothing
+    # a parser can misread. Everything else is prose out of the register book,
+    # and prose is encoded: not only because of the quotes and semicolons in it,
+    # but so that no word of it can ever be mistaken for the name of a table.
+    if re.fullmatch(r'[A-Za-z0-9_-]+', text) and not any(r in text for r in _RISKY):
+        return "'" + text + "'"
+    return _encoded(text)
 
 
 def jsonq(obj):
@@ -109,11 +125,12 @@ def jsonq(obj):
     if isinstance(obj, list):
         obj = [{k: v for k, v in o.items() if v not in (None, '', [], False)} | {'uid': o['uid']}
                if isinstance(o, dict) and 'uid' in o else o for o in obj]
-    # A semicolon inside the JSON goes in as \u003b, which is the same character
-    # once Postgres parses the jsonb but is not a semicolon in the file. See q()
-    # for why that matters.
     body = json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
-    return "'" + body.replace("'", "''").replace(';', '\\u003b') + "'::jsonb"
+    # Every JSON payload has double quotes in it by definition, so it is always
+    # encoded rather than quoted. See q() and _RISKY.
+    if any(r in body for r in _RISKY):
+        return _encoded(body) + '::jsonb'
+    return "'" + body + "'::jsonb"
 
 
 # How far apart the app and the book may write the same operation and still be

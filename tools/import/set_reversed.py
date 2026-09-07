@@ -185,9 +185,12 @@ BEGIN;
                 sets.append("extra_statuses = COALESCE(extra_statuses,'[]'::jsonb) "
                             "- 'deceased'")
             elif r['action'] == 'keep-moved':
-                sets.append("extra_statuses = CASE WHEN extra_statuses @> '[\"reversed\"]'::jsonb "
+                # jsonb_build_array rather than a '["reversed"]' literal: it
+                # keeps double quotes out of the file entirely. See make_sql.q().
+                sets.append("extra_statuses = CASE "
+                            "WHEN extra_statuses @> jsonb_build_array('reversed') "
                             "THEN extra_statuses ELSE COALESCE(extra_statuses,'[]'::jsonb) "
-                            "|| '[\"reversed\"]'::jsonb END")
+                            "|| jsonb_build_array('reversed') END")
             if not sets:
                 fh.write(f"-- nothing to write: {r['why']}\n")
                 continue
