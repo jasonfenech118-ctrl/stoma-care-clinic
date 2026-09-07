@@ -5150,7 +5150,24 @@ async function commitEpisodeAppliances(pending,rows){
   // what the database actually holds rather than what was hoped for.
   if(clrState.patientId===pending.patientId){await loadClinicalRecords(pending.patientId);renderClinicalPanel();}
   if(document.getElementById('hv-body'))await loadHandover();
+  // The row is then set from the note we just wrote, not from what the reload
+  // read back. A SELECT fired straight after the UPDATE can still return the old
+  // appliance — which is why the sheet used to keep the previous one until the
+  // Refresh button (a later read) was pressed. This makes the change show at
+  // once, whatever that read returned.
+  patchHandoverApplianceRow(pending.patientId,note);
   closeModal();
+}
+/* Set one handover row's appliance cell to a known line, without re-reading the
+   database. Used right after a save so the sheet never lags behind the write. */
+function patchHandoverApplianceRow(pid,line){
+  const sel=(window.CSS&&CSS.escape)?CSS.escape(String(pid)):String(pid);
+  const row=document.querySelector(`tr[data-pid="${sel}"]`);
+  if(!row)return;
+  const btn=row.querySelector('.hv-appl');
+  if(!btn)return;
+  btn.dataset.appliance=line||'';
+  btn.innerHTML=line?htmlSafe(line):'<span class="hv-appl-empty">Tap to set appliance</span>';
 }
 /* How an appliance is written on the ward sheet. The picker keeps the full
    supplier name and code so it can still be found by either; what gets written
