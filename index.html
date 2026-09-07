@@ -7729,6 +7729,37 @@ async function loadPatientDirectory(){
    filter narrows to first stomas only when a plain new-patient list is wanted.
    ------------------------------------------------------------------------- */
 let newPatientRows=[];
+/* The register writes some operations down twice, and the same patient can sit
+   in the app under two ID cards that differ only by a letter (421160A / 421160M)
+   or a leading zero — a book row and the app's own file for one person. Both
+   show here as a duplicate line. Two rows are the same operation when they are
+   the same patient on the same day: the ID card reduced to its digits (so the
+   A/M twins and the leading-zero twins collapse together) with the surgery date.
+   A patient's two operations on different days keep their own lines, because the
+   date differs; genuinely different people do not share a card number. */
+function formationDupKey(r){
+  const digits=String(r.id_card||'').replace(/\D/g,'').replace(/^0+/,'');
+  const name=String(`${r.surname||''} ${r.first_name||''}`).toLowerCase().replace(/[^a-z]/g,'');
+  return (digits||name||Math.random())+'|'+String(r.date||'');
+}
+// The fuller of two rows for the same operation is the one worth keeping — the
+// one that names the stoma type, the address and the longer operation text.
+function formationRowScore(r){
+  let s=0;
+  if(r.stoma_type&&r.stoma_type!=='—')s+=8;
+  if(r.address)s+=4;
+  if(r.consultant)s+=2;
+  if(r.comments)s+=1;
+  return s+Math.min(20,String(r.operation||'').length/20);
+}
+function dedupeFormationRows(rows){
+  const best=new Map();
+  rows.forEach(r=>{
+    const k=formationDupKey(r), cur=best.get(k);
+    if(!cur||formationRowScore(r)>formationRowScore(cur))best.set(k,r);
+  });
+  return [...best.values()];
+}
 // Every stoma formation on one patient, oldest first, as register rows.
 function patientFormationRows(p){
   const out=[];
@@ -7772,7 +7803,8 @@ async function loadNewPatients(){
     }
     rows=pats||[];
   }
-  newPatientRows=rows.flatMap(patientFormationRows).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  newPatientRows=dedupeFormationRows(rows.flatMap(patientFormationRows))
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const sel=document.getElementById('np-year');
   if(sel){
     const years=[...new Set(newPatientRows.map(r=>String(r.date).slice(0,4)))].sort().reverse();
