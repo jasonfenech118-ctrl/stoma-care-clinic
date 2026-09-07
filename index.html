@@ -5892,11 +5892,20 @@ async function getAppointmentHistoryLite(patientIds){
 }
 async function getAppointmentRowsForPatients(patientIds,year,month){
   if(!patientIds.length)return [];
-  let q=SB.from('appointments').select('*').in('patient_id',patientIds).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
-  if(year&&month){q=q.gte('appt_date',`${year}-${String(month).padStart(2,'0')}-01`).lte('appt_date',monthEndDate(String(year),String(month).padStart(2,'0')));}
-  else if(year){q=q.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
-  const{data}=await q;
-  return await enrichAppointments(data||[]);
+  // Read the ids in blocks: a single .in() with hundreds of ids builds a URL
+  // too long for the server to accept, which used to come back empty — now the
+  // Reversal Register can pass every reversed patient without losing their
+  // appointment history.
+  const out=[];
+  for(let i=0;i<patientIds.length;i+=100){
+    let q=SB.from('appointments').select('*').in('patient_id',patientIds.slice(i,i+100))
+      .order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+    if(year&&month){q=q.gte('appt_date',`${year}-${String(month).padStart(2,'0')}-01`).lte('appt_date',monthEndDate(String(year),String(month).padStart(2,'0')));}
+    else if(year){q=q.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
+    const{data}=await q;
+    if(data&&data.length)out.push(...data);
+  }
+  return await enrichAppointments(out);
 }
 async function getRecallWorklistRows(){
   const now=new Date();
@@ -14420,18 +14429,29 @@ async function loadReversalRegister(){
   tbody.innerHTML='<tr><td colspan="8" class="empty">Loading reversal register...</td></tr>';
   const year=document.getElementById('rev-year')?.value||'';
   const search=(document.getElementById('rev-search')?.value||'').trim().toLowerCase();
-  const{data,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
-    .eq('followup_status','reversed')
-    .order('surname',{ascending:true})
-    .order('first_name',{ascending:true});
+  // Everyone the app treats as ever reversed — not only those whose stored
+  // status is literally 'reversed'. A patient reversed and then deceased belongs
+  // in the register (this register follows the stoma, so the reversal is the
+  // outcome it records), and a reversal on file whose status was never flipped
+  // still counts. The whole registry is read and judged by the same rule the
+  // rest of the app uses, rather than a single stored flag — which is why the
+  // register used to show far fewer than the reversal book holds.
+  const{rows:allPats,error}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(error){
     console.error('Reversal register load error:',error);
     tbody.innerHTML=`<tr><td colspan="8" class="empty">Could not load reversal register: ${htmlSafe(error.message||'Unknown error')}</td></tr>`;
     if(stats)stats.innerHTML='<div class="sbox"><div class="sl">Setup Required</div><div class="sv" style="font-size:22px;color:var(--red);">SQL</div><div class="ss">Run the Reversed status SQL first</div></div>';
     return;
   }
-  let patients=data||[];
+  // Reversed on the record any way it can read as reversed: a dated reversal
+  // anywhere on the patient (even if they later died), the status the app
+  // derives, or a stored 'reversed' with only a year to go on and no date.
+  const isReversedForRegister=p=>patientEverReversed(p)
+    ||derivedFollowupStatus(p)==='reversed'
+    ||normaliseFollowupStatus(p&&p.followup_status)==='reversed';
+  let patients=(allPats||[]).filter(isReversedForRegister)
+    .sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))
+      ||String(a.first_name||'').localeCompare(String(b.first_name||'')));
   if(year)patients=patients.filter(p=>String(p.followup_year||'')===String(year));
   if(search){
     patients=patients.filter(p=>[
@@ -14445,18 +14465,18 @@ async function loadReversalRegister(){
   const seenCount=appts.filter(a=>a.status==='attended').length;
   if(stats){
     stats.innerHTML=`
-      <div class="sbox"><div class="sl">Reversed Patients</div><div class="sv">${patients.length}</div><div class="ss">${year||'all years'}</div></div>
+      <div class="sbox"><div class="sl">Reversed Patients</div><div class="sv">${patients.length}</div><div class="ss">ever reversed · ${year||'all years'}</div></div>
       <div class="sbox"><div class="sl">Appointments</div><div class="sv">${appts.length}</div><div class="ss">recorded history</div></div>
       <div class="sbox"><div class="sl">Seen Records</div><div class="sv">${seenCount}</div><div class="ss" style="color:var(--green)">attended outcomes</div></div>`;
   }
-  if(!patients.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No reversed patients found for this filter.</td></tr>';return;}
+  if(!patients.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No reversed patients found. If you have imported the reversal book, run the Reversed status SQL so the reversals are on file.</td></tr>';return;}
   tbody.innerHTML=patients.map(p=>{
     const latest=latestByPatient[p.id];
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
     const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
     const nurse=latest?.staff?.full_name||latest?.bank_staff?.full_name||(!latest?.assigned_to&&!latest?.bank_staff_id&&latest?'Common':'—');
     return `<tr class="followup-click-row" onclick="openFollowupHistory('${p.id}')" title="Open full history">
-      <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge('reversed',true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
+      <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge(derivedFollowupStatus(p),true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(p.followup_owner||'Common')}</td>
