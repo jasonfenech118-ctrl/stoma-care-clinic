@@ -256,11 +256,21 @@ def split(path, outdir, target_kb=190):
 --   * Running a part twice changes nothing the second time, so if you lose
 --     your place it is safe to run one again.
 --
+-- WHY THE OPERATIONS ARE NOT IN HERE IN WORDS
+--   Every value out of the register book is written as
+--   convert_from(decode('...','base64'),'UTF8'), which Postgres decodes back to
+--   exactly the text the book has. It goes in that way because a SQL editor in
+--   a browser works out where one statement ends by looking for punctuation the
+--   book is full of - Hartmann's procedure, Laparatomy; drainage of pus,
+--   ? tumour mass - and cutting in the wrong place makes it read a word out of
+--   an operation as the name of a table. Encoded, there is nothing in here for
+--   it to get wrong. ID cards, phone numbers and dates are still plain.
+--
 -- No patient is ever deleted, and nothing already on a patient is overwritten —
 -- only blanks are filled. There are two exceptions, both deliberate:
 --
---   * a patient whose stoma was reversed has their date of death cleared, with
---     the date written into their notes first;
+--   * a patient whose stoma was reversed has their date of death cleared, and
+--     the date is written into their notes first
 --   * the last part puts the stoma list right. An earlier version of this
 --     import gave patients who have only ever had one stoma a second one that
 --     never existed. It takes those out, keeps every stoma entered by hand,
