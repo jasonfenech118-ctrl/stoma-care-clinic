@@ -1142,6 +1142,14 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .sit-ck-n{font-weight:800;color:#6d28d9;margin-right:2px;}
 .sit-ck-type{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 2px;font-size:12px;color:#374151;}
 .sit-ck-type label{display:inline-flex;align-items:center;gap:4px;}
+/* The RIF/LIF site picker sits inline on the item's text line. */
+.sit-ck-site{display:inline-flex;gap:12px;margin-left:8px;font-size:12px;color:#374151;}
+.sit-ck-site label{display:inline-flex;align-items:center;gap:4px;}
+/* "Being sited for" — tick all that apply. */
+.sit-for-wrap{display:flex;gap:8px;flex-wrap:wrap;}
+.sit-for-opt{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #d5dae1;
+  border-radius:8px;font-size:13px;cursor:pointer;background:#fff;}
+.sit-for-opt:has(input:checked){border-color:#7c3aed;background:#f5f1ff;color:#5b21b6;font-weight:600;}
 .sit-ck-other{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:5px 8px;
   border:1px solid #d5dae1;border-radius:7px;font-size:12px;}
 .sit-ck-sitesel{margin-top:6px;padding:5px 8px;border:1px solid #d5dae1;border-radius:7px;font-size:12px;background:#fff;}
@@ -12037,7 +12045,13 @@ function openSitingBooking(presetDate,presetSlot,edit){
   sitingEditId=edit&&edit.id?edit.id:null;
   const e=edit||{};
   const sf=e.siting_for||'';
-  const opt=(v,l)=>`<option value="${v}" ${sf===v?'selected':''}>${l}</option>`;
+  // A patient can be sited for more than one stoma at once, so this is a set of
+  // tick boxes rather than a single choice. Whatever was saved before — a lone
+  // type, or the old "Bilateral (Colostomy & Ileostomy)" wording — is matched
+  // back to the boxes by looking for each type's name in the stored text.
+  const sfHas=t=>new RegExp(t,'i').test(sf);
+  const sitedForBox=SITING_STOMA_TYPES.map(t=>
+    `<label class="sit-for-opt"><input type="checkbox" class="sit-for-ck" value="${t}" ${sfHas(t)?'checked':''}/> ${t}</label>`).join('');
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📍 ${sitingEditId?'Edit siting session':'Book siting session'}</h2>
@@ -12048,8 +12062,8 @@ function openSitingBooking(presetDate,presetSlot,edit){
       <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name" value="${htmlSafe(e.surname||'')}"/></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions(e.consultant||'')}</select></div>
       <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate" value="${htmlSafe(e.surgery_date||'')}"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Being sited for *</label><select id="sit-for">
-        ${opt('','— stoma —')}${opt('Colostomy','Colostomy')}${opt('Ileostomy','Ileostomy')}${opt('Urostomy','Urostomy')}${opt('Bilateral (Colostomy & Ileostomy)','Bilateral (Colostomy & Ileostomy)')}</select></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Being sited for * <span style="font-weight:400;color:var(--muted);">(tick all that apply)</span></label>
+        <div id="sit-for" class="sit-for-wrap">${sitedForBox}</div></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Proposed operation</label><input type="text" id="sit-operation" placeholder="e.g. Abdominoperineal resection" value="${htmlSafe(e.proposed_operation||'')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Siting date *</label><input type="date" id="sit-date" value="${htmlSafe(presetDate||TODAY)}" onchange="refreshSitingSlotAvail()"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Pick a free hour *</label><div id="sit-slot-avail"><div class="ap-hint">Choose a date to see the free hours.</div></div></div>
@@ -12171,7 +12185,8 @@ async function saveSitingSession(){
   const date=val('sit-date'), slot=sitingChosenSlot;
   const msg=document.getElementById('sit-msg');
   if(!idcard||!first||!surname){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Fill in ID card, first name and surname.</div>';return;}
-  const sitedFor=val('sit-for');
+  // Every stoma type ticked, in the order they are shown, joined with " & ".
+  const sitedFor=[...document.querySelectorAll('.sit-for-ck:checked')].map(el=>el.value).join(' & ');
   if(!sitedFor){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Choose what the patient is being sited for.</div>';return;}
   if(!slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a free hour for the session.</div>';return;}
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
@@ -12237,14 +12252,21 @@ const SITING_CHECKLIST_ITEMS=[
   'Other issues discussed'
 ];
 let sitingSeenCtx=null;
-// The stoma type item (3) can be pre-circled from what the patient is sited for.
-function sitingTypeFromFor(f){
-  const s=String(f||'').toLowerCase();
-  if(s.includes('colo'))return 'colostomy';
-  if(s.includes('ileo'))return 'ileostomy';
-  if(s.includes('uro'))return 'urostomy';
-  return '';
+// The stoma types a patient can be sited for. A patient can need more than one,
+// so every "sited for" and "stoma type" control is a set of these, not a single
+// choice, and the value is stored as the chosen names joined with " & ".
+const SITING_STOMA_TYPES=['Colostomy','Ileostomy','Urostomy'];
+// Which of the three types are named in a stored "sited for" string. Reads the
+// new " & "-joined value and every older wording (a lone type, or the retired
+// "Bilateral (Colostomy & Ileostomy)") the same way.
+function sitingTypesFromFor(f){
+  const s=String(f||'');
+  return SITING_STOMA_TYPES.filter(t=>new RegExp(t,'i').test(s));
 }
+// The checklist's stoma-type item (3) is pre-ticked from what the patient is
+// sited for. Kept returning lower-case names, which is how the checklist stores
+// them.
+function sitingTypesFor(f){return sitingTypesFromFor(f).map(t=>t.toLowerCase());}
 async function openSitingSeen(id){
   const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
   if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
@@ -12260,20 +12282,26 @@ async function openSitingSeen(id){
   const ini=(who&&who.name)?String(who.name).trim():'';
   const nm=`${ss.first_name||''} ${ss.surname||''}`.trim();
   const items=(existing&&existing.items)||[];
-  const stomaType=(existing&&existing.stoma_type)||sitingTypeFromFor(ss.siting_for);
+  // The stoma types ticked at item 3. Prefer what was saved (an array, or an
+  // older single value), otherwise pre-tick from what the patient is sited for.
+  const savedTypes=existing&&existing.stoma_types;
+  const stomaTypes=Array.isArray(savedTypes)?savedTypes
+    :((existing&&existing.stoma_type)?[existing.stoma_type]:sitingTypesFor(ss.siting_for));
   const rows=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1, it=items[i]||{};
     const met=it.status==='met', unmet=it.status==='unmet';
     const dval=it.date||TODAY, ival=it.initials||ini;
     const typePick=(n===3)?`<div class="sit-ck-type">
-        ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="radio" name="ck-type" value="${t}" ${stomaType===t?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
+        ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="checkbox" class="ck-type" value="${t}" ${stomaTypes.includes(t)?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
     const specify=(n===10)?`<input type="text" id="ck-other" class="sit-ck-other" placeholder="Specify" value="${htmlSafe((existing&&existing.other)||'')}"/>`:'';
-    const sitePick=(n===8||n===9)?`<select id="ck-site-${n}" class="sit-ck-sitesel">
-        <option value="">— site —</option>
-        <option value="RIF" ${it.site==='RIF'?'selected':''}>RIF</option>
-        <option value="LIF" ${it.site==='LIF'?'selected':''}>LIF</option>
-      </select>`:'';
+    // Site can be RIF, LIF, or both (a patient sited for two stomas), so these
+    // are tick boxes. An older form saved a single "site" string; it is matched
+    // back by looking for each label in it.
+    const siteHas=lab=>{const arr=Array.isArray(it.sites)?it.sites:(it.site?[it.site]:[]);return arr.includes(lab);};
+    const sitePick=(n===8||n===9)?`<span class="sit-ck-site">
+        ${['RIF','LIF'].map(lab=>`<label><input type="checkbox" class="ck-site-${n}" value="${lab}" ${siteHas(lab)?'checked':''}/> ${lab}</label>`).join('')}
+      </span>`:'';
     const noted=it.status==='noted';
     return `<div class="sit-ck-item">
       <div class="sit-ck-text"><span class="sit-ck-n">${n}.</span> ${htmlSafe(label)}${typePick}${specify}${sitePick}</div>
@@ -12318,8 +12346,12 @@ async function openSitingSeen(id){
 const STOMA_MARK_SVG='<svg viewBox="0 0 34 34" width="34" height="34"><circle cx="17" cy="17" r="14" fill="none" stroke="#e11" stroke-width="2.5"/><line x1="8" y1="8" x2="26" y2="26" stroke="#e11" stroke-width="2.5"/><line x1="26" y1="8" x2="8" y2="26" stroke="#e11" stroke-width="2.5"/></svg>';
 let sitingStomaMarks=[], stomaDragging=false, stomaMoved=false, stomaMarkCap=1;
 function preopBodyMapSrc(){return new URL('assets/preop-abdomen.jpg',location.href).href;}
-/* A bilateral siting marks two sites; everything else marks one. */
-function stomaCapacityFor(sitedFor){return /bilateral|&|\+/i.test(String(sitedFor||''))?2:1;}
+/* One marker per stoma the patient is sited for — two types, two sites — with
+   at least one so a marker can always be placed. Older "Bilateral (…)" wording
+   still counts as two through sitingTypesFromFor. */
+function stomaCapacityFor(sitedFor){
+  return Math.max(1,sitingTypesFromFor(sitedFor).length||(/bilateral|&|\+/i.test(String(sitedFor||''))?2:1));
+}
 function renderStomaMarks(){
   const box=document.getElementById('sit-bodymap');if(!box)return;
   box.querySelectorAll('.sit-stoma-mark').forEach(el=>el.remove());
@@ -12368,18 +12400,26 @@ function toggleCkNote(n){
 }
 // Read the checklist from the open modal into a plain object for saving/printing.
 function readSitingChecklist(){
+  // The site of an item, as a list ticked from RIF / LIF. When both are ticked
+  // they read "LIF/RIF" — LIF first — as the ward writes it.
+  const siteOf=n=>['LIF','RIF'].filter(lab=>
+    document.querySelector(`.ck-site-${n}[value="${lab}"]`)?.checked);
   const items=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1;
     const status=(document.querySelector(`input[name="ck-status-${n}"]:checked`)||{}).value||'';
+    const sites=siteOf(n);
     return {n,label,status,
       date:document.getElementById('ck-date-'+n)?.value||'',
       initials:document.getElementById('ck-init-'+n)?.value.trim()||'',
-      site:document.getElementById('ck-site-'+n)?.value||'',
+      sites,
+      site:sites.join('/'),          // kept so older readers still find a value
       note:document.getElementById('ck-note-'+n)?.value.trim()||''};
   });
-  const stoma_type=(document.querySelector('input[name="ck-type"]:checked')||{}).value||'';
+  const stoma_types=[...document.querySelectorAll('.ck-type:checked')].map(el=>el.value);
   const other=document.getElementById('ck-other')?.value.trim()||'';
-  return {items,stoma_type,other,
+  return {items,stoma_types,
+    stoma_type:stoma_types.join(' & '),   // kept so older readers still find a value
+    other,
     stoma_marks:sitingStomaMarks.slice(),
     stoma_mark:sitingStomaMarks[0]||null};   // kept so older saved forms still read
 }
@@ -12410,7 +12450,7 @@ function printSitingChecklist(){
     const it=c.items[i]||{};
     let text=htmlSafe(label);
     if(i===2&&c.stoma_type)text+=` <b>(${htmlSafe(c.stoma_type)})</b>`;
-    if((i===7||i===8)&&it.site)text+=` <b>(${htmlSafe(it.site)})</b>`;
+    if((i===7||i===8)&&(it.site||(it.sites&&it.sites.length)))text+=` <b>(${htmlSafe(it.site||(it.sites||[]).join('/'))})</b>`;
     if(it.note)text+=` — <i>${htmlSafe(it.note)}</i>`;
     if(i===9&&c.other)text+=` — <i>${htmlSafe(c.other)}</i>`;
     return `<tr><td class="cl">${i+1}. ${text}</td>
@@ -12547,8 +12587,10 @@ function beginSitingStomaPatient(session,surgeryDate){
   sitingStomaCtx={sessionId:session.id,surgery_date:surgeryDate||null,
     prefill:{id_card:session.id_card,first_name:session.first_name,surname:session.surname,
       consultant:session.consultant,surgery_date:surgeryDate||null,
-      // Carry the "being sited for" choice into the post-op stoma type.
-      stoma_type:session.siting_for||''}};
+      // Carry the "being sited for" choice into the post-op stoma type. A
+      // patient sited for more than one gets the first as this stoma's type;
+      // the others are added from the patient's stoma list afterwards.
+      stoma_type:(sitingTypesFromFor(session.siting_for)[0]||session.siting_for||'')}};
   closeModal();
   // Show the Siting page without reloading its list, then render the form into it.
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
