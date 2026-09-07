@@ -12321,14 +12321,14 @@ async function openSitingSeen(id){
   stomaMarkCap=stomaCapacityFor(ss.siting_for);
   const savedMarks=(existing&&Array.isArray(existing.stoma_marks))?existing.stoma_marks
     :((existing&&existing.stoma_mark&&typeof existing.stoma_mark==='object')?[existing.stoma_mark]:[]);
-  sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,stomaMarkCap);
+  sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,STOMA_MARK_MAX);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📍 Pre-operative Assessment</h2>
     <div class="msub"><strong>${htmlSafe(nm||'—')}</strong> · ${htmlSafe(ss.id_card||'')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</div>
     <div class="sit-ck-wrap">${rows}</div>
     <div class="sit-bodymap-sec">
-      <div class="sit-bodymap-label">${stomaMarkCap===2?'Stoma sites — tap the diagram to place both markers, drag to adjust':'Stoma site — tap the diagram to place the marker, drag to adjust'}
-        <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear</button></div>
+      <div class="sit-bodymap-label">Stoma sites — tap to add a marker, drag to move it, tap a marker to remove it
+        <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear all</button></div>
       <div class="sit-bodymap" id="sit-bodymap" onclick="placeStomaMark(event)">
         <img src="${htmlSafe(preopBodyMapSrc())}" alt="Abdomen diagram" draggable="false"/>
       </div>
@@ -12344,6 +12344,11 @@ async function openSitingSeen(id){
 }
 // The draggable "stoma site" marker on the abdomen diagram.
 const STOMA_MARK_SVG='<svg viewBox="0 0 34 34" width="34" height="34"><circle cx="17" cy="17" r="14" fill="none" stroke="#e11" stroke-width="2.5"/><line x1="8" y1="8" x2="26" y2="26" stroke="#e11" stroke-width="2.5"/><line x1="26" y1="8" x2="8" y2="26" stroke="#e11" stroke-width="2.5"/></svg>';
+// As many site markers as the nurse needs — a candidate and a chosen site, a
+// marker per stoma, alternatives to discuss. The cap is only a guard against a
+// runaway of accidental taps. stomaMarkCap is how many the patient is sited for,
+// kept for the hint on the label, not as a limit.
+const STOMA_MARK_MAX=12;
 let sitingStomaMarks=[], stomaDragging=false, stomaMoved=false, stomaMarkCap=1;
 function preopBodyMapSrc(){return new URL('assets/preop-abdomen.jpg',location.href).href;}
 /* One marker per stoma the patient is sited for — two types, two sites — with
@@ -12373,13 +12378,9 @@ function stomaFractionFromEvent(e){
 function placeStomaMark(e){
   if(stomaMoved){stomaMoved=false;return;}   // a click right after a drag is ignored
   const f=stomaFractionFromEvent(e);if(!f)return;
-  if(sitingStomaMarks.length<stomaMarkCap)sitingStomaMarks.push(f);
-  else{
-    // Already at capacity, so the tap moves whichever marker is nearest to it.
-    let best=0,bd=Infinity;
-    sitingStomaMarks.forEach((m,i)=>{const d=(m.x-f.x)**2+(m.y-f.y)**2;if(d<bd){bd=d;best=i;}});
-    sitingStomaMarks[best]=f;
-  }
+  // Every tap on the diagram adds a marker. An existing marker is moved by
+  // dragging it and removed by tapping it, both handled in startStomaDrag.
+  if(sitingStomaMarks.length<STOMA_MARK_MAX)sitingStomaMarks.push(f);
   renderStomaMarks();
 }
 function startStomaDrag(e,idx){
@@ -12387,7 +12388,13 @@ function startStomaDrag(e,idx){
   stomaDragging=true;stomaMoved=false;
   const move=ev=>{if(!stomaDragging)return;const f=stomaFractionFromEvent(ev);
     if(f){sitingStomaMarks[idx]=f;stomaMoved=true;renderStomaMarks();}};
-  const up=()=>{stomaDragging=false;document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);};
+  const up=()=>{
+    stomaDragging=false;
+    document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
+    // A press that never moved is a tap on the marker: remove it. The flag is
+    // left set so the container's click handler does not then add a new one.
+    if(!stomaMoved){sitingStomaMarks.splice(idx,1);renderStomaMarks();stomaMoved=true;}
+  };
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 }
