@@ -612,6 +612,11 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .ap-card{background:white;border:1px solid var(--border);border-radius:12px;padding:18px 20px;box-shadow:0 2px 6px rgba(0,0,0,.05);max-width:900px;}
 .pf-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--teal);margin:14px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
 .pf-head:first-child{margin-top:0;}
+/* Demographics lock — the bar, its unlock button, and a locked field's look. */
+.pf-lockbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 12px;padding:8px 12px;background:#f1f5f9;border:1px solid #dbe3ec;border-radius:10px;font-size:12px;font-weight:600;color:#334155;}
+.pf-unlock-btn{padding:5px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0d7377;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;}
+.pf-unlock-btn:hover{background:#e8f5f4;}
+.pf-lockedfld{background:#f4f6f8!important;color:#526074!important;cursor:not-allowed;}
 .pf-outcome{padding-top:6px;}
 .ap-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
 .ap-actions button{padding:9px 20px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
@@ -668,7 +673,8 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .psm-loc{font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:4px;}
 .psm-close{border:1px solid var(--border);background:#fff;color:var(--muted);width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;}
 .psm-close:hover{background:#f4f6f8;color:var(--navy);}
-.psm-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;}
+.psm-tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;}
+@media (max-width:720px){.psm-tabs{grid-template-columns:repeat(2,1fr);}}
 .psm-tab{display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 5px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;overflow:hidden;}
 .psm-tab svg{width:15px;height:15px;}
 .psm-tab:hover{background:#f4f6f8;}
@@ -950,6 +956,19 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .clr-mini.danger{color:#b91c1c;border-color:#fecaca;}
 .clr-mini.danger:hover{background:#fef2f2;}
 .clr-empty{font-size:12px;color:var(--muted);padding:4px 0;}
+/* Complications — the running list and its add row. */
+.cmp-list{display:flex;flex-direction:column;}
+.cmp-row{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--border);}
+.cmp-row:last-child{border-bottom:none;}
+.cmp-dot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:#e07a1f;box-shadow:0 0 0 3px #fdecd7;}
+.cmp-copy{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0;}
+.cmp-title{font-size:13.5px;font-weight:800;color:var(--navy);}
+.cmp-meta{font-size:11.5px;color:var(--muted);}
+.cmp-note{color:var(--navy);font-weight:600;}
+.cmp-add{display:grid;grid-template-columns:1fr auto 1.2fr auto;gap:8px;align-items:center;margin-top:10px;}
+.cmp-add select,.cmp-add input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;outline:none;}
+.cmp-add-btn{margin:0;white-space:nowrap;}
+@media (max-width:640px){.cmp-add{grid-template-columns:1fr 1fr;}.cmp-add-btn{grid-column:1/-1;}}
 .clr-form{display:grid;gap:10px;}
 .clr-form label{display:grid;gap:3px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
 .clr-form input,.clr-form select,.clr-form textarea{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13.5px;font-family:inherit;color:var(--navy);outline:none;background:#fff;}
@@ -2635,6 +2654,7 @@ async function startApp(){
   await loadStaff();
   await loadLocalities();
   await loadFirms();
+  await loadComplicationTypes();
   renderRoster();
   loadTodaySnapshot();
   initAppts();
@@ -4727,6 +4747,16 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   mb.dataset.dntuBaseAfterSave=String(Math.min(3,dntuCurrentStreak+pendingCurrentDntu));
   const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu):'';
   const applianceSection=visitApplianceSummaryHTML(appt,p);
+  // The running complications, read fresh so the section opens with what is on
+  // the card (the appointment join may not carry the column).
+  let complicationsNow=[];
+  if(p.id){try{complicationsNow=parseComplications((await fetchPatientById(p.id)).data||p);}catch(e){complicationsNow=parseComplications(p);}}
+  const complicationsSection=p.id?`
+    <div class="edit-seen-section">Complications</div>
+    <div class="psm-card" style="margin-bottom:12px;">
+      <div id="of-cmp-list">${complicationListHTML(complicationsNow,{removable:true,patientId:p.id})}</div>
+      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`)}
+    </div>`:'';
   mb.innerHTML=`<h2>${modalTitle}</h2>
     <div class="msub">${modalSub}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
 
@@ -4747,6 +4777,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     </div>
     ${dntuSelectionSection}
     ${applianceSection}
+    ${complicationsSection}
 
     <div id="of-followup-planning-wrap">
     <div class="edit-seen-section">Follow-up planning</div>
@@ -5685,7 +5716,7 @@ async function requireRegisteredPatientForBooking(){
     .ilike('id_card',id).maybeSingle();
   if(error){alert('Could not check the patient registry: '+error.message);return null;}
   if(!data?.id){
-    alert(`${id} is not in the Registry.\n\nAdd the patient under Add Patient first — booking does not create patient records.`);
+    alert(`${id} is not in the Registry.\n\nAdd the patient under Add Patient first — booking does not create patient cards.`);
     return null;
   }
   if(normaliseFollowupStatus(data.followup_status)==='deceased'){
@@ -7708,7 +7739,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -8127,7 +8158,7 @@ function renderPatientDirectory(){
     const middle=outcomeView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
-    return `<tr class="pd-click-row ${rowCls}${incompleteCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient record">
+    return `<tr class="pd-click-row ${rowCls}${incompleteCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card">
       <td><strong>${htmlSafe(nm)}</strong>${extraStatusChipsHTML(p)}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
@@ -8923,6 +8954,17 @@ function pfStepperHTML(prefix){
        <span class="pf-step-t">${htmlSafe(s.title)}<small>${htmlSafe(s.sub)}</small></span>
      </li>`).join('')+`</ol>`;
 }
+/* Reopen the locked demographic fields for a deliberate correction. Everything
+   marked data-locked in step 1 is made editable and the lock bar is removed. */
+function unlockDemographics(prefix){
+  const pane=document.getElementById(prefix+'-pane-1');
+  if(!pane)return;
+  pane.querySelectorAll('[data-locked]').forEach(el=>{
+    el.removeAttribute('readonly');el.removeAttribute('disabled');
+    el.removeAttribute('data-locked');el.classList.remove('pf-lockedfld');
+  });
+  const bar=document.getElementById(prefix+'-lockbar');if(bar)bar.remove();
+}
 function patientFormHTML(p,prefix){
   // The stomas a refashioning can name, from the record as it stands.
   PF_STOMA_TARGETS=collectStomaTargetsFromPatient(p);
@@ -8930,26 +8972,38 @@ function patientFormHTML(p,prefix){
   const hasRefash=parseRefashionings(p).length>0;
   const xstat=parseExtraStatuses(p);
   const hasNewstoma=parseStomas(p).length>0;
+  /* Demographics lock: once a patient is saved, a demographic field that already
+     holds a value is read-only, so it is not changed by accident. A deliberate
+     "Unlock to correct" button reopens them all; a blank field stays editable so
+     missing details can still be filled in. New patients (no id) are all open. */
+  const isEdit=!!(p&&p.id);
+  const DEMO_KEYS={first:'first_name',surname:'surname',idcard:'id_card',phone:'phone_number',sex:'sex',locality:'locality',address:'address',dob:'date_of_birth',consultant:'consultant'};
+  const isLocked=field=>isEdit&&!!String(p?.[DEMO_KEYS[field]]??'').trim();
+  const lk=field=>isLocked(field)?' readonly data-locked="1" class="pf-lockedfld"':'';       // text / date inputs
+  const lksel=field=>isLocked(field)?' disabled data-locked="1" class="pf-lockedfld"':'';     // selects
+  const anyLocked=Object.keys(DEMO_KEYS).some(isLocked);
+  const demoLockBar=anyLocked?`<div class="pf-lockbar" id="${prefix}-lockbar">🔒 Demographics are locked so they are not changed by accident. <button type="button" class="pf-unlock-btn" onclick="unlockDemographics('${prefix}')">Unlock to correct</button></div>`:'';
   return `
   <div class="pf-wiz" id="${prefix}-wiz" data-step="1" data-pid="${htmlSafe(p?.id||'')}">
   ${pfStepperHTML(prefix)}
 
   <div class="pf-pane" id="${prefix}-pane-1" data-step="1">
   <h3 class="pf-head">Patient</h3>
+  ${demoLockBar}
   <div class="edit-seen-grid">
-    <div class="fg"><label>First name *</label><input type="text" id="${prefix}-first" value="${v('first_name')}" placeholder="Given name"/></div>
-    <div class="fg"><label>Surname *</label><input type="text" id="${prefix}-surname" value="${v('surname')}" placeholder="Family name"/></div>
-    <div class="fg"><label>ID card *</label><input type="text" id="${prefix}-idcard" value="${v('id_card')}" placeholder="e.g. 404261M"/></div>
-    <div class="fg"><label>Phone</label><input type="text" id="${prefix}-phone" value="${v('phone_number')}" placeholder="e.g. 79001122"/></div>
-    <div class="fg"><label>Sex *</label><select id="${prefix}-sex">
+    <div class="fg"><label>First name *</label><input type="text" id="${prefix}-first" value="${v('first_name')}" placeholder="Given name"${lk('first')}/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="${prefix}-surname" value="${v('surname')}" placeholder="Family name"${lk('surname')}/></div>
+    <div class="fg"><label>ID card *</label><input type="text" id="${prefix}-idcard" value="${v('id_card')}" placeholder="e.g. 404261M"${lk('idcard')}/></div>
+    <div class="fg"><label>Phone</label><input type="text" id="${prefix}-phone" value="${v('phone_number')}" placeholder="e.g. 79001122"${lk('phone')}/></div>
+    <div class="fg"><label>Sex *</label><select id="${prefix}-sex"${lksel('sex')}>
       <option value="">— not recorded —</option>
       <option value="Female" ${p?.sex==='Female'?'selected':''}>Female</option>
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
-    <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)">${localityOptions(p?.locality)}</select></div>
+    <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)"${lksel('locality')}>${localityOptions(p?.locality)}</select></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Full address <span style="font-weight:400;color:var(--muted);">(as the register book writes it)</span></label>
-      <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"/></div>
-    <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"/></div>
-    <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)">${firmOptions(p?.consultant)}</select></div>
+      <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"${lk('address')}/></div>
+    <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
+    <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
   </div>
   </div>
 
@@ -10120,6 +10174,219 @@ function patientStomaSummaryHTML(pat){
   </div>`;
 }
 
+/* ── COMPLICATIONS ────────────────────────────────────────────────────────
+   A running list on the patient card. A nurse adds one as they go along, from
+   the handover or the Seen / appointment card, picking from a standard list or
+   typing a new one. Each entry is stamped with the date and where it was added.
+   The dropdown choices live in the complication_types table so the list can be
+   grown in-app (like firms and localities); the running list is stored as JSON
+   on the patient. */
+const COMPLICATIONS_DEFAULT=['Parastomal hernia','Prolapse','Retraction','Stenosis','Necrosis / ischaemia','Mucocutaneous separation','Peristomal skin excoriation / dermatitis','Leakage','High output','Bleeding','Granuloma','Stomal fistula','Obstruction / blockage'];
+let complicationTypesList=COMPLICATIONS_DEFAULT.slice();
+let complicationTypesAvailable=false;   // true once the DB table has been read
+async function loadComplicationTypes(){
+  try{
+    const{data,error}=await SB.from('complication_types').select('name').order('name');
+    if(error||!Array.isArray(data)){complicationTypesAvailable=false;return;}
+    complicationTypesAvailable=true;
+    if(data.length)complicationTypesList=data.map(r=>r.name).filter(Boolean);
+  }catch(e){complicationTypesAvailable=false;}
+}
+function complicationOptions(cur){
+  const c=(cur==null?'':String(cur)).trim();
+  const opts=complicationTypesList.slice().sort((a,b)=>a.localeCompare(b));
+  if(c&&!opts.includes(c))opts.push(c);
+  return '<option value="">— choose a complication —</option>'
+    +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
+    +'<option value="__add__">＋ Add another…</option>';
+}
+/* Adds the typed complication to this dropdown now, and saves it to the
+   complication_types table so it is offered next time too. */
+async function complicationAdd(sel){
+  optionAdd(sel,'Type the complication');
+  const v=String(sel&&sel.value||'').trim();
+  if(!v||v==='__add__')return;
+  if(!complicationTypesList.some(f=>f.toLowerCase()===v.toLowerCase())){
+    try{const{error}=await SB.from('complication_types').insert({name:v});
+      if(!error){complicationTypesList.push(v);complicationTypesAvailable=true;}
+    }catch(e){}
+  }
+}
+// The patient's complications, tolerant of the column being JSON text or absent.
+function parseComplications(pat){
+  let v=pat&&pat.complications;
+  if(typeof v==='string'){try{v=JSON.parse(v);}catch(_){v=[];}}
+  if(!Array.isArray(v))return [];
+  return v.filter(x=>x&&(x.text||x.name)).map(x=>({
+    id:x.id||('c'+Math.random().toString(36).slice(2,9)),
+    text:String(x.text||x.name||'').trim(),
+    date:x.date||x.on||'',
+    note:String(x.note||'').trim(),
+    source:x.source||'',
+    by:x.by||''
+  }));
+}
+/* Append one complication to a patient and save. Returns {list} on success, or
+   {missing:true} when the column has not been created yet (the write is dropped
+   rather than the whole record), or {error} on any other failure. */
+async function addComplicationToPatient(patientId,entry){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat)return{error:error||{message:'This patient is no longer in the registry.'}};
+  const list=parseComplications(pat);
+  const user=await getCurrentUserForAudit();
+  list.push({
+    id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    text:String(entry.text||'').trim(),
+    date:entry.date||TODAY,
+    note:String(entry.note||'').trim(),
+    source:entry.source||'',
+    by:user.name||user.email||''
+  });
+  const{error:e2,dropped}=await updatePatientTolerant(patientId,{complications:list});
+  if(e2)return{error:e2};
+  if(dropped&&dropped.includes('complications'))return{missing:true};
+  return{list};
+}
+async function removeComplicationFromPatient(patientId,id){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat)return{error:error||{message:'This patient is no longer in the registry.'}};
+  const list=parseComplications(pat).filter(x=>String(x.id)!==String(id));
+  const{error:e2}=await updatePatientTolerant(patientId,{complications:list});
+  return e2?{error:e2}:{list};
+}
+// The running list, newest first. Read-only unless removable is set.
+function complicationListHTML(entries,opts={}){
+  const list=(entries||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  if(!list.length)return '<div class="clr-empty">No complications recorded yet.</div>';
+  return `<div class="cmp-list">${list.map(e=>`
+    <div class="cmp-row">
+      <span class="cmp-dot" aria-hidden="true"></span>
+      <div class="cmp-copy">
+        <span class="cmp-title">${htmlSafe(e.text)}</span>
+        <span class="cmp-meta">${[e.date?htmlSafe(fmtShortDate(e.date)):'',e.source?htmlSafe(e.source):'',e.by?htmlSafe(e.by):''].filter(Boolean).join(' · ')}${e.note?`<br><span class="cmp-note">${htmlSafe(e.note)}</span>`:''}</span>
+      </div>
+      ${opts.removable?`<button class="clr-mini danger" onclick="onRemoveComplication('${opts.patientId}','${e.id}')">Remove</button>`:''}
+    </div>`).join('')}</div>`;
+}
+/* The little pick-a-complication + date + note row. The Add button's onclick is
+   passed in, because who to tell afterwards differs by where it is shown. */
+function complicationAddFormHTML(prefix,onclickJs){
+  const note=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="grid-column:1/-1;margin:2px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
+  return `<div class="cmp-add">
+    <select id="${prefix}-cmp-sel" onchange="complicationAdd(this)">${complicationOptions('')}</select>
+    <input type="date" id="${prefix}-cmp-date" value="${TODAY}"/>
+    <input type="text" id="${prefix}-cmp-note" placeholder="Note (optional)"/>
+    <button type="button" class="pf-add-btn cmp-add-btn" onclick="${onclickJs}">＋ Add complication</button>
+    ${note}
+  </div>`;
+}
+/* Read the mini-form, save the complication, reset the inputs. Returns the new
+   list (or null if nothing was added / it could not be saved). */
+async function readAndAddComplication(prefix,patientId,source){
+  const sel=document.getElementById(prefix+'-cmp-sel');
+  const text=String(sel&&sel.value||'').trim();
+  if(!text||text==='__add__'){alert('Choose a complication first.');return null;}
+  const date=document.getElementById(prefix+'-cmp-date')?.value||TODAY;
+  const note=document.getElementById(prefix+'-cmp-note')?.value||'';
+  const res=await addComplicationToPatient(patientId,{text,date,note,source});
+  if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return null;}
+  if(res.error){alert('Could not save the complication: '+res.error.message);return null;}
+  if(sel)sel.value='';
+  const n=document.getElementById(prefix+'-cmp-note'); if(n)n.value='';
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.complications=res.list;
+  return res.list;
+}
+// Remove a complication and refresh whichever views are on screen.
+async function onRemoveComplication(patientId,id){
+  if(!confirm('Remove this complication from the record?'))return;
+  const res=await removeComplicationFromPatient(patientId,id);
+  if(res.error){alert('Could not remove it: '+res.error.message);return;}
+  refreshComplicationViews(patientId,res.list);
+}
+function refreshComplicationViews(patientId,list){
+  const pick=document.getElementById('cmp-pick-list'); if(pick)pick.innerHTML=complicationListHTML(list,{removable:true,patientId});
+  const of=document.getElementById('of-cmp-list'); if(of)of.innerHTML=complicationListHTML(list,{removable:true,patientId});
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId)){
+    clrState.patient.complications=list;
+    const host=document.getElementById('psm-outcomes');
+    if(host&&!host.hidden)host.innerHTML=stomaOutcomesPanelHTML(clrState.patient);
+  }
+}
+// A standalone picker, used from the handover: pick, add, and it saves at once.
+async function openComplicationPicker(patientId,source){
+  const{data:pat}=await fetchPatientById(patientId);
+  const nm=pat?`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient':'this patient';
+  const list=parseComplications(pat);
+  const mb=document.getElementById('mb');mb.className='mb';
+  mb.innerHTML=`<h2>⚠️ Complications</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
+    <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
+    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`)}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
+  openMo();
+}
+async function onPickAddComplication(patientId,source){
+  const list=await readAndAddComplication('pick',patientId,source);
+  if(!list)return;
+  const host=document.getElementById('cmp-pick-list'); if(host)host.innerHTML=complicationListHTML(list,{removable:true,patientId});
+  if(document.getElementById('hv-body'))await loadHandover();
+}
+/* The Stoma outcomes tab: the reversal / deceased outcome, a stoma-by-stoma
+   present-vs-reversed summary, and the running complications list with its
+   add row. Built from the patient alone so it can be re-rendered in place when
+   a complication is added or removed. */
+function stomaOutcomesPanelHTML(pat){
+  const oi=(label,val,wide)=>`<div class="psm-ditem${wide?' wide':''}"><dt>${htmlSafe(label)}</dt>${val?`<dd>${htmlSafe(val)}</dd>`:'<dd class="na">Not recorded</dd>'}</div>`;
+  const od=(label,val)=>oi(label,val?fmtShortDate(val):'');
+  const[outText,outCls]=patientOutcome(pat);
+  const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  const present=list.filter(x=>x.present).length;
+  const reversed=list.filter(x=>!x.present);
+  const stomaLines=list.length?`<div class="psm-card sm-list" style="margin-top:2px;">${list.map(x=>`
+      <div class="clr-rec">
+        <div class="clr-rec-copy">
+          <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(x.type)}`:''}</span>
+          <span class="clr-rec-meta">${x.present?'Present':'Reversed'+(x.reversal_date?' '+htmlSafe(fmtShortDate(x.reversal_date)):'')}</span>
+        </div>
+        <span class="clr-badge ${x.present?'':'past'}">${x.present?'Stoma present':'Reversed'}</span>
+      </div>`).join('')}
+      <div class="psm-audit">${psmIc('stoma')} ${present} present · ${reversed.length} reversed</div>
+    </div>`:'';
+  const complications=parseComplications(pat);
+  return `
+    <div>
+      <div class="psm-sec-head"><h3>Outcome</h3><span class="cr-out ${outCls}">${htmlSafe(outText)}</span></div>
+      <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+        ${pat.reversal_date?od('Reversal date',pat.reversal_date):''}
+        ${pat.proposed_reversal_date?od('Reversal planned for',pat.proposed_reversal_date):''}
+        ${pat.deceased_date?od('Date of RIP',pat.deceased_date):''}
+        ${(!pat.reversal_date&&!pat.proposed_reversal_date&&!pat.deceased_date)?oi('Status',outText,true):''}
+      </dl></div>
+    </div>
+    ${stomaLines?`<div><div class="psm-sec-head"><h3>Stomas</h3></div>${stomaLines}</div>`:''}
+    <div>
+      <div class="psm-sec-head"><h3>Complications${complications.length?` · ${complications.length}`:''}</h3><span class="psm-badge">Add as you go</span></div>
+      <div class="psm-card">
+        <div id="psm-cmp-list">${complicationListHTML(complications,{removable:true,patientId:pat.id})}</div>
+        ${complicationAddFormHTML('pcmp',`onCardAddComplication('${pat.id}')`)}
+      </div>
+    </div>`;
+}
+async function onCardAddComplication(patientId){
+  const list=await readAndAddComplication('pcmp',patientId,'Clinic');
+  if(!list)return;
+  const host=document.getElementById('psm-outcomes');
+  if(host&&clrState.patient)host.innerHTML=stomaOutcomesPanelHTML(clrState.patient);
+}
+// Add a complication from the Seen / appointment card. Saves at once and shows
+// it in the section without disturbing the rest of the outcome form.
+async function onApptAddComplication(patientId){
+  const list=await readAndAddComplication('of',patientId,'Appointment');
+  if(!list)return;
+  const host=document.getElementById('of-cmp-list');
+  if(host)host.innerHTML=complicationListHTML(list,{removable:true,patientId});
+}
+
 /* ---- patient clinical record page (card summary + appointments tab) ---- */
 // A small inline icon set, so the summary has no dependency on an icon font.
 const PSM_ICONS={
@@ -10143,11 +10410,14 @@ const PSM_ICONS={
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
 function switchPatientPanel(which){
-  ['summary','clinical','appts'].forEach(p=>{
+  ['demographics','stomas','outcomes','appts','episodes'].forEach(p=>{
     const panel=document.getElementById('psm-'+p);
     if(panel)panel.hidden=p!==which;
     document.getElementById('psm-tab-'+p)?.classList.toggle('active',p===which);
   });
+  // Fill the split clinical panels the first time each is opened.
+  if(which==='stomas')renderStomasPanel();
+  if(which==='episodes')renderEpisodesPanel();
 }
 
 /* ---- clinical records (episodes, stomas, appliances) ------------------------
@@ -10444,7 +10714,7 @@ function stomaCategoryHTML(meta,open){
           <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}${recCode(r)?`<span class="clr-code">${recCode(r)}</span>`:''}</span>
           <span class="clr-rec-meta">${clrMetaHTML(r)}</span>
         </div>
-        <div class="clr-rec-actions">${r.derived?'<span class="clr-rec-tag">From patient record</span>':`<button class="clr-mini" onclick="openClinicalRecordForm('stoma','${r.id}')">Edit</button>
+        <div class="clr-rec-actions">${r.derived?'<span class="clr-rec-tag">From patient card</span>':`<button class="clr-mini" onclick="openClinicalRecordForm('stoma','${r.id}')">Edit</button>
           <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}</div>
       </div>
       <div class="clr-appl-list"><div class="clr-appl-h">Appliances &amp; accessories on ${recCode(r)?htmlSafe(recCode(r)):'this stoma'}</div>${applHTML}${evHTML}</div>
@@ -10486,59 +10756,75 @@ function clrMetaHTML(r){
     html+='<br>'+(ap.stoma_type?`<span class="clr-code">${htmlSafe(ap.stoma_type)}</span> `:'')+appliancePillsHTML(ap.appliances,ap.accessories);
   return html;
 }
-function renderClinicalPanel(){
-  const host=document.getElementById('psm-clinical');
+/* The Episodes category — every inpatient visit, oldest reference first, each
+   expandable to its detail. Split out of the old combined Clinical panel so it
+   can stand on its own Episodes tab. */
+function episodeCategoryHTML(meta,open){
+  const recs=clrState.rows.filter(r=>r.kind===meta.kind);
+  const cur=recs.find(r=>r.is_current)||recs[0];
+  const curCode=recCode(cur);
+  const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
+  const listRows=recs.length?recs.map(r=>`<div class="clr-rec">
+      <div class="clr-rec-copy">
+        <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}${recCode(r)?`<span class="clr-code">${recCode(r)}</span>`:''}</span>
+        <span class="clr-rec-meta">${clrMetaHTML(r)}</span>
+      </div>
+      <div class="clr-rec-actions">
+        ${r.derived
+          ?'<span class="clr-rec-tag">From patient card</span>'
+          :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
+        <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
+      </div></div>`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
+  return `<div class="clr-cat">
+    <button class="clr-cat-head" onclick="toggleClinicalCategory('${meta.kind}')">
+      <span class="clr-cat-ic">${psmIc(meta.icon)}</span>
+      <span class="clr-cat-main">
+        <span class="clr-cat-title">${meta.label} <span class="clr-count">${recs.length}</span></span>
+        <span class="clr-cat-sub">${cur?htmlSafe(meta.cur):htmlSafe(meta.none)}</span>
+        ${cur?`<span class="clr-cat-line">${line}</span>`:''}
+      </span>
+      ${cur&&cur.status?`<span class="clr-badge ${clrBadgeCls(meta.kind,cur)}">${htmlSafe(cur.status)}</span>`:''}
+      <span class="clr-chev ${open?'open':''}">${psmIc('chevron')}</span>
+    </button>
+    ${open?`<div class="clr-list">${listRows}</div>`:''}
+  </div>`;
+}
+/* The Stomas & operation tab: the clickable stoma summary (each opens the stoma
+   modal with its operation, findings and dates), then the appliances used on
+   each stoma from the clinical records. */
+function renderStomasPanel(){
+  const host=document.getElementById('psm-stomas');
   if(!host)return;
-  const pid=clrState.patientId;
+  let html=patientStomaSummaryHTML(clrState.patient);
   if(!clrState.available){
-    host.innerHTML=`<div class="psm-missing">${psmIc('records')}<div>The <strong>clinical_records</strong> table is not in the database yet. Run <strong>sql/add-clinical-records.sql</strong> once in Supabase to turn on episodes, stomas and appliances.</div></div>`;
+    html+=`<div class="psm-missing">${psmIc('records')}<div>Appliance history needs the <strong>clinical_records</strong> table. Run <strong>sql/add-clinical-records.sql</strong> once in Supabase to turn on appliances.</div></div>`;
+  }else{
+    html+=`<div class="clr-cats" style="margin-top:14px;">${stomaCategoryHTML(clrMeta('stoma'),clrState.expanded.stoma!==false)}</div>`;
+  }
+  host.innerHTML=html;
+}
+/* The Episodes tab: each inpatient visit. Only one visit is open at a time —
+   while one is open the button is replaced by a note; the open visit is
+   continued and closed from the Handover. */
+function renderEpisodesPanel(){
+  const host=document.getElementById('psm-episodes');
+  if(!host)return;
+  if(!clrState.available){
+    host.innerHTML=`<div class="psm-missing">${psmIc('records')}<div>The <strong>clinical_records</strong> table is not in the database yet. Run <strong>sql/add-clinical-records.sql</strong> once in Supabase to turn on episodes.</div></div>`;
     return;
   }
-  const newest=clrState.rows[0];
-  const cats=CLR_KINDS.map(meta=>{
-    if(meta.kind==='stoma')return stomaCategoryHTML(meta,!!clrState.expanded.stoma);
-    let recs=clrState.rows.filter(r=>r.kind===meta.kind);
-    const cur=recs.find(r=>r.is_current)||recs[0];
-    const open=!!clrState.expanded[meta.kind];
-    const curCode=recCode(cur);
-    const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
-    const listRows=recs.length?recs.map(r=>`<div class="clr-rec">
-        <div class="clr-rec-copy">
-          <span class="clr-rec-title">${htmlSafe(r.title||meta.title)}${recCode(r)?`<span class="clr-code">${recCode(r)}</span>`:''}</span>
-          <span class="clr-rec-meta">${clrMetaHTML(r)}</span>
-        </div>
-        <div class="clr-rec-actions">
-          ${r.derived
-            ?'<span class="clr-rec-tag">From patient record</span>'
-            :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
-          <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
-        </div></div>`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
-    return `<div class="clr-cat">
-      <button class="clr-cat-head" onclick="toggleClinicalCategory('${meta.kind}')">
-        <span class="clr-cat-ic">${psmIc(meta.icon)}</span>
-        <span class="clr-cat-main">
-          <span class="clr-cat-title">${meta.label} <span class="clr-count">${recs.length}</span></span>
-          <span class="clr-cat-sub">${cur?htmlSafe(meta.cur):htmlSafe(meta.none)}</span>
-          ${cur?`<span class="clr-cat-line">${line}</span>`:''}
-        </span>
-        ${cur&&cur.status?`<span class="clr-badge ${clrBadgeCls(meta.kind,cur)}">${htmlSafe(cur.status)}</span>`:''}
-        <span class="clr-chev ${open?'open':''}">${psmIc('chevron')}</span>
-      </button>
-      ${open?`<div class="clr-list">${listRows}</div>`:''}
-    </div>`;
-  }).join('');
-  // Only one inpatient visit is open at a time: while an episode is open the
-  // button is replaced by a note, so a second admission cannot be started over
-  // the first — the open one is continued from the Handover and closed there.
   const openEp=openEpisodeIn(clrState.rows);
   const headAction=openEp
     ? `<span class="clr-head-open">${psmIc('folder')} Inpatient visit open${recCode(openEp)?' · '+htmlSafe(recCode(openEp)):''} — set appliances or discharge from the Handover</span>`
     : `<button class="psm-btn psm-btn-primary" onclick="openInpatientVisit()">${psmIc('plus')} Open inpatient visit</button>`;
-  host.innerHTML=`<div class="clr-head"><h3>Clinical records</h3>
-      ${headAction}</div>
-    <div class="clr-cats">${cats}</div>
+  const newest=clrState.rows.filter(r=>r.kind==='episode')[0];
+  host.innerHTML=`<div class="clr-head"><h3>Episodes</h3>${headAction}</div>
+    <div class="clr-cats">${episodeCategoryHTML(clrMeta('episode'),clrState.expanded.episode!==false)}</div>
     ${newest?`<div class="psm-audit">${psmIc('clock')} Last updated ${htmlSafe(fmtShortDate(String(newest.updated_at||newest.created_at||'').slice(0,10)))}${newest.created_by?' by '+htmlSafe(newest.created_by):''}</div>`:''}`;
 }
+// Re-render whichever of the split clinical panels are on screen. Kept as the
+// single entry point so every add / edit / delete caller still just calls this.
+function renderClinicalPanel(){renderStomasPanel();renderEpisodesPanel();}
 function toggleClinicalCategory(kind){clrState.expanded[kind]=!clrState.expanded[kind];renderClinicalPanel();}
 /* Opening an inpatient visit is a small admission form: the ward and bed, and
    what the patient is wearing. On save it records an Inpatient episode dated
@@ -11080,7 +11366,7 @@ async function openDischargeLetterFor(patientId){
 async function openPatientRecord(patientId){
   const host=document.getElementById('page-patient-record');
   const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Back to Registry</button></div>';
-  host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient record…</div></div>';
+  host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient card…</div></div>';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   host.classList.add('active');
   window.scrollTo(0,0);
@@ -11088,7 +11374,7 @@ async function openPatientRecord(patientId){
   if(error||!pat){host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div></div>';return;}
   const{data:rawAppts}=await SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
   const appts=await enrichAppointments(rawAppts||[]);
-  clrState.expanded={};
+  clrState.expanded={stoma:true,episode:true};
   await loadClinicalRecords(patientId);
   clrState.patient=pat;
   clrState.appts=appts;
@@ -11102,7 +11388,8 @@ async function openPatientRecord(patientId){
     if(made.error)console.error('openPatientRecord: could not reconcile the open episode',made.error);
     if(made.data)await loadClinicalRecords(patientId);
   }
-  const clrCount=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(pat).length;
+  const stomaCount=(typeof patientStomaList==='function'?patientStomaList(pat).length:0);
+  const episodeCount=clrState.available?clrState.rows.filter(r=>r.kind==='episode').length:0;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const[outText,outCls]=patientOutcome(pat);
   const age=psmAge(pat.date_of_birth);
@@ -11147,36 +11434,37 @@ async function openPatientRecord(patientId){
     </header>
 
     <nav class="psm-tabs">
-      <button class="psm-tab active" id="psm-tab-summary" onclick="switchPatientPanel('summary')">${psmIc('clipboard')} Summary</button>
-      <button class="psm-tab" id="psm-tab-clinical" onclick="switchPatientPanel('clinical')">${psmIc('records')} Clinical${clrCount?` (${clrCount})`:''}</button>
+      <button class="psm-tab active" id="psm-tab-demographics" onclick="switchPatientPanel('demographics')">${psmIc('user')} Demographics</button>
+      <button class="psm-tab" id="psm-tab-stomas" onclick="switchPatientPanel('stomas')">${psmIc('stoma')} Stomas &amp; operation${stomaCount?` (${stomaCount})`:''}</button>
+      <button class="psm-tab" id="psm-tab-outcomes" onclick="switchPatientPanel('outcomes')">${psmIc('records')} Stoma outcomes</button>
       <button class="psm-tab" id="psm-tab-appts" onclick="switchPatientPanel('appts')">${psmIc('calendar')} Appointments</button>
+      <button class="psm-tab" id="psm-tab-episodes" onclick="switchPatientPanel('episodes')">${psmIc('folder')} Episodes${episodeCount?` (${episodeCount})`:''}</button>
     </nav>
 
-    <section class="psm-panel" id="psm-summary">
+    <section class="psm-panel" id="psm-demographics">
       <div class="psm-card"><div class="psm-next">${nextCopy}
         ${scheduleBtn}</div></div>
       ${missingBlock}
-      ${patientStomaSummaryHTML(pat)}
-      ${(pat.deceased_date||pat.proposed_reversal_date)?`<div>
-        <div class="psm-sec-head"><h3>Outcome</h3></div>
-        <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
-          ${pat.deceased_date?dDate('Date of RIP',pat.deceased_date):''}
-          ${pat.proposed_reversal_date?dDate('Reversal planned for',pat.proposed_reversal_date):''}
-        </dl></div>
-      </div>`:''}
       <div>
-        <div class="psm-sec-head"><h3>Contact &amp; record</h3></div>
+        <div class="psm-sec-head"><h3>Patient demographics</h3><span class="psm-badge">Locked once entered — unlock in Edit patient</span></div>
         <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
-          ${dItem('Telephone',pat.phone_number)}
-          ${dDate('Date of birth',pat.date_of_birth)}
-          ${dItem('Locality',pat.locality)}
-          ${dItem('Firm',pat.consultant)}
+          ${dItem('Name',nm)}
           ${dItem('ID card',pat.id_card)}
+          ${dDate('Date of birth',pat.date_of_birth)}
+          ${dItem('Sex',pat.sex)}
+          ${dItem('Telephone',pat.phone_number)}
+          ${dItem('Locality',pat.locality)}
+          ${dItem('Address',pat.address,true)}
+          ${dItem('Firm',pat.consultant)}
         </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}</div>
       </div>
     </section>
 
-    <section class="psm-panel" id="psm-clinical" hidden></section>
+    <section class="psm-panel" id="psm-stomas" hidden></section>
+
+    <section class="psm-panel" id="psm-outcomes" hidden>${stomaOutcomesPanelHTML(pat)}</section>
+
+    <section class="psm-panel" id="psm-episodes" hidden></section>
 
     <section class="psm-panel" id="psm-appts" hidden>
       <div class="psm-card"><div class="psm-next">
@@ -11684,6 +11972,7 @@ function handoverStomaLine(patient,epRows){
 }
 function handoverRowHTML(p,cls){
   const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
+  const cmpCount=parseComplications(p).length;
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
@@ -11704,6 +11993,7 @@ function handoverRowHTML(p,cls){
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication">⚠️ Complications${cmpCount?` (${cmpCount})`:''}</button>
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Postop discharge</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge (old case)</button>
       <button class="ncb-btn hv-mob-only hv-lock" onclick="toggleHandoverLock('${p.id}')">✏️ Edit</button>
