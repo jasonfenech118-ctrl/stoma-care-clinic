@@ -5140,7 +5140,13 @@ async function commitEpisodeAppliances(pending,rows){
     const{error}=await SB.from('clinical_records').update({appliances:merged}).eq('id',ep.id);
     if(error){console.error('commitEpisodeAppliances: appliances update failed',error);
       alert('Could not record what was set: '+error.message);return;}
-    noteRows=latestApplianceRowsPerStoma({appliances:merged}).map(x=>x.row);
+    // The ward note is the CURRENT appliance per stoma, not every entry ever
+    // made: an appliance that replaced another belongs in the history, not on
+    // the sheet beside its replacement. Judged against the patient's own stomas
+    // so a single-stoma patient reads one line.
+    let pat=null;
+    try{const{data:pd}=await SB.from('patients').select('*').eq('id',pending.patientId).maybeSingle();pat=pd;}catch(e){}
+    noteRows=currentApplianceNoteRows(pat,merged);
   }
   const note=episodeApplianceNote(noteRows);
   const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
@@ -11599,24 +11605,61 @@ async function attachHandoverApplianceLines(rows){
 /* One line for a multi-stoma patient: each present stoma, its appliances and
    accessories in shorthand, a dash where nothing is set yet. Returns null for a
    single stoma, so the caller falls back to the plain ward note. */
-function handoverStomaLine(patient,epRows){
+/* The appliance line for the handover, built from the admission's own entries
+   so it always shows the CURRENT appliance and never the one it replaced. The
+   previous appliances stay on the record's history (with their start and close
+   dates); they simply drop off the ward sheet.
+
+   Only the newest entry counts. On a single-stoma patient that is one line — the
+   old bug showed the previous appliance beside the new one because two entries
+   with no stoma id never collapsed. On a patient with more than one stoma it is
+   the newest entry for each, matched by its stoma id. */
+function handoverApplianceRowText(tag,r){
+  const appl=r?shortApplianceList(r.appliances).join(', '):'';
+  const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
+  const bits=[appl,acc].filter(Boolean).join('; ');
+  const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
+  return (tag?tag+': ':'')+(bits||'—')+fd;
+}
+/* The appliance entries that are current for a patient right now — the newest
+   per stoma — which is what both the ward note and the handover line should
+   show. A patient with one stoma keeps only the single newest entry, so an
+   appliance that replaced another is never written beside it. */
+function currentApplianceNoteRows(patient,rows){
+  const useful=(rows||[]).filter(r=>(r.appliances&&r.appliances.length)
+    ||(r.accessories&&r.accessories.length));
+  if(!useful.length)return [];
+  const newest=list=>{let n=null;list.forEach(r=>{
+    if(!n||String(r.changed_on||'')>=String(n.changed_on||''))n=r;});return n;};
   let stomas=[];
-  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){return null;}
-  if(stomas.length<=1)return null;
-  const latest={};
-  (epRows||[]).forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
-    if(!latest[u]||String(r.changed_on||'')>=String(latest[u].changed_on||''))latest[u]=r;});
-  return stomas.map(st=>{
-    // The stoma is named by its type shorthand alone — Colo, Ileo, MF — with
-    // the quadrant added when two of a kind would otherwise read the same.
-    const tag=st.shortLabel||'';
-    const r=latest[st.uid];
-    const appl=r?shortApplianceList(r.appliances).join(', '):'';
-    const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
-    const bits=[appl,acc].filter(Boolean).join('; ');
-    const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
-    return (tag?tag+': ':'')+(bits||'—')+fd;
-  }).join('  ·  ');
+  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){stomas=[];}
+  if(stomas.length<=1)return [newest(useful)];
+  const byUid={};
+  useful.forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
+    if(!byUid[u]||String(r.changed_on||'')>=String(byUid[u].changed_on||''))byUid[u]=r;});
+  return Object.values(byUid);
+}
+function handoverStomaLine(patient,epRows){
+  // Only entries that actually record something; the newest of them is current.
+  const useful=(epRows||[]).filter(r=>(r.appliances&&r.appliances.length)
+    ||(r.accessories&&r.accessories.length));
+  if(!useful.length)return null;   // nothing on the admission — use the stored note
+  const newest=list=>{let n=null;(list||[]).forEach(r=>{
+    if(!n||String(r.changed_on||'')>=String(n.changed_on||''))n=r;});return n;};
+  let stomas=[];
+  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){stomas=[];}
+  // One stoma (or none we can tell apart): the single newest appliance, so the
+  // sheet never shows the same stoma twice.
+  if(stomas.length<=1){
+    const r=newest(useful);
+    const tag=(stomas[0]&&stomas[0].shortLabel)||'';
+    return handoverApplianceRowText(tag,r);
+  }
+  // Several stomas: the newest entry for each, matched by its stoma id.
+  const byUid={};
+  useful.forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
+    if(!byUid[u]||String(r.changed_on||'')>=String(byUid[u].changed_on||''))byUid[u]=r;});
+  return stomas.map(st=>handoverApplianceRowText(st.shortLabel||'',byUid[st.uid])).join('  ·  ');
 }
 function handoverRowHTML(p,cls){
   const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
