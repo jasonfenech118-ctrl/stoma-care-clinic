@@ -2105,11 +2105,17 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 
     <div class="page" id="page-snapshots">
       <div class="phdr">
-        <div><h2>📸 Archived Handover</h2><p>A picture of the handover saved automatically at 4&nbsp;pm each day — open any day in a new tab</p></div>
+        <div><h2>📸 Archived Handover</h2><p>A read-only picture of the handover, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab</p></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">📸 Capture now</button>
           <button class="btn-add" onclick="loadHandoverSnapshots()">Refresh</button>
         </div>
+      </div>
+      <div class="pd-toolbar" id="snapshots-toolbar" hidden>
+        <label>Jump to a date:</label>
+        <input type="date" id="snapf-date" onchange="renderHandoverSnapshots()"/>
+        <input type="text" id="snapf-search" placeholder="Search by date — e.g. September, 08/09, 2026…" oninput="renderHandoverSnapshots()" style="min-width:240px;"/>
+        <button class="btn-add" style="background:#eef0f3;color:#4b5563;" onclick="clearSnapshotFilter()">Clear</button>
       </div>
       <div id="snapshots-body"><div class="report-note">Loading snapshots…</div></div>
     </div>
@@ -13283,13 +13289,42 @@ async function loadHandoverSnapshots(){
     return;
   }
   handoverSnapshotRows=data||[];
+  const toolbar=document.getElementById('snapshots-toolbar');
+  if(toolbar)toolbar.hidden=!handoverSnapshotRows.length;
+  renderHandoverSnapshots();
+}
+// Clear the date search and show every day again.
+function clearSnapshotFilter(){
+  const d=document.getElementById('snapf-date'); if(d)d.value='';
+  const s=document.getElementById('snapf-search'); if(s)s.value='';
+  renderHandoverSnapshots();
+}
+/* Draw the list, narrowed by the date picker and the search box. The archive is
+   read only — a saved day can be opened or downloaded but not changed or
+   deleted, so it stays a true record. */
+function renderHandoverSnapshots(){
+  const body=document.getElementById('snapshots-body');
+  if(!body)return;
   if(!handoverSnapshotRows.length){
     body.innerHTML=emptyStateHTML('📸','No archived handovers yet',
       'A snapshot of the handover is saved here automatically at 4&nbsp;pm each day, as long as the app is open on a ward machine. You can also take one now.',
       `<button class="btn-save" onclick="captureHandoverSnapshot({manual:true})">📸 Capture now</button>`);
     return;
   }
-  const trs=handoverSnapshotRows.map(r=>{
+  const day=(document.getElementById('snapf-date')?.value||'').slice(0,10);
+  const q=(document.getElementById('snapf-search')?.value||'').trim().toLowerCase();
+  const rows=handoverSnapshotRows.filter(r=>{
+    if(day&&String(r.snapshot_date).slice(0,10)!==day)return false;
+    if(q){
+      // Match the ISO date, the written date and the day/month form, so
+      // "september", "08/09" and "2026" all find the same day.
+      const iso=String(r.snapshot_date).slice(0,10);
+      const hay=(iso+' '+fmtLabel(r.snapshot_date)+' '+fmtShortDate(r.snapshot_date)).toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+  const trs=rows.map(r=>{
     const t=r.captured_at?new Date(r.captured_at):null;
     const time=t?t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'';
     return `<tr>
@@ -13300,15 +13335,15 @@ async function loadHandoverSnapshots(){
       <td class="hv-actions-cell"><div class="followup-actions">
         <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverSnapshot('${r.id}')">↗ Open</button>
         <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="downloadHandoverSnapshot('${r.id}')">⤓ Download</button>
-        <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="deleteHandoverSnapshot('${r.id}','${htmlSafe(fmtLabel(r.snapshot_date))}')">Delete</button>
       </div></td>
     </tr>`;
   }).join('');
+  const shown=rows.length!==handoverSnapshotRows.length?`${rows.length} of ${handoverSnapshotRows.length}`:`${handoverSnapshotRows.length}`;
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl">
     <thead>
-      <tr class="hv-bannerrow"><th colspan="5"><span class="hv-date">Archived Handover</span><span class="hv-count">${handoverSnapshotRows.length} saved</span></th></tr>
+      <tr class="hv-bannerrow"><th colspan="5"><span class="hv-date">Archived Handover</span><span class="hv-count">${shown} saved · read only</span></th></tr>
       <tr><th>Date</th><th>Taken at</th><th>Inpatients</th><th>Saved by</th><th></th></tr>
-    </thead><tbody>${trs}</tbody></table></div>`;
+    </thead><tbody>${trs||'<tr><td colspan="5" class="empty">No archived handover matches that date.</td></tr>'}</tbody></table></div>`;
 }
 // The PNG is a data: URL; a big one can be refused by window.open, so it is
 // turned into a blob first and that is what opens.
@@ -13338,12 +13373,6 @@ async function downloadHandoverSnapshot(id){
   const a=document.createElement('a');
   a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
   document.body.appendChild(a); a.click(); a.remove();
-}
-async function deleteHandoverSnapshot(id,label){
-  if(!confirm(`Delete the handover snapshot for ${label}? This cannot be undone.`))return;
-  const{error}=await SB.from('handover_snapshots').delete().eq('id',id);
-  if(error){alert('Could not delete: '+error.message);return;}
-  loadHandoverSnapshots();
 }
 /* The 4pm timer. Every minute from 4pm on it checks whether today already has a
    snapshot (any machine), and if not, takes one. So the machine left open on
