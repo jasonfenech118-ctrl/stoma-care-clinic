@@ -5140,7 +5140,13 @@ async function commitEpisodeAppliances(pending,rows){
     const{error}=await SB.from('clinical_records').update({appliances:merged}).eq('id',ep.id);
     if(error){console.error('commitEpisodeAppliances: appliances update failed',error);
       alert('Could not record what was set: '+error.message);return;}
-    noteRows=latestApplianceRowsPerStoma({appliances:merged}).map(x=>x.row);
+    // The ward note is the CURRENT appliance per stoma, not every entry ever
+    // made: an appliance that replaced another belongs in the history, not on
+    // the sheet beside its replacement. Judged against the patient's own stomas
+    // so a single-stoma patient reads one line.
+    let pat=null;
+    try{const{data:pd}=await SB.from('patients').select('*').eq('id',pending.patientId).maybeSingle();pat=pd;}catch(e){}
+    noteRows=currentApplianceNoteRows(pat,merged);
   }
   const note=episodeApplianceNote(noteRows);
   const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
@@ -5892,11 +5898,20 @@ async function getAppointmentHistoryLite(patientIds){
 }
 async function getAppointmentRowsForPatients(patientIds,year,month){
   if(!patientIds.length)return [];
-  let q=SB.from('appointments').select('*').in('patient_id',patientIds).order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
-  if(year&&month){q=q.gte('appt_date',`${year}-${String(month).padStart(2,'0')}-01`).lte('appt_date',monthEndDate(String(year),String(month).padStart(2,'0')));}
-  else if(year){q=q.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
-  const{data}=await q;
-  return await enrichAppointments(data||[]);
+  // Read the ids in blocks: a single .in() with hundreds of ids builds a URL
+  // too long for the server to accept, which used to come back empty — now the
+  // Reversal Register can pass every reversed patient without losing their
+  // appointment history.
+  const out=[];
+  for(let i=0;i<patientIds.length;i+=100){
+    let q=SB.from('appointments').select('*').in('patient_id',patientIds.slice(i,i+100))
+      .order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+    if(year&&month){q=q.gte('appt_date',`${year}-${String(month).padStart(2,'0')}-01`).lte('appt_date',monthEndDate(String(year),String(month).padStart(2,'0')));}
+    else if(year){q=q.gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`);}
+    const{data}=await q;
+    if(data&&data.length)out.push(...data);
+  }
+  return await enrichAppointments(out);
 }
 async function getRecallWorklistRows(){
   const now=new Date();
@@ -7729,6 +7744,37 @@ async function loadPatientDirectory(){
    filter narrows to first stomas only when a plain new-patient list is wanted.
    ------------------------------------------------------------------------- */
 let newPatientRows=[];
+/* The register writes some operations down twice, and the same patient can sit
+   in the app under two ID cards that differ only by a letter (421160A / 421160M)
+   or a leading zero — a book row and the app's own file for one person. Both
+   show here as a duplicate line. Two rows are the same operation when they are
+   the same patient on the same day: the ID card reduced to its digits (so the
+   A/M twins and the leading-zero twins collapse together) with the surgery date.
+   A patient's two operations on different days keep their own lines, because the
+   date differs; genuinely different people do not share a card number. */
+function formationDupKey(r){
+  const digits=String(r.id_card||'').replace(/\D/g,'').replace(/^0+/,'');
+  const name=String(`${r.surname||''} ${r.first_name||''}`).toLowerCase().replace(/[^a-z]/g,'');
+  return (digits||name||Math.random())+'|'+String(r.date||'');
+}
+// The fuller of two rows for the same operation is the one worth keeping — the
+// one that names the stoma type, the address and the longer operation text.
+function formationRowScore(r){
+  let s=0;
+  if(r.stoma_type&&r.stoma_type!=='—')s+=8;
+  if(r.address)s+=4;
+  if(r.consultant)s+=2;
+  if(r.comments)s+=1;
+  return s+Math.min(20,String(r.operation||'').length/20);
+}
+function dedupeFormationRows(rows){
+  const best=new Map();
+  rows.forEach(r=>{
+    const k=formationDupKey(r), cur=best.get(k);
+    if(!cur||formationRowScore(r)>formationRowScore(cur))best.set(k,r);
+  });
+  return [...best.values()];
+}
 // Every stoma formation on one patient, oldest first, as register rows.
 function patientFormationRows(p){
   const out=[];
@@ -7772,7 +7818,8 @@ async function loadNewPatients(){
     }
     rows=pats||[];
   }
-  newPatientRows=rows.flatMap(patientFormationRows).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  newPatientRows=dedupeFormationRows(rows.flatMap(patientFormationRows))
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const sel=document.getElementById('np-year');
   if(sel){
     const years=[...new Set(newPatientRows.map(r=>String(r.date).slice(0,4)))].sort().reverse();
@@ -11558,24 +11605,61 @@ async function attachHandoverApplianceLines(rows){
 /* One line for a multi-stoma patient: each present stoma, its appliances and
    accessories in shorthand, a dash where nothing is set yet. Returns null for a
    single stoma, so the caller falls back to the plain ward note. */
-function handoverStomaLine(patient,epRows){
+/* The appliance line for the handover, built from the admission's own entries
+   so it always shows the CURRENT appliance and never the one it replaced. The
+   previous appliances stay on the record's history (with their start and close
+   dates); they simply drop off the ward sheet.
+
+   Only the newest entry counts. On a single-stoma patient that is one line — the
+   old bug showed the previous appliance beside the new one because two entries
+   with no stoma id never collapsed. On a patient with more than one stoma it is
+   the newest entry for each, matched by its stoma id. */
+function handoverApplianceRowText(tag,r){
+  const appl=r?shortApplianceList(r.appliances).join(', '):'';
+  const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
+  const bits=[appl,acc].filter(Boolean).join('; ');
+  const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
+  return (tag?tag+': ':'')+(bits||'—')+fd;
+}
+/* The appliance entries that are current for a patient right now — the newest
+   per stoma — which is what both the ward note and the handover line should
+   show. A patient with one stoma keeps only the single newest entry, so an
+   appliance that replaced another is never written beside it. */
+function currentApplianceNoteRows(patient,rows){
+  const useful=(rows||[]).filter(r=>(r.appliances&&r.appliances.length)
+    ||(r.accessories&&r.accessories.length));
+  if(!useful.length)return [];
+  const newest=list=>{let n=null;list.forEach(r=>{
+    if(!n||String(r.changed_on||'')>=String(n.changed_on||''))n=r;});return n;};
   let stomas=[];
-  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){return null;}
-  if(stomas.length<=1)return null;
-  const latest={};
-  (epRows||[]).forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
-    if(!latest[u]||String(r.changed_on||'')>=String(latest[u].changed_on||''))latest[u]=r;});
-  return stomas.map(st=>{
-    // The stoma is named by its type shorthand alone — Colo, Ileo, MF — with
-    // the quadrant added when two of a kind would otherwise read the same.
-    const tag=st.shortLabel||'';
-    const r=latest[st.uid];
-    const appl=r?shortApplianceList(r.appliances).join(', '):'';
-    const acc=r?shortApplianceList((r.accessories||[]).filter(a=>a&&a!=='None')).join(', '):'';
-    const bits=[appl,acc].filter(Boolean).join('; ');
-    const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
-    return (tag?tag+': ':'')+(bits||'—')+fd;
-  }).join('  ·  ');
+  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){stomas=[];}
+  if(stomas.length<=1)return [newest(useful)];
+  const byUid={};
+  useful.forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
+    if(!byUid[u]||String(r.changed_on||'')>=String(byUid[u].changed_on||''))byUid[u]=r;});
+  return Object.values(byUid);
+}
+function handoverStomaLine(patient,epRows){
+  // Only entries that actually record something; the newest of them is current.
+  const useful=(epRows||[]).filter(r=>(r.appliances&&r.appliances.length)
+    ||(r.accessories&&r.accessories.length));
+  if(!useful.length)return null;   // nothing on the admission — use the stored note
+  const newest=list=>{let n=null;(list||[]).forEach(r=>{
+    if(!n||String(r.changed_on||'')>=String(n.changed_on||''))n=r;});return n;};
+  let stomas=[];
+  try{stomas=stomasPresentOn(patient,TODAY);}catch(e){stomas=[];}
+  // One stoma (or none we can tell apart): the single newest appliance, so the
+  // sheet never shows the same stoma twice.
+  if(stomas.length<=1){
+    const r=newest(useful);
+    const tag=(stomas[0]&&stomas[0].shortLabel)||'';
+    return handoverApplianceRowText(tag,r);
+  }
+  // Several stomas: the newest entry for each, matched by its stoma id.
+  const byUid={};
+  useful.forEach(r=>{const u=r.stoma_uid||''; if(!u)return;
+    if(!byUid[u]||String(r.changed_on||'')>=String(byUid[u].changed_on||''))byUid[u]=r;});
+  return stomas.map(st=>handoverApplianceRowText(st.shortLabel||'',byUid[st.uid])).join('  ·  ');
 }
 function handoverRowHTML(p,cls){
   const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
@@ -14388,18 +14472,29 @@ async function loadReversalRegister(){
   tbody.innerHTML='<tr><td colspan="8" class="empty">Loading reversal register...</td></tr>';
   const year=document.getElementById('rev-year')?.value||'';
   const search=(document.getElementById('rev-search')?.value||'').trim().toLowerCase();
-  const{data,error}=await SB.from('patients')
-    .select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type')
-    .eq('followup_status','reversed')
-    .order('surname',{ascending:true})
-    .order('first_name',{ascending:true});
+  // Everyone the app treats as ever reversed — not only those whose stored
+  // status is literally 'reversed'. A patient reversed and then deceased belongs
+  // in the register (this register follows the stoma, so the reversal is the
+  // outcome it records), and a reversal on file whose status was never flipped
+  // still counts. The whole registry is read and judged by the same rule the
+  // rest of the app uses, rather than a single stored flag — which is why the
+  // register used to show far fewer than the reversal book holds.
+  const{rows:allPats,error}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
   if(error){
     console.error('Reversal register load error:',error);
     tbody.innerHTML=`<tr><td colspan="8" class="empty">Could not load reversal register: ${htmlSafe(error.message||'Unknown error')}</td></tr>`;
     if(stats)stats.innerHTML='<div class="sbox"><div class="sl">Setup Required</div><div class="sv" style="font-size:22px;color:var(--red);">SQL</div><div class="ss">Run the Reversed status SQL first</div></div>';
     return;
   }
-  let patients=data||[];
+  // Reversed on the record any way it can read as reversed: a dated reversal
+  // anywhere on the patient (even if they later died), the status the app
+  // derives, or a stored 'reversed' with only a year to go on and no date.
+  const isReversedForRegister=p=>patientEverReversed(p)
+    ||derivedFollowupStatus(p)==='reversed'
+    ||normaliseFollowupStatus(p&&p.followup_status)==='reversed';
+  let patients=(allPats||[]).filter(isReversedForRegister)
+    .sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))
+      ||String(a.first_name||'').localeCompare(String(b.first_name||'')));
   if(year)patients=patients.filter(p=>String(p.followup_year||'')===String(year));
   if(search){
     patients=patients.filter(p=>[
@@ -14413,18 +14508,18 @@ async function loadReversalRegister(){
   const seenCount=appts.filter(a=>a.status==='attended').length;
   if(stats){
     stats.innerHTML=`
-      <div class="sbox"><div class="sl">Reversed Patients</div><div class="sv">${patients.length}</div><div class="ss">${year||'all years'}</div></div>
+      <div class="sbox"><div class="sl">Reversed Patients</div><div class="sv">${patients.length}</div><div class="ss">ever reversed · ${year||'all years'}</div></div>
       <div class="sbox"><div class="sl">Appointments</div><div class="sv">${appts.length}</div><div class="ss">recorded history</div></div>
       <div class="sbox"><div class="sl">Seen Records</div><div class="sv">${seenCount}</div><div class="ss" style="color:var(--green)">attended outcomes</div></div>`;
   }
-  if(!patients.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No reversed patients found for this filter.</td></tr>';return;}
+  if(!patients.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No reversed patients found. If you have imported the reversal book, run the Reversed status SQL so the reversals are on file.</td></tr>';return;}
   tbody.innerHTML=patients.map(p=>{
     const latest=latestByPatient[p.id];
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
     const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
     const nurse=latest?.staff?.full_name||latest?.bank_staff?.full_name||(!latest?.assigned_to&&!latest?.bank_staff_id&&latest?'Common':'—');
     return `<tr class="followup-click-row" onclick="openFollowupHistory('${p.id}')" title="Open full history">
-      <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge('reversed',true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
+      <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge(derivedFollowupStatus(p),true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(p.followup_owner||'Common')}</td>
