@@ -2103,6 +2103,23 @@ table.np tbody tr:hover td{background:#f4fbfa;}
       <div id="postop-body"><div class="report-note">Loading the postop discharge list…</div></div>
     </div>
 
+    <div class="page" id="page-snapshots">
+      <div class="phdr">
+        <div><h2>📸 Archived Handover</h2><p>A read-only picture of the handover, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">📸 Capture now</button>
+          <button class="btn-add" onclick="loadHandoverSnapshots()">Refresh</button>
+        </div>
+      </div>
+      <div class="pd-toolbar" id="snapshots-toolbar" hidden>
+        <label>Jump to a date:</label>
+        <input type="date" id="snapf-date" onchange="renderHandoverSnapshots()"/>
+        <input type="text" id="snapf-search" placeholder="Search by date — e.g. September, 08/09, 2026…" oninput="renderHandoverSnapshots()" style="min-width:240px;"/>
+        <button class="btn-add" style="background:#eef0f3;color:#4b5563;" onclick="clearSnapshotFilter()">Clear</button>
+      </div>
+      <div id="snapshots-body"><div class="report-note">Loading snapshots…</div></div>
+    </div>
+
     <div class="page" id="page-siting">
       <div class="phdr">
         <div><h2>📍 Siting Session</h2></div>
@@ -2626,6 +2643,8 @@ async function startApp(){
   const ry=document.getElementById('rep-year'); if(ry) ry.value=String(new Date().getFullYear());
   // Reminders load last so the roster is already on screen, then the daily prompt appears.
   await refreshReminders();
+  // The 4pm handover snapshot runs quietly in the background from here on.
+  startHandoverSnapshotScheduler();
   // Pinned to a phone's home screen as .../#lookup, the app opens straight
   // into the read-only patient search instead of the roster.
   const deepPatient=/^#patient=(.+)$/.exec(location.hash||'');
@@ -2680,7 +2699,8 @@ const TAB_GROUPS=[
   {key:'handover',label:'Handover',icon:'🏥',color:'#b45309',
    pages:[
      {tab:'handover',label:'Handover',icon:'🏥',color:'#b45309'},
-     {tab:'postop',label:'Postop Discharges',icon:'📤',color:'#b45309'}
+     {tab:'postop',label:'Postop Discharges',icon:'📤',color:'#b45309'},
+     {tab:'snapshots',label:'Archived Handover',icon:'📸',color:'#b45309'}
    ]},
   {key:'patients',label:'Registry',icon:'👥',color:'#0891b2',
    pages:[
@@ -2785,6 +2805,7 @@ function switchTab(name){
   if(name==='nostoma')loadNoStomaOps();
   if(name==='stomaperformed')loadStomaPerformed();
   if(name==='postop')loadPostopDischarges();
+  if(name==='snapshots')loadHandoverSnapshots();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
   if(name==='reports')loadReports();
@@ -8645,12 +8666,12 @@ function newStomaRowHTML(d){
       <div class="fg"><label>New stoma formed date</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
       <div class="fg st-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" class="st-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
       <div class="fg"><label>Reversal notes</label><input type="text" class="st-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label class="pf-xchk" style="font-weight:600;">
         <input type="checkbox" class="st-mf" ${d.mucus_fistula?'checked':''}/> This one is a <strong>mucus fistula</strong></label></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="st-findings" value="${v('findings')}" placeholder="e.g. loop ileostomy formed, first stoma left in place"/></div>
     </div>
   </div>`;
 }
@@ -8819,10 +8840,10 @@ function refashionRowHTML(d){
       <input type="hidden" class="rf-type" value="${v('type')}"/>
       <div class="fg" style="grid-column:1 / -1;"><label>Which stoma was refashioned?</label><select class="rf-target">${refashionTargetOptions(d.target_uid)}</select></div>
       <div class="fg"><label>Stoma refashioned on *</label><input type="date" class="rf-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
-      <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
-      <div class="fg"><label>Reversal notes</label><input type="text" class="rf-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="rf-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" class="rf-findings" value="${v('findings')}" placeholder="e.g. closure of loop ileostomy, refashioned end colostomy"/></div>
+      <div class="fg"><label>Date of stoma reversal <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="date" class="rf-closure" value="${v('closure_date')}" onchange="onStomaDateChange(this)"/></div>
+      <div class="fg"><label>Reversal notes</label><input type="text" class="rf-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
     </div>
   </div>`;
 }
@@ -8872,9 +8893,9 @@ function initialStomaRowHTML(d){
       <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this)">${initialStomaTypeOptions(effType)}</select></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="ist-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="ist-findings" value="${v('findings')}" placeholder="e.g. mucus fistula formed alongside the ileostomy"/></div>
       <div class="fg"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label><input type="date" class="ist-reversal" value="${v('reversal_date')}" onchange="onPatientFormOutcomeFromRow(this)"/></div>
       <div class="fg"><label>Reversal notes</label><input type="text" class="ist-revnotes" value="${v('reversal_notes')}" placeholder="what was done at the reversal"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="ist-findings" value="${v('findings')}" placeholder="e.g. mucus fistula formed alongside the ileostomy"/></div>
       <div class="fg ist-id" style="grid-column:1 / -1;" ${effType?'':'hidden'}>
         <label>Stoma ID</label><div class="clr-code" style="display:inline-block;">${htmlSafe(code)}</div>
         <span style="font-weight:400;color:var(--muted);font-size:11.5px;"> — this stoma's own reference, so the ward can tell it apart, refashion or reverse it on its own</span></div>
@@ -8943,11 +8964,11 @@ function patientFormHTML(p,prefix){
       <div class="fg"><label>Date of surgery *</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
       <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Reversal notes <span style="font-weight:400;color:var(--muted);">(what was done at the reversal)</span></label>
         <input type="text" id="${prefix}-revnotes" value="${v('reversal_notes')}" placeholder="e.g. Reversal of Hartmann's"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
       <div class="fg" style="grid-column:1 / -1;">
         <label>Also formed at this same operation <span style="font-weight:400;color:var(--muted);">(a second stoma, a mucus fistula)</span></label>
         <div id="${prefix}-iststomalist">${parseInitialStomas(p).map(initialStomaRowHTML).join('')}</div>
@@ -13172,6 +13193,208 @@ function printHandover(){
     </div>
   </body></html>`);
   w.document.close();w.focus();setTimeout(()=>w.print(),250);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Handover snapshots — a picture of the sheet kept once a day.
+ * At 4pm (local time) the app takes a screenshot of the handover and saves it,
+ * one per day, in the handover_snapshots table. The Snapshots tab lists them
+ * and opens any day in a new browser tab. Needs sql/add-handover-snapshots.sql.
+ * ------------------------------------------------------------------------- */
+// Load the screenshot library only when a snapshot is actually taken, so the
+// rest of the app never pays for it. Same pattern as the spreadsheet reader.
+function ensureHtml2Canvas(){
+  if(window.html2canvas)return Promise.resolve(window.html2canvas);
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    s.onload=()=>window.html2canvas?resolve(window.html2canvas):reject(new Error('screenshot library failed to load'));
+    s.onerror=()=>reject(new Error('Could not load the screenshot library — check the connection.'));
+    document.head.appendChild(s);
+  });
+}
+let _snapshotBusy=false;
+/* Take the picture. {manual:true} is the "Capture now" button and replaces the
+   day's snapshot; {auto:true} is the 4pm timer and only writes if the day has
+   none yet. */
+async function captureHandoverSnapshot(opts){
+  opts=opts||{};
+  if(_snapshotBusy)return;
+  _snapshotBusy=true;
+  const onSnapTab=document.getElementById('page-snapshots')?.classList.contains('active');
+  const setBody=h=>{const b=document.getElementById('snapshots-body');if(b&&onSnapTab)b.innerHTML=h;};
+  try{
+    if(opts.manual)setBody('<div class="report-note">Taking the snapshot…</div>');
+    // The handover has to be rendered before it can be photographed.
+    await loadHandover();
+    const body=document.getElementById('hv-body');
+    if(!body||!document.getElementById('hv-table')){
+      if(opts.manual)alert('There is nobody on the handover to snapshot yet.');
+      return;
+    }
+    let H;
+    try{H=await ensureHtml2Canvas();}
+    catch(e){if(opts.manual)alert(e.message||'Could not load the screenshot library.');return;}
+    // The sheet lives on a hidden tab, which cannot be photographed, so a copy
+    // is rendered off-screen at a fixed width and the copy is the one captured.
+    const count=body.querySelectorAll('#hv-table tbody tr').length;
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;left:-10000px;top:0;width:1500px;background:#fff;padding:18px;z-index:-1;';
+    wrap.innerHTML=`<div style="font:700 16px Inter,Arial,sans-serif;color:#1a2e4a;margin-bottom:10px;">`
+      +`MDH Stoma Care — Handover — ${htmlSafe(fmtLabel(TODAY))}</div>`+body.innerHTML;
+    document.body.appendChild(wrap);
+    let dataUrl='';
+    try{
+      const canvas=await H(wrap,{backgroundColor:'#ffffff',scale:1,logging:false,useCORS:true,
+        windowWidth:1536,width:1500});
+      dataUrl=canvas.toDataURL('image/png');
+    }catch(e){
+      if(opts.manual)alert('Could not take the screenshot: '+(e.message||e));
+      return;
+    }finally{wrap.remove();}
+    if(!dataUrl){if(opts.manual)alert('The screenshot came out empty.');return;}
+    let who='4pm auto';
+    if(opts.manual){try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'Captured by hand';}catch(e){}}
+    const row={snapshot_date:TODAY,captured_at:new Date().toISOString(),image_data:dataUrl,
+      inpatient_count:count,created_by:who};
+    // One per day: the manual button replaces the day's; the 4pm timer only
+    // reaches here when the day has none, so either way upsert on the date is
+    // right, and two machines firing at 4pm cannot make two rows.
+    const{error}=await SB.from('handover_snapshots').upsert(row,{onConflict:'snapshot_date'});
+    if(error){
+      const missing=/handover_snapshots|relation|does not exist|column/i.test(String(error.message||''));
+      if(opts.manual)alert(missing
+        ? 'The snapshots table is not in the database yet. Run sql/add-handover-snapshots.sql once in Supabase.'
+        : 'Could not save the snapshot: '+error.message);
+      return;
+    }
+    if(onSnapTab)await loadHandoverSnapshots();
+  }finally{_snapshotBusy=false;}
+}
+let handoverSnapshotRows=[];
+async function loadHandoverSnapshots(){
+  const body=document.getElementById('snapshots-body');
+  if(!body)return;
+  body.innerHTML='<div class="report-note">Loading snapshots…</div>';
+  // Metadata only — the pictures themselves are fetched one at a time when
+  // opened, so the list stays light however many days pile up.
+  const{data,error}=await SB.from('handover_snapshots')
+    .select('id,snapshot_date,captured_at,inpatient_count,created_by')
+    .order('snapshot_date',{ascending:false});
+  if(error){
+    const missing=/handover_snapshots|relation|does not exist|column/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The snapshots table is not in the database yet. Run <strong>sql/add-handover-snapshots.sql</strong> once in Supabase to turn this on.')
+      : `<div class="report-note">Could not load snapshots: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  handoverSnapshotRows=data||[];
+  const toolbar=document.getElementById('snapshots-toolbar');
+  if(toolbar)toolbar.hidden=!handoverSnapshotRows.length;
+  renderHandoverSnapshots();
+}
+// Clear the date search and show every day again.
+function clearSnapshotFilter(){
+  const d=document.getElementById('snapf-date'); if(d)d.value='';
+  const s=document.getElementById('snapf-search'); if(s)s.value='';
+  renderHandoverSnapshots();
+}
+/* Draw the list, narrowed by the date picker and the search box. The archive is
+   read only — a saved day can be opened or downloaded but not changed or
+   deleted, so it stays a true record. */
+function renderHandoverSnapshots(){
+  const body=document.getElementById('snapshots-body');
+  if(!body)return;
+  if(!handoverSnapshotRows.length){
+    body.innerHTML=emptyStateHTML('📸','No archived handovers yet',
+      'A snapshot of the handover is saved here automatically at 4&nbsp;pm each day, as long as the app is open on a ward machine. You can also take one now.',
+      `<button class="btn-save" onclick="captureHandoverSnapshot({manual:true})">📸 Capture now</button>`);
+    return;
+  }
+  const day=(document.getElementById('snapf-date')?.value||'').slice(0,10);
+  const q=(document.getElementById('snapf-search')?.value||'').trim().toLowerCase();
+  const rows=handoverSnapshotRows.filter(r=>{
+    if(day&&String(r.snapshot_date).slice(0,10)!==day)return false;
+    if(q){
+      // Match the ISO date, the written date and the day/month form, so
+      // "september", "08/09" and "2026" all find the same day.
+      const iso=String(r.snapshot_date).slice(0,10);
+      const hay=(iso+' '+fmtLabel(r.snapshot_date)+' '+fmtShortDate(r.snapshot_date)).toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+  const trs=rows.map(r=>{
+    const t=r.captured_at?new Date(r.captured_at):null;
+    const time=t?t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'';
+    return `<tr>
+      <td data-label="Date"><strong>${htmlSafe(fmtLabel(r.snapshot_date))}</strong></td>
+      <td data-label="Taken at">${htmlSafe(time)}</td>
+      <td data-label="Inpatients">${r.inpatient_count!=null?htmlSafe(String(r.inpatient_count)):'—'}</td>
+      <td data-label="Saved by">${htmlSafe(r.created_by||'—')}</td>
+      <td class="hv-actions-cell"><div class="followup-actions">
+        <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openHandoverSnapshot('${r.id}')">↗ Open</button>
+        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="downloadHandoverSnapshot('${r.id}')">⤓ Download</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  const shown=rows.length!==handoverSnapshotRows.length?`${rows.length} of ${handoverSnapshotRows.length}`:`${handoverSnapshotRows.length}`;
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl">
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="5"><span class="hv-date">Archived Handover</span><span class="hv-count">${shown} saved · read only</span></th></tr>
+      <tr><th>Date</th><th>Taken at</th><th>Inpatients</th><th>Saved by</th><th></th></tr>
+    </thead><tbody>${trs||'<tr><td colspan="5" class="empty">No archived handover matches that date.</td></tr>'}</tbody></table></div>`;
+}
+// The PNG is a data: URL; a big one can be refused by window.open, so it is
+// turned into a blob first and that is what opens.
+function dataUrlToBlob(d){
+  const c=String(d||'').split(',');
+  const mime=(c[0].match(/:(.*?);/)||[])[1]||'image/png';
+  const bin=atob(c[1]||'');
+  const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+async function fetchSnapshotImage(id){
+  const{data,error}=await SB.from('handover_snapshots').select('image_data,snapshot_date').eq('id',id).maybeSingle();
+  if(error||!data||!data.image_data){alert('Could not open this snapshot: '+(error?error.message:'not found'));return null;}
+  return data;
+}
+async function openHandoverSnapshot(id){
+  const d=await fetchSnapshotImage(id); if(!d)return;
+  const url=URL.createObjectURL(dataUrlToBlob(d.image_data));
+  const w=window.open(url,'_blank');
+  if(!w)alert('The new tab was blocked. Allow pop-ups for this site and try again.');
+  // The tab holds its own reference to the blob; this page can let go of it.
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+async function downloadHandoverSnapshot(id){
+  const d=await fetchSnapshotImage(id); if(!d)return;
+  const a=document.createElement('a');
+  a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+/* The 4pm timer. Every minute from 4pm on it checks whether today already has a
+   snapshot (any machine), and if not, takes one. So the machine left open on
+   the ward saves the day's sheet without anyone remembering, and a machine
+   opened at 4:30 still catches up. Before 4pm it does nothing. */
+let _snapSchedulerOn=false, _snapDoneFor='';
+function startHandoverSnapshotScheduler(){
+  if(_snapSchedulerOn)return;
+  _snapSchedulerOn=true;
+  const tick=async()=>{
+    try{
+      if(new Date().getHours()<16)return;      // only from 4pm
+      if(_snapDoneFor===TODAY)return;          // handled today in this session
+      const{data,error}=await SB.from('handover_snapshots').select('id').eq('snapshot_date',TODAY).limit(1);
+      if(error)return;                         // table not there yet — leave it
+      _snapDoneFor=TODAY;                      // don't ask again today
+      if(data&&data.length)return;             // a machine already saved today
+      await captureHandoverSnapshot({auto:true});
+    }catch(e){}
+  };
+  tick();                                       // catch up now if it is already past 4pm
+  setInterval(tick,60000);
 }
 async function loadDuplicates(){
   const body=document.getElementById('dup-body');
