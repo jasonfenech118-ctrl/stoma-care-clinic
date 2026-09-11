@@ -252,6 +252,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 .mo{position:fixed;inset:0;background:rgba(10,20,40,.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .2s;}
 .mo.open{opacity:1;pointer-events:all;}
+/* A second modal layer that can stack on top of the first (e.g. the detail
+   popup for a complication opened from the complications picker). */
+.mo2{z-index:1100;}
 .mb{background:white;border-radius:16px;padding:28px;width:420px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,.25);transform:translateY(12px);transition:transform .2s;}
 .mo.open .mb{transform:translateY(0);}
 .mb h2{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:4px;}
@@ -969,6 +972,20 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .cmp-add select,.cmp-add input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;outline:none;}
 .cmp-add-btn{margin:0;white-space:nowrap;}
 @media (max-width:640px){.cmp-add{grid-template-columns:1fr 1fr;}.cmp-add-btn{grid-column:1/-1;}}
+/* One-tap chips for the commonest post-op problems, above the dropdown. */
+.cmp-chips{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;}
+.cmp-chip{border:1.5px solid #f0c8a0;background:#fff7ed;color:#9a3412;font-size:12px;font-weight:800;
+  padding:6px 11px;border-radius:20px;cursor:pointer;font-family:inherit;transition:background .13s,border-color .13s;}
+.cmp-chip:hover{background:#fde6cf;border-color:#e07a1f;}
+.cmp-chip-sep{background:#eef4ff;border-color:#bcd2f5;color:#1d4ed8;}
+.cmp-chip-sep:hover{background:#dce8fd;border-color:#1d4ed8;}
+/* The mucocutaneous-separation detail popup: a clock-face picker. */
+.sep-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:6px 0 2px;}
+.sep-grid label,.sep-full label{display:grid;gap:4px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
+.sep-grid select,.sep-grid input,.sep-full input,.sep-full textarea{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13.5px;font-family:inherit;color:var(--navy);background:#fff;outline:none;}
+.sep-grid select:focus,.sep-grid input:focus,.sep-full input:focus,.sep-full textarea:focus{border-color:var(--teal);}
+.sep-full{margin-top:10px;}
+.sep-hint{font-size:11.5px;color:var(--muted);margin-top:2px;}
 .clr-form{display:grid;gap:10px;}
 .clr-form label{display:grid;gap:3px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
 .clr-form input,.clr-form select,.clr-form textarea{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13.5px;font-family:inherit;color:var(--navy);outline:none;background:#fff;}
@@ -2187,6 +2204,7 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 
 <!-- MODAL -->
 <div class="mo" id="mo" onclick="moOut(event)"><div class="mb" id="mb"></div></div>
+<div class="mo mo2" id="mo2"><div class="mb" id="mb2"></div></div>
 
 <script>
 /* Ward and clinic machines run Edge with Tracking Prevention on, and some are
@@ -4784,7 +4802,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
       <div id="of-cmp-list">${complicationListHTML(complicationsNow,{removable:true,patientId:p.id})}</div>
-      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`)}
+      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`,p.id,'Appointment')}
     </div>`:'';
   mb.innerHTML=`<h2>${modalTitle}</h2>
     <div class="msub">${modalSub}<br/>${htmlSafe(appt.appt_date||'')} · ${htmlSafe(String(appt.appt_slot||'').slice(0,5))}</div>
@@ -10210,7 +10228,12 @@ function patientStomaSummaryHTML(pat){
    The dropdown choices live in the complication_types table so the list can be
    grown in-app (like firms and localities); the running list is stored as JSON
    on the patient. */
-const COMPLICATIONS_DEFAULT=['Parastomal hernia','Prolapse','Retraction','Stenosis','Necrosis / ischaemia','Mucocutaneous separation','Peristomal skin excoriation / dermatitis','Leakage','High output','Bleeding','Granuloma','Stomal fistula','Obstruction / blockage'];
+const COMPLICATIONS_DEFAULT=['Parastomal hernia','Prolapse','Retraction','Stenosis','Necrosis / ischaemia','Mucocutaneous separation','Peristomal skin excoriation / dermatitis','Skin redness','Leakage','High output','Bleeding','Granuloma','Stomal fistula','Obstruction / blockage'];
+/* The problems seen most often right after surgery, shown as one-tap chips above
+   the dropdown so they need no scrolling. Order roughly by how often they crop
+   up on the ward. Mucocutaneous separation opens a detail popup (see below). */
+const COMMON_COMPLICATIONS=['Bleeding','Peristomal skin excoriation / dermatitis','Skin redness','Prolapse','Retraction','Mucocutaneous separation','Necrosis / ischaemia','High output','Leakage'];
+const SEPARATION_COMPLICATION='Mucocutaneous separation';
 let complicationTypesList=COMPLICATIONS_DEFAULT.slice();
 let complicationTypesAvailable=false;   // true once the DB table has been read
 async function loadComplicationTypes(){
@@ -10297,17 +10320,108 @@ function complicationListHTML(entries,opts={}){
       ${opts.removable?`<button class="clr-mini danger" onclick="onRemoveComplication('${opts.patientId}','${e.id}')">Remove</button>`:''}
     </div>`).join('')}</div>`;
 }
-/* The little pick-a-complication + date + note row. The Add button's onclick is
-   passed in, because who to tell afterwards differs by where it is shown. */
-function complicationAddFormHTML(prefix,onclickJs){
+/* The little pick-a-complication + date + note row, with one-tap chips for the
+   commonest problems above it. The Add button's onclick is passed in, because
+   who to tell afterwards differs by where it is shown; patientId and source let
+   a chip (and the separation popup) save straight away. */
+function complicationAddFormHTML(prefix,onclickJs,patientId,source){
   const note=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="grid-column:1/-1;margin:2px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
+  const pid=patientId||'',src=source||'Handover';
+  const chips=pid?`<div class="cmp-chips">${COMMON_COMPLICATIONS.map(n=>{
+    const isSep=(n===SEPARATION_COMPLICATION);
+    return `<button type="button" class="cmp-chip${isSep?' cmp-chip-sep':''}" title="${isSep?'Record where the stoma edge has separated':'Add this complication'}" onclick="pickComplicationChip('${prefix}','${jsSafe(n)}','${jsSafe(pid)}','${jsSafe(src)}')">${htmlSafe(n)}${isSep?' ›':''}</button>`;
+  }).join('')}</div>`:'';
   return `<div class="cmp-add">
-    <select id="${prefix}-cmp-sel" onchange="complicationAdd(this)">${complicationOptions('')}</select>
+    ${chips}
+    <select id="${prefix}-cmp-sel" onchange="onComplicationSelect(this,'${jsSafe(pid)}','${jsSafe(src)}')">${complicationOptions('')}</select>
     <input type="date" id="${prefix}-cmp-date" value="${TODAY}"/>
     <input type="text" id="${prefix}-cmp-note" placeholder="Note (optional)"/>
     <button type="button" class="pf-add-btn cmp-add-btn" onclick="${onclickJs}">＋ Add complication</button>
     ${note}
   </div>`;
+}
+/* A common-problem chip: the separation one opens its detail popup, the rest drop
+   the name into the dropdown ready for the date/note and the Add button. */
+function pickComplicationChip(prefix,name,patientId,source){
+  if(name===SEPARATION_COMPLICATION){openSeparationDetail(patientId,source);return;}
+  const sel=document.getElementById(prefix+'-cmp-sel');
+  if(!sel)return;
+  if(!Array.from(sel.options).some(o=>o.value===name)){
+    const o=document.createElement('option');o.value=name;o.textContent=name;
+    sel.appendChild(o);
+  }
+  sel.value=name;
+  const d=document.getElementById(prefix+'-cmp-date'); if(d)d.focus();
+}
+/* Picking "Mucocutaneous separation" from the dropdown opens the detail popup
+   too, so it is captured the same way however it is chosen. Otherwise this just
+   forwards to the "type a new one" handler. */
+function onComplicationSelect(sel,patientId,source){
+  if(sel&&sel.value===SEPARATION_COMPLICATION&&patientId){
+    sel.value='';                       // the popup owns this one; clear the box
+    openSeparationDetail(patientId,source);
+    return;
+  }
+  complicationAdd(sel);
+}
+/* Save one complication and refresh every view that might be showing the list —
+   the picker, the appointment card, the patient card and the handover row — so
+   a chip or the separation popup lands everywhere at once. */
+async function commitComplication(patientId,entry){
+  const res=await addComplicationToPatient(patientId,entry);
+  if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return null;}
+  if(res.error){alert('Could not save the complication: '+(res.error.message||res.error));return null;}
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.complications=res.list;
+  refreshComplicationViews(patientId,res.list);
+  if(document.getElementById('hv-body'))await loadHandover();
+  return res.list;
+}
+// A 1–12 clock-position dropdown for the separation popup.
+function clockOptions(){
+  let o='<option value="">—</option>';
+  for(let h=1;h<=12;h++)o+=`<option value="${h}">${h} o&#39;clock</option>`;
+  return o;
+}
+/* The detail popup for a mucocutaneous separation: where the stoma edge has
+   lifted from the skin, read like a clock face, plus depth and how much of the
+   circumference. Opens on the second modal layer so the picker stays underneath;
+   Save writes it as one complication with the detail in the note. */
+function openSeparationDetail(patientId,source){
+  if(!patientId){alert('Save the patient first, then record the separation.');return;}
+  const mb2=document.getElementById('mb2');mb2.className='mb';
+  mb2.innerHTML=`<h2>⚠️ Mucocutaneous separation</h2>
+    <div class="msub">Where the stoma edge has lifted away from the skin. Read the join like a clock face — 12 at the top — and give the span that has separated.</div>
+    <div class="sep-grid">
+      <label>From<select id="sep-from">${clockOptions()}</select></label>
+      <label>To<select id="sep-to">${clockOptions()}</select></label>
+      <label>Depth<select id="sep-depth"><option value="">—</option><option>Superficial</option><option>Deep</option><option>Full thickness</option></select></label>
+      <label>Circumference<input type="number" id="sep-pct" min="0" max="100" placeholder="e.g. 30%"/></label>
+    </div>
+    <div class="sep-grid">
+      <label>Date<input type="date" id="sep-date" value="${TODAY}"/></label>
+      <label>Note (optional)<input type="text" id="sep-note" placeholder="e.g. discharge present, packed"/></label>
+    </div>
+    <div class="sep-hint">Saved under Complications as &ldquo;Mucocutaneous separation&rdquo; with this detail.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeMo2()">Cancel</button>
+      <button class="pf-add-btn" onclick="saveSeparationDetail('${jsSafe(patientId)}','${jsSafe(source||'Handover')}')">Save complication</button></div>`;
+  openMo2();
+  setTimeout(()=>{document.getElementById('sep-from')?.focus();},60);
+}
+async function saveSeparationDetail(patientId,source){
+  const from=document.getElementById('sep-from')?.value||'';
+  const to=document.getElementById('sep-to')?.value||'';
+  const depth=document.getElementById('sep-depth')?.value||'';
+  const pct=document.getElementById('sep-pct')?.value||'';
+  const date=document.getElementById('sep-date')?.value||TODAY;
+  const typed=String(document.getElementById('sep-note')?.value||'').trim();
+  if(!from||!to){alert('Say where the separation runs from and to (clock positions).');return;}
+  const parts=[`From ${from} to ${to} o'clock`];
+  if(depth)parts.push(depth.toLowerCase());
+  if(pct!==''&&!isNaN(Number(pct)))parts.push(`~${Number(pct)}% of circumference`);
+  let note=parts.join(' · ');
+  if(typed)note+=' — '+typed;
+  const list=await commitComplication(patientId,{text:SEPARATION_COMPLICATION,date,note,source});
+  if(list)closeMo2();
 }
 /* Read the mini-form, save the complication, reset the inputs. Returns the new
    list (or null if nothing was added / it could not be saved). */
@@ -10350,7 +10464,7 @@ async function openComplicationPicker(patientId,source){
   mb.innerHTML=`<h2>⚠️ Complications</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
-    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`)}
+    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover')}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
 }
@@ -10397,7 +10511,7 @@ function stomaOutcomesPanelHTML(pat){
       <div class="psm-sec-head"><h3>Complications${complications.length?` · ${complications.length}`:''}</h3><span class="psm-badge">Add as you go</span></div>
       <div class="psm-card">
         <div id="psm-cmp-list">${complicationListHTML(complications,{removable:true,patientId:pat.id})}</div>
-        ${complicationAddFormHTML('pcmp',`onCardAddComplication('${pat.id}')`)}
+        ${complicationAddFormHTML('pcmp',`onCardAddComplication('${pat.id}')`,pat.id,'Clinic')}
       </div>
     </div>`;
 }
@@ -15292,10 +15406,20 @@ async function delBankTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('b
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeMo(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
 function closeModal(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
+// The second, stacked modal layer (e.g. the mucocutaneous-separation detail
+// opened from the complications picker). It sits on top of the first and closes
+// on its own without disturbing whatever opened it.
+function openMo2(){document.getElementById('mo2').classList.add('open');}
+function closeMo2(){document.getElementById('mo2').classList.remove('open');document.getElementById('mb2').className='mb';}
 // Clicking the dark backdrop no longer closes the modal — an accidental click
 // used to discard a half-filled form. Close only with Cancel, the ✕, or Escape.
 function moOut(e){}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('mo')?.classList.contains('open'))closeModalGuarded();});
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  // The top layer closes first, so Escape never dismisses both at once.
+  if(document.getElementById('mo2')?.classList.contains('open')){closeMo2();return;}
+  if(document.getElementById('mo')?.classList.contains('open'))closeModalGuarded();
+});
 
 /* ── REGISTRY MAP ─────────────────────────────────────────────────────────
    A choropleth of the 68 Maltese local councils. Pick a measure and every

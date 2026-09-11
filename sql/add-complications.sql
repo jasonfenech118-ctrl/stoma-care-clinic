@@ -38,6 +38,7 @@ INSERT INTO public.complication_types (name) VALUES
   ('Necrosis / ischaemia'),
   ('Mucocutaneous separation'),
   ('Peristomal skin excoriation / dermatitis'),
+  ('Skin redness'),
   ('Leakage'),
   ('High output'),
   ('Bleeding'),
@@ -45,3 +46,16 @@ INSERT INTO public.complication_types (name) VALUES
   ('Stomal fistula'),
   ('Obstruction / blockage')
 ON CONFLICT (name) DO NOTHING;
+
+-- Let the app read and grow the dropdown the same way the rest of the registry
+-- is reached (anon key + a signed-in session). WITHOUT this block a complication
+-- a nurse picks or types comes back 403 and will not save. It must run even when
+-- the table already exists — all of it is safe to re-run.
+GRANT ALL ON public.complication_types TO anon, authenticated;
+ALTER TABLE public.complication_types ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS complication_types_all ON public.complication_types;
+CREATE POLICY complication_types_all ON public.complication_types
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- Confirm.
+SELECT count(*) AS complication_types FROM public.complication_types;
