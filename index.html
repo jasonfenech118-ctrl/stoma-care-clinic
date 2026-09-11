@@ -5607,7 +5607,8 @@ function updateRebookDayPreview(){
   if(!load){note.innerHTML=`<div class="registry-lookup-note found">${htmlSafe(clinicDayLabel(chosen,owner))} — available day.</div>`;return;}
   note.innerHTML=availabilityPreviewHTML({...load,clinicDays:1},{label:clinicDayLabel(chosen,owner)},Number(String(chosen).slice(5,7)));
 }
-async function openPatientRebookModal(patientId){
+async function openPatientRebookModal(patientId,mode){
+  const isPostop=mode==='postop';
   const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
   if(error||!pat){alert('Could not open this patient for rebooking.');return;}
   if(normaliseFollowupStatus(pat.followup_status)==='deceased'){alert('This patient is marked as deceased and is kept in the separate deceased register. Change the status first before rebooking.');return;}
@@ -5632,12 +5633,14 @@ async function openPatientRebookModal(patientId){
   const daySets={clinic:{days:clinicDays,loads:clinicLoads},common:{days:commonDays,loads:commonLoads}};
   const mb=document.getElementById('mb');
   mb.className='mb';
-  mb.innerHTML=`<h2>Rebook Patient</h2>
+  mb.innerHTML=`<h2>${isPostop?'Book Follow-up Appointment':'Rebook Patient'}</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>
       Follow-up owner: <strong>${htmlSafe(owner)}</strong> · Due: <strong>${htmlSafe(dueLabel)}</strong><br/>
-      Patient details are already on file — no need to re-enter the ID card. This creates a new booked appointment and keeps the full history.</div>
-    <div class="fg"><label>Nurse / Column</label><select id="rb-nurse" onchange="refreshRebookDayOptions()"><option value="common" ${ownerStaff?'':'selected'}>Common</option>${coreOptions}${bankOptions}</select>
-      <div class="dntu-note" style="margin-top:4px;">Common patients are booked Monday to Saturday. A named nurse books into the Sunday and public holiday clinic.</div>
+      ${isPostop
+        ?'Booking a follow-up allocates this patient to the nurse you book them on, and takes them off the Postop Discharges list.'
+        :'Patient details are already on file — no need to re-enter the ID card. This creates a new booked appointment and keeps the full history.'}</div>
+    <div class="fg"><label>${isPostop?'Book on / allocate to':'Nurse / Column'}</label><select id="rb-nurse" onchange="refreshRebookDayOptions()"><option value="common" ${ownerStaff?'':'selected'}>Common</option>${coreOptions}${bankOptions}</select>
+      <div class="dntu-note" style="margin-top:4px;">Common patients are booked Monday to Saturday. A named nurse books into the Sunday and public holiday clinic.${isPostop?' The named nurse you choose becomes the follow-up owner.':''}</div>
     </div>
     <div class="fg"><label id="rb-day-label">Appointment Day *</label>
       <select id="rb-clinic-day" onchange="updateRebookDayPreview()" data-day-sets='${htmlSafe(JSON.stringify(daySets))}'></select>
@@ -5646,12 +5649,15 @@ async function openPatientRebookModal(patientId){
     <div class="fg" id="rb-custom-date-wrap" style="display:none;"><label>Custom Date</label><input type="date" id="rb-date-custom" onchange="document.getElementById('rb-date').value=this.value;updateRebookDayPreview()"/></div>
     <input type="hidden" id="rb-date" value=""/>
     <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
-    <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
+    ${isPostop
+      ?`<div class="booking-guidance-note">Need to edit the patient or change their status instead? <a href="#" onclick="closeModal();openPatientRecord('${patientId}');return false;">Open the full patient record</a>.</div>`
+      :'<div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>'}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}'${isPostop?",'postop'":''})">Book Appointment</button></div>`;
   openMo();
   refreshRebookDayOptions();
 }
-async function savePatientRebook(patientId){
+async function savePatientRebook(patientId,mode){
+  const isPostop=mode==='postop';
   const daySelect=document.getElementById('rb-clinic-day');
   const date=daySelect&&daySelect.value!=='custom'
     ?daySelect.value
@@ -5684,10 +5690,27 @@ async function savePatientRebook(patientId){
     }
     return;
   }
+  // In the postop flow the nurse you book the patient on becomes their follow-up
+  // owner from now on; a bank nurse leaves the existing owner untouched.
+  let allocated=null;
+  if(isPostop){
+    if(nurse==='common')allocated='Common';
+    else if(nurse.startsWith('core:')){
+      const st=(staffList||[]).find(s=>String(s.id)===nurse.replace('core:',''));
+      if(st)allocated=normaliseFollowupOwner(st.full_name);
+    }
+    if(allocated){try{await updatePatientTolerant(patientId,{followup_owner:allocated});}catch(e){}}
+  }
   closeModal();
-  alert('✅ Patient rebooked successfully.');
-  refreshAppointmentViews();
-  searchPatientsForRebook();
+  if(isPostop){
+    alert('✅ Follow-up booked'+(allocated?` and allocated to ${allocated}`:'')+'. Taken off the Postop Discharges list.');
+    refreshAppointmentViews();
+    loadPostopDischarges();
+  }else{
+    alert('✅ Patient rebooked successfully.');
+    refreshAppointmentViews();
+    searchPatientsForRebook();
+  }
 }
 
 /* ---- booking is registry-only ------------------------------------------------
@@ -13506,7 +13529,7 @@ async function loadPostopDischarges(){
       appliance:episodeApplianceSummaryLine(ep)};
   });
   postopState.rows=rows;
-  const trs=rows.map(r=>`<tr class="postop-row"${r.id?` onclick="openPatientRecord('${r.id}')" title="Open ${htmlSafe(`${r.first_name} ${r.surname}`.trim())} — edit details or change status"`:''}>
+  const trs=rows.map(r=>`<tr class="postop-row"${r.id?` onclick="openPatientRebookModal('${r.id}','postop')" title="Book a follow-up for ${htmlSafe(`${r.first_name} ${r.surname}`.trim())}"`:''}>
     <td data-label="Date of discharge"><strong>${htmlSafe(fmtShortDate(r.discharge_date))}</strong>${
       r.waited>0?`<div style="font-size:10px;color:var(--muted);font-weight:700;">${r.waited} day${r.waited===1?'':'s'} ago</div>`:''}</td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
