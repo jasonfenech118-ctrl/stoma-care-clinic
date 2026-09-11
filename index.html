@@ -2189,9 +2189,37 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 <div class="mo" id="mo" onclick="moOut(event)"><div class="mb" id="mb"></div></div>
 
 <script>
+/* Ward and clinic machines run Edge with Tracking Prevention on, and some are
+   used in private windows. In those the browser blocks access to localStorage,
+   which the Supabase auth client uses to remember the signed-in session — the
+   access throws and the console fills with "Tracking Prevention blocked access
+   to storage". This wrapper tries localStorage once; if it is blocked it quietly
+   keeps the session in memory for the tab instead, so login still works and the
+   blocked-storage access is not retried on every read and write. */
+const safeAuthStorage=(()=>{
+  const mem={};
+  const memStore={
+    getItem:k=>(k in mem?mem[k]:null),
+    setItem:(k,v)=>{mem[k]=String(v);},
+    removeItem:k=>{delete mem[k];},
+  };
+  try{
+    const probe='__sb_storage_probe__';
+    window.localStorage.setItem(probe,'1');
+    window.localStorage.removeItem(probe);
+    return {
+      getItem:k=>{try{return window.localStorage.getItem(k);}catch(e){return memStore.getItem(k);}},
+      setItem:(k,v)=>{try{window.localStorage.setItem(k,v);}catch(e){memStore.setItem(k,v);}},
+      removeItem:k=>{try{window.localStorage.removeItem(k);}catch(e){memStore.removeItem(k);}},
+    };
+  }catch(e){
+    return memStore;   // storage blocked outright — keep the session in memory
+  }
+})();
 const SB=supabase.createClient(
   'https://gkixdimdmechujeqzfkl.supabase.co',
-  'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS'
+  'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS',
+  {auth:{storage:safeAuthStorage,persistSession:true,autoRefreshToken:true}}
 );
 
 let holidays={},staffList=[],rCache={};

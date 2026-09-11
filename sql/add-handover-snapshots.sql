@@ -29,3 +29,16 @@ CREATE TABLE IF NOT EXISTS public.handover_snapshots (
 -- Newest first is how the tab reads them.
 CREATE INDEX IF NOT EXISTS handover_snapshots_date_idx
   ON public.handover_snapshots (snapshot_date DESC);
+
+-- Let the app read and manage the archive the same way the rest of the registry
+-- is reached (anon key + a signed-in session). WITHOUT this block every write
+-- comes back 403 and the app wrongly reports the table as missing, so it must
+-- run even when the table already exists — all of it is safe to re-run.
+GRANT ALL ON public.handover_snapshots TO anon, authenticated;
+ALTER TABLE public.handover_snapshots ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS handover_snapshots_all ON public.handover_snapshots;
+CREATE POLICY handover_snapshots_all ON public.handover_snapshots
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- Confirm.
+SELECT 'handover_snapshots' AS table, count(*) FROM public.handover_snapshots;
