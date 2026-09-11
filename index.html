@@ -12000,7 +12000,11 @@ function handoverStomaLine(patient,epRows){
   return stomas.map(st=>handoverApplianceRowText(st.shortLabel||'',byUid[st.uid])).join('  ·  ');
 }
 function handoverRowHTML(p,cls){
-  const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
+  // The appliance line and the "flange due" chip are shown side by side, so the
+  // date is stripped from the appliance text (rawAppl) and left to the chip
+  // alone — otherwise it appeared twice, one copy going stale on an edit.
+  const rawAppl=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
+  const applLine=stripHandoverFlangeDue(rawAppl);
   const cmpCount=parseComplications(p).length;
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
@@ -12017,7 +12021,7 @@ function handoverRowHTML(p,cls){
             ?htmlSafe(applLine)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,applLine)}
+          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
@@ -12293,6 +12297,20 @@ function flangeDueMeta(due){
   if(n===0)   return {cls:'due', note:'Due today'};
   if(n<=2)    return {cls:'soon',note:'Due in '+n+' day'+(n===1?'':'s')};
   return {cls:'ok',note:'Due '+fmtShortDate(due)};
+}
+/* The next-flange-change date has its own editable, colour-coded chip on the
+   handover row, so it must NOT also appear baked into the appliance line — doing
+   both showed the date twice and left a stale copy behind when the chip's date
+   was changed. Strip the structured " - flange due <date>" fragment out of the
+   appliance text for the handover; the chip is the single source of the date.
+   The [^,;·] boundary matches how the printout and the bolding pick out the same
+   fragment, so a trailing note after a comma is kept. */
+function stripHandoverFlangeDue(text){
+  return String(text||'')
+    .replace(/\s*-\s*flange due[^,;·]*/gi,'')   // drop " - flange due <date>"
+    .replace(/\s*·\s*/g,' · ')                   // keep the multi-stoma separator tidy
+    .replace(/\s{2,}/g,' ')
+    .trim();
 }
 /* A two-piece patient carries a "next flange change" date, edited right here in
    the table. It is a plain date on the patient, so it always saves — no matter
