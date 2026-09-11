@@ -1,5 +1,5 @@
 -- =============================================================================
--- Tracey Galea — provisional core nurse
+-- Tracey Galea — core nurse
 -- =============================================================================
 --
 -- The app adds her by itself on first load, so this file is only needed if you
@@ -51,7 +51,7 @@ ORDER BY full_name;
 
 
 -- -----------------------------------------------------------------------------
--- If she ever leaves, or the trial ends: switch her off rather than deleting
+-- If she ever leaves: switch her off rather than deleting
 -- her, so past appointments keep the nurse they were seen by.
 -- -----------------------------------------------------------------------------
 -- UPDATE public.staff SET is_active = false
