@@ -7,8 +7,9 @@
 -- is not allowed to write to the staff table.
 --
 -- Her shift pattern is NOT stored here. It lives in the app, in defaultCode():
---   Day, Day, Day, Off, Off — starting 1 September 2026 on the first off day,
---   so 1 and 2 September are off, 3 to 5 September are on, and so on.
+--   Day, Day, Day, Day, Off — a 5-day cycle of four working days then one off.
+--   Anchored so that 11 September 2026 is her 3rd working day, which makes
+--   13 September her off day, and so on from there.
 -- Individual days can still be changed on the roster; those overrides are what
 -- the roster table holds.
 --
