@@ -2189,9 +2189,37 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 <div class="mo" id="mo" onclick="moOut(event)"><div class="mb" id="mb"></div></div>
 
 <script>
+/* Ward and clinic machines run Edge with Tracking Prevention on, and some are
+   used in private windows. In those the browser blocks access to localStorage,
+   which the Supabase auth client uses to remember the signed-in session — the
+   access throws and the console fills with "Tracking Prevention blocked access
+   to storage". This wrapper tries localStorage once; if it is blocked it quietly
+   keeps the session in memory for the tab instead, so login still works and the
+   blocked-storage access is not retried on every read and write. */
+const safeAuthStorage=(()=>{
+  const mem={};
+  const memStore={
+    getItem:k=>(k in mem?mem[k]:null),
+    setItem:(k,v)=>{mem[k]=String(v);},
+    removeItem:k=>{delete mem[k];},
+  };
+  try{
+    const probe='__sb_storage_probe__';
+    window.localStorage.setItem(probe,'1');
+    window.localStorage.removeItem(probe);
+    return {
+      getItem:k=>{try{return window.localStorage.getItem(k);}catch(e){return memStore.getItem(k);}},
+      setItem:(k,v)=>{try{window.localStorage.setItem(k,v);}catch(e){memStore.setItem(k,v);}},
+      removeItem:k=>{try{window.localStorage.removeItem(k);}catch(e){memStore.removeItem(k);}},
+    };
+  }catch(e){
+    return memStore;   // storage blocked outright — keep the session in memory
+  }
+})();
 const SB=supabase.createClient(
   'https://gkixdimdmechujeqzfkl.supabase.co',
-  'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS'
+  'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS',
+  {auth:{storage:safeAuthStorage,persistSession:true,autoRefreshToken:true}}
 );
 
 let holidays={},staffList=[],rCache={};
@@ -2321,6 +2349,7 @@ const CODE_MAP={working:'D',off:'R',sick_leave:'S',maternity_leave:'M',study_lea
 const PATTERN_DDR=['working','working','off'];
 const PATTERN_DDDOO=['working','working','working','off','off'];
 const PATTERN_DDODO=['working','working','off','working','off'];
+const PATTERN_DDDDO=['working','working','working','working','off'];
 const ANCHOR=new Date(2026,3,26);
 
 function fmt(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
@@ -2472,10 +2501,10 @@ function defaultCode(staff,dateStr){
   if(name==='Lorraine') return PATTERN_DDDOO[((diff+3)%5+5)%5];
   // Erika Psaila — Day, Day, Off, Day, Off (5-day cycle). Anchored so 2026-07-06 is her 2nd day.
   if(normStaffName(name).includes('psaila')||normStaffName(name).includes('erik')) return PATTERN_DDODO[((diff)%5+5)%5];
-  // Tracey Galea — Day, Day, Day, Off, Off (5-day cycle), starting 1 September
-  // 2026 on the first of her two off days. That date lands on index 3 of the
-  // pattern on its own, so she needs no offset from the anchor.
-  if(normStaffName(name).includes('tracey')||normStaffName(name).includes('galea')) return PATTERN_DDDOO[((diff)%5+5)%5];
+  // Tracey Galea — Day, Day, Day, Day, Off (5-day cycle: 4 on, 1 off).
+  // Anchored with a +4 offset so that 2026-09-11 lands on index 2, i.e. her 3rd
+  // working day, making 2026-09-13 her off day and so on from there.
+  if(normStaffName(name).includes('tracey')||normStaffName(name).includes('galea')) return PATTERN_DDDDO[((diff+4)%5+5)%5];
   return 'working';
 }
 
@@ -11971,7 +12000,11 @@ function handoverStomaLine(patient,epRows){
   return stomas.map(st=>handoverApplianceRowText(st.shortLabel||'',byUid[st.uid])).join('  ·  ');
 }
 function handoverRowHTML(p,cls){
-  const applLine=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
+  // The appliance line and the "flange due" chip are shown side by side, so the
+  // date is stripped from the appliance text (rawAppl) and left to the chip
+  // alone — otherwise it appeared twice, one copy going stale on an edit.
+  const rawAppl=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
+  const applLine=stripHandoverFlangeDue(rawAppl);
   const cmpCount=parseComplications(p).length;
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
@@ -11988,7 +12021,7 @@ function handoverRowHTML(p,cls){
             ?htmlSafe(applLine)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,applLine)}
+          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p.id,'discharge_letter',p.discharge_letter)}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p.id,'schedule_five_permit',p.schedule_five_permit)}</td>
@@ -12264,6 +12297,20 @@ function flangeDueMeta(due){
   if(n===0)   return {cls:'due', note:'Due today'};
   if(n<=2)    return {cls:'soon',note:'Due in '+n+' day'+(n===1?'':'s')};
   return {cls:'ok',note:'Due '+fmtShortDate(due)};
+}
+/* The next-flange-change date has its own editable, colour-coded chip on the
+   handover row, so it must NOT also appear baked into the appliance line — doing
+   both showed the date twice and left a stale copy behind when the chip's date
+   was changed. Strip the structured " - flange due <date>" fragment out of the
+   appliance text for the handover; the chip is the single source of the date.
+   The [^,;·] boundary matches how the printout and the bolding pick out the same
+   fragment, so a trailing note after a comma is kept. */
+function stripHandoverFlangeDue(text){
+  return String(text||'')
+    .replace(/\s*-\s*flange due[^,;·]*/gi,'')   // drop " - flange due <date>"
+    .replace(/\s*·\s*/g,' · ')                   // keep the multi-stoma separator tidy
+    .replace(/\s{2,}/g,' ')
+    .trim();
 }
 /* A two-piece patient carries a "next flange change" date, edited right here in
    the table. It is a plain date on the patient, so it always saves — no matter
