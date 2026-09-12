@@ -35,17 +35,18 @@ INSERT INTO public.complication_types (name) VALUES
   ('Prolapse'),
   ('Retraction'),
   ('Stenosis'),
-  ('Necrosis / ischaemia'),
   ('Mucocutaneous separation'),
   ('Peristomal skin excoriation / dermatitis'),
   ('Skin redness'),
-  ('Leakage'),
   ('High output'),
   ('Bleeding'),
-  ('Granuloma'),
-  ('Stomal fistula'),
-  ('Obstruction / blockage')
+  ('Granuloma')
 ON CONFLICT (name) DO NOTHING;
+
+-- Retired complications — removed from the dropdown. Safe to re-run; if a nurse
+-- re-adds one of these later, the next run removes it again.
+DELETE FROM public.complication_types
+WHERE name IN ('Necrosis / ischaemia','Leakage','Stomal fistula','Obstruction / blockage');
 
 -- Let the app read and grow the dropdown the same way the rest of the registry
 -- is reached (anon key + a signed-in session). WITHOUT this block a complication
