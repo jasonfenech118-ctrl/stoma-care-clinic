@@ -10203,8 +10203,17 @@ async function saveStomaModal(){
 
   const payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
-  const{error,dropped}=await updatePatientTolerant(ctx.patientId,payload);
-  if(error){say(patientSaveError(error));return;}
+  // Guard against a double click creating two writes: disable the save while it
+  // is in flight and restore it if the write fails.
+  const btn=document.querySelector('#mb .btn-save');
+  if(btn&&btn.dataset.busy)return;
+  const restore=()=>{if(btn){btn.disabled=false;btn.textContent='Save this stoma';delete btn.dataset.busy;}};
+  if(btn){btn.dataset.busy='1';btn.disabled=true;btn.textContent='Saving…';}
+  let res;
+  try{res=await updatePatientTolerant(ctx.patientId,payload);}
+  catch(e){restore();say(patientSaveError(e));return;}
+  const{error,dropped}=res;
+  if(error){restore();say(patientSaveError(error));return;}
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.`);
   modalCloseGuard=null;                       // saved, so there is nothing to lose
   closeModal();
