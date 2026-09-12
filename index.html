@@ -10614,6 +10614,7 @@ function stomaOutcomesPanelHTML(pat){
         <div class="clr-rec-copy">
           <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(prettyStomaType(x.type))}`:''}</span>
           <span class="clr-rec-meta"><span class="stoma-badge ${o.cls}">${htmlSafe(o.label)}</span> <span class="stoma-badge ${s.cls}">${htmlSafe(s.label)}</span></span>
+          ${x.present?`<button type="button" class="pf-add-btn" style="justify-self:start;margin-top:5px;" onclick="openStomaModal('${pat.id}','${jsSafe(x.slot)}')" title="Record reversal or closure of this stoma">${psmIc('refresh')} Record reversal / closure</button>`:''}
         </div>
       </div>`;}).join('')}
       <div class="psm-audit">${psmIc('stoma')} ${present} present · ${reversedN} reversed${supersededN?` · ${supersededN} superseded`:''}</div>
@@ -10659,7 +10660,12 @@ function croStatusDate(pat,key){
 }
 function croStatusPanelHTML(pat){
   const cur=derivedFollowupStatus(pat);
-  const btns=PF_STATUS_ACTIONS.map(a=>{
+  // Reversal is a stoma outcome, not a patient follow-up status, so it is not
+  // offered as a patient-status button here — it is recorded on the stoma itself
+  // (the "Record reversal / closure" action under Stomas), and the patient's
+  // status then follows from the stoma. Deceased, Gozo and overseas remain, as
+  // those are decisions about the patient rather than about one stoma.
+  const btns=PF_STATUS_ACTIONS.filter(a=>a.key!=='reversed').map(a=>{
     const on=cur===a.key;
     // Current status but no date on file: keep the button live so the date can
     // still be recorded, rather than locking it as "current" with the date
@@ -10693,6 +10699,7 @@ function croStatusPanelHTML(pat){
       <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Asks first, then the date</span></div>
       <div class="psm-card">
         <div class="pf-sbtns">${btns}${clearBtn}</div>
+        ${patientStomaList(pat).some(x=>x.present)?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;">A stoma <strong>reversal or closure</strong> is recorded on the stoma below, not here.</div>`:''}
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
         ${note}
       </div>
