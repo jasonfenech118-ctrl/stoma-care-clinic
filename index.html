@@ -1051,6 +1051,7 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .pd-qf.qf-gozo.active{background:#1e3a8a;border-color:#1e3a8a;}
 .pd-qf.qf-overseas.active{background:#a16207;border-color:#a16207;}
 .pd-dash{color:var(--muted);}
+.pd-arch-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#e5e7eb;color:#4b5563;font-size:9.5px;font-weight:800;vertical-align:middle;}
 .pd-text{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
 .pager{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0 4px;flex-wrap:wrap;}
 .pager:empty{display:none;}
@@ -7811,6 +7812,8 @@ function printAnnualReport(){
    acted on without going through a booking first. Reuses the existing history,
    rebook and set-due-month cards. */
 let patientDirectoryRows=[];
+let pdShowArchived=false;
+function togglePdArchived(){pdShowArchived=!pdShowArchived;renderPatientDirectory();}
 let patientDatesAvailable=true;
 /* Optional columns are added by migrations that an install may not have run
    yet. Dropping every clinical column because one of them is missing blanks
@@ -7855,7 +7858,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,followup_status_effective_date,followup_status_reason';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -8231,7 +8234,11 @@ function renderPatientDirectory(){
   const status=document.getElementById('pd-status')?.value||'all';
   const pdKey=q+'|'+owner+'|'+status;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
+  const archivedCount=patientDirectoryRows.filter(p=>p.archived).length;
   let rows=patientDirectoryRows.filter(p=>{
+    // Archived patients are kept out of the registry unless they are being shown
+    // on purpose, so an accidental clutter never reappears in the active list.
+    if(!pdShowArchived&&p.archived)return false;
     if(owner!=='all'&&p.owner!==owner)return false;
     // "Ever reversed" cuts across the status buckets — see patientEverReversed.
     if(status==='ever_reversed'){if(!patientEverReversed(p))return false;}
@@ -8243,7 +8250,9 @@ function renderPatientDirectory(){
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
   const incompleteCount=rows.filter(patientIsIncomplete).length;
-  if(countEl)countEl.textContent=`${rows.length} of ${patientDirectoryRows.length} patient${patientDirectoryRows.length!==1?'s':''}`+(incompleteCount?` · ${incompleteCount} incomplete`:'');
+  if(countEl)countEl.innerHTML=`${rows.length} of ${patientDirectoryRows.length-(pdShowArchived?0:archivedCount)} patient${patientDirectoryRows.length!==1?'s':''}`
+    +(incompleteCount?` · ${incompleteCount} incomplete`:'')
+    +(archivedCount?` · <a href="#" onclick="event.preventDefault();togglePdArchived()" style="color:var(--teal);font-weight:700;">${pdShowArchived?'hide':'show'} ${archivedCount} archived</a>`:'');
   const note=document.getElementById('pd-setup-note');
   if(note)note.innerHTML=!patientDatesAvailable
     ? '<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>'
@@ -8274,11 +8283,13 @@ function renderPatientDirectory(){
     const middle=outcomeView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
-    return `<tr class="pd-click-row ${rowCls}${incompleteCls}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card">
-      <td><strong>${htmlSafe(nm)}</strong>${extraStatusChipsHTML(p)}</td>
+    const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
+    return `<tr class="pd-click-row ${rowCls}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
+      <td><strong>${htmlSafe(nm)}</strong>${p.archived?' <span class="pd-arch-tag">Archived</span>':''}${extraStatusChipsHTML(p)}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
       <td onclick="event.stopPropagation();"><div class="pd-actions">
+        ${restoreBtn}
         ${datesBtn}
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${(hasDue||!['active','awaiting_feedback','paused'].includes(p.status))?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
@@ -9764,7 +9775,7 @@ async function openPatientDatesModal(patientId){
     ${patientFormHTML(pat,'pcd')}
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:space-between;">
-      <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">🗑 Delete Patient</button>
+      <button class="btn-cancel" onclick="confirmArchivePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">🗄 Archive patient</button>
       <div style="display:flex;gap:8px;">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')" hidden>Save Patient</button>
@@ -12161,10 +12172,43 @@ async function openPatientRecord(patientId){
 }
 
 /* ---- delete patient with confirmation ---- */
+/* Archiving is the everyday "remove from the registry": the record is kept in
+   full and can be restored, so a patient entered by mistake or a duplicate is
+   taken out of the active list without the finality of a delete. Permanent
+   deletion stays available, but behind this step rather than as a prominent
+   red button on the edit form. */
+function confirmArchivePatient(patientId,name){
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>🗄 Archive patient</h2>
+    <div class="msub">Archiving <strong>${htmlSafe(name)}</strong> takes them out of the registry but keeps the full record. You can restore them at any time from the registry's <strong>show archived</strong> list.</div>
+    <div class="mact" style="justify-content:space-between;">
+      <button class="btn-cancel" style="color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${jsSafe(name)}')">Delete permanently instead…</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" onclick="executeArchivePatient('${patientId}')">Archive patient</button>
+      </div></div>`;
+  openMo();
+}
+async function executeArchivePatient(patientId){
+  const{error,dropped}=await updatePatientTolerant(patientId,{archived:true,archived_at:new Date().toISOString(),archived_by:(typeof currentUser!=='undefined'&&currentUser&&currentUser.email)||null});
+  if(error){alert('Could not archive: '+(error.message||error));return;}
+  if(dropped&&dropped.includes('archived')){alert('The archive columns are not in the database yet.\n\nRun sql/add-archive.sql once in Supabase, then try again.');return;}
+  closeModal();
+  refreshReminders();
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))switchTab('patients');
+  if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
+}
+async function restorePatient(patientId,name){
+  if(!confirm(`Restore ${name} to the registry?`))return;
+  const{error}=await updatePatientTolerant(patientId,{archived:false,archived_at:null,archived_by:null});
+  if(error){alert('Could not restore: '+(error.message||error));return;}
+  if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
+}
 function confirmDeletePatient(patientId,name){
   const mb=document.getElementById('mb');
   mb.className='mb';
-  mb.innerHTML=`<h2 style="color:#b91c1c;">Delete Patient</h2>
+  mb.innerHTML=`<h2 style="color:#b91c1c;">Delete Patient</h2>`+`
     <div class="msub">You are about to permanently delete <strong>${name}</strong> and all their appointment history. This cannot be undone.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" style="background:#b91c1c;" onclick="executeDeletePatient('${patientId}')">Yes, delete permanently</button></div>`;
