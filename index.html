@@ -873,6 +873,11 @@ a.inc-link:hover{border-bottom-color:var(--teal);}
 .sit-notes dt{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
 .sit-notes dd{font-size:13px;color:var(--navy);font-weight:600;word-break:break-word;}
 .sit-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.sit-thumb{margin-left:auto;width:52px;height:52px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#0b0b0b;cursor:pointer;padding:0;flex:0 0 auto;}
+.sit-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+/* A refashioning and the record it superseded read as one linked history. */
+.sm-row.sm-superseded{opacity:.72;}
+.sm-row.sm-refash{border-left:2px solid #d6c8f5;}
 /* ---- new patients (the register book) --------------------------------------
    The paper register runs a month at a time with the month written across the
    page, so this does the same — bold month bands, newest first, and the same
@@ -10275,7 +10280,7 @@ function patientStomaSummaryHTML(pat){
   const pid=pat.id;
   const rows=list.map(x=>{
     const k=STOMA_KINDS[x.kind];
-    return `<button type="button" class="sm-row" onclick="openStomaModal('${pid}','${jsSafe(x.slot)}')"
+    return `<button type="button" class="sm-row${x.superseded?' sm-superseded':''}${x.kind==='refashion'?' sm-refash':''}" onclick="openStomaModal('${pid}','${jsSafe(x.slot)}')"
       title="Open this stoma">
       <span class="sm-row-n">${x.kind==='refashion'?'↻':x.number}</span>
       <span class="sm-row-main">
@@ -10652,7 +10657,8 @@ const PSM_ICONS={
   chevleft:'<path d="M15 6l-6 6 6 6"/>',
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/>',
   refresh:'<path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-4.9"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 4.9"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>',
-  mappin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><path d="M9 10l2 2 4-4"/>'
+  mappin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><path d="M9 10l2 2 4-4"/>',
+  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="M21 15l-5-5L5 21"/>'
 };
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
@@ -11077,6 +11083,85 @@ async function refreshRecordSiting(){
   if(!page||!page.classList.contains('active'))return;
   const p=clrState.patient; if(!p)return;
   clrState.siting=await fetchPatientSiting(p.id,p.id_card);
+  if(clrState.siting)clrState.siting.image_data=await fetchSitingImage(clrState.siting.id);
+  if(document.getElementById('psm-stomas'))renderStomasPanel();
+}
+/* The siting photograph lives in its own table (one row per siting) so it never
+   weighs down the siting lists. Read, saved and removed on its own. */
+async function fetchSitingImage(sitingId){
+  try{
+    const{data,error}=await SB.from('siting_images').select('image_data').eq('siting_id',sitingId).maybeSingle();
+    if(error||!data)return null;
+    return data.image_data||null;
+  }catch(e){return null;}
+}
+// A phone photo is far bigger than the record needs, so it is scaled down and
+// re-encoded as JPEG before it is stored — a couple of hundred KB, not several
+// megabytes. Nothing about the image is logged.
+async function fileToCompressedDataUrl(file,maxDim=1280,quality=0.82){
+  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('read failed'));r.readAsDataURL(file);});
+  const img=await new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=()=>rej(new Error('decode failed'));im.src=dataUrl;});
+  let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+  const scale=Math.min(1,maxDim/Math.max(w,h||1));
+  w=Math.max(1,Math.round(w*scale));h=Math.max(1,Math.round(h*scale));
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  c.getContext('2d').drawImage(img,0,0,w,h);
+  return c.toDataURL('image/jpeg',quality);
+}
+function pickSitingPhoto(sitingId){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';inp.setAttribute('capture','environment');
+  inp.onchange=()=>onSitingPhotoChosen(inp,sitingId);
+  inp.click();
+}
+async function onSitingPhotoChosen(inp,sitingId){
+  const f=inp.files&&inp.files[0]; if(!f)return;
+  if(!/^image\//.test(f.type||'')){alert('Please choose an image file (a photo).');return;}
+  if(f.size>20*1024*1024){alert('That image is very large (over 20 MB). Please choose a smaller photo.');return;}
+  let dataUrl;
+  try{dataUrl=await fileToCompressedDataUrl(f);}catch(e){alert('Could not read that image. Please try another photo.');return;}
+  let who='';try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'';}catch(e){}
+  const{error}=await SB.from('siting_images').upsert(
+    {siting_id:sitingId,image_data:dataUrl,created_by:who,updated_at:new Date().toISOString()},
+    {onConflict:'siting_id'});
+  if(error){
+    const missing=/siting_images|relation|does not exist|column/i.test(String(error.message||''));
+    alert(missing
+      ? 'The siting photo table is not in the database yet.\n\nRun sql/add-siting-images.sql once in Supabase, then add the photo again.'
+      : 'Could not save the photo: '+error.message);
+    return;
+  }
+  if(clrState.siting&&String(clrState.siting.id)===String(sitingId))clrState.siting.image_data=dataUrl;
+  if(document.getElementById('psm-stomas'))renderStomasPanel();
+}
+/* An accessible viewer for the siting photograph: the picture with its date and
+   clinician, and Replace / Remove / Close. Neutral alt text, no identifiers. */
+function openSitingPhoto(sitingId){
+  const ss=clrState.siting;
+  if(!ss||String(ss.id)!==String(sitingId)||!ss.image_data){alert('No photograph on this siting.');return;}
+  const cl=sitingChecklistOf(ss);
+  const marks=(cl&&Array.isArray(cl.stoma_marks))?cl.stoma_marks.length:0;
+  const alt='Pre-operative stoma site photograph'+(ss.session_date?' dated '+fmtShortDate(ss.session_date):'');
+  const sub=[ss.session_date?fmtShortDate(ss.session_date):'',ss.consultant||'',marks?`${marks} site${marks>1?'s':''} marked`:''].filter(Boolean).join(' · ');
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>Stoma siting photograph</h2>
+    ${sub?`<div class="msub">${htmlSafe(sub)}</div>`:''}
+    <img src="${ss.image_data}" alt="${htmlSafe(alt)}" style="display:block;width:100%;max-height:70vh;object-fit:contain;border-radius:10px;background:#0b0b0b;"/>
+    <div class="mact" style="justify-content:space-between;">
+      <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="removeSitingPhoto('${sitingId}')">Remove</button>
+      <div style="display:flex;gap:8px;">
+        <button class="pf-add-btn" onclick="pickSitingPhoto('${sitingId}')">Replace</button>
+        <button class="btn-cancel" onclick="closeModal()">Close</button>
+      </div>
+    </div>`;
+  openMo();
+}
+async function removeSitingPhoto(sitingId){
+  if(!confirm('Remove this siting photograph?'))return;
+  const{error}=await SB.from('siting_images').delete().eq('siting_id',sitingId);
+  if(error){alert('Could not remove the photo: '+error.message);return;}
+  if(clrState.siting&&String(clrState.siting.id)===String(sitingId))clrState.siting.image_data=null;
+  closeModal();
   if(document.getElementById('psm-stomas'))renderStomasPanel();
 }
 function sitingSummaryHTML(pat,ss){
@@ -11100,6 +11185,7 @@ function sitingSummaryHTML(pat,ss){
       <div class="sit-top">
         <span class="psm-chip-sited">${psmIc('mappin')} ${seen?'SITED':'Booked'}</span>
         <span class="psm-badge">${htmlSafe(sitingStatusLabel(ss))}</span>
+        ${ss.image_data?`<button type="button" class="sit-thumb" onclick="openSitingPhoto('${ss.id}')" title="View the siting photograph" aria-label="View the siting photograph"><img src="${ss.image_data}" alt="${htmlSafe('Pre-operative stoma site photograph'+(ss.session_date?' dated '+fmtShortDate(ss.session_date):''))}"/></button>`:''}
       </div>
       <dl class="psm-dgrid" style="margin:8px 0 0;">
         ${di('Siting date',ss.session_date?fmtShortDate(ss.session_date):'')}
@@ -11114,6 +11200,7 @@ function sitingSummaryHTML(pat,ss){
       <div class="sit-actions">
         <button type="button" class="psm-btn" onclick="openSitingSeen('${ss.id}')">${psmIc('records')} Open assessment</button>
         <button type="button" class="psm-btn" onclick="openSitingEdit('${ss.id}')">${psmIc('pencil')} Edit siting</button>
+        ${ss.image_data?'':`<button type="button" class="psm-btn" onclick="pickSitingPhoto('${ss.id}')">${psmIc('image')} Add photo</button>`}
       </div>
     </div></div>`;
 }
@@ -11710,6 +11797,9 @@ async function openPatientRecord(patientId){
   // patient id, else matched on the id card (a siting can predate the patient).
   // Read on its own so a missing siting_sessions table never breaks the record.
   clrState.siting=await fetchPatientSiting(patientId,pat.id_card);
+  // Its photograph lives in its own table, so it is fetched only here (never in
+  // the siting lists) and attached to the record's siting object.
+  if(clrState.siting)clrState.siting.image_data=await fetchSitingImage(clrState.siting.id);
   // Being on the Handover (an inpatient) and having an open episode are the same
   // thing. If a patient is on the Handover with no open episode — admitted before
   // episodes were recorded, say — one is opened now so it shows on the record and
