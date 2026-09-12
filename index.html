@@ -10212,6 +10212,19 @@ async function saveStomaModal(){
      ones formed years earlier. Refusing those would make the imported records
      the only ones that cannot be edited. */
 
+  // A reversal is a clinical event, so recording one is confirmed by naming the
+  // result — which stoma, the state change, and what it means for the patient —
+  // rather than saved silently (spec §12C). Only when a present stoma is being
+  // newly reversed here; editing other fields saves straight away.
+  if(x.present&&f.present===false&&f.reversal_date){
+    const others=patientStomaList(ctx.pat).filter(s=>s.slot!==ctx.slot&&s.present).length;
+    const lines=[`Record reversal / closure of ${stomaTitle(x)}${x.type?' · '+prettyStomaType(x.type):''}?`,
+      '',`State: Present → Reversed on ${fmtShortDate(f.reversal_date)}.`];
+    lines.push(others===0
+      ? 'This is the patient’s last present stoma, so the patient will then read as Reversed.'
+      : `The patient still has ${others} other present stoma${others>1?'s':''}, so they stay in follow-up.`);
+    if(!confirm(lines.join('\n')))return;
+  }
   const payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
   // Guard against a double click creating two writes: disable the save while it
