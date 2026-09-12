@@ -10622,14 +10622,35 @@ function croPatientLabel(){
   const card=String(p.id_card||'').trim();
   return `<strong>${htmlSafe(nm)}</strong>`+(card?` <span class="pf-sc-id">${htmlSafe(card)}</span>`:'');
 }
+// The date that belongs to a given outcome, so the panel can tell when a status
+// is on the record but its date is not (a patient imported as deceased with no
+// date of death, say). The reversal date lives on the stoma, not the patient.
+function croStatusDate(pat,key){
+  if(!pat)return '';
+  if(key==='deceased')return pat.deceased_date||'';
+  if(key==='discharged_gozo')return pat.discharged_gozo_date||'';
+  if(key==='relocated_overseas')return pat.relocated_overseas_date||'';
+  if(key==='reversed'){const d=everReversedDates(pat);return d.length?d[d.length-1]:'';}
+  return '';
+}
 function croStatusPanelHTML(pat){
   const cur=derivedFollowupStatus(pat);
   const btns=PF_STATUS_ACTIONS.map(a=>{
     const on=cur===a.key;
     const off=cur==='deceased'&&a.key!=='deceased';
-    return `<button type="button" class="pf-sbtn ${a.cls}${on?' is-on':''}"
-      ${on||off?'disabled':''} title="${off?'Cleared only by removing the date of death':htmlSafe('Mark '+a.label.toLowerCase())}"
-      onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${on?' · current':''}</button>`;
+    // Current status but no date on file: keep the button live so the date can
+    // still be recorded, rather than locking it as "current" with the date
+    // missing forever. A reversal date is filled from Edit patient (it lives on
+    // the stoma), so that one is not offered here.
+    const needDate=on&&a.key!=='reversed'&&!croStatusDate(pat,a.key);
+    const disabled=(on&&!needDate)||off;
+    const suffix=on?(needDate?' · add date':' · current'):'';
+    const title=off?'Cleared only by removing the date of death'
+      :needDate?htmlSafe('Record the missing '+a.dateLabel.toLowerCase())
+      :htmlSafe('Mark '+a.label.toLowerCase());
+    return `<button type="button" class="pf-sbtn ${a.cls}${on&&!needDate?' is-on':''}"
+      ${disabled?'disabled':''}${needDate?' style="box-shadow:0 0 0 2px #f0c47a;"':''} title="${title}"
+      onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${suffix}</button>`;
   }).join('');
   const deadNote=cur==='deceased'
     ?`<div class="registry-lookup-note" style="margin:8px 0 0;background:#f4f4f5;border-color:#d4d4d8;color:#3f3f46;">This patient is <strong>deceased</strong> — the end of the record. Reversed, discharged to Gozo and relocated overseas are switched off; a stoma reversal already on file still stands on the operation history. To undo, clear the date of death from <strong>Edit patient</strong>.</div>`
@@ -10649,9 +10670,15 @@ function croStatusPanelHTML(pat){
 function croAsk(key){
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
+  // When the patient already reads as this outcome, the button is only there to
+  // record a date that was never captured — so the question asks for the date
+  // rather than for a status change that has already happened.
+  const adding=clrState.patient&&derivedFollowupStatus(clrState.patient)===key;
   box.hidden=false;
-  box.innerHTML=`<div class="pf-sconfirm-q">Do you want ${croPatientLabel()}
-      to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?</div>
+  const q=adding
+    ? `${croPatientLabel()} already reads as <strong>${htmlSafe(a.label)}</strong>, but no date is on file. Record it now?`
+    : `Do you want ${croPatientLabel()} to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?`;
+  box.innerHTML=`<div class="pf-sconfirm-q">${q}</div>
     <div class="pf-sconfirm-act">
       <button type="button" class="pf-sc-no" onclick="croCancel()">No, leave it</button>
       <button type="button" class="pf-sc-yes" onclick="croConfirm('${key}')">Yes</button>
