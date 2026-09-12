@@ -4870,6 +4870,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     </div>
     ${dntuSelectionSection}
     ${applianceSection}
+    ${isDntuEditMode?'':`<div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">
+      <button type="button" class="btn-cancel" style="width:auto;background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="correctApptAppliance('${htmlSafe(apptId||'')}','${htmlSafe(appt.patient_id||p.id||'')}')">✎ Edit / correct appliance</button>
+      <div class="ap-hint" style="margin-top:5px;">Fix an appliance entered by mistake — opens the appliance picker directly, without the follow-up planning below.</div>
+    </div></div>`}
     ${complicationsSection}
 
     <div id="of-followup-planning-wrap">
@@ -5382,6 +5386,33 @@ function visitPanelHTML(part,selected){
     return applianceGroupHTML('Dressings',all.filter(a=>a.system==='dressing'),selected);
   return applianceCouplings().map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,
     all.filter(a=>a.part===part&&a.coupling===c),selected)).join('');
+}
+/* Correct an appliance entered by mistake, straight from the Edit / Seen card,
+   without going through the follow-up planning gate that "Set appliance" applies.
+   An inpatient's appliance is corrected on the open admission (same-day changes
+   replace, no effect on the appointment); a clinic appliance opens the picker
+   pre-filled and saves against the appointment. */
+async function correctApptAppliance(apptId,patientId){
+  if(!patientId){alert('This appointment has no patient linked, so there is no appliance to correct.');return;}
+  const{data:pat}=await fetchPatientById(patientId);
+  if(!pat){alert('Could not load the patient.');return;}
+  const date=document.getElementById('of-date')?.value||TODAY;
+  if(!stomasPresentOn(pat,date).length){alert('This patient has no stoma on this date, so there is no appliance to set.');return;}
+  if(pat.is_inpatient){await openHandoverAppliance(patientId);return;}
+  const slot=document.getElementById('of-slot')?.value||'';
+  const year=document.getElementById('of-year')?.value;
+  const pending={apptId:apptId||null,patientId,status:'attended',
+    year,month:resolveMonthValueFromSelect(document.getElementById('of-month'),year),
+    followupStatus:document.getElementById('of-followup-status')?.value||'active',
+    owner:document.getElementById('of-owner')?.value||'Common',
+    fn:document.getElementById('of-fn')?.value.trim()||pat.first_name||'',
+    sn:document.getElementById('of-sn')?.value.trim()||pat.surname||'',
+    idcard:normaliseIdCard(document.getElementById('of-idcard')?.value||pat.id_card||''),
+    phone:document.getElementById('of-phone')?.value.trim()||pat.phone_number||'',
+    date,slot:String(slot).slice(0,5),
+    nurse:document.getElementById('of-nurse')?.value||'common',
+    isDntuEditMode:false,dntuTarget:0,allowSameMonth:true};
+  await openVisitApplianceWizard(pending,pat);
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
