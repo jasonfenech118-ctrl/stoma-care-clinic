@@ -974,6 +974,12 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 /* On a phone the select + date + note + button do not fit one row, so stack them
    in a single column — otherwise the row overflowed the modal card. */
 @media (max-width:640px){.cmp-add{grid-template-columns:1fr;}.cmp-add-btn{grid-column:1/-1;}}
+/* ROD (stoma rod / bridge) removal date, under the complications add row. */
+.cmp-rod{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);}
+.cmp-rod-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:6px;}
+.cmp-rod-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.cmp-rod-row input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;min-width:0;}
+.cmp-rod-hint{font-size:11px;color:var(--muted);margin-top:5px;}
 /* The mucocutaneous-separation detail popup: a clock-face picker. */
 .sep-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:6px 0 2px;}
 .sep-grid label,.sep-full label{display:grid;gap:4px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
@@ -6334,9 +6340,23 @@ async function getSitingReminders(){
         items.push({...r,kind:'nodate',eff:sd});
     });
     items.push(...await getReversalDueReminders());
+    items.push(...await getRodDueReminders());
     items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
     return {items,total:items.length,today:items.filter(r=>r.eff===TODAY).length};
   }catch(e){return {items:[],total:0,today:0};}
+}
+/* Patients with a ROD (stoma rod / bridge) removal date that has come round.
+   Chased until the date is cleared, which the nurse does once the rod is out. */
+async function getRodDueReminders(){
+  try{
+    const{data,error}=await SB.from('patients')
+      .select('id,first_name,surname,id_card,consultant,rod_removal_date,inpatient_ward,inpatient_bed')
+      .lte('rod_removal_date',TODAY);
+    if(error)return [];   // the column is not in the database yet
+    return (data||[])
+      .filter(p=>p.rod_removal_date)
+      .map(p=>({...p,kind:'rod',eff:String(p.rod_removal_date)}));
+  }catch(e){return [];}
 }
 /* Planned reversal surgery whose day has come. Only patients who may still have
    one are chased — a reversal already done, a death, or a move away takes the
@@ -6370,6 +6390,14 @@ function renderSitingReminderList(items){
         <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${r.consultant?' · '+htmlSafe(r.consultant):''} · reversal surgery ${htmlSafe(fmtShortDate(r.proposed_reversal_date))}</div>
         <div style="margin-top:5px;"><button class="ncb-btn" style="background:#dbeafe;color:#1d4ed8;" onclick="closeReminderPanel();closeModal();openPatientDatesModal('${r.id}')">Open record</button></div>
       </div>`;
+    if(r.kind==='rod'){
+      const wb=[r.inpatient_ward,r.inpatient_bed].filter(Boolean).join(' - ');
+      return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">ROD REMOVAL</span></div>
+        <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${wb?' · '+htmlSafe(wb):''} · remove rod ${htmlSafe(fmtShortDate(r.rod_removal_date))}</div>
+        <div style="margin-top:5px;"><button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="closeReminderPanel();closeModal();openComplicationPicker('${r.id}','Handover')">Open / clear</button></div>
+      </div>`;
+    }
     const kindTag=r.kind==='postop'
       ? '<span style="font-size:9px;font-weight:800;background:#ffe0b2;color:#8a4b00;padding:1px 6px;border-radius:5px;margin-left:6px;">SURGERY</span>'
       : r.kind==='nodate'
@@ -6598,10 +6626,12 @@ async function openDailyReminderModal(force){
   const bits=[];
   const nNo=todayItems.filter(r=>r.kind==='nodate').length;
   const nRev=todayItems.filter(r=>r.kind==='reversal').length;
+  const nRod=todayItems.filter(r=>r.kind==='rod').length;
   if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
   if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
   if(nNo)bits.push(`${nNo} without a surgery date`);
   if(nRev)bits.push(`${nRev} reversal${nRev!==1?'s':''}`);
+  if(nRod)bits.push(`${nRod} ROD removal${nRod!==1?'s':''}`);
   if(!bits.length)bits.push(`${todayItems.length} reminder${todayItems.length!==1?'s':''}`);
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🔔 Reminders today</h2>
@@ -10444,11 +10474,25 @@ async function openComplicationPicker(patientId,source){
   const{data:pat}=await fetchPatientById(patientId);
   const nm=pat?`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient':'this patient';
   const list=parseComplications(pat);
+  // The ROD removal date is a newer column, so read it on its own and tolerate
+  // it not being in the database yet.
+  let rod='';
+  try{const{data}=await SB.from('patients').select('rod_removal_date').eq('id',patientId).maybeSingle();
+    rod=data&&data.rod_removal_date?String(data.rod_removal_date).slice(0,10):'';}catch(e){}
   const mb=document.getElementById('mb');mb.className='mb';
-  mb.innerHTML=`<h2>⚠️ Complications</h2>
+  mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
     ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover')}
+    <div class="cmp-rod">
+      <div class="cmp-rod-head">🩹 ROD removal date</div>
+      <div class="cmp-rod-row">
+        <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
+        <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
+        ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
+      </div>
+      <div class="cmp-rod-hint">A reminder pops up on this date (and stays until cleared). Clear it once the rod is removed.</div>
+    </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
 }
@@ -10457,6 +10501,23 @@ async function onPickAddComplication(patientId,source){
   if(!list)return;
   const host=document.getElementById('cmp-pick-list'); if(host)host.innerHTML=complicationListHTML(list,{removable:true,patientId});
   if(document.getElementById('hv-body'))await loadHandover();
+}
+/* The ROD (stoma rod / bridge) removal date lives on the patient. Setting it
+   raises a reminder on that day; clearing it (once the rod is out) stops it. */
+async function saveRodRemovalDate(patientId){
+  const v=document.getElementById('rod-date')?.value||'';
+  const{error,dropped}=await updatePatientTolerant(patientId,{rod_removal_date:v||null});
+  if(error){alert('Could not save the ROD removal date: '+(error.message||error));return;}
+  if(dropped&&dropped.includes('rod_removal_date')){
+    alert('The ROD removal date column is not in the database yet.\n\nRun sql/add-rod-removal-date.sql once in Supabase, then set it again.');return;}
+  alert(v?`✅ ROD removal date set to ${fmtShortDate(v)}. A reminder will pop up on that day.`:'ROD removal date cleared.');
+  try{await refreshReminders();}catch(e){}
+  if(document.getElementById('hv-body'))await loadHandover();
+  openComplicationPicker(patientId,'Handover');   // reopen so Clear appears/updates
+}
+function clearRodRemovalDate(patientId){
+  const el=document.getElementById('rod-date'); if(el)el.value='';
+  saveRodRemovalDate(patientId);
 }
 /* The Stoma outcomes tab: the reversal / deceased outcome, a stoma-by-stoma
    present-vs-reversed summary, and the running complications list with its
@@ -12180,7 +12241,7 @@ function handoverRowHTML(p,cls){
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
           onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
-        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication">⚠️ Complications${cmpCount?` (${cmpCount})`:''}</button>
+        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication or a ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
