@@ -862,6 +862,17 @@ a.inc-link:hover{border-bottom-color:var(--teal);}
 .sm-lineage{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#6b21a8;margin-top:2px;}
 .sm-lineage svg{width:13px;height:13px;}
 @media(max-width:720px){.sm-row{align-items:flex-start;}}
+/* Pre-operative stoma siting summary on the record. */
+.psm-chip-sited{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;background:#e7f6f4;color:#087f7b;font-size:10.5px;font-weight:800;white-space:nowrap;}
+.psm-chip-sited svg{width:13px;height:13px;}
+.sit-none{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.sit-none-t{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);}
+.sit-none .pf-add-btn{margin:0;}
+.sit-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.sit-notes{margin-top:10px;display:grid;gap:2px;}
+.sit-notes dt{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
+.sit-notes dd{font-size:13px;color:var(--navy);font-weight:600;word-break:break-word;}
+.sit-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
 /* ---- new patients (the register book) --------------------------------------
    The paper register runs a month at a time with the month written across the
    page, so this does the same — bold month bands, newest first, and the same
@@ -10640,7 +10651,8 @@ const PSM_ICONS={
   chevron:'<path d="M9 6l6 6-6 6"/>',
   chevleft:'<path d="M15 6l-6 6 6 6"/>',
   mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/>',
-  refresh:'<path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-4.9"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 4.9"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>'
+  refresh:'<path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-4.9"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 4.9"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>',
+  mappin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><path d="M9 10l2 2 4-4"/>'
 };
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
@@ -11024,13 +11036,94 @@ function episodeCategoryHTML(meta,open){
     ${open?`<div class="clr-list">${listRows}</div>`:''}
   </div>`;
 }
-/* The Stomas & operation tab: the clickable stoma summary (each opens the stoma
-   modal with its operation, findings and dates), then the appliances used on
-   each stoma from the clinical records. */
+/* ── Pre-operative stoma siting on the record ─────────────────────────────
+   The patient's siting_sessions record surfaced on the Stomas & operation tab:
+   date, firm, what they were sited for, the assessed site, notes and status,
+   with actions to open the assessment or edit it. No clinical image yet. */
+async function fetchPatientSiting(patientId,idCard){
+  try{
+    const{data:byPid}=await SB.from('siting_sessions').select('*')
+      .eq('patient_id',patientId).neq('status','cancelled').order('session_date',{ascending:false});
+    if(byPid&&byPid.length)return byPid[0];
+    if(idCard){
+      const{data:byId}=await SB.from('siting_sessions').select('*')
+        .eq('id_card',idCard).neq('status','cancelled').order('session_date',{ascending:false});
+      if(byId&&byId.length)return byId[0];
+    }
+  }catch(e){}
+  return null;
+}
+// The checklist is a jsonb column, or (before that column was added) stashed as
+// JSON in the notes behind a [[CHECKLIST]] marker.
+function sitingChecklistOf(ss){
+  if(ss&&ss.checklist&&typeof ss.checklist==='object')return ss.checklist;
+  const n=String(ss&&ss.notes||'');
+  if(n.startsWith('[[CHECKLIST]]')){try{return JSON.parse(n.slice(13));}catch(e){}}
+  return null;
+}
+// Real free-text notes only — not the stashed checklist JSON.
+function sitingCleanNotes(ss){
+  const n=String(ss&&ss.notes||'').trim();
+  return n.startsWith('[[CHECKLIST]]')?'':n;
+}
+function addSitingForPatient(){
+  const p=clrState.patient; if(!p)return;
+  openSitingBooking(TODAY,'',{id_card:p.id_card,first_name:p.first_name,surname:p.surname,consultant:p.consultant});
+}
+// After a siting is booked/edited, refresh the open patient record's siting
+// section (and the header chip on the next open) so it is not left stale.
+async function refreshRecordSiting(){
+  const page=document.getElementById('page-patient-record');
+  if(!page||!page.classList.contains('active'))return;
+  const p=clrState.patient; if(!p)return;
+  clrState.siting=await fetchPatientSiting(p.id,p.id_card);
+  if(document.getElementById('psm-stomas'))renderStomasPanel();
+}
+function sitingSummaryHTML(pat,ss){
+  const head='<div class="psm-sec-head"><h3>Pre-operative stoma siting</h3></div>';
+  if(!ss){
+    return `<div>${head}
+      <div class="psm-card"><div class="sit-none">
+        <span class="sit-none-t">${psmIc('mappin')} Not recorded</span>
+        <button type="button" class="pf-add-btn" onclick="addSitingForPatient()">＋ Add siting session</button>
+      </div></div></div>`;
+  }
+  const cl=sitingChecklistOf(ss);
+  const marks=(cl&&Array.isArray(cl.stoma_marks))?cl.stoma_marks.length:0;
+  const notes=sitingCleanNotes(ss);
+  const assessedBy=(cl&&cl.signed_name)||ss.created_by||'';
+  const assessedOn=(cl&&cl.signed_date)?fmtShortDate(cl.signed_date):'';
+  const seen=ss.status==='seen'||!!cl||ss.surgery_performed!=null;
+  const di=(l,v)=>`<div class="psm-ditem"><dt>${htmlSafe(l)}</dt>${v?`<dd>${htmlSafe(v)}</dd>`:'<dd class="na">Not recorded</dd>'}</div>`;
+  return `<div>${head}
+    <div class="psm-card">
+      <div class="sit-top">
+        <span class="psm-chip-sited">${psmIc('mappin')} ${seen?'SITED':'Booked'}</span>
+        <span class="psm-badge">${htmlSafe(sitingStatusLabel(ss))}</span>
+      </div>
+      <dl class="psm-dgrid" style="margin:8px 0 0;">
+        ${di('Siting date',ss.session_date?fmtShortDate(ss.session_date):'')}
+        ${di('Firm',ss.consultant)}
+        ${di('Sited for',ss.siting_for)}
+        ${di('Proposed operation',ss.proposed_operation)}
+        ${di('Assessed site',marks?`${marks} position${marks>1?'s':''} marked on the abdomen`:'')}
+        ${di('Surgery date',ss.surgery_date?fmtShortDate(ss.surgery_date):'')}
+      </dl>
+      ${notes?`<div class="sit-notes"><dt>Notes</dt><dd>${htmlSafe(notes)}</dd></div>`:''}
+      ${(assessedBy||assessedOn)?`<div class="psm-audit">${psmIc('clock')} Assessed${assessedBy?' by '+htmlSafe(assessedBy):''}${assessedOn?' · '+htmlSafe(assessedOn):''}</div>`:''}
+      <div class="sit-actions">
+        <button type="button" class="psm-btn" onclick="openSitingSeen('${ss.id}')">${psmIc('records')} Open assessment</button>
+        <button type="button" class="psm-btn" onclick="openSitingEdit('${ss.id}')">${psmIc('pencil')} Edit siting</button>
+      </div>
+    </div></div>`;
+}
+/* The Stomas & operation tab: the pre-operative siting summary, the clickable
+   stoma summary (each opens the stoma modal), then the appliances from the
+   clinical records. */
 function renderStomasPanel(){
   const host=document.getElementById('psm-stomas');
   if(!host)return;
-  let html=patientStomaSummaryHTML(clrState.patient);
+  let html=sitingSummaryHTML(clrState.patient,clrState.siting)+patientStomaSummaryHTML(clrState.patient);
   if(!clrState.available){
     html+=`<div class="psm-missing">${psmIc('records')}<div>Appliance history needs the <strong>clinical_records</strong> table. Run <strong>sql/add-clinical-records.sql</strong> once in Supabase to turn on appliances.</div></div>`;
   }else{
@@ -11613,6 +11706,10 @@ async function openPatientRecord(patientId){
   await loadClinicalRecords(patientId);
   clrState.patient=pat;
   clrState.appts=appts;
+  // The patient's pre-operative stoma siting record, if any — linked by the
+  // patient id, else matched on the id card (a siting can predate the patient).
+  // Read on its own so a missing siting_sessions table never breaks the record.
+  clrState.siting=await fetchPatientSiting(patientId,pat.id_card);
   // Being on the Handover (an inpatient) and having an open episode are the same
   // thing. If a patient is on the Handover with no open episode — admitted before
   // episodes were recorded, say — one is opened now so it shows on the record and
@@ -11662,7 +11759,7 @@ async function openPatientRecord(patientId){
         <div class="psm-head-copy">
           <span class="psm-name">${htmlSafe(nm)}</span>
           <span class="psm-sub">${demo}</span>
-          <span class="psm-status"><span class="cr-out ${outCls}">${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${pat.locality?`<span class="psm-loc">${htmlSafe(pat.locality)}</span>`:''}</span>
+          <span class="psm-status"><span class="cr-out ${outCls}">${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.locality?`<span class="psm-loc">${htmlSafe(pat.locality)}</span>`:''}</span>
         </div>
       </div>
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
@@ -12992,6 +13089,7 @@ async function saveSitingSession(){
   closeModal();
   if(document.getElementById('siting-body'))loadSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+  refreshRecordSiting();
 }
 async function cancelSitingSession(id,name){
   if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
@@ -13003,6 +13101,7 @@ async function cancelSitingSession(id,name){
 function refreshSitingViews(){
   if(document.getElementById('siting-body'))loadSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+  refreshRecordSiting();
 }
 /* The siting appointment's own outcome buttons (in the Daily Clinic box) work
    differently from a follow-up: "Seen" opens the pre-operative stoma care
