@@ -11225,6 +11225,16 @@ function stomaCategoryHTML(meta,open){
   const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
   const groups=applianceTimelineByStomaType();
   const evGroups=applianceEventsByStomaType();
+  // Correcting a mistake: while the patient is an inpatient, the appliance can be
+  // re-set (which replaces today's entry) or today's change removed. After the
+  // day it locks into the history, so an old change is never rewritten.
+  const openEp=(typeof openEpisodeIn==='function')?openEpisodeIn(clrState.rows):null;
+  const todayEntry=openEp?parseEpisodeApplianceRows(openEp).some(e=>String(e.changed_on||'')===TODAY):false;
+  const applActions=openEp?`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+      <button class="clr-mini" onclick="openHandoverAppliance('${pat.id}')">✎ Edit / correct appliances</button>
+      ${todayEntry?`<button class="clr-mini danger" onclick="removeTodaysApplianceChange('${pat.id}')">🗑 Remove today’s change</button>`:''}
+      <span style="font-size:11px;color:var(--muted);">Appliances set today can still be corrected here; after today they lock into the history.</span>
+    </div>`:'';
   const single=recs.length===1;
   const blocks=recs.length?recs.map(r=>{
     const appl=applianceListForStoma(groups,r.title,single);
@@ -11257,8 +11267,33 @@ function stomaCategoryHTML(meta,open){
       ${cur&&cur.status?`<span class="clr-badge ${clrBadgeCls('stoma',cur)}">${htmlSafe(cur.status)}</span>`:''}
       <span class="clr-chev ${open?'open':''}">${psmIc('chevron')}</span>
     </button>
-    ${open?`<div class="clr-list">${blocks}</div>`:''}
+    ${open?`<div class="clr-list">${blocks}${applActions}</div>`:''}
   </div>`;
+}
+/* Undo an appliance change made today on the open inpatient visit — the "entered
+   by mistake" case. Only today's entries are touched (yesterday's and earlier are
+   locked into the history), and the ward note is rebuilt from what remains, the
+   same way commitEpisodeAppliances writes it. */
+async function removeTodaysApplianceChange(patientId){
+  const ep=(typeof openEpisodeIn==='function')?openEpisodeIn(clrState.rows):null;
+  if(!ep){alert('There is no open inpatient visit to correct.');return;}
+  const rows=parseEpisodeApplianceRows(ep);
+  const todays=rows.filter(e=>String(e.changed_on||'')===TODAY);
+  if(!todays.length){alert('No appliance change was recorded today, so there is nothing to undo.');return;}
+  const names=[...new Set(todays.flatMap(e=>e.appliances.concat(e.accessories)))].join(', ');
+  if(!confirm(`Remove today’s appliance change?\n\n${names||'(nothing listed)'}\n\nThis undoes what was set today on this visit. Earlier changes stay on the record.`))return;
+  const kept=rows.filter(e=>String(e.changed_on||'')!==TODAY);
+  const{error}=await SB.from('clinical_records').update({appliances:kept}).eq('id',ep.id);
+  if(error){alert('Could not remove the change: '+error.message);return;}
+  // Rebuild the ward note from the appliances that remain.
+  let pat=null;try{const{data}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();pat=data;}catch(e){}
+  try{
+    const note=episodeApplianceNote(currentApplianceNoteRows(pat,kept));
+    await SB.from('patients').update({inpatient_notes:note}).eq('id',patientId);
+  }catch(e){console.error('removeTodaysApplianceChange: note rebuild failed',e);}
+  await loadClinicalRecords(patientId);
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))renderStomasPanel();
+  if(document.getElementById('hv-body'))await loadHandover();
 }
 /* Which admission this is for this patient — counted over their own episodes,
    oldest first, so it stays right if one is removed. */
