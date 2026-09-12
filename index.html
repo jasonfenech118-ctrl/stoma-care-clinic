@@ -850,7 +850,18 @@ a.inc-link:hover{border-bottom-color:var(--teal);}
 .sm-remove:hover{background:#fee2e2;}
 .sm-remove[hidden]{display:none;}
 .sm-yn input{width:15px;height:15px;cursor:pointer;}
-@media(max-width:720px){.sm-row{align-items:flex-start;}.sm-row .clr-badge{align-self:center;}}
+/* Two independent stoma badges: origin (how it arose) and current state. Colour
+   supports the wording, never replaces it. */
+.sm-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
+.stoma-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap;}
+.sb-origin-new{background:#dbeafe;color:#1e40af;}
+.sb-origin-refash{background:#f3e8ff;color:#6b21a8;}
+.sb-present{background:#e8f7ed;color:#238451;}
+.sb-reversed{background:#eef2f6;color:#475569;}
+.sb-superseded{background:#f1f5f9;color:#7c8a9c;}
+.sm-lineage{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#6b21a8;margin-top:2px;}
+.sm-lineage svg{width:13px;height:13px;}
+@media(max-width:720px){.sm-row{align-items:flex-start;}}
 /* ---- new patients (the register book) --------------------------------------
    The paper register runs a month at a time with the month written across the
    page, so this does the same — bold month bands, newest first, and the same
@@ -9920,7 +9931,33 @@ function patientStomaList(p){
     x.code=initialStomaCode(x.uid==='base'?String(x.formed_date||'base'):x.uid);
     x.present=!x.reversal_date;
   });
+  // A refashioning replaces the stoma it remade, so that earlier stoma is
+  // SUPERSEDED — kept on the record as history but no longer counted as present.
+  // Match its named target, else the most recent still-present stoma before it.
+  out.forEach((r,i)=>{
+    if(r.kind!=='refashion')return;
+    let from=null;
+    if(r.target_uid)from=out.find(s=>s.uid===r.target_uid&&s.kind!=='refashion');
+    if(!from){for(let j=i-1;j>=0;j--){if(out[j].kind!=='refashion'&&out[j].present){from=out[j];break;}}}
+    if(from){from.present=false;from.superseded=true;r.fromStoma=from;}
+  });
   return out;
+}
+/* The two independent status dimensions for a stoma record, per the redesign:
+   how it arose (origin) and what is true of it now (current state). */
+function stomaOriginBadge(x){
+  return x.kind==='refashion'
+    ? {label:'Refashioned stoma',cls:'sb-origin-refash'}
+    : {label:'New stoma',cls:'sb-origin-new'};
+}
+function stomaStateBadge(x){
+  if(x.superseded)return {label:'Superseded',cls:'sb-superseded'};
+  if(x.reversal_date)return {label:'Reversed'+(x.reversal_date?' '+fmtShortDate(x.reversal_date):''),cls:'sb-reversed'};
+  return {label:'Present',cls:'sb-present'};
+}
+function stomaBadgesHTML(x){
+  const o=stomaOriginBadge(x),s=stomaStateBadge(x);
+  return `<span class="sm-badges"><span class="stoma-badge ${o.cls}">${htmlSafe(o.label)}</span><span class="stoma-badge ${s.cls}">${htmlSafe(s.label)}</span></span>`;
 }
 function stomaBySlot(p,slot){return patientStomaList(p).find(x=>x.slot===slot)||null;}
 function stomaTitle(x){
@@ -10237,18 +10274,19 @@ function patientStomaSummaryHTML(pat){
           x.discharge_date?` · home ${htmlSafe(fmtShortDate(x.discharge_date))}`:''}${
           x.kind==='refashion'&&x.same_admission===true?' · same admission':''}</span>
         ${(x.operation||x.comments)?`<span class="sm-row-op">${htmlSafe([x.operation,x.comments].filter(Boolean).join(' — '))}</span>`:''}
+        ${(x.kind==='refashion'&&x.fromStoma)?`<span class="sm-lineage">${psmIc('refresh')} Refashioned from Stoma ${x.fromStoma.number}${x.formed_date?' on '+htmlSafe(fmtShortDate(x.formed_date)):''}</span>`:''}
+        ${stomaBadgesHTML(x)}
       </span>
-      <span class="clr-badge ${x.present?'':'past'}">${x.present?'Stoma present':'Reversed '+htmlSafe(fmtShortDate(x.reversal_date))}</span>
       <span class="sm-row-go">${psmIc('chevron')}</span>
     </button>`;
   }).join('');
   const present=list.filter(x=>x.present).length;
-  const refash=list.filter(x=>x.kind==='refashion').length;
+  const superseded=list.filter(x=>x.superseded).length;
   const foot=list.length?`<div class="psm-audit">${psmIc('stoma')} ${
-    present===0?'Every stoma on this record has been reversed.'
+    present===0?'No stoma is present today.'
     :present===1?'One stoma is present today.'
     :`${present} stomas are present today.`}${
-    refash?' A refashioning remakes the stoma the patient already has, so it keeps that stoma\u2019s number and takes a stoma ID of its own.':''}</div>`:'';
+    superseded?` \u00b7 ${superseded} superseded by a refashioning`:''}</div>`:'';
   return `<div>
     <div class="psm-sec-head"><h3>Stomas${list.length?` · ${list.length}`:''}</h3>
       <span class="psm-badge">Click a stoma to open it</span></div>
@@ -10536,16 +10574,17 @@ function stomaOutcomesPanelHTML(pat){
   const[outText,outCls]=patientOutcome(pat);
   const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
   const present=list.filter(x=>x.present).length;
-  const reversed=list.filter(x=>!x.present);
-  const stomaLines=list.length?`<div class="psm-card sm-list" style="margin-top:2px;">${list.map(x=>`
-      <div class="clr-rec">
+  const supersededN=list.filter(x=>x.superseded).length;
+  const reversedN=list.filter(x=>!x.present&&!x.superseded).length;
+  const stomaLines=list.length?`<div class="psm-card sm-list" style="margin-top:2px;">${list.map(x=>{
+      const o=stomaOriginBadge(x),s=stomaStateBadge(x);
+      return `<div class="clr-rec">
         <div class="clr-rec-copy">
           <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(x.type)}`:''}</span>
-          <span class="clr-rec-meta">${x.present?'Present':'Reversed'+(x.reversal_date?' '+htmlSafe(fmtShortDate(x.reversal_date)):'')}</span>
+          <span class="clr-rec-meta"><span class="stoma-badge ${o.cls}">${htmlSafe(o.label)}</span> <span class="stoma-badge ${s.cls}">${htmlSafe(s.label)}</span></span>
         </div>
-        <span class="clr-badge ${x.present?'':'past'}">${x.present?'Stoma present':'Reversed'}</span>
-      </div>`).join('')}
-      <div class="psm-audit">${psmIc('stoma')} ${present} present · ${reversed.length} reversed</div>
+      </div>`;}).join('')}
+      <div class="psm-audit">${psmIc('stoma')} ${present} present · ${reversedN} reversed${supersededN?` · ${supersededN} superseded`:''}</div>
     </div>`:'';
   const complications=parseComplications(pat);
   return `
@@ -10600,7 +10639,8 @@ const PSM_ICONS={
   plus:'<path d="M12 5v14M5 12h14"/>',
   chevron:'<path d="M9 6l6 6-6 6"/>',
   chevleft:'<path d="M15 6l-6 6 6 6"/>',
-  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/>'
+  mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 6.5l8 6 8-6"/>',
+  refresh:'<path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-8-4.9"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 8 4.9"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>'
 };
 function psmIc(name){return `<svg viewBox="0 0 24 24" aria-hidden="true">${PSM_ICONS[name]||''}</svg>`;}
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
