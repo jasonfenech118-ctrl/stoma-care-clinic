@@ -10636,7 +10636,9 @@ function stomaOutcomesPanelHTML(pat){
         ${pat.reversal_date?od('Reversal date',pat.reversal_date):''}
         ${pat.proposed_reversal_date?od('Reversal planned for',pat.proposed_reversal_date):''}
         ${pat.deceased_date?od('Date of death',pat.deceased_date):''}
+        ${(pat.followup_status_effective_date&&!pat.deceased_date&&!pat.reversal_date)?od('Effective from',pat.followup_status_effective_date):''}
         ${(!pat.reversal_date&&!pat.proposed_reversal_date&&!pat.deceased_date)?oi('Status',outText,true):''}
+        ${pat.followup_status_reason?oi('Reason',pat.followup_status_reason,true):''}
       </dl></div>
     </div>
     ${stomaLines?`<div><div class="psm-sec-head"><h3>Stomas</h3></div>${stomaLines}</div>`:''}`;
@@ -10744,11 +10746,16 @@ function croCancel(){const box=document.getElementById('cro-confirm');if(box){bo
 function croConfirm(key){
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
-  const notes=a.notes?`<div class="pf-sc-notes">
-      <label for="cro-notes">${htmlSafe(a.notesLabel)}
-        <span style="font-weight:400;color:var(--muted);">(optional — as the register book writes it)</span></label>
-      <textarea id="cro-notes" rows="2" placeholder="${htmlSafe(a.notesPlaceholder||'')}"></textarea>
-    </div>`:'';
+  // An optional reason/note travels with the change and its effective date, so
+  // the record says why, not only when.
+  const reasonPh=key==='deceased'?'e.g. cause of death, if recorded'
+    :key==='discharged_gozo'?'e.g. follow-up handed to Gozo General'
+    :key==='relocated_overseas'?'e.g. moved to the UK'
+    :'';
+  const notes=`<div class="pf-sc-notes">
+      <label for="cro-notes">Reason / note <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+      <textarea id="cro-notes" rows="2" placeholder="${htmlSafe(reasonPh)}"></textarea>
+    </div>`;
   box.innerHTML=`<div class="pf-sconfirm-q">${croPatientLabel()} → <strong>${htmlSafe(a.label)}</strong>.
       On what date? <span style="font-weight:400;color:var(--muted);">The status changes when you press OK.</span></div>
     <div class="pf-sconfirm-act">
@@ -10801,6 +10808,9 @@ async function croApply(key){
     const sel=document.getElementById('crx-status');
     if(sel)sel.value=key;
     const payload=readPatientForm('crx');
+    // The date the outcome takes effect, and the optional reason, travel with it.
+    payload.followup_status_effective_date=date;
+    payload.followup_status_reason=note||null;
     holder.remove();
     const btn=document.querySelector('#cro-confirm .pf-sc-ok');
     if(btn){btn.disabled=true;btn.textContent='Saving…';}
@@ -10845,6 +10855,9 @@ async function croApplyClear(){
     SECONDARY_STATUSES.forEach(k=>{const cb=document.getElementById('crx-xs-'+k);if(cb)cb.checked=false;});
     const sel=document.getElementById('crx-status');if(sel)sel.value='active';
     const payload=readPatientForm('crx');
+    // Returning to follow-up clears the status reason and effective date too.
+    payload.followup_status_effective_date=null;
+    payload.followup_status_reason=null;
     holder.remove();
     const btn=document.querySelector('#cro-confirm .pf-sc-ok');
     if(btn){btn.disabled=true;btn.textContent='Saving…';}
