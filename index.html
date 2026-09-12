@@ -9016,7 +9016,7 @@ function initialStomaCode(uid){
   const s=String(uid||'').replace(/[^a-z0-9]/gi,'');
   return s?'STO-'+s.slice(-8).toUpperCase():'';
 }
-const INITIAL_STOMA_TYPES=['Colostomy','Ileostomy','Mucus Fistula'];
+const INITIAL_STOMA_TYPES=['Colostomy','Ileostomy','Mucus fistula'];
 function initialStomaTypeOptions(cur){
   cur=String(cur||'').trim();
   const inList=INITIAL_STOMA_TYPES.some(t=>t.toLowerCase()===cur.toLowerCase());
@@ -9852,17 +9852,41 @@ async function savePatientDates(patientId){
    that is not in this list is kept and shown as its own option, so nothing
    already entered is lost or silently changed. */
 const STOMA_TYPE_OPTIONS=[
-  'End - Colostomy','Loop - Colostomy','Transverse Colostomy','Sigmoid Colostomy',
-  'Descending Colostomy','Double-Barrel Colostomy',
-  'End - Ileostomy','Loop - Ileostomy','Double-Barrel Ileostomy',
-  'Urostomy','Caecostomy','Jejunostomy','Mucus Fistula','Other'
+  'End colostomy','Loop colostomy','Transverse colostomy','Sigmoid colostomy',
+  'Descending colostomy','Double-barrel colostomy',
+  'End ileostomy','Loop ileostomy','Double-barrel ileostomy',
+  'Urostomy','Caecostomy','Jejunostomy','Mucus fistula','Other'
 ];
+/* One canonical key for a stoma type, so the older inconsistent spellings
+   ("End - Colostomy", "Loop - Ileostomy", even "End _ Ileostomy") all match the
+   single sentence-case label. Dashes, underscores and spacing are ignored, and
+   "double barrel" is rejoined so it keys the same as "double-barrel". */
+function stomaTypeKey(s){
+  return String(s==null?'':s).toLowerCase()
+    .replace(/[–—]/g,'-')
+    .replace(/\s*[-_]\s*/g,' ')
+    .replace(/\s+/g,' ')
+    .replace(/double barrel/g,'double-barrel')
+    .trim();
+}
+/* The tidy label for a stored stoma type: the canonical sentence-case spelling
+   when it is a known type, otherwise the value exactly as it was recorded, so a
+   free-text "Other" entry is never rewritten. */
+function prettyStomaType(raw){
+  const c=String(raw==null?'':raw).trim();
+  if(!c)return '';
+  const k=stomaTypeKey(c);
+  return STOMA_TYPE_OPTIONS.find(t=>stomaTypeKey(t)===k)||c;
+}
 function stomaTypeOptions(cur){
   const c=String(cur==null?'':cur).trim();
-  const known=STOMA_TYPE_OPTIONS.some(t=>t.toLowerCase()===c.toLowerCase());
+  const ck=stomaTypeKey(c);
+  // Match on the canonical key so a value stored in an older spelling selects its
+  // sentence-case option instead of falling through to "(as recorded)".
+  const known=!!c&&STOMA_TYPE_OPTIONS.some(t=>stomaTypeKey(t)===ck);
   return '<option value="">— choose the stoma type —</option>'
     +(c&&!known?`<option value="${htmlSafe(c)}" selected>${htmlSafe(c)} (as recorded)</option>`:'')
-    +STOMA_TYPE_OPTIONS.map(t=>`<option${c.toLowerCase()===t.toLowerCase()?' selected':''}>${t}</option>`).join('');
+    +STOMA_TYPE_OPTIONS.map(t=>`<option${ck===stomaTypeKey(t)?' selected':''}>${htmlSafe(t)}</option>`).join('');
 }
 
 /* Closing a form that has been typed into and not saved loses the work with no
@@ -10276,7 +10300,7 @@ function patientStomaSummaryHTML(pat){
       title="Open this stoma">
       <span class="sm-row-n">${x.kind==='refashion'?'↻':x.number}</span>
       <span class="sm-row-main">
-        <span class="sm-row-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(x.type)}`:''}</span>
+        <span class="sm-row-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(prettyStomaType(x.type))}`:''}</span>
         <span class="sm-row-sub">${htmlSafe(k.short)}${x.formed_date?` · ${htmlSafe(fmtShortDate(x.formed_date))}`:' · no date yet'}${
           x.location?` · ${htmlSafe(x.location)}`:''}${
           x.discharge_date?` · home ${htmlSafe(fmtShortDate(x.discharge_date))}`:''}${
@@ -10588,7 +10612,7 @@ function stomaOutcomesPanelHTML(pat){
       const o=stomaOriginBadge(x),s=stomaStateBadge(x);
       return `<div class="clr-rec">
         <div class="clr-rec-copy">
-          <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(x.type)}`:''}</span>
+          <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(prettyStomaType(x.type))}`:''}</span>
           <span class="clr-rec-meta"><span class="stoma-badge ${o.cls}">${htmlSafe(o.label)}</span> <span class="stoma-badge ${s.cls}">${htmlSafe(s.label)}</span></span>
         </div>
       </div>`;}).join('')}
