@@ -9055,13 +9055,17 @@ function addInitialStomaRow(prefix){document.getElementById(`${prefix}-iststomal
    save button with its identity or its stoma half-entered — the mistake that
    made the single long form dangerous to hand to a nurse. The ids are the
    form's own, so readPatientForm and the outcome preview are untouched. */
+/* Two steps only. The outcome (reversed / deceased / discharged / relocated) is
+   no longer set here — it is changed on the patient record's Outcome tab, where
+   each button asks first and then takes the date. The record's current outcome
+   still travels through this form untouched via the hidden carrier in step 2, so
+   an edit never wipes a status that was set on the record. */
 const PF_STEPS=[
   {n:1,key:'patient',title:'Patient',sub:'Who they are',
    need:[['first','First name'],['surname','Surname'],['idcard','ID card'],['sex','Sex'],
          ['locality','Locality'],['dob','Date of birth'],['consultant','Firm (consultant)']]},
   {n:2,key:'stoma',title:'Stoma',sub:'The operation',
-   need:[['stoma','Stoma type'],['surgery','Date of surgery'],['findings','Operation and findings']]},
-  {n:3,key:'outcome',title:'Outcome & check',sub:'Read it back',need:[]}
+   need:[['stoma','Stoma type'],['surgery','Date of surgery'],['findings','Operation and findings']]}
 ];
 function pfStepperHTML(prefix){
   return `<ol class="pf-steps" id="${prefix}-steps">`+PF_STEPS.map(s=>
@@ -9171,37 +9175,22 @@ function patientFormHTML(p,prefix){
   </div>
   </div>
 
-  <div class="pf-pane" id="${prefix}-pane-3" data-step="3" hidden>
-  ${p?.id?pfStatusButtonsHTML(p,prefix):''}
-  <h3 class="pf-head">Read the record back</h3>
-  <div id="${prefix}-review"></div>
-
-  <h3 class="pf-head">Outcome</h3>
-  <div class="edit-seen-grid">
-    <div class="fg"><label>Status</label><select id="${prefix}-status" onchange="onPatientFormOutcome('${prefix}')">
-      ${followupStatusOptionsHTML(p?.followup_status||'active')}</select></div>
-    <div class="fg"><label>Date of RIP (death)</label>
-      <input type="date" id="${prefix}-rip" value="${v('deceased_date')}" onchange="onPatientFormDate('${prefix}','deceased')"/></div>
-    <div class="fg" id="${prefix}-proprevwrap"><label>Proposed date for reversal surgery <span style="font-weight:400;color:var(--muted);">(leave blank if none is planned)</span></label>
-      <input type="date" id="${prefix}-proprev" value="${v('proposed_reversal_date')}"/></div>
-    <div class="fg" style="grid-column:1 / -1;"><label>Other statuses that also apply</label>
-      <div class="pf-xstatus">${SECONDARY_STATUSES.map(st=>`<label class="pf-xchk"><input type="checkbox" id="${prefix}-xs-${st}" value="${st}" ${xstat.includes(st)?'checked':''} onchange="onPatientFormOutcome('${prefix}')"/> ${htmlSafe(followupStatusText(st))}</label>`).join('')}</div></div>
-    <div class="fg" style="grid-column:1 / -1;"><label>This patient will read as</label>
-      <div class="pf-outcome" id="${prefix}-outcome-note"></div></div>
-    <div class="registry-lookup-note" id="${prefix}-dead-note" hidden
-      style="grid-column:1 / -1;margin:0;background:#f4f4f5;border-color:#d4d4d8;color:#3f3f46;">
-      This patient is <strong>deceased</strong>, which is the end of the record. Reversed,
-      discharged to Gozo and relocated overseas are switched off and cannot be recorded
-      against them — any stoma reversal they had still stands on the operation history.
-      Clear the <strong>Date of RIP</strong> above, and untick <strong>Deceased</strong>,
-      if this was entered in error.</div>
-  </div>
-  <div class="registry-lookup-note" style="margin-bottom:10px;">Anything other than <strong>Active</strong> takes the patient off the recall list — they stay in the Registry. Each stoma's reversal date lives with that stoma; the status follows the newest one. If a <strong>stoma was formed after a reversal</strong>, the patient stays in follow-up because they still have a stoma.</div>
+  <!-- Outcome carrier: the outcome is set on the record's Outcome tab, not here.
+       These hidden fields hold the record's CURRENT outcome so that saving an
+       edit round-trips it unchanged (readPatientForm reads them, and the reversal
+       field on step 2 can still flip the status). Nothing here is shown. -->
+  <div id="${prefix}-outcome-carry" hidden>
+    <input type="hidden" id="${prefix}-status" value="${htmlSafe(p?.followup_status||'active')}"/>
+    <input type="hidden" id="${prefix}-rip" value="${v('deceased_date')}"/>
+    <input type="hidden" id="${prefix}-proprev" value="${v('proposed_reversal_date')}"/>
+    <input type="hidden" id="${prefix}-gozodate" value="${v('discharged_gozo_date')}"/>
+    <input type="hidden" id="${prefix}-ovsdate" value="${v('relocated_overseas_date')}"/>
+    ${SECONDARY_STATUSES.map(st=>`<input type="checkbox" id="${prefix}-xs-${st}" value="${st}" ${xstat.includes(st)?'checked':''} hidden/>`).join('')}
   </div>
 
   <div class="pf-step-err" id="${prefix}-steperr" hidden></div>
   <div class="pf-nav">
-    <span class="pf-nav-where" id="${prefix}-where">Step 1 of 3 · Patient</span>
+    <span class="pf-nav-where" id="${prefix}-where">Step 1 of 2 · Patient</span>
     <div class="pf-nav-btns">
       <button type="button" class="pf-btn-back" id="${prefix}-back" onclick="pfStep('${prefix}',-1)" hidden>‹ Back</button>
       <button type="button" class="pf-btn-next" id="${prefix}-next" onclick="pfStep('${prefix}',1)">Next ›</button>
@@ -9773,7 +9762,6 @@ async function openPatientDatesModal(patientId){
     <div class="mact" style="justify-content:space-between;">
       <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">🗑 Delete Patient</button>
       <div style="display:flex;gap:8px;">
-        <button class="btn-cancel" style="background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="openPatientSiting('${patientId}','${jsSafe(pat.id_card||'')}','${jsSafe(nm)}')">📍 Siting</button>
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')" hidden>Save Patient</button>
       </div></div>`;
@@ -10604,6 +10592,7 @@ function stomaOutcomesPanelHTML(pat){
     </div>`:'';
   const complications=parseComplications(pat);
   return `
+    ${pat.id?croStatusPanelHTML(pat):''}
     <div>
       <div class="psm-sec-head"><h3>Outcome</h3><span class="cr-out ${outCls}">${htmlSafe(outText)}</span></div>
       <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
@@ -10621,6 +10610,128 @@ function stomaOutcomesPanelHTML(pat){
         ${complicationAddFormHTML('pcmp',`onCardAddComplication('${pat.id}')`,pat.id,'Clinic')}
       </div>
     </div>`;
+}
+/* ── outcome change on the record page ───────────────────────────────────────
+   The outcome buttons that used to live in the register form's third step now
+   sit on the record's Outcome tab. Each one asks first, in the patient's own
+   name and ID card, then takes the date, and only then writes to the database —
+   nothing changes on a stray click. A death is the end of the record, so once a
+   patient reads as deceased the other three are switched off until the date of
+   death is cleared. The reversal date travels with the stoma being reversed, so
+   the change is applied through the very same form logic the register uses
+   (built hidden and read straight back), never a hand-rolled second path. */
+function croPatientLabel(){
+  const p=clrState.patient||{};
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
+  const card=String(p.id_card||'').trim();
+  return `<strong>${htmlSafe(nm)}</strong>`+(card?` <span class="pf-sc-id">${htmlSafe(card)}</span>`:'');
+}
+function croStatusPanelHTML(pat){
+  const cur=derivedFollowupStatus(pat);
+  const btns=PF_STATUS_ACTIONS.map(a=>{
+    const on=cur===a.key;
+    const off=cur==='deceased'&&a.key!=='deceased';
+    return `<button type="button" class="pf-sbtn ${a.cls}${on?' is-on':''}"
+      ${on||off?'disabled':''} title="${off?'Cleared only by removing the date of death':htmlSafe('Mark '+a.label.toLowerCase())}"
+      onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${on?' · current':''}</button>`;
+  }).join('');
+  const deadNote=cur==='deceased'
+    ?`<div class="registry-lookup-note" style="margin:8px 0 0;background:#f4f4f5;border-color:#d4d4d8;color:#3f3f46;">This patient is <strong>deceased</strong> — the end of the record. Reversed, discharged to Gozo and relocated overseas are switched off; a stoma reversal already on file still stands on the operation history. To undo, clear the date of death from <strong>Edit patient</strong>.</div>`
+    :cur==='reversed'
+    ?`<div class="registry-lookup-note" style="margin:8px 0 0;">This patient is <strong>reversed</strong>. If they are having another stoma, add it from <strong>Edit patient</strong> — that puts them back in follow-up.</div>`
+    :'';
+  return `<div>
+      <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Asks first, then the date</span></div>
+      <div class="psm-card">
+        <div class="pf-sbtns">${btns}</div>
+        <div class="pf-sconfirm" id="cro-confirm" hidden></div>
+        ${deadNote}
+      </div>
+    </div>`;
+}
+// Step one of the guard: the question, in the patient's own name and card.
+function croAsk(key){
+  const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
+  const box=document.getElementById('cro-confirm'); if(!box)return;
+  box.hidden=false;
+  box.innerHTML=`<div class="pf-sconfirm-q">Do you want ${croPatientLabel()}
+      to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?</div>
+    <div class="pf-sconfirm-act">
+      <button type="button" class="pf-sc-no" onclick="croCancel()">No, leave it</button>
+      <button type="button" class="pf-sc-yes" onclick="croConfirm('${key}')">Yes</button>
+    </div>`;
+  box.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function croCancel(){const box=document.getElementById('cro-confirm');if(box){box.hidden=true;box.innerHTML='';}}
+// Step two: Yes was pressed, so now — and only now — ask for the date.
+function croConfirm(key){
+  const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
+  const box=document.getElementById('cro-confirm'); if(!box)return;
+  const notes=a.notes?`<div class="pf-sc-notes">
+      <label for="cro-notes">${htmlSafe(a.notesLabel)}
+        <span style="font-weight:400;color:var(--muted);">(optional — as the register book writes it)</span></label>
+      <textarea id="cro-notes" rows="2" placeholder="${htmlSafe(a.notesPlaceholder||'')}"></textarea>
+    </div>`:'';
+  box.innerHTML=`<div class="pf-sconfirm-q">${croPatientLabel()} → <strong>${htmlSafe(a.label)}</strong>.
+      On what date? <span style="font-weight:400;color:var(--muted);">The status changes when you press OK.</span></div>
+    <div class="pf-sconfirm-act">
+      <div class="fg"><label>${htmlSafe(a.dateLabel)}</label>
+        <input type="date" id="cro-date" max="${htmlSafe(TODAY)}"/></div>
+      <button type="button" class="pf-sc-no" onclick="croCancel()">Cancel</button>
+      <button type="button" class="pf-sc-ok" onclick="croApply('${key}')">OK</button>
+    </div>
+    ${notes}
+    <div class="pf-step-err" id="cro-err" hidden></div>`;
+  document.getElementById('cro-date')?.focus();
+}
+// Step three: OK. Validate, then apply the change through the register form's own
+// logic (built hidden from the patient, so the reversal lands on the right stoma)
+// and save it. The record is rebuilt so the header chips and totals read it back.
+async function croApply(key){
+  const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
+  const pat=clrState.patient; if(!pat||!pat.id)return;
+  const date=document.getElementById('cro-date')?.value||'';
+  const note=String(document.getElementById('cro-notes')?.value||'').trim();
+  const err=document.getElementById('cro-err');
+  const say=m=>{if(err){err.hidden=false;err.textContent=m;}};
+  if(!date){say('A date is needed before the status can change.');return;}
+  if(date>TODAY){say('That date is in the future. Check it and try again.');return;}
+  const dob=pat.date_of_birth?String(pat.date_of_birth):'';
+  if(dob&&date<dob){say('That date is before the patient was born. Check it and try again.');return;}
+  // Build the register form hidden, off-screen, from this patient. Applying the
+  // change to it and reading it straight back reuses every rule the edit form
+  // already trusts — which stoma a reversal closes, how a death locks the rest.
+  const holder=document.createElement('div');
+  holder.style.display='none';
+  holder.innerHTML=patientFormHTML(pat,'crx');
+  document.body.appendChild(holder);
+  try{
+    if(key==='reversed'){
+      if(!pfSetNewestOpenStomaReversal('crx',date,note)){
+        say('There is no stoma still present to reverse. Add the new stoma from Edit patient first.');
+        return;
+      }
+    }else{
+      const f=document.getElementById(`crx-${a.date}`);
+      if(f)f.value=date;
+    }
+    const sel=document.getElementById('crx-status');
+    if(sel)sel.value=key;
+    const payload=readPatientForm('crx');
+    holder.remove();
+    const btn=document.querySelector('#cro-confirm .pf-sc-ok');
+    if(btn){btn.disabled=true;btn.textContent='Saving…';}
+    const{error,dropped}=await updatePatientTolerant(pat.id,payload);
+    if(error){say('Could not save: '+(error.message||error));if(btn){btn.disabled=false;btn.textContent='OK';}return;}
+    if(dropped&&dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
+    try{await refreshReminders();}catch(e){}
+    // Rebuild the record so the header status, the stoma totals and the buttons
+    // all read the change, then land back on the Outcome tab.
+    await openPatientRecord(pat.id);
+    switchPatientPanel('outcomes');
+  }finally{
+    if(document.body.contains(holder))holder.remove();
+  }
 }
 async function onCardAddComplication(patientId){
   const list=await readAndAddComplication('pcmp',patientId,'Clinic');
