@@ -10637,32 +10637,40 @@ function croStatusPanelHTML(pat){
   const cur=derivedFollowupStatus(pat);
   const btns=PF_STATUS_ACTIONS.map(a=>{
     const on=cur===a.key;
-    const off=cur==='deceased'&&a.key!=='deceased';
     // Current status but no date on file: keep the button live so the date can
     // still be recorded, rather than locking it as "current" with the date
     // missing forever. A reversal date is filled from Edit patient (it lives on
     // the stoma), so that one is not offered here.
     const needDate=on&&a.key!=='reversed'&&!croStatusDate(pat,a.key);
-    const disabled=(on&&!needDate)||off;
+    // Only the current status (with its date already on file) is locked. Every
+    // other status stays selectable — including while the patient reads as
+    // deceased — so a status picked by mistake can be corrected straight here.
+    const disabled=on&&!needDate;
     const suffix=on?(needDate?' · add date':' · current'):'';
-    const title=off?'Cleared only by removing the date of death'
-      :needDate?htmlSafe('Record the missing '+a.dateLabel.toLowerCase())
-      :htmlSafe('Mark '+a.label.toLowerCase());
+    const title=needDate?htmlSafe('Record the missing '+a.dateLabel.toLowerCase())
+      :on?'This is the current status'
+      :htmlSafe('Change to '+a.label.toLowerCase());
     return `<button type="button" class="pf-sbtn ${a.cls}${on&&!needDate?' is-on':''}"
       ${disabled?'disabled':''}${needDate?' style="box-shadow:0 0 0 2px #f0c47a;"':''} title="${title}"
       onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${suffix}</button>`;
   }).join('');
-  const deadNote=cur==='deceased'
-    ?`<div class="registry-lookup-note" style="margin:8px 0 0;background:#f4f4f5;border-color:#d4d4d8;color:#3f3f46;">This patient is <strong>deceased</strong> — the end of the record. Reversed, discharged to Gozo and relocated overseas are switched off; a stoma reversal already on file still stands on the operation history. To undo, clear the date of death from <strong>Edit patient</strong>.</div>`
-    :cur==='reversed'
+  // A patient-level status set by mistake can be cleared straight back to
+  // follow-up; the stoma history then decides active vs reversed. Shown only
+  // when there is such a date to clear — a plain reversal is corrected from Edit
+  // patient (its date lives on the stoma).
+  const canClear=!!(pat.deceased_date||pat.discharged_gozo_date||pat.relocated_overseas_date);
+  const clearBtn=canClear?`<button type="button" class="pf-sbtn" style="color:#0d7377;border-color:#b5e0dd;background:#f0faf9;" title="Clear a status set by mistake and return to follow-up" onclick="croAskClear()"><span aria-hidden="true">↺</span>Back to follow-up</button>`:'';
+  const note=cur==='deceased'
+    ?`<div class="registry-lookup-note" style="margin:8px 0 0;">This patient reads as <strong>deceased</strong>. If that was a mistake, press <strong>Back to follow-up</strong>, or pick the status that is correct — the date of death is cleared when you do. A stoma reversal already on file stays on the operation history.</div>`
+    :(cur==='reversed'&&!canClear)
     ?`<div class="registry-lookup-note" style="margin:8px 0 0;">This patient is <strong>reversed</strong>. If they are having another stoma, add it from <strong>Edit patient</strong> — that puts them back in follow-up.</div>`
     :'';
   return `<div>
       <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Asks first, then the date</span></div>
       <div class="psm-card">
-        <div class="pf-sbtns">${btns}</div>
+        <div class="pf-sbtns">${btns}${clearBtn}</div>
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
-        ${deadNote}
+        ${note}
       </div>
     </div>`;
 }
@@ -10672,12 +10680,18 @@ function croAsk(key){
   const box=document.getElementById('cro-confirm'); if(!box)return;
   // When the patient already reads as this outcome, the button is only there to
   // record a date that was never captured — so the question asks for the date
-  // rather than for a status change that has already happened.
-  const adding=clrState.patient&&derivedFollowupStatus(clrState.patient)===key;
+  // rather than for a status change that has already happened. When they read as
+  // deceased and a DIFFERENT status is picked, it is a correction, so the
+  // question says the date of death will be cleared.
+  const cur=clrState.patient?derivedFollowupStatus(clrState.patient):'';
   box.hidden=false;
-  const q=adding
-    ? `${croPatientLabel()} already reads as <strong>${htmlSafe(a.label)}</strong>, but no date is on file. Record it now?`
-    : `Do you want ${croPatientLabel()} to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?`;
+  let q;
+  if(cur===key)
+    q=`${croPatientLabel()} already reads as <strong>${htmlSafe(a.label)}</strong>, but no date is on file. Record it now?`;
+  else if(cur==='deceased')
+    q=`${croPatientLabel()} currently reads as <strong>deceased</strong>. Change them to <strong>${htmlSafe(a.label)}</strong> instead? The recorded date of death is cleared.`;
+  else
+    q=`Do you want ${croPatientLabel()} to have their status changed to <strong>${htmlSafe(a.label)}</strong> — ${htmlSafe(a.verb)}?`;
   box.innerHTML=`<div class="pf-sconfirm-q">${q}</div>
     <div class="pf-sconfirm-act">
       <button type="button" class="pf-sc-no" onclick="croCancel()">No, leave it</button>
@@ -10738,6 +10752,12 @@ async function croApply(key){
       const f=document.getElementById(`crx-${a.date}`);
       if(f)f.value=date;
     }
+    // A clean switch: clear the other patient-level outcome dates and any
+    // secondary statuses so the chosen one is the only status on file. This is
+    // what lets a mistake be corrected — picking a different status (or the
+    // right one after "deceased") does not leave a stale date behind it.
+    ['rip','gozodate','ovsdate'].forEach(id=>{if(id!==a.date){const f=document.getElementById('crx-'+id);if(f)f.value='';}});
+    SECONDARY_STATUSES.forEach(k=>{const cb=document.getElementById('crx-xs-'+k);if(cb)cb.checked=false;});
     const sel=document.getElementById('crx-status');
     if(sel)sel.value=key;
     const payload=readPatientForm('crx');
@@ -10750,6 +10770,48 @@ async function croApply(key){
     try{await refreshReminders();}catch(e){}
     // Rebuild the record so the header status, the stoma totals and the buttons
     // all read the change, then land back on the Outcome tab.
+    await openPatientRecord(pat.id);
+    switchPatientPanel('outcomes');
+  }finally{
+    if(document.body.contains(holder))holder.remove();
+  }
+}
+// Undo a patient-level status set by mistake: clear the date of death / Gozo /
+// overseas and return the patient to follow-up. The stoma history then decides
+// whether they read as active or reversed; nothing on the operation history is
+// touched.
+function croAskClear(){
+  const box=document.getElementById('cro-confirm'); if(!box)return;
+  box.hidden=false;
+  box.innerHTML=`<div class="pf-sconfirm-q">Set ${croPatientLabel()} back to <strong>still in follow-up</strong>?
+      This clears any date of death, Gozo or overseas date set by mistake. The stoma and any reversal on the operation history are unchanged.</div>
+    <div class="pf-sconfirm-act">
+      <button type="button" class="pf-sc-no" onclick="croCancel()">No, leave it</button>
+      <button type="button" class="pf-sc-ok" onclick="croApplyClear()">Yes, back to follow-up</button>
+    </div>
+    <div class="pf-step-err" id="cro-err" hidden></div>`;
+  box.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function croApplyClear(){
+  const pat=clrState.patient; if(!pat||!pat.id)return;
+  const err=document.getElementById('cro-err');
+  const say=m=>{if(err){err.hidden=false;err.textContent=m;}};
+  const holder=document.createElement('div');
+  holder.style.display='none';
+  holder.innerHTML=patientFormHTML(pat,'crx');
+  document.body.appendChild(holder);
+  try{
+    ['rip','gozodate','ovsdate'].forEach(id=>{const f=document.getElementById('crx-'+id);if(f)f.value='';});
+    SECONDARY_STATUSES.forEach(k=>{const cb=document.getElementById('crx-xs-'+k);if(cb)cb.checked=false;});
+    const sel=document.getElementById('crx-status');if(sel)sel.value='active';
+    const payload=readPatientForm('crx');
+    holder.remove();
+    const btn=document.querySelector('#cro-confirm .pf-sc-ok');
+    if(btn){btn.disabled=true;btn.textContent='Saving…';}
+    const{error,dropped}=await updatePatientTolerant(pat.id,payload);
+    if(error){say('Could not save: '+(error.message||error));if(btn){btn.disabled=false;btn.textContent='Yes, back to follow-up';}return;}
+    if(dropped&&dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.`);
+    try{await refreshReminders();}catch(e){}
     await openPatientRecord(pat.id);
     switchPatientPanel('outcomes');
   }finally{
