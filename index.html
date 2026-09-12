@@ -968,12 +968,13 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .cmp-title{font-size:13.5px;font-weight:800;color:var(--navy);}
 .cmp-meta{font-size:11.5px;color:var(--muted);}
 .cmp-note{color:var(--navy);font-weight:600;}
-.cmp-add{display:grid;grid-template-columns:1fr auto 1.2fr auto;gap:8px;align-items:center;margin-top:10px;}
+.cmp-add{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;margin-top:10px;}
 .cmp-add select,.cmp-add input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;outline:none;min-width:0;max-width:100%;}
-.cmp-add-btn{margin:0;white-space:nowrap;}
-/* On a phone the select + date + note + button do not fit one row, so stack them
-   in a single column — otherwise the row overflowed the modal card. */
-@media (max-width:640px){.cmp-add{grid-template-columns:1fr;}.cmp-add-btn{grid-column:1/-1;}}
+/* The dropdown and the Add button each take a full row; the date and note share
+   the middle row — so nothing is squeezed to a sliver in the narrow modal. */
+.cmp-add select{grid-column:1/-1;}
+.cmp-add-btn{grid-column:1/-1;margin:0;white-space:nowrap;}
+@media (max-width:640px){.cmp-add{grid-template-columns:1fr;}}
 /* ROD (stoma rod / bridge) removal date, under the complications add row. */
 .cmp-rod{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);}
 .cmp-rod-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:6px;}
@@ -12652,7 +12653,9 @@ async function loadSitingSessions(){
       : `<div class="report-note">Could not load siting sessions: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const rows=applySitingPatches(data||[]).filter(r=>r.status!=='cancelled');
+  // A session drops off this list once it is cancelled or has produced a stoma —
+  // a stoma-formed patient now lives on the Performed Stoma tab (and the Handover).
+  const rows=applySitingPatches(data||[]).filter(r=>r.status!=='cancelled'&&r.stoma_formed!==true);
   sitingState.rows=rows;
   if(!rows.length){
     body.innerHTML=emptyStateHTML('📍','No siting sessions booked',
@@ -13484,13 +13487,22 @@ async function loadStomaPerformed(){
       'A record appears here when a sited patient has surgery and a stoma is formed — press <strong>Stoma performed</strong> on their handover row on the day.');
     return;
   }
+  // Prefer the actual stoma type from the patient record; fall back to what they
+  // were sited for. Older records (saved before the siting_for column existed)
+  // have no sited-for, so the patient's stoma type keeps the column populated.
+  const pids=[...new Set(rows.map(r=>r.patient_id).filter(Boolean))];
+  const stomaById={};
+  if(pids.length){
+    try{const{data:pats}=await SB.from('patients').select('id,stoma_type').in('id',pids);
+      (pats||[]).forEach(p=>{stomaById[p.id]=p.stoma_type||'';});}catch(e){}
+  }
   const trs=rows.map(r=>`<tr>
     <td data-label="Surgery date">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
-    <td data-label="Stoma">${htmlSafe(r.siting_for||'—')}</td>
+    <td data-label="Stoma">${htmlSafe((r.patient_id&&stomaById[r.patient_id])||r.siting_for||'—')}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
       ${r.patient_id?`<button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openPatientDatesModal('${r.patient_id}')">Open patient</button>`:'<span style="color:var(--muted);font-size:11px;">—</span>'}
     </div></td>
