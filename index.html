@@ -2109,6 +2109,7 @@ table.np tbody tr:hover td{background:#f4fbfa;}
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn-add" style="background:#6d28d9;" onclick="openLocalitiesModal()">🏘 Manage localities</button>
           <button class="btn-add" style="background:#0d7377;" onclick="openFirmsModal()">🩺 Manage firms</button>
+          <button class="btn-add" style="background:#b45309;" onclick="openComplicationTypesModal()">⚠️ Manage complications</button>
           <button class="btn-add" onclick="switchTab('patients')">Go to Registry</button>
         </div>
       </div>
@@ -8612,6 +8613,124 @@ async function deleteLocality(name){
   await loadLocalities();renderLocalitiesModal();
   refreshPatientFormLists();
 }
+
+/* ── MANAGE COMPLICATIONS (the catalogue) ──────────────────────────────────
+   Add, rename, scope, order and retire the complications offered in the
+   complication dropdowns. A complication that has been used is never deleted —
+   it is made inactive, which hides it from new records while keeping it visible
+   in the ones that already have it. Backed by the complication_types table;
+   scope / order / active need sql/upgrade-complication-catalogue.sql. */
+async function openComplicationTypesModal(){
+  await loadComplicationTypes();
+  const mb=document.getElementById('mb');
+  mb.className='mb mb-wide';
+  if(!complicationTypesAvailable){
+    mb.innerHTML=`<h2>⚠️ Manage complications</h2>
+      <div class="registry-lookup-note error" style="margin-bottom:12px;">The <strong>complication list</strong> could not be opened. Run <strong>sql/add-complications.sql</strong> once in the Supabase SQL Editor (it creates the table and grants access), then reopen this.${complicationTypesError?`<br><br><span style="font-weight:400;">Database said: ${htmlSafe(complicationTypesError)}</span>`:''}</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    openMo();return;
+  }
+  renderComplicationTypesModal();
+  openMo();
+}
+function cmpTypeMsg(html){const el=document.getElementById('cmptype-msg');if(el)el.innerHTML=html?`<div class="registry-lookup-note ${html.err?'error':'found'}" style="margin:6px 0;">${htmlSafe(html.text)}</div>`:'';}
+function renderComplicationTypesModal(){
+  const mb=document.getElementById('mb');
+  const rich=complicationCatalogueRich;
+  const rows=complicationCatalogue.slice().sort((a,b)=>(a.display_order-b.display_order)||a.name.localeCompare(b.name));
+  const upgradeNote=rich?'':`<div class="registry-lookup-note" style="margin:6px 0 10px;">Adding and renaming work now. To set which stomas a complication is for, reorder the list, or retire one without deleting it, run <strong>sql/upgrade-complication-catalogue.sql</strong> once in Supabase, then reopen this.</div>`;
+  const scopeSel=(r)=>`<select class="clr-mini" onchange="setComplicationTypeScope('${jsSafe(r.name)}',this.value)">
+      ${['all','colostomy','ileostomy'].map(s=>`<option value="${s}" ${r.scope===s?'selected':''}>${COMPLICATION_SCOPE_LABEL[s]}</option>`).join('')}
+    </select>`;
+  mb.innerHTML=`<h2>⚠️ Manage complications</h2>
+    <div class="msub">Add, rename, scope and order the complications offered in the dropdowns. A complication that has been used is retired (made inactive), never deleted — it stays on records that already have it.</div>
+    ${upgradeNote}
+    <div class="fg" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+      <div style="flex:1;min-width:180px;"><label>New complication</label><input type="text" id="cmptype-new" placeholder="e.g. Peristomal candidiasis" onkeydown="if(event.key==='Enter'){event.preventDefault();addComplicationTypeFromManager()}"/></div>
+      ${rich?`<div><label>Applies to</label><select id="cmptype-new-scope"><option value="all">All stomas</option><option value="colostomy">Colostomy only</option><option value="ileostomy">Ileostomy only</option></select></div>`:''}
+      <button class="btn-save" onclick="addComplicationTypeFromManager()">Add</button>
+    </div>
+    <div id="cmptype-msg"></div>
+    <div class="loc-list">${rows.length?rows.map((r,i)=>`
+      <div class="loc-row" data-name="${htmlSafe(r.name)}" style="${r.active?'':'opacity:.55;'}">
+        <span class="loc-name">${htmlSafe(r.name)}${r.active?'':' <span style="font-size:11px;color:#b91c1c;">(inactive)</span>'}</span>
+        <span class="loc-acts" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          ${rich?scopeSel(r):''}
+          ${rich?`<button class="clr-mini" title="Move up" ${i===0?'disabled':''} onclick="moveComplicationType('${jsSafe(r.name)}',-1)">↑</button>
+                  <button class="clr-mini" title="Move down" ${i===rows.length-1?'disabled':''} onclick="moveComplicationType('${jsSafe(r.name)}',1)">↓</button>`:''}
+          <button class="clr-mini" onclick="renameComplicationType('${jsSafe(r.name)}')">Rename</button>
+          ${rich?`<button class="clr-mini ${r.active?'danger':''}" onclick="toggleComplicationTypeActive('${jsSafe(r.name)}')">${r.active?'Make inactive':'Make active'}</button>`:''}
+        </span>
+      </div>`).join(''):'<div class="report-note">No complications yet — add the first one above.</div>'}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+}
+// Rebuild any open complication dropdowns after the catalogue changes, keeping
+// each one's current value and its stoma scope.
+function refreshComplicationDropdowns(){
+  document.querySelectorAll('select[id$="-cmp-sel"]').forEach(sel=>{
+    const cur=sel.value&&sel.value!=='__add__'?sel.value:'';
+    const st=sel.getAttribute('data-stoma-type')||'';
+    sel.innerHTML=complicationOptions(cur,st);
+    sel.value=cur;
+  });
+}
+async function addComplicationTypeFromManager(){
+  const inp=document.getElementById('cmptype-new');const name=(inp?.value||'').trim();
+  const scope=document.getElementById('cmptype-new-scope')?.value||'all';
+  if(!name){cmpTypeMsg({err:true,text:'Type a complication name first.'});return;}
+  if(complicationTypesList.some(n=>n.toLowerCase()===name.toLowerCase())){cmpTypeMsg({err:true,text:`"${name}" is already on the list.`});return;}
+  const{error}=await insertComplicationType(name,scope);
+  if(error){cmpTypeMsg({err:true,text:'Could not add: '+(error.message||error)});return;}
+  await loadComplicationTypes();renderComplicationTypesModal();cmpTypeMsg({text:`Added ${name}.`});
+  refreshComplicationDropdowns();
+}
+// Tolerant update: send the audit columns too, but fall back to the bare patch
+// if those columns are not there yet.
+async function updateComplicationTypeRow(name,patch){
+  const user=await getCurrentUserForAudit().catch(()=>({}));
+  const full=Object.assign({},patch,{updated_at:new Date().toISOString(),updated_by:user.name||user.email||''});
+  let{error}=await SB.from('complication_types').update(full).eq('name',name);
+  if(error){const{error:e2}=await SB.from('complication_types').update(patch).eq('name',name);if(e2)return{error:e2};}
+  return{};
+}
+async function renameComplicationType(oldName){
+  const name=(prompt('Rename complication',oldName)||'').trim();
+  if(!name||name===oldName)return;
+  if(complicationTypesList.some(n=>n.toLowerCase()===name.toLowerCase()&&n.toLowerCase()!==oldName.toLowerCase())){alert(`"${name}" is already on the list.`);return;}
+  const{error}=await updateComplicationTypeRow(oldName,{name});
+  if(error){alert('Could not rename: '+(error.message||error));return;}
+  await loadComplicationTypes();renderComplicationTypesModal();
+  refreshComplicationDropdowns();
+}
+async function setComplicationTypeScope(name,scope){
+  if(!['all','colostomy','ileostomy'].includes(scope))return;
+  const{error}=await updateComplicationTypeRow(name,{scope});
+  if(error){alert('Could not change the scope: '+(error.message||error)+'\n\nRun sql/upgrade-complication-catalogue.sql once in Supabase.');return;}
+  await loadComplicationTypes();renderComplicationTypesModal();
+  refreshComplicationDropdowns();
+}
+async function toggleComplicationTypeActive(name){
+  const cur=complicationCatalogue.find(r=>r.name===name);
+  const next=!(cur&&cur.active!==false);
+  const{error}=await updateComplicationTypeRow(name,{active:next});
+  if(error){alert('Could not change this: '+(error.message||error)+'\n\nRun sql/upgrade-complication-catalogue.sql once in Supabase.');return;}
+  await loadComplicationTypes();renderComplicationTypesModal();
+  refreshComplicationDropdowns();
+}
+async function moveComplicationType(name,dir){
+  const rows=complicationCatalogue.slice().sort((a,b)=>(a.display_order-b.display_order)||a.name.localeCompare(b.name));
+  const i=rows.findIndex(r=>r.name===name);
+  const j=i+dir;
+  if(i<0||j<0||j>=rows.length)return;
+  const a=rows[i],b=rows[j];
+  // Swap their display orders (fall back to positions if they happen to match).
+  let oa=a.display_order,ob=b.display_order; if(oa===ob){oa=(i+1)*10;ob=(j+1)*10;}
+  const r1=await updateComplicationTypeRow(a.name,{display_order:ob});
+  const r2=await updateComplicationTypeRow(b.name,{display_order:oa});
+  if(r1.error||r2.error){alert('Could not reorder: '+((r1.error||r2.error).message||(r1.error||r2.error))+'\n\nRun sql/upgrade-complication-catalogue.sql once in Supabase.');}
+  await loadComplicationTypes();renderComplicationTypesModal();
+  refreshComplicationDropdowns();
+}
 // A patient can have several new stoma formations — held as a JSON array in
 // extra_stomas. Parse it, falling back to the older single-column fields.
 function parseStomas(p){
@@ -10412,35 +10531,137 @@ function patientStomaSummaryHTML(pat){
 const COMPLICATIONS_DEFAULT=['Parastomal hernia','Prolapse','Retraction','Stenosis','Mucocutaneous separation','Peristomal skin excoriation / dermatitis','Skin redness','High output','Bleeding','Granuloma'];
 // Mucocutaneous separation is special: choosing it opens a detail popup.
 const SEPARATION_COMPLICATION='Mucocutaneous separation';
-let complicationTypesList=COMPLICATIONS_DEFAULT.slice();
+/* The complication catalogue. Each entry carries a scope (which stoma it is
+   offered for), a display order, and an active flag; a light audit trail is kept
+   where the columns exist. The list is read tolerantly: until
+   sql/upgrade-complication-catalogue.sql runs, only the name is present and the
+   app behaves as a flat, always-active, all-stomas list exactly as before. */
+let complicationCatalogue=COMPLICATIONS_DEFAULT.map((name,i)=>({name,scope:'all',display_order:(i+1)*10,active:true}));
+let complicationTypesList=COMPLICATIONS_DEFAULT.slice();   // every name, for dedupe
 let complicationTypesAvailable=false;   // true once the DB table has been read
+let complicationCatalogueRich=false;    // true once the catalogue columns exist
+let complicationTypesError='';          // last load error, shown in the manager
+function complicationCatalogueFromRows(rows){
+  return rows.map(r=>({
+    name:String(r.name||'').trim(),
+    scope:(r.scope==='colostomy'||r.scope==='ileostomy')?r.scope:'all',
+    display_order:Number.isFinite(r.display_order)?r.display_order:0,
+    active:r.active!==false,
+    created_at:r.created_at||null,created_by:r.created_by||'',
+    updated_at:r.updated_at||null,updated_by:r.updated_by||''
+  })).filter(r=>r.name);
+}
 async function loadComplicationTypes(){
+  // Try the full catalogue first (scope / order / active / audit)…
+  try{
+    const{data,error}=await SB.from('complication_types')
+      .select('name,scope,display_order,active,created_at,created_by,updated_at,updated_by')
+      .order('display_order').order('name');
+    if(!error&&Array.isArray(data)){
+      complicationTypesAvailable=true;complicationCatalogueRich=true;complicationTypesError='';
+      if(data.length){complicationCatalogue=complicationCatalogueFromRows(data);complicationTypesList=complicationCatalogue.map(r=>r.name);}
+      return;
+    }
+  }catch(e){/* fall through to the plain read */}
+  // …then fall back to just the names, so a pre-upgrade table still works.
   try{
     const{data,error}=await SB.from('complication_types').select('name').order('name');
-    if(error||!Array.isArray(data)){complicationTypesAvailable=false;return;}
-    complicationTypesAvailable=true;
-    if(data.length)complicationTypesList=data.map(r=>r.name).filter(Boolean);
-  }catch(e){complicationTypesAvailable=false;}
+    if(error||!Array.isArray(data)){complicationTypesAvailable=false;complicationTypesError=error?.message||'';return;}
+    complicationTypesAvailable=true;complicationCatalogueRich=false;complicationTypesError='';
+    if(data.length){
+      complicationTypesList=data.map(r=>r.name).filter(Boolean);
+      complicationCatalogue=complicationTypesList.map((name,i)=>({name,scope:'all',display_order:(i+1)*10,active:true}));
+    }
+  }catch(e){complicationTypesAvailable=false;complicationTypesError=String(e&&e.message||e);}
 }
-function complicationOptions(cur){
+// A stoma type ('End colostomy', 'Loop ileostomy', …) → the catalogue scope key.
+function complicationScopeForStoma(stomaType){
+  const t=String(stomaType||'').toLowerCase();
+  if(t.includes('colostomy'))return 'colostomy';
+  if(t.includes('ileostomy'))return 'ileostomy';
+  return null;   // unknown / mixed → offer everything
+}
+const COMPLICATION_SCOPE_LABEL={all:'All stomas',colostomy:'Colostomy only',ileostomy:'Ileostomy only'};
+/* The dropdown options. When a stoma type is given, only complications for that
+   stoma (or those marked "all") are offered; inactive ones are kept out of NEW
+   records but an existing value is always retained so a historical record still
+   reads correctly whatever has since happened to the catalogue. */
+function complicationOptions(cur,stomaType){
   const c=(cur==null?'':String(cur)).trim();
-  const opts=complicationTypesList.slice().sort((a,b)=>a.localeCompare(b));
-  if(c&&!opts.includes(c))opts.push(c);
+  const scope=complicationScopeForStoma(stomaType);
+  const cat=complicationCatalogue.slice()
+    .filter(r=>r.active)
+    .filter(r=>!scope||r.scope==='all'||r.scope===scope)
+    .sort((a,b)=>(a.display_order-b.display_order)||a.name.localeCompare(b.name));
+  const names=cat.map(r=>r.name);
+  if(c&&!names.includes(c))names.push(c);   // keep an existing / inactive value
   return '<option value="">— choose a complication —</option>'
-    +opts.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
-    +'<option value="__add__">＋ Add another…</option>';
+    +names.map(o=>`<option ${c===o?'selected':''}>${htmlSafe(o)}</option>`).join('')
+    +'<option value="__add__">＋ Add new complication type…</option>';
 }
-/* Adds the typed complication to this dropdown now, and saves it to the
-   complication_types table so it is offered next time too. */
+/* Insert one complication type, tolerant of the catalogue columns not being
+   there yet: a full insert is tried first and, if a column is missing, it falls
+   back to name-only so it still saves. Returns {error} on real failure. */
+async function insertComplicationType(name,scope){
+  const user=await getCurrentUserForAudit().catch(()=>({}));
+  const nextOrder=(complicationCatalogue.reduce((m,r)=>Math.max(m,r.display_order||0),0)||0)+10;
+  const full={name,scope:scope||'all',display_order:nextOrder,active:true,created_by:user.name||user.email||'',updated_at:new Date().toISOString(),updated_by:user.name||user.email||''};
+  let{error}=await SB.from('complication_types').insert(full);
+  if(error){const{error:e2}=await SB.from('complication_types').insert({name});if(e2)return{error:e2};}
+  return{};
+}
+/* Adds the typed complication to a dropdown now, and saves it to the catalogue
+   so it is offered next time too. Kept for the plain (prompt-based) path. */
 async function complicationAdd(sel){
   optionAdd(sel,'Type the complication');
   const v=String(sel&&sel.value||'').trim();
   if(!v||v==='__add__')return;
   if(!complicationTypesList.some(f=>f.toLowerCase()===v.toLowerCase())){
-    try{const{error}=await SB.from('complication_types').insert({name:v});
-      if(!error){complicationTypesList.push(v);complicationTypesAvailable=true;}
-    }catch(e){}
+    const{error}=await insertComplicationType(v,'all');
+    if(!error){complicationTypesList.push(v);complicationTypesAvailable=true;await loadComplicationTypes();}
+    else alert('The complication was used here but could not be saved to the list: '+(error.message||error)+'\n\nRun sql/add-complications.sql once in Supabase so new complications are kept.');
   }
+}
+/* The focused "add a new complication type" dialog opened from a dropdown's
+   "＋ Add new complication type…" choice. It captures the name and the stoma
+   scope, saves to the catalogue, refreshes it everywhere, and auto-selects the
+   new option in the dropdown it was opened from. */
+function openAddComplicationTypeDialog(selId,patientId,source){
+  const mb2=document.getElementById('mb2');mb2.className='mb';
+  mb2.innerHTML=`<h2>⚠️ Add a complication type</h2>
+    <div class="msub">Adds a new choice to the complication list for everyone. Choose which stomas it applies to.</div>
+    <div class="fg"><label>Complication name</label>
+      <input type="text" id="nct-name" placeholder="e.g. Peristomal candidiasis" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('nct-save')?.click()}"/></div>
+    <div class="fg"><label>Applies to</label>
+      <select id="nct-scope">
+        <option value="all">All stomas</option>
+        <option value="colostomy">Colostomy only</option>
+        <option value="ileostomy">Ileostomy only</option>
+      </select></div>
+    <div id="nct-msg"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeMo2()">Cancel</button>
+      <button class="pf-add-btn" id="nct-save" onclick="saveAddComplicationTypeDialog('${jsSafe(selId)}','${jsSafe(patientId||'')}','${jsSafe(source||'')}')">Add complication type</button></div>`;
+  openMo2();
+  setTimeout(()=>{document.getElementById('nct-name')?.focus();},60);
+}
+async function saveAddComplicationTypeDialog(selId,patientId,source){
+  const name=String(document.getElementById('nct-name')?.value||'').trim();
+  const scope=document.getElementById('nct-scope')?.value||'all';
+  const msg=t=>{const el=document.getElementById('nct-msg');if(el)el.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${htmlSafe(t)}</div>`;};
+  if(!name){msg('Type a complication name first.');return;}
+  // Trimmed, case-insensitive duplicate guard.
+  if(complicationTypesList.some(n=>n.toLowerCase()===name.toLowerCase())){msg(`"${name}" is already on the list.`);return;}
+  const{error}=await insertComplicationType(name,scope);
+  if(error){msg('Could not add: '+(error.message||error));return;}
+  await loadComplicationTypes();
+  // Refresh and auto-select in the dropdown it was opened from.
+  const sel=document.getElementById(selId);
+  if(sel){
+    const stomaType=sel.getAttribute('data-stoma-type')||'';
+    sel.innerHTML=complicationOptions(name,stomaType);
+    sel.value=name;
+  }
+  closeMo2();
 }
 // The patient's complications, tolerant of the column being JSON text or absent.
 function parseComplications(pat){
@@ -10502,27 +10723,32 @@ function complicationListHTML(entries,opts={}){
    Add button's onclick is passed in, because who to tell afterwards differs by
    where it is shown; patientId and source let the separation popup save straight
    away. The common problems all live in the dropdown itself. */
-function complicationAddFormHTML(prefix,onclickJs,patientId,source){
+function complicationAddFormHTML(prefix,onclickJs,patientId,source,stomaType){
   const note=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="grid-column:1/-1;margin:2px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
-  const pid=patientId||'',src=source||'Handover';
+  const pid=patientId||'',src=source||'Handover',st=stomaType||'';
   return `<div class="cmp-add">
-    <select id="${prefix}-cmp-sel" onchange="onComplicationSelect(this,'${jsSafe(pid)}','${jsSafe(src)}')">${complicationOptions('')}</select>
+    <select id="${prefix}-cmp-sel" data-stoma-type="${htmlSafe(st)}" onchange="onComplicationSelect(this,'${jsSafe(pid)}','${jsSafe(src)}')">${complicationOptions('',st)}</select>
     <input type="date" id="${prefix}-cmp-date" value="${TODAY}"/>
     <input type="text" id="${prefix}-cmp-note" placeholder="Note (optional)"/>
     <button type="button" class="pf-add-btn cmp-add-btn" onclick="${onclickJs}">＋ Add complication</button>
     ${note}
   </div>`;
 }
-/* Picking "Mucocutaneous separation" from the dropdown opens the detail popup
-   too, so it is captured the same way however it is chosen. Otherwise this just
-   forwards to the "type a new one" handler. */
+/* The dropdown's onchange. "＋ Add new complication type…" opens the focused
+   add dialog; "Mucocutaneous separation" opens its detail popup; anything else
+   is just a selection and needs no handling here. */
 function onComplicationSelect(sel,patientId,source){
-  if(sel&&sel.value===SEPARATION_COMPLICATION&&patientId){
+  if(!sel)return;
+  if(sel.value==='__add__'){
+    sel.value='';                       // clear the sentinel; the dialog owns adding
+    openAddComplicationTypeDialog(sel.id,patientId,source);
+    return;
+  }
+  if(sel.value===SEPARATION_COMPLICATION&&patientId){
     sel.value='';                       // the popup owns this one; clear the box
     openSeparationDetail(patientId,source);
     return;
   }
-  complicationAdd(sel);
 }
 /* Save one complication and refresh every view that might be showing the list —
    the picker, the appointment card, the patient card and the handover row — so
