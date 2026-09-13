@@ -4642,6 +4642,47 @@ function visitApplianceSummaryHTML(appt,patient){
   return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
     <div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">${body}</div></div>`;
 }
+/* Step 2 (Clinical review) requires the nurse to say, for every attended visit,
+   how complications were reviewed and how appliances were reviewed — an explicit
+   decision, not a silent skip. Both are stored on the appointment. */
+function complicationReviewSectionHTML(patientId,complicationsNow,preset){
+  if(!patientId)return `<div class="edit-seen-section">Complications reviewed</div><div class="report-note">No patient record is linked to this appointment, so complications cannot be recorded here.</div>`;
+  const list=complicationsNow||[];
+  const r=preset||'';
+  const listHTML=list.length?complicationListHTML(list,{removable:false}):'<div class="clr-empty">No complications on record yet.</div>';
+  const stateOpts=['Ongoing','Improving','Deteriorating','Resolved'];
+  const existingRows=list.length?list.map(e=>`
+      <div class="cmp-review-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0;">
+        <span class="cmp-title" style="min-width:130px;font-weight:700;">${htmlSafe(e.text)}</span>
+        <select class="of-cmp-state" data-id="${htmlSafe(e.id)}"><option value="">— review state —</option>${stateOpts.map(s=>`<option>${s}</option>`).join('')}</select>
+        <input type="text" class="of-cmp-state-note" placeholder="Note (optional)" style="flex:1;min-width:140px;"/>
+      </div>`).join(''):'<div class="clr-empty">No existing complications to review.</div>';
+  return `<div class="edit-seen-section">Complications reviewed *</div>
+    <div class="psm-card" style="margin-bottom:12px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">On record:</div>
+      <div id="of-cmp-list">${listHTML}</div>
+      <div class="es-review-choice" id="of-cmp-review" style="margin-top:8px;">
+        <label><input type="radio" name="of-cmp-review" value="none" ${r==='none'?'checked':''} onchange="esCmpReviewChange()"> No complications identified today</label>
+        <label><input type="radio" name="of-cmp-review" value="existing-reviewed" ${r==='existing-reviewed'?'checked':''} onchange="esCmpReviewChange()"> Review an existing complication</label>
+        <label><input type="radio" name="of-cmp-review" value="new-added" ${r==='new-added'?'checked':''} onchange="esCmpReviewChange()"> Add a new complication</label>
+      </div>
+      <div id="of-cmp-existing" hidden style="margin-top:8px;">${existingRows}</div>
+      <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationAddFormHTML('of',`onApptAddComplication('${patientId}')`,patientId,'Appointment')}</div>
+    </div>`;
+}
+function applianceReviewSectionHTML(appt,patient,preset){
+  const r=preset||'';
+  const choice=(v,label)=>`<label><input type="radio" name="of-app-review" value="${v}" ${r===v?'checked':''} onchange="esAppReviewChange()"> ${label}</label>`;
+  return `${visitApplianceSummaryHTML(appt,patient)}
+    <div class="edit-seen-section" style="margin-top:4px;">Appliances reviewed *</div>
+    <div class="es-review-choice" id="of-app-review">
+      ${choice('unchanged','Continue current appliances unchanged')}
+      ${choice('changed','Change appliances or accessories')}
+      ${choice('first','Add first appliance')}
+      ${choice('none','No appliance required / recorded')}
+    </div>
+    <div class="dntu-note" id="of-app-note" style="margin-top:6px;"></div>`;
+}
 function applianceSectionHTML(appliances,accessories){
   const selApp=parseNameList(appliances),selAcc=parseNameList(accessories);
   // Anything already on the record but not in the standard list still shows, so
@@ -4919,6 +4960,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       ${attendanceGrid}
       ${dntuSelectionSection}
       ${applianceSection}
+      ${complicationsSection}
       <div class="edit-seen-section">Follow-up planning</div>
       ${followupBlock}
       <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Edit / DNTU Appointment</button></div>`;
@@ -4943,8 +4985,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <input type="hidden" id="of-phone" value="${htmlSafe(p.phone_number||'')}"/>
       <input type="hidden" id="of-fn" value="${htmlSafe(p.first_name||'')}"/>
       <input type="hidden" id="of-sn" value="${htmlSafe(p.surname||'')}"/>`;
-    const clinicalPane=p.id?`${applianceSection}${correctApplianceBtn}${complicationsSection}`
-      :`${applianceSection}${correctApplianceBtn}<div class="report-note">No patient record is linked to this appointment, so complications cannot be recorded here.</div>`;
+    const clinicalPane=`${complicationReviewSectionHTML(p.id,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'')}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
@@ -4975,6 +5016,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   if(!isDntuEditMode){
     esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||''};
     esGoStep(1);
+    esCmpReviewChange();
+    esAppReviewChange();
   }else{esState=null;}
   updateOutcomeAvailabilityPreview();
   updateFollowupChangeWarning();
@@ -5037,6 +5080,28 @@ function esRenderFooter(){
     right=`<button type="button" class="btn-save" onclick="esNextStep()">${nextLabel}</button>`;
   }
   foot.innerHTML=`${left}${right}`;
+}
+/* The two required Clinical-review decisions. Choosing how complications were
+   reviewed reveals the matching sub-form; choosing how appliances were reviewed
+   sets a one-line explanation and decides whether the appliance picker opens
+   when the visit is completed. */
+function esCmpReviewChange(){
+  const v=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
+  const ex=document.getElementById('of-cmp-existing'); if(ex)ex.hidden=(v!=='existing-reviewed');
+  const add=document.getElementById('of-cmp-add'); if(add)add.hidden=(v!=='new-added');
+  const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
+}
+function esAppReviewChange(){
+  const v=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
+  const note=document.getElementById('of-app-note');
+  const hints={
+    unchanged:'The current appliances are kept and marked reviewed for this visit — the picker will not reopen.',
+    changed:'The appliance picker opens when you complete the visit, so you can change what is used.',
+    first:'The appliance picker opens when you complete the visit, to record the first appliance.',
+    none:'Recorded as no appliance required or recorded for this visit.'
+  };
+  if(note)note.textContent=hints[v]||'';
+  const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
 }
 /* ---- what was used, stoma by stoma ------------------------------------------
    Marking a visit as Seen walks through one card per stoma: its appliances,
@@ -5570,13 +5635,38 @@ async function saveOutcomeFollowup(apptId,patientId){
   // (updateFollowupChangeWarning). Month/year presence is already checked above.
   if(isDntuEditMode&&dntuTarget>0&&!validateMissingDntuFieldsBeforeSave(dntuTarget))return;
 
+  // Clinical-review decisions (required for a normal attended visit).
+  const complicationReview=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
+  const applianceReview=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
+  if(status==='attended'&&!isNewCase&&!isDntuEditMode){
+    if(!complicationReview||!applianceReview){
+      const err=document.getElementById('of-review-error');
+      if(err){err.hidden=false;err.textContent='Before completing the visit, confirm how complications were reviewed and how appliances were reviewed.';}
+      if(typeof esState!=='undefined'&&esState){esState.step=2;esGoStep(2);}
+      return;
+    }
+  }
+  // The per-complication review states, gathered only when reviewing existing ones.
+  let complicationReviews=[];
+  if(complicationReview==='existing-reviewed'){
+    document.querySelectorAll('#of-cmp-existing .cmp-review-row').forEach(row=>{
+      const sel=row.querySelector('.of-cmp-state');const st=sel&&sel.value||'';
+      if(!st)return;
+      complicationReviews.push({id:sel.getAttribute('data-id')||'',type:row.querySelector('.cmp-title')?.textContent||'',state:st,note:row.querySelector('.of-cmp-state-note')?.value||''});
+    });
+  }
+
   const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
+    complicationReview,applianceReview,complicationReviews,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
 
-  /* A patient who was seen has to leave a record of what was used, one card per
-     stoma. Anything other than Seen has nothing to record, so it saves here. */
-  if(status==='attended'&&patientId){
+  /* A patient who was seen records what was used, one card per stoma — but only
+     when the appliances were actually changed or a first one is being added.
+     "Unchanged" or "none" keeps the existing appliance record and skips the
+     picker, so nothing is re-typed and nothing is wiped. */
+  const needsPicker=(applianceReview==='changed'||applianceReview==='first');
+  if(status==='attended'&&patientId&&needsPicker){
     const{data:pat}=await SB.from('patients').select(patientSelectCols()).eq('id',patientId).maybeSingle();
     if(pat&&stomasPresentOn(pat,date).length){
       await openVisitApplianceWizard(pending,pat);
@@ -5586,13 +5676,10 @@ async function saveOutcomeFollowup(apptId,patientId){
   return commitOutcomeFollowup(pending,[]);
 }
 async function commitOutcomeFollowup(v,stomaRows){
-  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget}=v;
+  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews}=v;
   const flat=list=>[...new Set((stomaRows||[]).flatMap(r=>r[list]||[]))];
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
-    appliances:flat('appliances'),
-    accessories:flat('accessories'),
-    stoma_appliances:stomaRows||[],
     status,
     appt_date:date,
     appt_slot:slot,
@@ -5602,6 +5689,23 @@ async function commitOutcomeFollowup(v,stomaRows){
     outcome_recorded_by_email:currentUser.email,
     outcome_recorded_by_name:currentUser.name
   };
+  // Appliance columns: write them only when the picker recorded rows; when the
+  // picker was skipped (unchanged / none) leave the existing record alone rather
+  // than wiping it. Non-attended outcomes keep the old behaviour of clearing.
+  const recordAppliances=(stomaRows&&stomaRows.length>0);
+  if(recordAppliances){
+    outcomeUpdate.appliances=flat('appliances');
+    outcomeUpdate.accessories=flat('accessories');
+    outcomeUpdate.stoma_appliances=stomaRows;
+  }else if(status!=='attended'){
+    outcomeUpdate.appliances=[];
+    outcomeUpdate.accessories=[];
+    outcomeUpdate.stoma_appliances=[];
+  }
+  // The two visit-review decisions (tolerant: dropped if the columns are absent).
+  if(complicationReview)outcomeUpdate.complication_review=complicationReview;
+  if(applianceReview)outcomeUpdate.appliance_review=applianceReview;
+  if(complicationReviews&&complicationReviews.length)outcomeUpdate.complication_reviews=complicationReviews;
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
 
