@@ -4843,7 +4843,17 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   // The running complications, read fresh so the section opens with what is on
   // the card (the appointment join may not carry the column).
   let complicationsNow=[];
-  if(p.id){try{complicationsNow=parseComplications((await fetchPatientById(p.id)).data||p);}catch(e){complicationsNow=parseComplications(p);}}
+  let fullPat=p;   // the full patient record, for fields the appointment join may not carry
+  if(p.id){try{const fp=(await fetchPatientById(p.id)).data;if(fp)fullPat=fp;complicationsNow=parseComplications(fullPat);}catch(e){complicationsNow=parseComplications(p);}}
+  // Planning a reversal from the Seen card: only offered to a patient who could
+  // still have one (a present stoma, not already reversed / deceased / moved on).
+  const reversalPlanSection=(!isDntuEditMode&&typeof canPlanReversal==='function'&&canPlanReversal(fullPat))?`
+    <div class="edit-seen-section">Reversal planning</div>
+    <div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">
+      <label>Proposed reversal surgery date <span style="font-weight:400;color:var(--muted);">(leave blank if none planned)</span></label>
+      <input type="date" id="of-proprev" value="${htmlSafe(fullPat.proposed_reversal_date||'')}"/>
+      <div class="ap-hint" style="margin-top:4px;">Shows on the record as “Reversal planned for” and raises a reminder when the date comes.</div>
+    </div></div>`:'';
   const complicationsSection=p.id?`
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
@@ -4874,6 +4884,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <button type="button" class="btn-cancel" style="width:auto;background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="correctApptAppliance('${htmlSafe(apptId||'')}','${htmlSafe(appt.patient_id||p.id||'')}')">✎ Edit / correct appliance</button>
       <div class="ap-hint" style="margin-top:5px;">Fix an appliance entered by mistake — opens the appliance picker directly, without the follow-up planning below.</div>
     </div></div>`}
+    ${reversalPlanSection}
     ${complicationsSection}
 
     <div id="of-followup-planning-wrap">
@@ -5449,6 +5460,10 @@ async function saveOutcomeFollowup(apptId,patientId){
   const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
+  // The proposed reversal date, only when the field was offered (a reversal-
+  // eligible patient) — so an appointment that never showed it can never clear
+  // an existing plan.
+  {const pr=document.getElementById('of-proprev');if(pr)pending.proposedReversal=pr.value||'';}
 
   /* A patient who was seen has to leave a record of what was used, one card per
      stoma. Anything other than Seen has nothing to record, so it saves here. */
@@ -5511,6 +5526,8 @@ async function commitOutcomeFollowup(v,stomaRows){
       followup_status:followupStatus
     };
     if(status==='attended')updatePayload.followup_type='follow_up';
+    // Save the proposed reversal date only when the Seen card offered the field.
+    if('proposedReversal' in v)updatePayload.proposed_reversal_date=v.proposedReversal||null;
     const{error:pErr}=await SB.from('patients').update(updatePayload).eq('id',patientId);
     if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
   }
