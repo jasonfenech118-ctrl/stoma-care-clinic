@@ -4843,17 +4843,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   // The running complications, read fresh so the section opens with what is on
   // the card (the appointment join may not carry the column).
   let complicationsNow=[];
-  let fullPat=p;   // the full patient record, for fields the appointment join may not carry
-  if(p.id){try{const fp=(await fetchPatientById(p.id)).data;if(fp)fullPat=fp;complicationsNow=parseComplications(fullPat);}catch(e){complicationsNow=parseComplications(p);}}
-  // Planning a reversal from the Seen card: only offered to a patient who could
-  // still have one (a present stoma, not already reversed / deceased / moved on).
-  const reversalPlanSection=(!isDntuEditMode&&typeof canPlanReversal==='function'&&canPlanReversal(fullPat))?`
-    <div class="edit-seen-section">Reversal planning</div>
-    <div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">
-      <label>Proposed reversal surgery date <span style="font-weight:400;color:var(--muted);">(leave blank if none planned)</span></label>
-      <input type="date" id="of-proprev" value="${htmlSafe(fullPat.proposed_reversal_date||'')}"/>
-      <div class="ap-hint" style="margin-top:4px;">Shows on the record as “Reversal planned for” and raises a reminder when the date comes.</div>
-    </div></div>`:'';
+  if(p.id){try{complicationsNow=parseComplications((await fetchPatientById(p.id)).data||p);}catch(e){complicationsNow=parseComplications(p);}}
   const complicationsSection=p.id?`
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
@@ -4884,7 +4874,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <button type="button" class="btn-cancel" style="width:auto;background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="correctApptAppliance('${htmlSafe(apptId||'')}','${htmlSafe(appt.patient_id||p.id||'')}')">✎ Edit / correct appliance</button>
       <div class="ap-hint" style="margin-top:5px;">Fix an appliance entered by mistake — opens the appliance picker directly, without the follow-up planning below.</div>
     </div></div>`}
-    ${reversalPlanSection}
     ${complicationsSection}
 
     <div id="of-followup-planning-wrap">
@@ -5460,10 +5449,6 @@ async function saveOutcomeFollowup(apptId,patientId){
   const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
-  // The proposed reversal date, only when the field was offered (a reversal-
-  // eligible patient) — so an appointment that never showed it can never clear
-  // an existing plan.
-  {const pr=document.getElementById('of-proprev');if(pr)pending.proposedReversal=pr.value||'';}
 
   /* A patient who was seen has to leave a record of what was used, one card per
      stoma. Anything other than Seen has nothing to record, so it saves here. */
@@ -5526,8 +5511,6 @@ async function commitOutcomeFollowup(v,stomaRows){
       followup_status:followupStatus
     };
     if(status==='attended')updatePayload.followup_type='follow_up';
-    // Save the proposed reversal date only when the Seen card offered the field.
-    if('proposedReversal' in v)updatePayload.proposed_reversal_date=v.proposedReversal||null;
     const{error:pErr}=await SB.from('patients').update(updatePayload).eq('id',patientId);
     if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
   }
@@ -10711,13 +10694,24 @@ function stomaOutcomesPanelHTML(pat){
       <div class="psm-sec-head"><h3>Outcome</h3><span class="cr-out ${outCls}">${htmlSafe(outText)}</span></div>
       <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
         ${pat.reversal_date?od('Reversal date',pat.reversal_date):''}
-        ${pat.proposed_reversal_date?od('Reversal planned for',pat.proposed_reversal_date):''}
         ${pat.deceased_date?od('Date of death',pat.deceased_date):''}
         ${(pat.followup_status_effective_date&&!pat.deceased_date&&!pat.reversal_date)?od('Effective from',pat.followup_status_effective_date):''}
-        ${(!pat.reversal_date&&!pat.proposed_reversal_date&&!pat.deceased_date)?oi('Status',outText,true):''}
+        ${(!pat.reversal_date&&!pat.deceased_date)?oi('Status',outText,true):''}
         ${pat.followup_status_reason?oi('Reason',pat.followup_status_reason,true):''}
       </dl></div>
     </div>
+    ${(pat.id&&typeof canPlanReversal==='function'&&canPlanReversal(pat))?`
+    <div>
+      <div class="psm-sec-head"><h3>Reversal planning</h3></div>
+      <div class="psm-card">
+        <label style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);">Proposed reversal surgery date</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px;">
+          <input type="date" id="cro-proprev" value="${htmlSafe(pat.proposed_reversal_date||'')}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:#fff;color:var(--navy);"/>
+          <button type="button" class="pf-add-btn" onclick="saveProposedReversal('${pat.id}')">Save</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Raises a reminder and lists the patient on the Handover on that day. Leave blank and Save to clear the plan.</div>
+      </div>
+    </div>`:''}
     ${stomaLines?`<div><div class="psm-sec-head"><h3>Stomas</h3></div>${stomaLines}</div>`:''}`;
 }
 /* ── outcome change on the record page ───────────────────────────────────────
@@ -10954,6 +10948,21 @@ async function onCardAddComplication(patientId){
   if(!list)return;
   const host=document.getElementById('psm-outcomes');
   if(host&&clrState.patient)host.innerHTML=stomaOutcomesPanelHTML(clrState.patient);
+}
+// Set / change / clear the proposed reversal surgery date from the Outcome tab.
+// On its day it raises a reminder and lists the patient on the Handover.
+async function saveProposedReversal(patientId){
+  const el=document.getElementById('cro-proprev');
+  const v=el?String(el.value||'').trim():'';
+  const{error,dropped}=await updatePatientTolerant(patientId,{proposed_reversal_date:v||null});
+  if(error){alert('Could not save the proposed reversal date: '+(error.message||error));return;}
+  if(dropped&&dropped.includes('proposed_reversal_date')){
+    alert('The proposed reversal date column is not in the database yet.\n\nRun sql/add-registry-columns.sql once in Supabase, then try again.');return;}
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.proposed_reversal_date=v||null;
+  try{await refreshReminders();}catch(e){}
+  const host=document.getElementById('psm-outcomes');
+  if(host&&clrState.patient)host.innerHTML=stomaOutcomesPanelHTML(clrState.patient);
+  alert(v?`✅ Proposed reversal surgery date set to ${fmtShortDate(v)}. A reminder and a Handover row appear on that day.`:'Proposed reversal date cleared.');
 }
 // Add a complication from the Seen / appointment card. Saves at once and shows
 // it in the section without disturbing the rest of the outcome form.
