@@ -8310,7 +8310,9 @@ function renderPatientDirectory(){
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
     const incompleteCls=patientIsIncomplete(p)?' pd-row-incomplete':' pd-row-complete';
-    const datesBtn=patientDatesAvailable?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
+    // A deceased record is finalised: hide Edit so it is not changed. Correcting a
+    // status set in error is done from the record's Outcome tab (Back to follow-up).
+    const datesBtn=(patientDatesAvailable&&p.status!=='deceased')?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
     const middle=outcomeView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
@@ -9805,12 +9807,15 @@ async function openPatientDatesModal(patientId){
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} — every field can be changed, including the date of birth. Leave anything that does not apply blank.</div>
     ${patientFormHTML(pat,'pcd')}
     <div id="pcd-error"></div>
-    <div class="mact" style="justify-content:space-between;">
-      <button class="btn-cancel" style="background:#fef2f2;color:#b91c1c;border-color:#fecaca;" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')">🗑 Delete patient</button>
-      <div style="display:flex;gap:8px;">
+    <div class="mact" style="justify-content:flex-end;gap:8px;">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')" hidden>Save Patient</button>
-      </div></div>`;
+      </div>
+    <div style="text-align:center;margin-top:14px;">
+      <button type="button" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')"
+        style="background:none;border:none;color:#b91c1c;opacity:.6;font-size:11px;padding:4px 6px;text-decoration:underline;cursor:pointer;font-family:inherit;"
+        title="Delete this patient permanently">Delete patient</button>
+    </div>`;
   openMo();
   renumberStomaRows('pcd');
   onPatientFormOutcome('pcd');
@@ -12243,7 +12248,7 @@ async function openPatientRecord(patientId){
       <button class="psm-btn" onclick="goRegistry()">${psmIc('chevleft')} Back</button>
       <div class="psm-foot-right">
         ${pat.is_inpatient?`<button class="psm-btn" onclick="openDischargeLetterFor('${patientId}')">${psmIc('mail')} Discharge letter</button>`:''}
-        <button class="psm-btn psm-btn-primary" onclick="openPatientDatesModal('${patientId}')">${psmIc('pencil')} Edit patient</button>
+        ${derivedFollowupStatus(pat)==='deceased'?'':`<button class="psm-btn psm-btn-primary" onclick="openPatientDatesModal('${patientId}')">${psmIc('pencil')} Edit patient</button>`}
       </div>
     </footer>
   </div></div>`;
