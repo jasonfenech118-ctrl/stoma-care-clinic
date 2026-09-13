@@ -4040,22 +4040,16 @@ function outcomeFollowupChangeCheck(month,year,followupStatus){
      Core staff may deliberately override this and rebook into the same month — including the
      current month — by ticking "Rebook in the same month". That override is not offered when
      the follow-up is left on the Common list. */
-  const sameMonth=initialMonth&&initialMonth===newMonth;
+  /* Editing an existing appointment: keeping the same follow-up due month (and
+     year) is a valid plan and must never block the edit. The old rule forced a
+     forward move and demanded a "Rebook in the same month" tick, which wrongly
+     blocked ordinary amendments — a complication, an appliance, a note — any
+     time the month was left unchanged. Keeping it is now simply reported inline;
+     a genuine clash with another booked appointment is caught at booking time. */
+  const sameMonth=!!(initialMonth&&initialMonth===newMonth);
   const sameYear=!initialYear||initialYear===newYear;
   if(sameMonth&&sameYear){
-    const owner=document.getElementById('of-owner')?.value||'Common';
-    const allowSame=!!document.getElementById('of-allow-same-month')?.checked;
-    if(allowSame&&isCoreStaffOwner(owner)){
-      return {ok:true,bypass:false,sameMonth:true,message:''};
-    }
-    const yrText=initialYear?` ${initialYear}`:'';
-    return {
-      ok:false,
-      sameMonth:true,
-      message:isCoreStaffOwner(owner)
-        ?`The due date is still ${followupMonthName(initialMonth)}${yrText}. Choose a different month or year, or tick "Rebook in the same month" to keep it deliberately.`
-        :`Please choose a different follow-up due month or year before saving. The due date is still ${followupMonthName(initialMonth)}${yrText}. Same-month rebooking is only available when the follow-up is allocated to a core nurse.`
-    };
+    return {ok:true,bypass:false,sameMonth:true,message:''};
   }
 
   return {ok:true,bypass:false,message:''};
@@ -4115,7 +4109,7 @@ function updateFollowupChangeWarning(){
   }else if(check.ok){
     note.className='registry-lookup-note found';
     if(check.sameMonth){
-      note.innerHTML=`Same-month rebooking confirmed by core staff: the patient stays due in <strong>${htmlSafe(followupMonthName(month))} ${htmlSafe(year)}</strong>.`;
+      note.innerHTML=`Follow-up due month kept at <strong>${htmlSafe(followupMonthName(month))} ${htmlSafe(year)}</strong>.`;
     }else if(initialMonth&&initialYear){
       note.innerHTML=`Follow-up planning reviewed: month changed from <strong>${htmlSafe(followupMonthName(initialMonth))} ${htmlSafe(initialYear)}</strong> to <strong>${htmlSafe(followupMonthName(month))} ${htmlSafe(year)}</strong>.`;
     }else{
@@ -4890,10 +4884,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${outcomeYearOptions(defaultYear)}
       </select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month * — different month or year required when marking as Seen'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
+      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month *'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
         <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
-      </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">${isDntuEditMode?'DNTU correction: confirm or change the follow-up due month if needed. A different month is not required in this DNTU form.':'Clinical safety: choose a different follow-up due month before saving, so the next appointment is actively planned.'}</div></div>
-      <div class="fg" style="grid-column:1 / -1;" id="of-same-month-wrap">
+      </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">${isDntuEditMode?'DNTU correction: confirm or change the follow-up due month if needed. A different month is not required in this DNTU form.':'Set the follow-up due month. Keeping the current month is allowed — the edit is not blocked.'}</div></div>
+      <div class="fg" style="grid-column:1 / -1;display:none;" id="of-same-month-wrap">
         <label class="same-month-toggle"><input type="checkbox" id="of-allow-same-month" onchange="updateFollowupChangeWarning()"/><span>Rebook in the <strong>same month</strong> — core staff only</span></label>
         <div class="dntu-note" id="of-same-month-hint"></div>
       </div>
@@ -5441,14 +5435,9 @@ async function saveOutcomeFollowup(apptId,patientId){
   if(!date||!slot){alert('Please fill in appointment date and time.');return;}
   if(!isNewCase&&!(isDntuEditMode&&dntuTarget===3)&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
 
-  if(!isNewCase&&!isDntuEditMode&&status==='attended'){
-    const planningCheck=outcomeFollowupChangeCheck(month,year,followupStatus);
-    if(!planningCheck.ok){
-      updateFollowupChangeWarning();
-      alert(planningCheck.message);
-      return;
-    }
-  }
+  // Keeping the follow-up due month unchanged no longer blocks an edit, so there
+  // is no blocking alert here — the follow-up state is shown inline as it changes
+  // (updateFollowupChangeWarning). Month/year presence is already checked above.
   if(isDntuEditMode&&dntuTarget>0&&!validateMissingDntuFieldsBeforeSave(dntuTarget))return;
 
   const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
