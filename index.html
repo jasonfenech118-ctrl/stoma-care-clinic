@@ -10747,7 +10747,7 @@ function croStatusPanelHTML(pat){
       :on?'This is the current status'
       :htmlSafe('Change to '+a.label.toLowerCase());
     return `<button type="button" class="pf-sbtn ${a.cls}${on&&!needDate?' is-on':''}"
-      ${disabled?'disabled':''}${needDate?' style="box-shadow:0 0 0 2px #f0c47a;"':''} title="${title}"
+      ${disabled?'disabled':''}${needDate?' style="background:#fff7ed;color:#9a3412;border-color:#f0a94a;box-shadow:0 0 0 2px #f0c47a;font-weight:800;"':''} title="${title}"
       onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${suffix}</button>`;
   }).join('');
   // A patient-level status set by mistake can be cleared straight back to
@@ -10756,18 +10756,19 @@ function croStatusPanelHTML(pat){
   // patient (its date lives on the stoma).
   const canClear=!!(pat.deceased_date||pat.discharged_gozo_date||pat.relocated_overseas_date);
   const clearBtn=canClear?`<button type="button" class="pf-sbtn" style="color:#0d7377;border-color:#b5e0dd;background:#f0faf9;" title="Clear a status set by mistake and return to follow-up" onclick="croAskClear()"><span aria-hidden="true">↺</span>Back to follow-up</button>`:'';
-  const note=cur==='deceased'
-    ?`<div class="registry-lookup-note" style="margin:8px 0 0;">This patient reads as <strong>deceased</strong>. If that was a mistake, press <strong>Back to follow-up</strong>, or pick the status that is correct — the date of death is cleared when you do. A stoma reversal already on file stays on the operation history.</div>`
-    :(cur==='reversed'&&!canClear)
-    ?`<div class="registry-lookup-note" style="margin:8px 0 0;">This patient is <strong>reversed</strong>. If they are having another stoma, add it from <strong>Edit patient</strong> — that puts them back in follow-up.</div>`
+  // When the current status has no date on file, say so plainly and point at the
+  // exact button to press — a missing date should never be easy to miss.
+  const missingDateAction=PF_STATUS_ACTIONS.find(a=>cur===a.key&&a.key!=='reversed'&&!croStatusDate(pat,a.key));
+  const datePrompt=missingDateAction
+    ?`<div class="registry-lookup-note" style="margin:8px 0 0;background:#fff7ed;border-color:#f0c47a;color:#9a3412;font-weight:700;">⚠ No <strong>${htmlSafe(missingDateAction.dateLabel.toLowerCase())}</strong> is on file. Tap the highlighted <strong>${htmlSafe(missingDateAction.label)} · add date</strong> button above to record it.</div>`
     :'';
   return `<div>
-      <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Asks first, then the date</span></div>
+      <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Tap a status, then its date</span></div>
       <div class="psm-card">
         <div class="pf-sbtns">${btns}${clearBtn}</div>
         ${patientStomaList(pat).some(x=>x.present)?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;">A stoma <strong>reversal or closure</strong> is recorded on the stoma below, not here.</div>`:''}
+        ${datePrompt}
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
-        ${note}
       </div>
     </div>`;
 }
