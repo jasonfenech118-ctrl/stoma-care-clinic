@@ -6574,17 +6574,44 @@ async function loadBookingCalendar(){
     const{rows:appts}=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').gte('appt_date',first).lte('appt_date',last));
     bookCalState.bookings=appts||[];
     bookCalState.index=await loadClinicStaffingIndex(first,last);
+    // Make sure the staff list is loaded so the nurse's roster resolves.
+    if((!staffList||!staffList.length)&&typeof loadStaff==='function'){try{await loadStaff();}catch(e){}}
+    bookCalState.ownerStaff=bcOwnerStaff();
     renderBookingCalendar();
   }catch(e){root.innerHTML='<div class="report-note">Could not load the booking calendar: '+htmlSafe(String(e&&e.message||e))+'</div>';}
 }
+const BC_WORK_CODES=['D','OT','TIL'];
+// Resolve the follow-up owner to the roster staff whose shift pattern is that
+// owner (prefer an exact first-name match so 'Jacqueline' finds the patterned
+// nurse, not a same-first-name namesake).
+function bcOwnerStaff(){
+  const o=bookCalState.calOwner;
+  if(o==='Common')return null;
+  const list=staffList||[];
+  return list.find(st=>String(st.full_name||'').trim().toLowerCase()===o.toLowerCase())
+      || list.find(st=>normaliseFollowupOwner(st.full_name)===o)
+      || (typeof findCoreStaffByName==='function'?findCoreStaffByName(o):null);
+}
+// The roster code for the selected nurse on a day — computed exactly like the
+// Monthly Roster paints each cell, from the same fresh roster read.
+function bcDayCode(ds){
+  if(bookCalState.calOwner==='Common')return isCommonDay(ds)?'D':'';
+  const staff=bookCalState.ownerStaff;
+  const idx=bookCalState.index;
+  if(!staff||!idx)return '';
+  const key=`${staff.id}_${ds}`;
+  const til=idx.tilByKey[key];
+  if(til?.off)return 'TOL';
+  if(til?.in)return 'TIL';
+  if(idx.coreOtByKey[key])return 'OT';
+  const entry=idx.rosterByKey[key];
+  const status=entry?entry.status:defaultCode(staff,ds);
+  return CODE_MAP[status]||'D';
+}
 function bcDayIsOpen(ds){
-  // Open = the nurse is working that day (her off days are greyed), read from her
-  // roster / working pattern. The Common weekday list runs Monday to Saturday.
   if(bookCalState.calOwner==='Common')return isCommonDay(ds);
-  const staff=ownerStaffForCapacity(bookCalState.calOwner);
-  if(!staff)return isCommonDay(ds);          // unknown nurse → weekday default
-  if(!bookCalState.index)return false;
-  return isNurseWorkingClinicDay(staff,ds,bookCalState.index);
+  if(!bookCalState.ownerStaff)return isCommonDay(ds);   // unknown nurse → weekday default
+  return BC_WORK_CODES.includes(bcDayCode(ds));
 }
 function renderBookingCalendar(){
   const root=document.getElementById('bookcal-root');
@@ -6607,16 +6634,19 @@ function bcMonthHTML(){
   for(let i=0;i<firstDow;i++)cells+=`<div class="bc-day blank"></div>`;
   for(let d=1;d<=dim;d++){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const code=bookCalState.calOwner==='Common'?'':bcDayCode(ds);
     const open=bcDayIsOpen(ds);
-    if(!open){cells+=`<div class="bc-day off"><span class="bc-dnum">${d}</span></div>`;continue;}
+    const codeTag=code?`<span style="position:absolute;top:3px;right:4px;font-size:8px;font-weight:900;color:${open?'#0d7377':'#b91c1c'};">${htmlSafe(code)}</span>`:'';
+    if(!open){cells+=`<div class="bc-day off"><span class="bc-dnum">${d}</span>${codeTag}</div>`;continue;}
     const n=bcDayCounts(ds),cap=BC_WINDOW.length;
     const bg=bcFillColor(n);
     cells+=`<div class="bc-day" data-date="${ds}" style="background:${bg};" onclick="bcOpenDay('${ds}')">
-      <span class="bc-dnum">${d}</span>
+      <span class="bc-dnum">${d}</span>${codeTag}
       <span class="bc-fill" style="background:rgba(255,255,255,.75);">${n}/${cap}</span></div>`;
   }
+  const nurse=bookCalState.calOwner==='Common'?'Common weekday list — Monday to Saturday':htmlSafe((bookCalState.ownerStaff?.full_name||bookCalState.calOwner)+' — working days open (D/OT/TIL), off days greyed');
   return `<div class="bc-head"><h4>${followupMonthName(month)} ${year}</h4>
-      <span class="dntu-note" style="margin:0;">${bookCalState.calOwner==='Common'?'Common weekday list — Monday to Saturday':htmlSafe(bookCalState.calOwner+' — working days open, off days greyed')}</span></div>
+      <span class="dntu-note" style="margin:0;">${nurse}</span></div>
     <div class="bc-grid">${dows.map(d=>`<div class="bc-dow">${d}</div>`).join('')}${cells}</div>
     <div class="bc-legend">
       <span><i style="background:${bcFillColor(0)};border:1px solid #ccc;"></i>free</span>
