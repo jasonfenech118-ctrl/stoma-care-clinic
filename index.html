@@ -17569,7 +17569,14 @@ const MAP_ALIAS_EXTRA={
   qrendi:'Qrendi', ilqrendi:'Qrendi',
   dingli:'Dingli', hadingli:'Dingli',
   iklin:'Iklin', liklin:'Iklin',
-  pembroke:'Pembroke'
+  pembroke:'Pembroke',
+  // Common misspellings / short forms seen in the registry.
+  stavenera:'Santa Venera',
+  birzebbugia:'Birżebbuġa', birzebugia:'Birżebbuġa',
+  poala:'Paola', paolo:'Paola',
+  sanjulians:"San Ġiljan (St Julian's)", sanjulian:"San Ġiljan (St Julian's)",
+  mscala:'Marsaskala',
+  stalucia:'Santa Luċija', stalucija:'Santa Luċija'
 };
 /* Maltese place names carry articles — Ħal Qormi, Ir-Rabat, Tas-Sliema. A
    prefix is only dropped when what is left is itself a known locality, so
@@ -17595,25 +17602,43 @@ const MAP_LOOKUP=(function(){
   Object.keys(MAP_ALIAS_EXTRA).forEach(k=>{m[k]=MAP_ALIAS_EXTRA[k];});
   return m;
 })();
-// Which council a recorded locality belongs to, or null when it cannot be placed.
-function mapAreaFor(locality){
-  const raw=fixText(String(locality==null?'':locality));
-  const k=mapKey(raw);
+// A direct lookup: the exact key, then with a Maltese article prefix stripped.
+function mapDirect(k){
   if(!k)return null;
   if(MAP_LOOKUP[k])return MAP_LOOKUP[k];
-  // "St Paul's Bay (San Pawl il-Baħar)" — try each half on its own.
-  const m=raw.match(/^([^()]+)\(([^()]+)\)\s*$/);
-  if(m){
-    for(const part of [m[2],m[1]]){
-      const a=mapAreaFor(part);
-      if(a)return a;
-    }
-  }
   for(let i=0;i<MAP_PREFIXES.length;i++){
     const p=MAP_PREFIXES[i];
     if(k.length>p.length+2&&k.indexOf(p)===0){
       const rest=k.slice(p.length);
       if(MAP_LOOKUP[rest])return MAP_LOOKUP[rest];
+    }
+  }
+  return null;
+}
+// Which council a recorded locality belongs to, or null when it cannot be placed.
+function mapAreaFor(locality){
+  const raw=fixText(String(locality==null?'':locality));
+  const k=mapKey(raw);
+  if(!k)return null;
+  let a=mapDirect(k);
+  if(a)return a;
+  // "St Paul's Bay (San Pawl il-Baħar)" — try each half on its own.
+  const m=raw.match(/^([^()]+)\(([^()]+)\)\s*$/);
+  if(m){
+    for(const part of [m[2],m[1]]){
+      const aa=mapAreaFor(part);
+      if(aa)return aa;
+    }
+  }
+  // Last resort — an address like "Triq X, Town": scan its words for a known
+  // locality, preferring the ones nearest the end (Maltese addresses put the
+  // town last). Only reached once the whole string has failed to match, so a
+  // plain locality is never affected.
+  const words=raw.split(/[\s,]+/).filter(Boolean);
+  for(let start=words.length-1;start>=0;start--){
+    for(let len=1;len<=Math.min(4,words.length-start);len++){
+      const ca=mapDirect(mapKey(words.slice(start,start+len).join(' ')));
+      if(ca)return ca;
     }
   }
   return null;
