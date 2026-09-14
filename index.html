@@ -5018,9 +5018,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         <div id="of-exact-wrap" hidden>
           <div class="edit-seen-section">Book an exact appointment</div>
           <div class="edit-seen-grid">
-            <div class="fg"><label>Date</label><input type="date" id="of-exact-date"/></div>
-            <div class="fg"><label>Time</label><input type="time" id="of-exact-slot"/></div>
-            <div class="fg" style="grid-column:1 / -1;"><label>Nurse / Column</label><select id="of-exact-nurse">${nurseOptions}</select></div>
+            <div class="fg"><label>Date</label><input type="date" id="of-exact-date" onchange="esExactAvailability()"/></div>
+            <div class="fg"><label>Time</label><input type="time" id="of-exact-slot" onchange="esExactAvailability()"/></div>
+            <div class="fg" style="grid-column:1 / -1;"><label>Nurse / Column</label><select id="of-exact-nurse" onchange="esExactAvailability()">${nurseOptions}</select></div>
+            <div class="fg" style="grid-column:1 / -1;"><div id="of-exact-avail" class="dntu-note" style="margin:2px 0 6px;"></div></div>
             <div class="fg" style="grid-column:1 / -1;"><button type="button" class="btn-save" style="width:auto;" onclick="esBookExact('${jsSafe(String(appt.patient_id||''))}')">Book this appointment</button></div>
           </div>
           <div id="of-exact-note" class="dntu-note" style="margin-top:6px;">An exact appointment is separate from the due-month plan above — it books a real slot in the daily clinic straight away.</div>
@@ -5141,6 +5142,36 @@ function esNextChange(){
     'status-review':'The follow-up status needs a clinical decision — set it under Follow-up status above.'
   };
   if(note)note.textContent=notes[v]||'';
+  if(v==='book-exact')esExactAvailability();
+}
+/* Live capacity hint for the exact booking: how full the chosen day's whole
+   clinic is, and whether the exact time + column is already taken. Reuses the
+   day-availability the rebooking picker uses, so the figures match the diary. */
+async function esExactAvailability(){
+  const host=document.getElementById('of-exact-avail');
+  if(!host)return;
+  const date=document.getElementById('of-exact-date')?.value||'';
+  const slot=String(document.getElementById('of-exact-slot')?.value||'').slice(0,5);
+  const nurse=document.getElementById('of-exact-nurse')?.value||'common';
+  if(!date){host.textContent='';return;}
+  host.textContent='Checking clinic availability…';
+  try{
+    const day=(await getClinicDayAvailability([date],'Common'))[date]||{booked:0,capacity:0};
+    const free=Math.max(0,day.capacity-day.booked);
+    let msg=day.capacity>0
+      ?`${free} of ${day.capacity} slots free on ${fmtShortDate(date)} · ${day.booked} booked.`
+      :`No clinic runs on ${fmtShortDate(date)} — choose a clinic day.`;
+    if(slot&&day.capacity>0){
+      const{data}=await SB.from('appointments').select('assigned_to,bank_staff_id,status')
+        .eq('appt_date',date).eq('appt_slot',slot).neq('status','cancelled');
+      const rows=data||[];
+      const clash=nurse.startsWith('core:')?rows.some(r=>String(r.assigned_to||'')===nurse.replace('core:',''))
+        :nurse.startsWith('bank:')?rows.some(r=>String(r.bank_staff_id||'')===nurse.replace('bank:',''))
+        :rows.some(r=>!r.assigned_to&&!r.bank_staff_id);
+      msg+=clash?`  ⚠ ${slot} in that column is already taken.`:`  ${slot} in that column is free.`;
+    }
+    host.textContent=msg;
+  }catch(e){host.textContent='';}
 }
 /* Shows any future appointment the patient already has, so a second one is not
    booked by accident. Read-only, with a Change action onto that appointment. */
@@ -5180,6 +5211,7 @@ async function esBookExact(patientId){
   setNote(`Booked ${fmtShortDate(date)} at ${String(slot).slice(0,5)}.`,false);
   invalidateAvailabilityCaches();
   esLoadExistingAppointments(patientId,esState?esState.apptId:'');
+  esExactAvailability();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 /* ---- what was used, stoma by stoma ------------------------------------------
