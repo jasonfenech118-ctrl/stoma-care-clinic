@@ -6397,9 +6397,45 @@ function followupMonthName(m){
   const names={1:'January',2:'February',3:'March',4:'April',5:'May',6:'June',7:'July',8:'August',9:'September',10:'October',11:'November',12:'December'};
   return names[Number(m)]||'No Due Month';
 }
+let followupMonthDefaulted=false;
 function ensureFollowupDefaults(){
   const y=document.getElementById('followup-year');
   if(y && !y.value)y.value=String(new Date().getFullYear());
+  // Show the current month in the Due Month bar by default (once), so the bar
+  // matches the calendar; the nurse can still switch to another month or "All".
+  const m=document.getElementById('followup-month');
+  if(m && !followupMonthDefaulted){followupMonthDefaulted=true;m.value=String(new Date().getMonth()+1);}
+}
+/* Free booking-window (09:00–11:30) slots on Sundays and public holidays for the
+   selected nurse over the period, counting her as working when the roster says
+   working, overtime, or TIL-in. For Common/All it is the whole nurse-led clinic. */
+async function followupSundayHolidayAvailability(owner,year,month){
+  const months=month?[Number(month)]:[1,2,3,4,5,6,7,8,9,10,11,12];
+  const days=[];
+  months.forEach(m=>daysInMonthMatching(year,m,isClinicDay).forEach(ds=>days.push(ds)));
+  if(!days.length)return {free:0,capacity:0,booked:0,days:0};
+  if((!staffList||!staffList.length)&&typeof loadStaff==='function'){try{await loadStaff();}catch(e){}}
+  const start=days[0],end=days[days.length-1];
+  const index=await loadClinicStaffingIndex(start,end);
+  const{rows:appts}=await fetchAllRows(()=>SB.from('appointments').select('appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name)').in('appt_date',days));
+  const daySet=new Set(days);
+  const staff=(owner&&owner!=='Common'&&owner!=='All Patients')?ownerStaffForCapacity(owner):null;
+  const WIN=BC_WINDOW;
+  let cap=0,booked=0,workDays=0;
+  days.forEach(ds=>{
+    const cols=staff?(isNurseWorkingClinicDay(staff,ds,index)?1:0):countClinicNursesForDate(ds,index);
+    if(cols>0)workDays++;
+    cap+=cols*WIN.length;
+  });
+  (appts||[]).forEach(a=>{
+    if(!daySet.has(a.appt_date)||String(a.status||'')==='cancelled')return;
+    if(!WIN.includes(String(a.appt_slot||'').slice(0,5)))return;
+    if(staff){
+      const core=a.bank_staff&&findCoreStaffByName(a.bank_staff.full_name);
+      if(String(a.assigned_to||'')===String(staff.id)||(core&&String(core.id)===String(staff.id)))booked++;
+    }else booked++;
+  });
+  return {free:Math.max(0,cap-booked),capacity:cap,booked,days:workDays};
 }
 function setFollowupOwner(owner){
   selectedFollowupOwner=owner;
@@ -7441,6 +7477,7 @@ async function loadStaffAudit(){
   const attended=kpiAppts.filter(a=>a.status==='attended').length;
   const cancelled=kpiAppts.filter(a=>a.status==='cancelled').length;
   const dntu=kpiAppts.filter(a=>a.status==='did_not_attend').length;
+  const avail=await followupSundayHolidayAvailability(selectedFollowupOwner,year,month);
   const stats=document.getElementById('followup-stats');
   if(stats){
     stats.innerHTML=`
@@ -7448,7 +7485,7 @@ async function loadStaffAudit(){
       <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
       <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
       <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
-      <div class="sbox"><div class="sl">List Selection</div><div class="sv" style="font-size:24px;">${followupStatus==='all'?'All':followupStatusText(followupStatus)}</div><div class="ss">${patients.length} patient${patients.length!==1?'s':''}</div></div>`;
+      <div class="sbox"><div class="sl">Available Slots</div><div class="sv" style="color:var(--teal)">${avail.free}</div><div class="ss">Sun &amp; public holidays · ${htmlSafe(month?followupMonthName(month):String(year))}</div></div>`;
   }
 
   if(!tbody)return;
