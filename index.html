@@ -7431,15 +7431,20 @@ async function loadStaffAudit(){
     .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`))
     .forEach(a=>{if(!nextByPatient[a.patient_id])nextByPatient[a.patient_id]=a;});
 
-  const total=appts.length;
-  const booked=appts.filter(a=>a.status==='booked').length;
-  const attended=appts.filter(a=>a.status==='attended').length;
-  const cancelled=appts.filter(a=>a.status==='cancelled').length;
-  const dntu=appts.filter(a=>a.status==='did_not_attend').length;
+  // KPIs reflect the owner's appointment activity for the whole YEAR, independent
+  // of the due-month filter (which scopes only the patient list below). Otherwise
+  // picking a month zeroed the counts even though patients had been seen.
+  const kpiOwnerIds=(selectedFollowupOwner==='All Patients'?allPatients:allPatients.filter(p=>(p.followup_owner||'Common')===selectedFollowupOwner)).map(p=>p.id).filter(Boolean);
+  const kpiAppts=kpiOwnerIds.length?await getAppointmentRowsForPatients(kpiOwnerIds,year,''):[];
+  const total=kpiAppts.length;
+  const booked=kpiAppts.filter(a=>a.status==='booked').length;
+  const attended=kpiAppts.filter(a=>a.status==='attended').length;
+  const cancelled=kpiAppts.filter(a=>a.status==='cancelled').length;
+  const dntu=kpiAppts.filter(a=>a.status==='did_not_attend').length;
   const stats=document.getElementById('followup-stats');
   if(stats){
     stats.innerHTML=`
-      <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${total}</div><div class="ss">${selectedFollowupOwner} · ${year}${month?' · '+followupMonthName(month):''}</div></div>
+      <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${total}</div><div class="ss">${selectedFollowupOwner} · ${year}</div></div>
       <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
       <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
       <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
