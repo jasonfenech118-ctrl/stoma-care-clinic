@@ -7564,20 +7564,17 @@ async function printBookedPatients(){
 /* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
    printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
    set the printer's stock to 50 x 25 mm and print at 100% (no scaling). */
-function printPatientLabels(){
-  const s=fpView;
-  const list=(s.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
-  if(!list.length){alert('No booked patients to print labels for.');return;}
-  const labels=list.map(a=>{
-    const p=a.patients||{};
-    const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';
-    return `<div class="label">
-      <div class="l-nm">${htmlSafe(nm)}</div>
-      <div class="l-id">${htmlSafe(p.id_card||'')}</div>
-      <div class="l-dt">${htmlSafe(fmtShortDate(a.appt_date))} · ${htmlSafe(String(a.appt_slot||'').slice(0,5))}</div>
-      <div class="l-nu">${htmlSafe(appointmentNurseLabel(a))}</div>
-    </div>`;
-  }).join('');
+function patientLabelHTML(a){
+  const p=a.patients||{};
+  const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';
+  return `<div class="label">
+    <div class="l-nm">${htmlSafe(nm)}</div>
+    <div class="l-id">${htmlSafe(p.id_card||'')}</div>
+    <div class="l-dt">${htmlSafe(fmtShortDate(a.appt_date))} · ${htmlSafe(String(a.appt_slot||'').slice(0,5))}</div>
+    <div class="l-nu">${htmlSafe(appointmentNurseLabel(a))}</div>
+  </div>`;
+}
+function printLabelsWindow(inner){
   const w=window.open('','_blank');
   if(!w){alert('Please allow pop-ups to print the labels.');return;}
   w.document.write(`<html><head><title>Patient labels</title><style>
@@ -7587,8 +7584,20 @@ function printPatientLabels(){
     .label{width:50mm;height:25mm;padding:1.6mm 2.2mm;page-break-after:always;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#000;display:flex;flex-direction:column;justify-content:center;}
     .l-nm{font-weight:bold;font-size:11pt;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .l-id{font-size:9pt;margin-top:0.8mm;} .l-dt{font-size:9.5pt;font-weight:bold;margin-top:0.5mm;} .l-nu{font-size:8pt;color:#333;margin-top:0.4mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  </style></head><body onload="setTimeout(function(){window.focus();window.print();},250)">${labels}</body></html>`);
+  </style></head><body onload="setTimeout(function(){window.focus();window.print();},250)">${inner}</body></html>`);
   w.document.close();
+}
+// Bulk: one 50 x 25 mm label per already-booked patient (Zebra desktop printer).
+function printPatientLabels(){
+  const list=(fpView.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  if(!list.length){alert('No booked patients to print labels for.');return;}
+  printLabelsWindow(list.map(patientLabelHTML).join(''));
+}
+// A single label for one booked patient, printed on demand from the list.
+function printLabelForAppt(apptId){
+  const a=(fpView.booked||[]).find(x=>String(x.id)===String(apptId));
+  if(!a){alert('Could not find this booking to print a label.');return;}
+  printLabelsWindow(patientLabelHTML(a));
 }
 async function loadStaffAudit(){
   ensureFollowupDefaults();
@@ -7704,7 +7713,7 @@ async function loadStaffAudit(){
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(appointmentNurseLabel(a))}</td>
-      <td onclick="event.stopPropagation();"><div class="followup-actions"><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="editAppointment('${a.id}')">Edit</button><button class="ncb-btn" onclick="openFollowupHistory('${a.patient_id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
+      <td onclick="event.stopPropagation();"><div class="followup-actions"><button class="ncb-btn" style="background:#f3ecff;color:#6d28d9;" title="Print a 50x25mm label for this patient" onclick="printLabelForAppt('${a.id}')">🏷 Label</button><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="editAppointment('${a.id}')">Edit</button><button class="ncb-btn" onclick="openFollowupHistory('${a.patient_id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
     </tr>`;
   }).join('');
 }
