@@ -7579,16 +7579,19 @@ async function printBookingSheet(blank){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dObj=new Date(ds+'T12:00:00');
     const dowShort=dObj.toLocaleDateString('en-GB',{weekday:'short'});
-    const sun=isSunday(ds), hol=!!holidays[ds], off=bookedDayOff(ctx,ds), working=!off;
-    // Clinic day she works → bold red target; clinic day she is off → red header
-    // but faint slots; her off/rest days → grey; every other day of the working
-    // week (Saturdays included) → faint, so the eye is not distracted. Saturday
-    // is NOT a clinic day and gets no special colour of its own.
+    const sun=isSunday(ds), hol=!!holidays[ds];
+    // Does the owner take bookings on this day? A nurse owner's rostered working
+    // days; the Common weekday service Mon–Sat. Days she is OFF carry no sticker
+    // boxes at all (blank grey) so a label is never stuck on a day off by mistake
+    // — even a Sunday she is off. The days she IS on duty get a black dashed
+    // sticker box that stays clear on a black-and-white print; Sundays & public
+    // holidays she works also keep the red date column.
+    const duty=ctx.staff?!bookedDayOff(ctx,ds):isCommonDay(ds);
     let cls;
-    if(sun||hol)cls=working?'d-clinic':'d-clinic d-clinic-off';
-    else if(off)cls='d-off';
-    else cls='d-week';
-    const greyBlank=(cls==='d-off');
+    if(!duty)cls='d-off';
+    else if(sun||hol)cls='d-duty d-clinic';
+    else cls='d-duty';
+    const greyBlank=!duty;
     const cells=BC_WINDOW.map(t=>{
       const a=bySlot[ds+'|'+t];
       if(a){
@@ -7619,23 +7622,20 @@ async function printBookingSheet(blank){
       table.bs th.dt,table.bs td.dt{width:8%;} table.bs th.dy,table.bs td.dy{width:9%;}
       table.bs th.dt,table.bs th.dy{font-size:8.5pt;}
       table.bs td.dt{font-weight:800;font-size:13pt;} table.bs td.dy{font-weight:600;font-size:9pt;}
-      table.bs td.sl{color:#8f8f8f;font-size:7pt;font-style:italic;border:1px dashed #b4b4b4;}
       table.bs td.bk{border:1px solid #6fa382;background:#e9f8ef;padding:1mm 0.8mm;}
       table.bs td.bk .bn{display:block;font-weight:800;font-size:8pt;color:#0a5e33;line-height:1.08;}
       table.bs td.bk .bi{display:block;font-size:6.5pt;color:#333;font-family:monospace;}
       table.bs td.bk .bl{display:block;font-size:6.5pt;color:#555;}
       table.bs td.off{background:#e6e6e6;}
-      /* off / rest days — grey and quiet */
+      /* Days OFF — grey and blank: no sticker box at all, so nothing is stuck on
+         a day off (a Sunday she is off included). */
       table.bs tr.d-off td{background:#ededed;} table.bs tr.d-off td.dt,table.bs tr.d-off td.dy{background:#d6d6d6;color:#888;}
-      /* Sundays & public holidays she WORKS — the clinic days: bold red, and a
-         strong dashed contour on every slot so the label targets stand out. */
+      /* Days ON DUTY — a bold BLACK dashed sticker box with black wording, so it
+         reads clearly even on a black-and-white print and marks exactly where a
+         label may be stuck. */
+      table.bs tr.d-duty td.sl{color:#000;font-size:7pt;font-weight:700;font-style:normal;border:1.4px dashed #000;}
+      /* Sundays & public holidays she works — also flag the date column red. */
       table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{background:#f6ccd2;color:#a1172a;font-weight:800;}
-      table.bs tr.d-clinic td.sl{color:#c22a3d;font-weight:700;font-style:normal;border:1.6px dashed #cf3346;}
-      /* Clinic day she is OFF — keep the red header but fade the slots right back. */
-      table.bs tr.d-clinic-off td.sl{color:#e7b3ba;font-weight:400;font-style:italic;border:0.9px dashed #eecbd0;}
-      /* ordinary weekdays incl. Saturday — faint, so they do not distract the eye */
-      table.bs tr.d-week td.dt,table.bs tr.d-week td.dy{color:#9a9a9a;}
-      table.bs tr.d-week td.sl{color:#9a9a9a;border-color:#bcbcbc;}
      </style>
      <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">Booking sheet — ${htmlSafe(s.owner)}</span></div>
      <div class="bs-wrap"><table class="bs"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div>`);
