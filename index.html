@@ -4932,7 +4932,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${outcomeYearOptions(defaultYear)}
       </select></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month *'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
+      <div class="fg" style="grid-column:1 / -1;" id="of-month-fg"><label>${isDntuEditMode?'Follow-up due month':'Follow-up due month *'}</label><select id="of-month" onchange="updateOutcomeAvailabilityPreview();updateFollowupChangeWarning()">
         <option value="${AUTO_AVAILABILITY_VALUE}">According to clinic availability</option>${monthsForYear.map(m=>`<option value="${m}" ${Number(m)===Number(defaultMonth)?'selected':''}>${availabilityOptionText(m,availability[m]||0,contextForFollowupOwner(ownerDefault))}</option>`).join('')}
       </select><div id="of-availability-note" style="margin-top:5px;">${availabilityPreviewHTML(availability[defaultMonth]||{booked:0,capacity:0},contextForFollowupOwner(ownerDefault),defaultMonth)}</div><div id="of-followup-change-note" class="registry-lookup-note new" style="margin-top:8px;">${isDntuEditMode?'DNTU correction: confirm or change the follow-up due month if needed. A different month is not required in this DNTU form.':'Set the follow-up due month. Keeping the current month is allowed — the edit is not blocked.'}</div></div>
       <div class="fg" style="grid-column:1 / -1;display:none;" id="of-same-month-wrap">
@@ -4974,7 +4974,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     const summary=`<div class="es-summary">
         <span class="es-nm">${htmlSafe(nm)}</span>
         ${p.id_card?`<span class="es-chip">ID ${htmlSafe(p.id_card)}</span>`:''}
-        <span class="es-chip">${htmlSafe(appt.appt_date||'')}${appt.appt_slot?' · '+htmlSafe(String(appt.appt_slot).slice(0,5)):''}</span>
+        <span class="es-chip">Appointment: ${htmlSafe(appt.appt_date||'')}${appt.appt_slot?' · '+htmlSafe(String(appt.appt_slot).slice(0,5)):''}</span>
         ${stomaSummary?`<span class="es-chip">${htmlSafe(stomaSummary)}</span>`:''}
         <span class="es-chip ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
       </div>`;
@@ -5004,8 +5004,27 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         ${clinicalPane}
       </div>
       <div class="es-pane" id="es-pane-3">
-        <div class="edit-seen-section">Follow-up</div>
-        ${followupBlock}
+        <div class="edit-seen-section">Follow-up — what happens next?</div>
+        <div id="of-existing-appt"></div>
+        <div class="es-review-choice" id="of-next">
+          <label><input type="radio" name="of-next" value="review-month" ${(appt.followup_action||'review-month')==='review-month'?'checked':''} onchange="esNextChange()"> Review due in a selected month</label>
+          <label><input type="radio" name="of-next" value="book-exact" ${appt.followup_action==='book-exact'?'checked':''} onchange="esNextChange()"> Book an exact appointment now</label>
+          <label><input type="radio" name="of-next" value="none" ${appt.followup_action==='none'?'checked':''} onchange="esNextChange()"> No further appointment required</label>
+          <label><input type="radio" name="of-next" value="urgent" ${appt.followup_action==='urgent'?'checked':''} onchange="esNextChange()"> Urgent review required</label>
+          <label><input type="radio" name="of-next" value="status-review" ${appt.followup_action==='status-review'?'checked':''} onchange="esNextChange()"> Patient follow-up status needs review</label>
+        </div>
+        <div id="of-next-note" class="dntu-note" style="margin:6px 0;"></div>
+        <div id="of-duemonth-wrap">${followupBlock}</div>
+        <div id="of-exact-wrap" hidden>
+          <div class="edit-seen-section">Book an exact appointment</div>
+          <div class="edit-seen-grid">
+            <div class="fg"><label>Date</label><input type="date" id="of-exact-date"/></div>
+            <div class="fg"><label>Time</label><input type="time" id="of-exact-slot"/></div>
+            <div class="fg" style="grid-column:1 / -1;"><label>Nurse / Column</label><select id="of-exact-nurse">${nurseOptions}</select></div>
+            <div class="fg" style="grid-column:1 / -1;"><button type="button" class="btn-save" style="width:auto;" onclick="esBookExact('${jsSafe(String(appt.patient_id||''))}')">Book this appointment</button></div>
+          </div>
+          <div id="of-exact-note" class="dntu-note" style="margin-top:6px;">An exact appointment is separate from the due-month plan above — it books a real slot in the daily clinic straight away.</div>
+        </div>
       </div>
       <div class="mact" id="es-footer"></div>`;
   }
@@ -5018,6 +5037,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     esGoStep(1);
     esCmpReviewChange();
     esAppReviewChange();
+    esNextChange();
+    esLoadExistingAppointments(String(appt.patient_id||''),String(apptId||''));
   }else{esState=null;}
   updateOutcomeAvailabilityPreview();
   updateFollowupChangeWarning();
@@ -5101,6 +5122,65 @@ function esAppReviewChange(){
   };
   if(note)note.textContent=hints[v]||'';
   const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
+}
+/* Step 3 (Follow-up) begins with "what happens next?". Each choice reveals the
+   controls it needs: a due-month plan, an exact booking, or neither. It never
+   discharges the patient automatically — that stays a follow-up-status decision. */
+function esNextChange(){
+  const v=document.querySelector('input[name="of-next"]:checked')?.value||'review-month';
+  const monthFg=document.getElementById('of-month-fg');
+  const exact=document.getElementById('of-exact-wrap');
+  const note=document.getElementById('of-next-note');
+  if(monthFg)monthFg.style.display=(v==='none')?'none':'';
+  if(exact)exact.hidden=(v!=='book-exact');
+  const notes={
+    'review-month':'A due-month plan: the patient is reviewed around the chosen month, without an exact date yet.',
+    'book-exact':'Book a specific date and time below — an exact appointment, not just a due month.',
+    'none':'No further appointment: the due month is cleared. The patient follow-up status is not changed automatically.',
+    'urgent':'Urgent review — choose the soonest appropriate due month above (or book an exact slot).',
+    'status-review':'The follow-up status needs a clinical decision — set it under Follow-up status above.'
+  };
+  if(note)note.textContent=notes[v]||'';
+}
+/* Shows any future appointment the patient already has, so a second one is not
+   booked by accident. Read-only, with a Change action onto that appointment. */
+async function esLoadExistingAppointments(patientId,excludeApptId){
+  const host=document.getElementById('of-existing-appt');
+  if(!host||!patientId)return;
+  try{
+    const{data}=await SB.from('appointments')
+      .select('id,appt_date,appt_slot,status,assigned_to,bank_staff_id,patients(*),staff(*),bank_staff(*)')
+      .eq('patient_id',patientId).eq('status','booked').gte('appt_date',TODAY).order('appt_date');
+    let rows=(data||[]).filter(a=>String(a.id)!==String(excludeApptId||''));
+    if(!rows.length){host.innerHTML='';return;}
+    host.innerHTML=`<div class="es-info" style="background:#fff7ed;border-color:#f0c47a;color:#9a3412;">${rows.map(a=>`Already booked: <strong>${htmlSafe(fmtShortDate(a.appt_date))} at ${htmlSafe(String(a.appt_slot||'').slice(0,5))}</strong> with ${htmlSafe(appointmentNurseLabel(a))}. <button type="button" class="clr-mini" style="margin-left:6px;" onclick="closeModal();editAppointment('${jsSafe(String(a.id))}')">Change</button>`).join('<br/>')}</div>`;
+  }catch(e){host.innerHTML='';}
+}
+/* Books an exact appointment straight away — separate from completing the visit,
+   so the visit save is never entangled with a slot clash. Reuses the daily-clinic
+   insert and its unique-slot handling. */
+async function esBookExact(patientId){
+  const date=document.getElementById('of-exact-date')?.value||'';
+  const slot=document.getElementById('of-exact-slot')?.value||'';
+  const nurse=document.getElementById('of-exact-nurse')?.value||'common';
+  const note=document.getElementById('of-exact-note');
+  const setNote=(t,err)=>{if(note){note.className='registry-lookup-note '+(err?'error':'found');note.style.margin='6px 0';note.textContent=t;}};
+  if(!patientId){setNote('No patient is linked to this appointment.',true);return;}
+  if(!date||!slot){setNote('Choose a date and a time to book.',true);return;}
+  const row={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),status:'booked',assigned_to:null,bank_staff_id:null};
+  if(nurse.startsWith('core:'))row.assigned_to=nurse.replace('core:','');
+  if(nurse.startsWith('bank:'))row.bank_staff_id=nurse.replace('bank:','');
+  const{error}=await SB.from('appointments').insert(row);
+  if(error){
+    const msg=String(error.message||'');
+    if(/duplicate|unique/i.test(msg))setNote('That slot is already taken. Choose another time or nurse.',true);
+    else setNote('Booking error: '+msg,true);
+    return;
+  }
+  setNote(`Booked ${fmtShortDate(date)} at ${String(slot).slice(0,5)}.`,false);
+  invalidateAvailabilityCaches();
+  esLoadExistingAppointments(patientId,esState?esState.apptId:'');
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 /* ---- what was used, stoma by stoma ------------------------------------------
    Marking a visit as Seen walks through one card per stoma: its appliances,
@@ -5625,9 +5705,13 @@ async function saveOutcomeFollowup(apptId,patientId){
   const dntuTarget=isDntuEditMode?(Number(document.getElementById('of-dntu-target')?.value)||0):0;
   const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
 
+  // What happens next: a due-month plan, an exact booking, or none.
+  const followupAction=document.querySelector('input[name="of-next"]:checked')?.value||'review-month';
+  const noDueMonth=(followupAction==='none');
+
   if(!fn||!sn||!idcard){alert('Please fill in ID card number, name and surname.');return;}
   if(!date||!slot){alert('Please fill in appointment date and time.');return;}
-  if(!isNewCase&&!(isDntuEditMode&&dntuTarget===3)&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
+  if(!isNewCase&&!(isDntuEditMode&&dntuTarget===3)&&!noDueMonth&&(!month||!year)){alert('Please select follow-up due month and year.');return;}
 
   // Keeping the follow-up due month unchanged no longer blocks an edit, so there
   // is no blocking alert here — the follow-up state is shown inline as it changes
@@ -5657,7 +5741,7 @@ async function saveOutcomeFollowup(apptId,patientId){
 
   const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
-    complicationReview,applianceReview,complicationReviews,
+    complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
 
   /* A patient who was seen records what was used, one card per stoma — but only
@@ -5675,7 +5759,7 @@ async function saveOutcomeFollowup(apptId,patientId){
   return commitOutcomeFollowup(pending,[]);
 }
 async function commitOutcomeFollowup(v,stomaRows){
-  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews}=v;
+  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth}=v;
   const flat=list=>[...new Set((stomaRows||[]).flatMap(r=>r[list]||[]))];
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
@@ -5705,6 +5789,7 @@ async function commitOutcomeFollowup(v,stomaRows){
   if(complicationReview)outcomeUpdate.complication_review=complicationReview;
   if(applianceReview)outcomeUpdate.appliance_review=applianceReview;
   if(complicationReviews&&complicationReviews.length)outcomeUpdate.complication_reviews=complicationReviews;
+  if(followupAction)outcomeUpdate.followup_action=followupAction;
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
 
@@ -5732,8 +5817,8 @@ async function commitOutcomeFollowup(v,stomaRows){
       surname:sn,
       id_card:idcard,
       phone_number:phone||null,
-      followup_due_month:Number(month),
-      followup_year:Number(year),
+      followup_due_month:noDueMonth?null:Number(month),
+      followup_year:noDueMonth?null:Number(year),
       followup_owner:owner,
       followup_status:followupStatus
     };
@@ -14074,9 +14159,17 @@ function initialsFromName(name){
 // they edit the initials by hand, after which their version is left alone.
 function syncSignInitials(){
   const ini=document.getElementById('ck-sign-init');
-  if(ini&&ini.dataset.touched)return;
   const nm=document.getElementById('ck-sign-name');
-  if(ini&&nm)ini.value=initialsFromName(nm.value);
+  if(ini&&!ini.dataset.touched&&nm)ini.value=initialsFromName(nm.value);
+  propagateSignInitials(ini?ini.value:'');
+}
+// The per-item initials follow whoever completed the assessment: as the sign-off
+// name or initials change, every row that has not been hand-edited is updated to
+// match — so they read "JS", not a lone "J" from the signed-in email.
+function propagateSignInitials(val){
+  const v=String(val||'').trim();
+  if(!v)return;
+  document.querySelectorAll('.sit-ck-init').forEach(inp=>{if(!inp.dataset.touched)inp.value=v;});
 }
 // The stoma types a patient can be sited for. A patient can need more than one,
 // so every "sited for" and "stoma type" control is a set of these, not a single
@@ -14122,7 +14215,7 @@ async function openSitingSeen(id){
   const rows=SITING_CHECKLIST_ITEMS.map((label,i)=>{
     const n=i+1, it=items[i]||{};
     const met=it.status==='met', unmet=it.status==='unmet';
-    const dval=it.date||TODAY, ival=it.initials||initialsFromName(ini);
+    const dval=it.date||TODAY, ival=it.initials||signInit;
     const typePick=(n===3)?`<div class="sit-ck-type">
         ${['colostomy','ileostomy','urostomy'].map(t=>`<label><input type="checkbox" class="ck-type" value="${t}" ${stomaTypes.includes(t)?'checked':''}/> ${t.charAt(0).toUpperCase()+t.slice(1)}</label>`).join('')}
       </div>`:'';
@@ -14144,7 +14237,7 @@ async function openSitingSeen(id){
           <label class="ck-noted"><input type="radio" name="ck-status-${n}" value="noted" ${noted?'checked':''} onchange="toggleCkNote(${n})"/> Notes</label>
         </div>
         <input type="date" id="ck-date-${n}" value="${htmlSafe(dval)}" title="Date"/>
-        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials"/>
+        <input type="text" id="ck-init-${n}" class="sit-ck-init" placeholder="Initials" value="${htmlSafe(ival)}" title="Initials" oninput="this.dataset.touched=1"/>
       </div>
       <div id="ck-note-wrap-${n}" class="sit-ck-note-wrap"${noted?'':' hidden'}>
         <input type="text" id="ck-note-${n}" class="sit-ck-other" placeholder="Notes" value="${htmlSafe(it.note||'')}"/></div>
@@ -14169,7 +14262,7 @@ async function openSitingSeen(id){
       <div class="sit-signoff-h">Assessment completed by</div>
       <div class="sit-signoff-row">
         <label>Name<input type="text" id="ck-sign-name" value="${htmlSafe(signName)}" placeholder="Nurse name" oninput="syncSignInitials()"/></label>
-        <label>Initials<input type="text" id="ck-sign-init" value="${htmlSafe(signInit)}" placeholder="e.g. JF" maxlength="6" oninput="this.dataset.touched=1"/></label>
+        <label>Initials<input type="text" id="ck-sign-init" value="${htmlSafe(signInit)}" placeholder="e.g. JF" maxlength="6" oninput="this.dataset.touched=1;propagateSignInitials(this.value)"/></label>
         <label>Date<input type="date" id="ck-sign-date" value="${htmlSafe(signDate)}"/></label>
       </div>
     </div>
