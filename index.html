@@ -1520,6 +1520,9 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .bc-slot.free{cursor:pointer;}
 .bc-slot.free:hover{border-color:var(--teal);background:#f2fafa;}
 .bc-slot.filled{background:#e6f7ec;border-style:solid;border-color:#7fce9b;}
+.bc-slot .bc-slot-nm{flex:1;}
+.bc-undo{margin-left:auto;flex:none;border:1px solid #e5b3b3;background:#fff5f5;color:#b91c1c;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;min-height:34px;}
+.bc-undo:hover{background:#fde1e1;}
 .bc-slot.drop{background:#e8f5f4;border-color:var(--teal);border-style:solid;}
 .bc-ghost{position:fixed;z-index:99999;pointer-events:none;background:var(--teal);color:#fff;padding:6px 11px;border-radius:9px;font-size:12px;font-weight:800;box-shadow:0 6px 16px rgba(0,0,0,.28);opacity:.96;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bc-pickhint{font-size:11px;font-weight:800;color:var(--teal);background:#e8f5f4;border:1px solid #b7ddd9;border-radius:8px;padding:6px 9px;margin-bottom:8px;}
@@ -6747,7 +6750,7 @@ function bcDayViewHTML(){
   const slots=BC_WINDOW.map(t=>{
     const a=filledBy[t];
     if(a){const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked';
-      return `<div class="bc-slot filled"><span class="bc-time">${t}</span><span>${htmlSafe(nm)}</span></div>`;}
+      return `<div class="bc-slot filled"><span class="bc-time">${t}</span><span class="bc-slot-nm">${htmlSafe(nm)}</span><button class="bc-undo" onclick="event.stopPropagation();bcUndoBooking('${a.id}')" title="Undo this booking — removes it and frees the slot">↺ Undo</button></div>`;}
     return `<div class="bc-slot free" data-date="${ds}" data-slot="${t}" onclick="bcSlotTap('${ds}','${t}')"><span class="bc-time">${t}</span><span style="color:var(--muted);">Free — drop or tap a patient here</span></div>`;
   }).join('');
   const sp=bookCalState.selId?bookCalState.patients.find(x=>String(x.id)===String(bookCalState.selId)):null;
@@ -6795,6 +6798,20 @@ async function bcBook(ds,slot,patientId){
   bookCalState.selId=null;
   invalidateAvailabilityCaches();
   renderBookingCalendar();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+// Undo a booking made by mistake: delete the appointment and free the slot. The
+// patient goes back onto the due-this-month list if they are still due.
+async function bcUndoBooking(apptId){
+  const a=bookCalState.bookings.find(x=>String(x.id)===String(apptId));
+  const nm=a?`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim():'';
+  if(!confirm(`Remove the booking${nm?' for '+nm:''}? This deletes the appointment and frees the slot.`))return;
+  const{error}=await SB.from('appointments').delete().eq('id',apptId);
+  if(error){alert('Could not remove the booking: '+(error.message||error));return;}
+  invalidateAvailabilityCaches();
+  const keepDay=bookCalState.dayOpen;
+  await loadBookingCalendar();               // re-fetch so the due list rebuilds
+  if(keepDay){bookCalState.dayOpen=keepDay;renderBookingCalendar();}
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 /* Pointer-based drag that works on touch and mouse, plus tap-to-select as a
