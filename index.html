@@ -2350,7 +2350,7 @@ let dntuRows=[];
 let selectedFollowupOwner='Common';
 let followupPatients=[];
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
-const FOLLOWUP_OWNER_FILTERS=['Common','All Patients','Jacqueline','Jason','Lorraine','Tracey'];
+const FOLLOWUP_OWNER_FILTERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
 const AUTO_AVAILABILITY_VALUE='auto_availability';
 let reportCharts={};
 let reportPatientRows=[];
@@ -6558,8 +6558,10 @@ async function loadBookingCalendar(){
     const first=`${year}-${String(month).padStart(2,'0')}-01`;
     const last=`${year}-${String(month).padStart(2,'0')}-${String(new Date(year,month,0).getDate()).padStart(2,'0')}`;
     // Due patients for this month + owner, with no future appointment yet.
-    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,newstoma_findings,locality,surgery_date');
-    const{data:future}=await SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled');
+    // Page through every row — an unbounded select silently caps at 1000, which
+    // was dropping patients past the cap from the month list.
+    const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,newstoma_findings,locality,surgery_date'));
+    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
     const booked=new Set((future||[]).map(r=>String(r.patient_id)));
     bookCalState.patients=(pats||[]).filter(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
@@ -6568,7 +6570,7 @@ async function loadBookingCalendar(){
       return !booked.has(String(p.id));
     }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
     // Existing bookings in the month + the roster staffing index for greying.
-    const{data:appts}=await SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').gte('appt_date',first).lte('appt_date',last);
+    const{rows:appts}=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').gte('appt_date',first).lte('appt_date',last));
     bookCalState.bookings=appts||[];
     bookCalState.index=await loadClinicStaffingIndex(first,last);
     renderBookingCalendar();
