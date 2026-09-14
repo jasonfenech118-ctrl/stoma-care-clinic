@@ -322,6 +322,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .followup-pill{display:inline-block;padding:4px 9px;border-radius:14px;font-size:10px;font-weight:800;background:#e8f5f4;color:var(--teal);}
 .followup-click-row{cursor:pointer;}
 .followup-click-row:hover td{background:#f8fafc!important;}
+.followup-click-row.row-seen td{background:#dcf4e6;}
+.followup-click-row.row-seen:hover td{background:#cdefdb!important;}
+.seen-tag{display:inline-block;margin-left:6px;font-size:11px;font-weight:800;color:#1e7d43;background:#c9edd6;border-radius:8px;padding:1px 7px;vertical-align:middle;}
 .next-appt-pill{display:inline-block;padding:4px 9px;border-radius:14px;font-size:10px;font-weight:800;background:#fff8e1;color:#856404;}
 .history-table-wrap{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:12px;}
 .history-table{width:100%;border-collapse:collapse;}
@@ -7776,11 +7779,12 @@ async function loadStaffAudit(){
   }
 
   const ownerTitle=document.getElementById('followup-owner-title'); if(ownerTitle)ownerTitle.textContent=selectedFollowupOwner;
-  // The bottom list is the owner's BOOKED appointments (upcoming), scoped to the
-  // selected month when one is chosen, newest booking date first at the top of a
-  // day. It replaces the old planning list.
+  // The bottom list is the owner's appointments still to be seen (booked) AND
+  // those already seen (attended), scoped to the selected month when one is
+  // chosen, in date/slot order. A seen row shows green so it is clear at a glance
+  // who has been reviewed.
   const bookedList=kpiAppts
-    .filter(a=>a.status==='booked')
+    .filter(a=>a.status==='booked'||a.status==='attended')
     .filter(a=>!month||Number(String(a.appt_date||'').slice(5,7))===Number(month))
     .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
   // Snapshot for the Bird's-eye / Print / Statistics buttons.
@@ -7790,16 +7794,17 @@ async function loadStaffAudit(){
   const stMonth=month||(new Date().getMonth()+1);
   const dueCount=ownerActive.filter(p=>Number(p.followup_due_month)===Number(stMonth)&&Number(p.followup_year)===Number(year)).length;
   const awaitingCount=ownerActive.filter(p=>{const k=Number(p.followup_year)*100+Number(p.followup_due_month);return k>0&&k<nowKey&&!futureBookedIds.has(String(p.id));}).length;
-  fpView={owner:selectedFollowupOwner,year,month,booked:bookedList,due:dueCount,bookedCount:bookedList.length,slots:avail.free,awaiting:awaitingCount};
+  fpView={owner:selectedFollowupOwner,year,month,booked:bookedList,due:dueCount,bookedCount:bookedList.filter(a=>a.status==='booked').length,slots:avail.free,awaiting:awaitingCount};
   if(!tbody)return;
-  if(!bookedList.length){tbody.innerHTML=`<tr><td colspan="7" class="empty">No booked appointments for ${htmlSafe(selectedFollowupOwner)} · ${htmlSafe(month?followupMonthName(month):String(year))}.</td></tr>`;return;}
+  if(!bookedList.length){tbody.innerHTML=`<tr><td colspan="7" class="empty">No booked or seen appointments for ${htmlSafe(selectedFollowupOwner)} · ${htmlSafe(month?followupMonthName(month):String(year))}.</td></tr>`;return;}
   tbody.innerHTML=bookedList.map(a=>{
     const p=a.patients||{};
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-    return `<tr class="followup-click-row" onclick="openFollowupHistory('${a.patient_id}')" title="Open full history">
+    const seen=a.status==='attended';
+    return `<tr class="followup-click-row${seen?' row-seen':''}" onclick="openFollowupHistory('${a.patient_id}')" title="Open full history">
       <td>${htmlSafe(fmtShortDate(a.appt_date))}</td>
       <td><span class="next-appt-pill">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</span></td>
-      <td><strong>${htmlSafe(nm)}</strong></td>
+      <td><strong>${htmlSafe(nm)}</strong>${seen?' <span class="seen-tag">✓ Seen</span>':''}</td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(appointmentNurseLabel(a))}</td>
