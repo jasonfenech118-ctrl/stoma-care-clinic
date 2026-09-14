@@ -1863,10 +1863,10 @@ table.np tbody tr:hover td{background:#f4fbfa;}
         <div id="bookcal-root"><div class="report-note">Loading booking calendar…</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Patient Follow-up List — <span id="followup-owner-title">Common</span></div>
+        <div class="card-title">Booked Patients — <span id="followup-owner-title">Common</span></div>
         <div style="overflow-x:auto;"><table class="dt">
-          <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Due Month<br/><span style="font-size:9px;color:var(--muted);font-weight:600;">Clinic Availability</span></th><th>Follow-up Year</th><th>Owner</th><th>Status</th><th>Last Appointment</th><th>Next Appointment Date</th><th>Actions</th></tr></thead>
-          <tbody id="followup-patient-tbody"><tr><td colspan="10" class="empty">Loading follow-up patients...</td></tr></tbody>
+          <thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Nurse / Column</th><th>Actions</th></tr></thead>
+          <tbody id="followup-patient-tbody"><tr><td colspan="7" class="empty">Loading booked patients...</td></tr></tbody>
         </table></div>
       </div>
 
@@ -7506,72 +7506,29 @@ async function loadStaffAudit(){
       <div class="sbox"><div class="sl">Available Slots</div><div class="sv" style="color:var(--teal)">${avail.free}</div><div class="ss">Sun &amp; public holidays · ${htmlSafe(month?followupMonthName(month):String(year))}</div></div>`;
   }
 
+  const ownerTitle=document.getElementById('followup-owner-title'); if(ownerTitle)ownerTitle.textContent=selectedFollowupOwner;
   if(!tbody)return;
-  if(!patients.length){const statusLabel=followupStatus==='all'?'all':followupStatusText(followupStatus).toLowerCase();tbody.innerHTML=`<tr><td colspan="10" class="empty">No ${statusLabel} patients for this owner/year/month.</td></tr>`;return;}
-  const latestByPatient={};
-  appts.forEach(a=>{if(!latestByPatient[a.patient_id])latestByPatient[a.patient_id]=a;});
-  const grouped={};
-  patients.forEach(p=>{const m=Number(p.followup_due_month)||0;if(!grouped[m])grouped[m]=[];grouped[m].push(p);});
-
-  const followupAvailabilityByOwnerYear={};
-  const combos=[...new Set(patients.map(p=>{
-    const rowOwner=normaliseFollowupOwner(p.followup_owner||selectedFollowupOwner||'Common');
-    const rowYear=Number(p.followup_year)||Number(year)||new Date().getFullYear();
-    return `${rowOwner}_${rowYear}`;
-  }))];
-  for(const key of combos){
-    const idx=key.lastIndexOf('_');
-    const rowOwner=key.slice(0,idx);
-    const rowYear=key.slice(idx+1);
-    followupAvailabilityByOwnerYear[key]=await getFollowupPlanningAvailability(rowYear,rowOwner);
-  }
-
-  const yearOptions=[2026,2027,2028,2029].map(y=>`<option value="${y}">${y}</option>`).join('');
-  const ownerOptions=FOLLOWUP_OWNERS.map(o=>`<option value="${o}">${o}</option>`).join('');
-  const followupStatusOptions=followupStatusOptionsHTML('');
-  const order=[1,2,3,4,5,6,7,8,9,10,11,12,0];
-  let html='';
-  order.forEach(m=>{
-    const rows=grouped[m]||[];
-    if(!rows.length)return;
-    html+=`<tr class="followup-month-row"><td colspan="10">${followupMonthName(m)} — ${rows.length} patient${rows.length!==1?'s':''}</td></tr>`;
-    rows.forEach(p=>{
-      const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-      const latest=latestByPatient[p.id];
-      const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment in selected period';
-      const nextAppt=nextByPatient[p.id];
-      const nextLabel=nextAppt?`${nextAppt.appt_date} ${String(nextAppt.appt_slot||'').slice(0,5)}`:'—';
-      const dntuStreak=dntuStreakByPatient[p.id]||0;
-      const manualStatus=normaliseFollowupStatus(p.followup_status);
-      const rowStatus=(dntuStreak>=3 && manualStatus!=='awaiting_feedback')?'paused':manualStatus;
-      const pausedBadge=(rowStatus==='paused'||dntuStreak>=3)?`<br/><span class="dntu-streak paused" style="margin-top:4px;">Paused${dntuStreak?` · ${dntuStreak} DNTU`:''}</span>`:'';
-      const awaitingBadge=rowStatus==='awaiting_feedback'?`<br/><span class="dntu-streak awaiting" style="margin-top:4px;">Awaiting Feedback</span>`:'';
-      const rowOwner=normaliseFollowupOwner(p.followup_owner||selectedFollowupOwner||'Common');
-      const rowYear=Number(p.followup_year)||Number(year)||new Date().getFullYear();
-      const rowMonth=Number(p.followup_due_month)||0;
-      const availabilityKey=`${rowOwner}_${rowYear}`;
-      const rowMonthOptions=buildAvailabilityMonthOptions(rowYear,rowOwner,rowMonth,followupAvailabilityByOwnerYear[availabilityKey]||{});
-      html+=`<tr class="followup-click-row ${(rowStatus==='paused'||dntuStreak>=3)?'dntu-row-paused':''}" onclick="openFollowupHistory('${p.id}')" title="Open full follow-up appointment history">
-        <td><strong>${htmlSafe(nm)}</strong>${pausedBadge}${awaitingBadge}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>
-        <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
-        <td>${htmlSafe(p.phone_number||'—')}</td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select month-availability-select" id="fu-month-${p.id}" data-selected-month="${rowMonth}">${rowMonthOptions}</select></td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-year-${p.id}" onchange="refreshFollowupPlanningMonthOptions('${p.id}')">${yearOptions}</select></td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-owner-${p.id}" onchange="refreshFollowupPlanningMonthOptions('${p.id}')">${ownerOptions}</select></td>
-        <td onclick="event.stopPropagation();"><select class="followup-small-select" id="fu-status-${p.id}">${followupStatusOptions}</select></td>
-        <td>${htmlSafe(latestLabel)}</td>
-        <td><span class="next-appt-pill">${htmlSafe(nextLabel)}</span></td>
-        <td onclick="event.stopPropagation();"><div class="followup-actions"><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="savePatientFollowup('${p.id}')">Save</button><button class="ncb-btn" onclick="openPatientRebookModal('${p.id}')" style="background:#fff8e1;color:#856404;">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
-      </tr>`;
-    });
-  });
-  tbody.innerHTML=html;
-  patients.forEach(p=>{
-    const mEl=document.getElementById('fu-month-'+p.id); if(mEl)mEl.value=String(p.followup_due_month||'');
-    const yEl=document.getElementById('fu-year-'+p.id); if(yEl)yEl.value=String(p.followup_year||year);
-    const oEl=document.getElementById('fu-owner-'+p.id); if(oEl)oEl.value=p.followup_owner||'Common';
-    const sEl=document.getElementById('fu-status-'+p.id); if(sEl)sEl.value=normaliseFollowupStatus(p.followup_status||((dntuStreakByPatient[p.id]||0)>=3?'paused':'active'));
-  });
+  // The bottom list is the owner's BOOKED appointments (upcoming), scoped to the
+  // selected month when one is chosen, newest booking date first at the top of a
+  // day. It replaces the old planning list.
+  const bookedList=kpiAppts
+    .filter(a=>a.status==='booked')
+    .filter(a=>!month||Number(String(a.appt_date||'').slice(5,7))===Number(month))
+    .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  if(!bookedList.length){tbody.innerHTML=`<tr><td colspan="7" class="empty">No booked appointments for ${htmlSafe(selectedFollowupOwner)} · ${htmlSafe(month?followupMonthName(month):String(year))}.</td></tr>`;return;}
+  tbody.innerHTML=bookedList.map(a=>{
+    const p=a.patients||{};
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
+    return `<tr class="followup-click-row" onclick="openFollowupHistory('${a.patient_id}')" title="Open full history">
+      <td>${htmlSafe(fmtShortDate(a.appt_date))}</td>
+      <td><span class="next-appt-pill">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</span></td>
+      <td><strong>${htmlSafe(nm)}</strong></td>
+      <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+      <td>${htmlSafe(p.phone_number||'—')}</td>
+      <td>${htmlSafe(appointmentNurseLabel(a))}</td>
+      <td onclick="event.stopPropagation();"><div class="followup-actions"><button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="editAppointment('${a.id}')">Edit</button><button class="ncb-btn" onclick="openFollowupHistory('${a.patient_id}')" style="background:#edf1f5;color:var(--navy);">History</button></div></td>
+    </tr>`;
+  }).join('');
 }
 async function savePatientFollowup(patientId){
   const year=document.getElementById('fu-year-'+patientId)?.value;
