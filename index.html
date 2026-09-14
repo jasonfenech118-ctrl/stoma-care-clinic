@@ -1529,16 +1529,14 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .be-appt{background:#e8f5f4;border-radius:4px;padding:1px 3px;margin-bottom:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .be-appt b{color:#0d7377;}
 @media(max-width:520px){.be-day{min-height:56px;font-size:9px;}.be-day .be-dnum{font-size:10px;}}
-/* Slot sheet (each clinic day's time slots, booked + available, for labels). */
-.be-day-sec{margin-bottom:14px;}
-.be-day-h{font-weight:900;color:var(--navy);font-size:14px;border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:8px;}
-.be-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;}
-.be-slot{border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;min-height:46px;display:flex;flex-direction:column;justify-content:center;}
-.be-slot .be-slot-t{font-weight:900;color:var(--navy);font-size:12px;}
-.be-slot .be-slot-p{font-size:12px;margin-top:2px;}
-.be-slot.booked{background:#e6f7ec;border-color:#7fce9b;}
-.be-slot.booked .be-slot-p{font-weight:800;color:#1e7d43;}
-.be-slot.free{background:#fff;border-style:dashed;}
+/* Slot sheet — one compact table (days down, time slots across). */
+.be-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+.be-tbl th,.be-tbl td{border:1px solid var(--border);padding:5px 4px;font-size:11px;text-align:center;overflow:hidden;text-overflow:ellipsis;}
+.be-tbl th{background:var(--navy);color:#fff;font-weight:800;font-size:10px;}
+.be-tbl td.be-d{text-align:left;font-weight:900;color:var(--navy);white-space:nowrap;}
+.be-tbl td.be-bk{background:#e6f7ec;font-weight:800;color:#1e7d43;font-size:10px;line-height:1.2;}
+.be-tbl tr:nth-child(even) td{background:#fafbfc;}
+.be-tbl tr:nth-child(even) td.be-bk{background:#e6f7ec;}
 
 /* ── MOBILE NAV DRAWER ── */
 .mob-ham{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:38px;padding:8px;border:none;background:rgba(255,255,255,.12);border-radius:9px;cursor:pointer;flex-shrink:0;}
@@ -6710,7 +6708,10 @@ function bcMonthHTML(){
     const codeTag=code?`<span style="position:absolute;top:3px;right:4px;font-size:8px;font-weight:900;color:${open?'#0d7377':'#b91c1c'};">${htmlSafe(code)}</span>`:'';
     if(!open){cells+=`<div class="bc-day off"><span class="bc-dnum">${d}</span>${codeTag}</div>`;continue;}
     const n=bcDayCounts(ds),cap=BC_WINDOW.length;
-    const bg=bcFillColor(n);
+    // Sundays and public holidays (the nurse-led clinic days) read green even at
+    // 0, to mark them as available clinic days; they still shade toward red as
+    // they fill.
+    const bg=(n===0&&isClinicDay(ds))?'#bdeccb':bcFillColor(n);
     cells+=`<div class="bc-day" data-date="${ds}" style="background:${bg};" onclick="bcOpenDay('${ds}')">
       <span class="bc-dnum">${d}</span>${codeTag}
       <span class="bc-fill" style="background:rgba(255,255,255,.75);">${n}/${cap}</span></div>`;
@@ -7532,47 +7533,44 @@ function birdsEyeSlotDays(s,ctx){
   }
   return days;
 }
+function birdsEyeTableHTML(s,ctx,cls){
+  const days=birdsEyeSlotDays(s,ctx);
+  if(!days.length)return '<div class="report-note">No clinic days for this nurse and month.</div>';
+  const head=`<tr><th style="width:22%;">Day</th>${BC_WINDOW.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+  const rows=days.map(day=>{
+    const tds=day.slots.map(sl=>{
+      if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'.':''}`.trim()||'Patient';return `<td class="be-bk">${htmlSafe(nm)}</td>`;}
+      return `<td></td>`;
+    }).join('');
+    return `<tr><td class="be-d">${htmlSafe(fmtShortDate(day.ds))}</td>${tds}</tr>`;
+  }).join('');
+  return `<table class="${cls||'be-tbl'}"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
 async function openBookedBirdsEye(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
-  const days=birdsEyeSlotDays(s,ctx);
-  const body=days.length?days.map(day=>`
-    <div class="be-day-sec">
-      <div class="be-day-h">${htmlSafe(fmtShortDate(day.ds))}${day.working?'':' · off (has bookings)'}</div>
-      <div class="be-slots">${day.slots.map(sl=>{
-        if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';return `<div class="be-slot booked"><span class="be-slot-t">${sl.time}</span><span class="be-slot-p">${htmlSafe(nm)}${p.id_card?' · '+htmlSafe(p.id_card):''}</span></div>`;}
-        return `<div class="be-slot free"><span class="be-slot-t">${sl.time}</span><span class="be-slot-p" style="color:var(--muted);">Available</span></div>`;
-      }).join('')}</div>
-    </div>`).join(''):'<div class="report-note">No clinic days for this nurse and month.</div>';
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🦅 Bird's-eye view — ${htmlSafe(s.owner)}</h2>
-    <div class="msub">${followupMonthName(ctx.month)} ${ctx.year} · every clinic day's 09:00–11:30 slots, booked and available</div>
-    ${body}
+    <div class="msub">${followupMonthName(ctx.month)} ${ctx.year} · every clinic day's 09:00–11:30 slots, booked and available — all on one sheet</div>
+    ${birdsEyeTableHTML(s,ctx)}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print sheet</button></div>`;
   openMo();
 }
-// The printable planning sheet: each clinic day's slots as bordered boxes —
-// booked ones filled, empty ones blank with the time, sized so a 50x25mm label
-// can be stuck straight onto an empty slot by hand.
+// The printable one-page sheet: days down, time slots across; booked cells filled,
+// empty cells blank to write in or stick a small label on.
 async function printBookedPatients(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
-  const days=birdsEyeSlotDays(s,ctx);
-  const body=days.length?days.map(day=>`
-    <div class="be-day-h">${htmlSafe(fmtShortDate(day.ds))}</div>
-    <div class="be-slots">${day.slots.map(sl=>{
-      if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';return `<div class="be-pslot filled"><div class="t">${sl.time}</div><div class="p">${htmlSafe(nm)}</div><div class="i">${htmlSafe(p.id_card||'')}</div></div>`;}
-      return `<div class="be-pslot"><div class="t">${sl.time}</div></div>`;
-    }).join('')}</div>`).join(''):'<div class="sub">No clinic days for this nurse and month.</div>';
   bcPrintWindow(`Booking sheet — ${s.owner}`,
     `<style>
-      .be-day-h{font-weight:bold;font-size:12pt;border-bottom:2px solid #000;margin:6mm 0 3mm;padding-bottom:1mm;}
-      .be-slots{display:flex;flex-wrap:wrap;gap:3mm;}
-      .be-pslot{width:62mm;height:26mm;border:1.2px solid #000;box-sizing:border-box;padding:2mm;overflow:hidden;font-family:Arial,sans-serif;}
-      .be-pslot .t{font-weight:bold;font-size:8pt;color:#333;} .be-pslot .p{font-weight:bold;font-size:11pt;margin-top:1.5mm;} .be-pslot .i{font-size:9pt;}
-      .be-pslot.filled{background:#f2f7f4;}
+      .bes{width:100%;border-collapse:collapse;table-layout:fixed;}
+      .bes th,.bes td{border:1px solid #000;padding:3px 3px;font-size:9pt;text-align:center;height:9mm;overflow:hidden;}
+      .bes th{background:#1a2e4a;color:#fff;font-size:8pt;} .bes td.be-d{text-align:left;font-weight:bold;white-space:nowrap;}
+      .bes td.be-bk{background:#eef7f0;font-weight:bold;font-size:8pt;}
+      @page{size:A4 portrait;margin:10mm;}
      </style>
-     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 slots · stick a label on any empty box</div>${body}`);
+     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 · booked filled, empty to write in or label</div>
+     ${birdsEyeTableHTML(s,ctx,'bes')}`);
 }
 /* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
    printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
