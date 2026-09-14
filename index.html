@@ -7779,14 +7779,24 @@ async function loadStaffAudit(){
   }
 
   const ownerTitle=document.getElementById('followup-owner-title'); if(ownerTitle)ownerTitle.textContent=selectedFollowupOwner;
-  // The bottom list is the owner's appointments still to be seen (booked) AND
-  // those already seen (attended), scoped to the selected month when one is
-  // chosen, in date/slot order. A seen row shows green so it is clear at a glance
-  // who has been reviewed.
-  const bookedList=kpiAppts
-    .filter(a=>a.status==='booked'||a.status==='attended')
-    .filter(a=>!month||Number(String(a.appt_date||'').slice(5,7))===Number(month))
-    .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  // The bottom list is EVERY patient booked into this owner's clinic column for
+  // the selected month (or the whole year when no month is chosen) — matching the
+  // Booking Worklist calendar, not just the owner's own follow-up patients. It
+  // shows those still to be seen (booked) and those already seen (attended); a
+  // seen row shows green so it is clear at a glance who has been reviewed.
+  const listCalOwner=(selectedFollowupOwner==='All Patients')?'Common':selectedFollowupOwner;
+  if((!staffList||!staffList.length)&&typeof loadStaff==='function'){try{await loadStaff();}catch(e){}}
+  const mNum=Number(month)||0;
+  const listFirst=mNum?`${year}-${String(mNum).padStart(2,'0')}-01`:`${year}-01-01`;
+  const listLast=mNum?`${year}-${String(mNum).padStart(2,'0')}-${String(new Date(Number(year),mNum,0).getDate()).padStart(2,'0')}`:`${year}-12-31`;
+  let bookedList=[];
+  try{
+    const{rows:listRaw}=await fetchAllRows(()=>SB.from('appointments').select('*').gte('appt_date',listFirst).lte('appt_date',listLast));
+    const listEnriched=await enrichAppointments(listRaw||[]);
+    bookedList=listEnriched
+      .filter(a=>(a.status==='booked'||a.status==='attended')&&bcColumnMatch(a,listCalOwner))
+      .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  }catch(e){console.error('Booked patients list query error:',e);}
   // Snapshot for the Bird's-eye / Print / Statistics buttons.
   const nowKey=new Date().getFullYear()*100+(new Date().getMonth()+1);
   const futureBookedIds=new Set(kpiAppts.filter(a=>String(a.status||'')!=='cancelled'&&String(a.appt_date||'')>=TODAY).map(a=>String(a.patient_id)));
