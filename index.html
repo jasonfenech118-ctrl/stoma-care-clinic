@@ -1522,6 +1522,8 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .be-dow{font-size:10px;font-weight:900;text-transform:uppercase;text-align:center;color:var(--muted);padding:2px 0;}
 .be-day{min-height:66px;border:1px solid var(--border);border-radius:8px;padding:3px 4px;background:#fff;font-size:10px;overflow:hidden;}
 .be-day.blank{border:none;background:transparent;}
+.be-day.off{background:#eef1f4;color:#aab1bb;}
+.be-day.off .be-dnum{color:#aab1bb;}
 .be-day.has{background:#f0faf3;border-color:#bfe6c9;}
 .be-day .be-dnum{font-weight:900;color:var(--navy);font-size:11px;margin-bottom:2px;}
 .be-appt{background:#e8f5f4;border-radius:4px;padding:1px 3px;margin-bottom:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1882,8 +1884,9 @@ table.np tbody tr:hover td{background:#f4fbfa;}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">Booked Patients — <span id="followup-owner-title">Common</span></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="openBookedBirdsEye()">📅 Calendar</button>
+            <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="openBookedBirdsEye()">🦅 Bird's-eye</button>
             <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="printBookedPatients()">🖨 Print</button>
+            <button class="btn-add" style="padding:6px 11px;background:#7c3aed;" onclick="printPatientLabels()">🏷 Labels</button>
             <button class="btn-add" style="padding:6px 11px;" onclick="openFollowupStats()">📊 Statistics</button>
           </div>
         </div>
@@ -7477,11 +7480,34 @@ function openFollowupStats(){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
 }
-function openBookedBirdsEye(){
-  const s=fpView;
+// Which month the bird's-eye shows, and the roster context to grey off/rest days.
+function bookedGridMonth(s){
   const year=Number(s.year)||new Date().getFullYear();
   let month=Number(s.month)||0;
   if(!month)month=(s.booked&&s.booked[0])?Number(String(s.booked[0].appt_date).slice(5,7)):(new Date().getMonth()+1);
+  return {year,month};
+}
+async function bookedGridContext(s){
+  const {year,month}=bookedGridMonth(s);
+  const mm=String(month).padStart(2,'0');
+  const first=`${year}-${mm}-01`,last=`${year}-${mm}-${String(new Date(year,month,0).getDate()).padStart(2,'0')}`;
+  let index=null,staff=null;
+  try{
+    if((!staffList||!staffList.length)&&typeof loadStaff==='function')await loadStaff();
+    index=await loadClinicStaffingIndex(first,last);
+    staff=(s.owner&&s.owner!=='Common'&&s.owner!=='All Patients')?ownerStaffForCapacity(s.owner):null;
+  }catch(e){}
+  return {year,month,index,staff};
+}
+// True when the nurse is OFF (greyed). Common has no single nurse → never greyed.
+function bookedDayOff(ctx,ds){
+  if(!ctx.staff||!ctx.index)return false;
+  return !isNurseWorkingClinicDay(ctx.staff,ds,ctx.index);
+}
+async function openBookedBirdsEye(){
+  const s=fpView;
+  const ctx=await bookedGridContext(s);
+  const {year,month}=ctx;
   const byDate={};
   (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
   const dim=new Date(year,month,0).getDate();
@@ -7492,25 +7518,77 @@ function openBookedBirdsEye(){
   for(let d=1;d<=dim;d++){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const list=(byDate[ds]||[]).slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
+    const off=!list.length&&bookedDayOff(ctx,ds);
     const items=list.map(a=>{const p=a.patients||{};const nm=`${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'. ':''}${p.surname||p.first_name||'Patient'}`.trim();return `<div class="be-appt"><b>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</b> ${htmlSafe(nm)}</div>`;}).join('');
-    cells+=`<div class="be-day${list.length?' has':''}"><div class="be-dnum">${d}</div>${items}</div>`;
+    cells+=`<div class="be-day${list.length?' has':(off?' off':'')}"><div class="be-dnum">${d}</div>${items}</div>`;
   }
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>📅 Calendar — ${htmlSafe(s.owner)}</h2>
+  mb.innerHTML=`<h2>🦅 Bird's-eye view — ${htmlSafe(s.owner)}</h2>
     <div class="msub">${followupMonthName(month)} ${year} · ${(s.booked||[]).length} booked</div>
     <div class="be-grid">${dows.map(d=>`<div class="be-dow">${d}</div>`).join('')}${cells}</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print</button></div>`;
   openMo();
 }
-function printBookedPatients(){
+async function printBookedPatients(){
   const s=fpView;
-  const rows=(s.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`)).map(a=>{
-    const p=a.patients||{};const nm=`${p.first_name||''} ${p.surname||''}`.trim();
-    return `<tr><td>${htmlSafe(fmtShortDate(a.appt_date))}</td><td>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</td><td>${htmlSafe(nm)}</td><td>${htmlSafe(p.id_card||'')}</td><td>${htmlSafe(p.phone_number||'')}</td><td>${htmlSafe(appointmentNurseLabel(a))}</td><td style="width:26%;">&nbsp;</td></tr>`;
-  }).join('')||'<tr><td colspan="7">No booked appointments.</td></tr>';
-  bcPrintWindow(`Booked patients — ${s.owner}`,
-    `<h1>Booked patients — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(s.month?followupMonthName(s.month):String(s.year))} ${s.year} · ${(s.booked||[]).length} booked</div>
-     <table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>ID card</th><th>Phone</th><th>Nurse</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`);
+  const ctx=await bookedGridContext(s);
+  const {year,month}=ctx;
+  const byDate={};
+  (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
+  const dim=new Date(year,month,0).getDate();
+  const firstDow=(new Date(year,month-1,1).getDay()+6)%7;
+  const dows=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  // Build a 7-column calendar grid as table rows (weeks).
+  let cells=[];
+  for(let i=0;i<firstDow;i++)cells.push('<td class="pd-blank"></td>');
+  for(let d=1;d<=dim;d++){
+    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const list=(byDate[ds]||[]).slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
+    const off=!list.length&&bookedDayOff(ctx,ds);
+    const items=list.map(a=>{const p=a.patients||{};const nm=`${p.surname||''} ${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'.':''}`.trim()||'Patient';return `<div class="pd-appt"><b>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</b> ${htmlSafe(nm)}</div>`;}).join('');
+    cells.push(`<td class="${off?'pd-off':''}"><div class="pd-num">${d}</div>${items}</td>`);
+  }
+  while(cells.length%7)cells.push('<td class="pd-blank"></td>');
+  let rows='';
+  for(let i=0;i<cells.length;i+=7)rows+=`<tr>${cells.slice(i,i+7).join('')}</tr>`;
+  bcPrintWindow(`Bird's-eye view — ${s.owner}`,
+    `<style>
+      .pdcal{width:100%;border-collapse:collapse;table-layout:fixed;} .pdcal th{background:#eef2f7;border:1px solid #cfd8e3;padding:4px;font-size:10px;text-transform:uppercase;}
+      .pdcal td{border:1px solid #cfd8e3;vertical-align:top;height:90px;padding:3px;font-size:9px;}
+      .pdcal td.pd-blank{background:#fafafa;border:none;} .pdcal td.pd-off{background:#eef1f4;}
+      .pd-num{font-weight:bold;font-size:11px;margin-bottom:2px;} .pd-appt{border-bottom:1px dotted #cfd8e3;padding:1px 0;} .pd-appt b{color:#0d7377;}
+     </style>
+     <h1>Bird's-eye view — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(month))} ${year} · ${(s.booked||[]).length} booked</div>
+     <table class="pdcal"><thead><tr>${dows.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`);
+}
+/* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
+   printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
+   set the printer's stock to 50 x 25 mm and print at 100% (no scaling). */
+function printPatientLabels(){
+  const s=fpView;
+  const list=(s.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  if(!list.length){alert('No booked patients to print labels for.');return;}
+  const labels=list.map(a=>{
+    const p=a.patients||{};
+    const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';
+    return `<div class="label">
+      <div class="l-nm">${htmlSafe(nm)}</div>
+      <div class="l-id">${htmlSafe(p.id_card||'')}</div>
+      <div class="l-dt">${htmlSafe(fmtShortDate(a.appt_date))} · ${htmlSafe(String(a.appt_slot||'').slice(0,5))}</div>
+      <div class="l-nu">${htmlSafe(appointmentNurseLabel(a))}</div>
+    </div>`;
+  }).join('');
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to print the labels.');return;}
+  w.document.write(`<html><head><title>Patient labels</title><style>
+    @page{size:50mm 25mm;margin:0;}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
+    html,body{margin:0;padding:0;}
+    .label{width:50mm;height:25mm;padding:1.6mm 2.2mm;page-break-after:always;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#000;display:flex;flex-direction:column;justify-content:center;}
+    .l-nm{font-weight:bold;font-size:11pt;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .l-id{font-size:9pt;margin-top:0.8mm;} .l-dt{font-size:9.5pt;font-weight:bold;margin-top:0.5mm;} .l-nu{font-size:8pt;color:#333;margin-top:0.4mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  </style></head><body onload="setTimeout(function(){window.focus();window.print();},250)">${labels}</body></html>`);
+  w.document.close();
 }
 async function loadStaffAudit(){
   ensureFollowupDefaults();
