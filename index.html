@@ -6575,12 +6575,12 @@ async function loadBookingCalendar(){
   }catch(e){root.innerHTML='<div class="report-note">Could not load the booking calendar: '+htmlSafe(String(e&&e.message||e))+'</div>';}
 }
 function bcDayIsOpen(ds){
-  // A day is bookable + not greyed when the list may book on it and, for a named
-  // nurse, she is actually working (roster) that day.
-  if(!isBookableDayForOwner(ds,bookCalState.calOwner))return false;
-  if(bookCalState.calOwner==='Common')return true;
+  // Open = the nurse is working that day (her off days are greyed), read from her
+  // roster / working pattern. The Common weekday list runs Monday to Saturday.
+  if(bookCalState.calOwner==='Common')return isCommonDay(ds);
   const staff=ownerStaffForCapacity(bookCalState.calOwner);
-  if(!staff)return true;
+  if(!staff)return isCommonDay(ds);          // unknown nurse → weekday default
+  if(!bookCalState.index)return false;
   return isNurseWorkingClinicDay(staff,ds,bookCalState.index);
 }
 function renderBookingCalendar(){
@@ -6613,7 +6613,7 @@ function bcMonthHTML(){
       <span class="bc-fill" style="background:rgba(255,255,255,.75);">${n}/${cap}</span></div>`;
   }
   return `<div class="bc-head"><h4>${followupMonthName(month)} ${year}</h4>
-      <span class="dntu-note" style="margin:0;">${htmlSafe(bookableDayRuleText(bookCalState.calOwner))}</span></div>
+      <span class="dntu-note" style="margin:0;">${bookCalState.calOwner==='Common'?'Common weekday list — Monday to Saturday':htmlSafe(bookCalState.calOwner+' — working days open, off days greyed')}</span></div>
     <div class="bc-grid">${dows.map(d=>`<div class="bc-dow">${d}</div>`).join('')}${cells}</div>
     <div class="bc-legend">
       <span><i style="background:${bcFillColor(0)};border:1px solid #ccc;"></i>free</span>
