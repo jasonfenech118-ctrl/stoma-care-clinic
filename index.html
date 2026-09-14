@@ -6717,7 +6717,7 @@ function bcMonthHTML(){
   }
   const nurse=bookCalState.calOwner==='Common'?'':htmlSafe(bookCalState.ownerStaff?.full_name||bookCalState.calOwner);
   return `<div class="bc-head"><h4>${followupMonthName(month)} ${year}</h4>
-      ${nurse?`<span class="dntu-note" style="margin:0;">${nurse}</span>`:''}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${nurse?`<span class="dntu-note" style="margin:0;">${nurse}</span>`:''}<button class="btn-add" onclick="printBlankCalendar()" style="padding:5px 10px;background:#475569;font-size:12px;" title="Print a blank booking calendar for this month — no names">🖨 Print calendar</button></div></div>
     <div class="bc-grid">${dows.map(d=>`<div class="bc-dow">${d}</div>`).join('')}${cells}</div>
     <div class="bc-legend">
       <span><i style="background:${bcFillColor(0)};border:1px solid #ccc;"></i>free</span>
@@ -7562,27 +7562,32 @@ async function openBookedBirdsEye(){
 // and the ordinary weekdays stay quiet: Sundays & public holidays red, Saturdays
 // blue, the nurse's off/rest days grey, and every other weekday a faint light so
 // it is not distracting to the eye.
-async function printBookedPatients(){
+// The booked-patient sheet (blank=false) fills each slot with any patient
+// booked there; the blank calendar (blank=true) is the same month grid with no
+// names — a plain sheet to write on or stick labels straight onto.
+async function printBookedPatients(){ return printBookingSheet(false); }
+async function printBlankCalendar(){ return printBookingSheet(true); }
+async function printBookingSheet(blank){
   const s=fpView;
   const ctx=await bookedGridContext(s);
   const {year,month}=ctx;
   const monthName=followupMonthName(month);
   const dim=new Date(year,month,0).getDate();
   const bySlot={};
-  (s.booked||[]).forEach(a=>{bySlot[a.appt_date+'|'+String(a.appt_slot||'').slice(0,5)]=a;});
+  if(!blank)(s.booked||[]).forEach(a=>{bySlot[a.appt_date+'|'+String(a.appt_slot||'').slice(0,5)]=a;});
   const rows=[];
   for(let d=1;d<=dim;d++){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dObj=new Date(ds+'T12:00:00');
     const dowShort=dObj.toLocaleDateString('en-GB',{weekday:'short'});
-    const sun=isSunday(ds), hol=!!holidays[ds], sat=dObj.getDay()===6, off=bookedDayOff(ctx,ds), working=!off;
+    const sun=isSunday(ds), hol=!!holidays[ds], off=bookedDayOff(ctx,ds), working=!off;
     // Clinic day she works → bold red target; clinic day she is off → red header
-    // but faint slots; her off/rest days → grey; Saturdays → blue; the rest of
-    // the working week → faint, so the eye is not distracted.
+    // but faint slots; her off/rest days → grey; every other day of the working
+    // week (Saturdays included) → faint, so the eye is not distracted. Saturday
+    // is NOT a clinic day and gets no special colour of its own.
     let cls;
     if(sun||hol)cls=working?'d-clinic':'d-clinic d-clinic-off';
     else if(off)cls='d-off';
-    else if(sat)cls='d-sat';
     else cls='d-week';
     const greyBlank=(cls==='d-off');
     const cells=BC_WINDOW.map(t=>{
@@ -7598,7 +7603,7 @@ async function printBookedPatients(){
     rows.push(`<tr class="${cls}"><td class="dt">${d}</td><td class="dy">${htmlSafe(dowShort)}</td>${cells}</tr>`);
   }
   const head=`<tr><th class="dt">Date</th><th class="dy">Day</th>${BC_WINDOW.map(t=>`<th class="tm">${t}</th>`).join('')}</tr>`;
-  bcPrintWindow(`Booking sheet — ${s.owner} — ${monthName} ${year}`,
+  bcPrintWindow(`${blank?'Booking calendar':'Booking sheet'} — ${s.owner} — ${monthName} ${year}`,
     `<style>
       @page{size:A4 portrait;margin:6mm;}
       html,body{height:100%;}
@@ -7629,10 +7634,7 @@ async function printBookedPatients(){
       table.bs tr.d-clinic td.sl{color:#c22a3d;font-weight:700;font-style:normal;border:1.6px dashed #cf3346;}
       /* Clinic day she is OFF — keep the red header but fade the slots right back. */
       table.bs tr.d-clinic-off td.sl{color:#e7b3ba;font-weight:400;font-style:italic;border:0.9px dashed #eecbd0;}
-      /* Saturdays — blue */
-      table.bs tr.d-sat td.dt,table.bs tr.d-sat td.dy{background:#cfe1f6;color:#194a82;font-weight:800;}
-      table.bs tr.d-sat td.sl{color:#9fc2e8;border-color:#c0d9f2;}
-      /* ordinary weekdays — faint, so they do not distract the eye */
+      /* ordinary weekdays incl. Saturday — faint, so they do not distract the eye */
       table.bs tr.d-week td.dt,table.bs tr.d-week td.dy{color:#9a9a9a;}
       table.bs tr.d-week td.sl{color:#d8d8d8;border-color:#e6e6e6;}
      </style>
