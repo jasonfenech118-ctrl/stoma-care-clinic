@@ -1892,7 +1892,6 @@ table.np tbody tr:hover td{background:#f4fbfa;}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">Booked Patients — <span id="followup-owner-title">Common</span></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="openBookedBirdsEye()">🦅 Bird's-eye</button>
             <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="printBookedPatients()">🖨 Print</button>
             <button class="btn-add" style="padding:6px 11px;background:#7c3aed;" onclick="printPatientLabels()">🏷 Labels</button>
             <button class="btn-add" style="padding:6px 11px;" onclick="openFollowupStats()">📊 Statistics</button>
@@ -7556,21 +7555,38 @@ async function openBookedBirdsEye(){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print sheet</button></div>`;
   openMo();
 }
-// The printable one-page sheet: days down, time slots across; booked cells filled,
-// empty cells blank to write in or stick a small label on.
+// The printable sheet: each slot is its own dotted-outline label box carrying a
+// prominent date and a faded time — booked ones show the patient, empty ones are
+// blank so a printed label can be stuck straight onto the dotted contour.
 async function printBookedPatients(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
+  const days=birdsEyeSlotDays(s,ctx);
+  const monthShort=followupMonthName(ctx.month).slice(0,3);
+  const boxes=days.length?days.flatMap(day=>{
+    const dnum=Number(day.ds.slice(8,10));
+    const dow=new Date(day.ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'});
+    return day.slots.map(sl=>{
+      const p=sl.appt?sl.appt.patients||{}:null;
+      const nm=p?`${p.surname||''} ${p.first_name||''}`.trim():'';
+      return `<div class="lbox">
+        <div class="lh"><span class="ld">${dow} ${dnum} ${htmlSafe(monthShort)}</span><span class="lt">${sl.time}</span></div>
+        <div class="lp">${p?htmlSafe(nm)+(p.id_card?'<br><span class=\"li\">'+htmlSafe(p.id_card)+'</span>':''):''}</div>
+      </div>`;
+    });
+  }).join(''):'<div class="sub">No clinic days for this nurse and month.</div>';
   bcPrintWindow(`Booking sheet — ${s.owner}`,
     `<style>
-      .bes{width:100%;border-collapse:collapse;table-layout:fixed;}
-      .bes th,.bes td{border:1px solid #000;padding:3px 3px;font-size:9pt;text-align:center;height:9mm;overflow:hidden;}
-      .bes th{background:#1a2e4a;color:#fff;font-size:8pt;} .bes td.be-d{text-align:left;font-weight:bold;white-space:nowrap;}
-      .bes td.be-bk{background:#eef7f0;font-weight:bold;font-size:8pt;}
-      @page{size:A4 portrait;margin:10mm;}
+      @page{size:A4 portrait;margin:8mm;}
+      .lwrap{display:flex;flex-wrap:wrap;gap:3mm;}
+      .lbox{width:60mm;height:26mm;border:1.4px dashed #444;border-radius:2mm;box-sizing:border-box;padding:2mm 2.5mm;overflow:hidden;font-family:Arial,sans-serif;}
+      .lh{display:flex;justify-content:space-between;align-items:baseline;}
+      .lh .ld{font-weight:bold;font-size:12pt;color:#000;}
+      .lh .lt{font-size:8pt;color:#bbb;font-weight:bold;}
+      .lp{font-weight:bold;font-size:11pt;margin-top:2mm;} .lp .li{font-size:8pt;font-weight:normal;color:#333;}
      </style>
-     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 · booked filled, empty to write in or label</div>
-     ${birdsEyeTableHTML(s,ctx,'bes')}`);
+     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 · stick a label on any empty box</div>
+     <div class="lwrap">${boxes}</div>`);
 }
 /* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
    printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
