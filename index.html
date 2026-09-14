@@ -1863,7 +1863,14 @@ table.np tbody tr:hover td{background:#f4fbfa;}
         <div id="bookcal-root"><div class="report-note">Loading booking calendar…</div></div>
       </div>
       <div class="card">
-        <div class="card-title">Booked Patients — <span id="followup-owner-title">Common</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="card-title" style="margin-bottom:0;">Booked Patients — <span id="followup-owner-title">Common</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="openBookedBirdsEye()">🦅 Bird's-eye</button>
+            <button class="btn-add" style="padding:6px 11px;background:#475569;" onclick="printBookedPatients()">🖨 Print</button>
+            <button class="btn-add" style="padding:6px 11px;" onclick="openFollowupStats()">📊 Statistics</button>
+          </div>
+        </div>
         <div style="overflow-x:auto;"><table class="dt">
           <thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Nurse / Column</th><th>Actions</th></tr></thead>
           <tbody id="followup-patient-tbody"><tr><td colspan="7" class="empty">Loading booked patients...</td></tr></tbody>
@@ -7420,6 +7427,67 @@ async function openDailyReminderModal(force){
     </div>`;
   openMo();
 }
+/* Snapshot of the current Follow-up Planning view, filled by loadStaffAudit and
+   read by the Bird's-eye / Print / Statistics buttons. */
+let fpView={owner:'Common',year:new Date().getFullYear(),month:0,booked:[],due:0,bookedCount:0,slots:0,awaiting:0};
+// A small vertical bar chart (inline SVG) for the booking statistics.
+function followupStatsChartHTML(s){
+  const items=[
+    {label:'Due',value:Number(s.due)||0,color:'#2980b9'},
+    {label:'Booked',value:Number(s.bookedCount)||0,color:'#27ae60'},
+    {label:'Slots free',value:Number(s.slots)||0,color:'#0d7377'},
+    {label:'Awaiting',value:Number(s.awaiting)||0,color:'#c0392b'}
+  ];
+  const max=Math.max(1,...items.map(i=>i.value));
+  const H=210,BW=64,GAP=30,padL=12,padB=42,padT=24;
+  const W=padL*2+items.length*BW+(items.length-1)*GAP;
+  const bars=items.map((it,i)=>{
+    const x=padL+i*(BW+GAP);
+    const bh=Math.round((it.value/max)*(H-padB-padT));
+    const y=H-padB-bh;
+    return `<rect x="${x}" y="${y}" width="${BW}" height="${bh}" rx="6" fill="${it.color}"></rect>
+      <text x="${x+BW/2}" y="${y-7}" text-anchor="middle" font-size="16" font-weight="800" fill="#1a2e4a">${it.value}</text>
+      <text x="${x+BW/2}" y="${H-padB+17}" text-anchor="middle" font-size="11" font-weight="700" fill="#7a8fa6">${htmlSafe(it.label)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;height:auto;">${bars}</svg>`;
+}
+function openFollowupStats(){
+  const s=fpView;
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>📊 Booking statistics — ${htmlSafe(s.owner)}</h2>
+    <div class="msub">${htmlSafe(s.month?followupMonthName(s.month):String(s.year))} ${s.year}</div>
+    <div style="text-align:center;">${followupStatsChartHTML(s)}</div>
+    <div class="report-note" style="margin-top:8px;"><strong>Due</strong> — patients due this month · <strong>Booked</strong> — appointments booked · <strong>Slots free</strong> — Sunday &amp; public-holiday availability · <strong>Awaiting</strong> — overdue from earlier months with no booking yet.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+}
+function openBookedBirdsEye(){
+  const s=fpView;
+  const byDate={};
+  (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
+  const dates=Object.keys(byDate).sort();
+  const body=dates.length?dates.map(d=>`
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:900;color:var(--navy);border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:6px;">${htmlSafe(fmtShortDate(d))} — ${byDate[d].length} booked</div>
+      ${byDate[d].slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||''))).map(a=>{const p=a.patients||{};const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';return `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px dotted #e5e9ef;font-size:13px;"><span style="font-weight:800;min-width:54px;">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</span><span style="flex:1;"><strong>${htmlSafe(nm)}</strong>${p.id_card?' · '+htmlSafe(p.id_card):''}${p.phone_number?' · '+htmlSafe(p.phone_number):''}</span><span style="color:var(--muted);">${htmlSafe(appointmentNurseLabel(a))}</span></div>`;}).join('')}
+    </div>`).join(''):'<div class="report-note">No booked appointments for this nurse and period.</div>';
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>🦅 Bird's-eye view — ${htmlSafe(s.owner)}</h2>
+    <div class="msub">Booked appointments · ${htmlSafe(s.month?followupMonthName(s.month):String(s.year))} ${s.year} · ${(s.booked||[]).length} total</div>
+    ${body}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print</button></div>`;
+  openMo();
+}
+function printBookedPatients(){
+  const s=fpView;
+  const rows=(s.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`)).map(a=>{
+    const p=a.patients||{};const nm=`${p.first_name||''} ${p.surname||''}`.trim();
+    return `<tr><td>${htmlSafe(fmtShortDate(a.appt_date))}</td><td>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</td><td>${htmlSafe(nm)}</td><td>${htmlSafe(p.id_card||'')}</td><td>${htmlSafe(p.phone_number||'')}</td><td>${htmlSafe(appointmentNurseLabel(a))}</td><td style="width:26%;">&nbsp;</td></tr>`;
+  }).join('')||'<tr><td colspan="7">No booked appointments.</td></tr>';
+  bcPrintWindow(`Booked patients — ${s.owner}`,
+    `<h1>Booked patients — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(s.month?followupMonthName(s.month):String(s.year))} ${s.year} · ${(s.booked||[]).length} booked</div>
+     <table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>ID card</th><th>Phone</th><th>Nurse</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
 async function loadStaffAudit(){
   ensureFollowupDefaults();
   loadOvertimeAudit();
@@ -7507,7 +7575,6 @@ async function loadStaffAudit(){
   }
 
   const ownerTitle=document.getElementById('followup-owner-title'); if(ownerTitle)ownerTitle.textContent=selectedFollowupOwner;
-  if(!tbody)return;
   // The bottom list is the owner's BOOKED appointments (upcoming), scoped to the
   // selected month when one is chosen, newest booking date first at the top of a
   // day. It replaces the old planning list.
@@ -7515,6 +7582,15 @@ async function loadStaffAudit(){
     .filter(a=>a.status==='booked')
     .filter(a=>!month||Number(String(a.appt_date||'').slice(5,7))===Number(month))
     .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
+  // Snapshot for the Bird's-eye / Print / Statistics buttons.
+  const nowKey=new Date().getFullYear()*100+(new Date().getMonth()+1);
+  const futureBookedIds=new Set(kpiAppts.filter(a=>String(a.status||'')!=='cancelled'&&String(a.appt_date||'')>=TODAY).map(a=>String(a.patient_id)));
+  const ownerActive=(selectedFollowupOwner==='All Patients'?allPatients:allPatients.filter(p=>(p.followup_owner||'Common')===selectedFollowupOwner)).filter(p=>normaliseFollowupStatus(p.followup_status)==='active');
+  const stMonth=month||(new Date().getMonth()+1);
+  const dueCount=ownerActive.filter(p=>Number(p.followup_due_month)===Number(stMonth)&&Number(p.followup_year)===Number(year)).length;
+  const awaitingCount=ownerActive.filter(p=>{const k=Number(p.followup_year)*100+Number(p.followup_due_month);return k>0&&k<nowKey&&!futureBookedIds.has(String(p.id));}).length;
+  fpView={owner:selectedFollowupOwner,year,month,booked:bookedList,due:dueCount,bookedCount:bookedList.length,slots:avail.free,awaiting:awaitingCount};
+  if(!tbody)return;
   if(!bookedList.length){tbody.innerHTML=`<tr><td colspan="7" class="empty">No booked appointments for ${htmlSafe(selectedFollowupOwner)} · ${htmlSafe(month?followupMonthName(month):String(year))}.</td></tr>`;return;}
   tbody.innerHTML=bookedList.map(a=>{
     const p=a.patients||{};
