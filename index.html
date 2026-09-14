@@ -1529,6 +1529,16 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .be-appt{background:#e8f5f4;border-radius:4px;padding:1px 3px;margin-bottom:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .be-appt b{color:#0d7377;}
 @media(max-width:520px){.be-day{min-height:56px;font-size:9px;}.be-day .be-dnum{font-size:10px;}}
+/* Slot sheet (each clinic day's time slots, booked + available, for labels). */
+.be-day-sec{margin-bottom:14px;}
+.be-day-h{font-weight:900;color:var(--navy);font-size:14px;border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:8px;}
+.be-slots{display:flex;flex-wrap:wrap;gap:8px;}
+.be-slot{flex:1 1 150px;min-width:140px;border:1.5px solid var(--border);border-radius:9px;padding:8px 10px;min-height:46px;display:flex;flex-direction:column;justify-content:center;}
+.be-slot .be-slot-t{font-weight:900;color:var(--navy);font-size:12px;}
+.be-slot .be-slot-p{font-size:12px;margin-top:2px;}
+.be-slot.booked{background:#e6f7ec;border-color:#7fce9b;}
+.be-slot.booked .be-slot-p{font-weight:800;color:#1e7d43;}
+.be-slot.free{background:#fff;border-style:dashed;}
 
 /* ── MOBILE NAV DRAWER ── */
 .mob-ham{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:38px;padding:8px;border:none;background:rgba(255,255,255,.12);border-radius:9px;cursor:pointer;flex-shrink:0;}
@@ -7504,62 +7514,65 @@ function bookedDayOff(ctx,ds){
   if(!ctx.staff||!ctx.index)return false;
   return !isNurseWorkingClinicDay(ctx.staff,ds,ctx.index);
 }
+// Each clinic day the nurse works, with its 09:00–11:30 slots (booked or free) —
+// a day is included when the nurse works it (Common: Mon–Sat) or it already has
+// a booking. Sundays and public holidays she works are always included.
+function birdsEyeSlotDays(s,ctx){
+  const {year,month,staff,index}=ctx;
+  const bySlot={};
+  (s.booked||[]).forEach(a=>{bySlot[a.appt_date+'|'+String(a.appt_slot||'').slice(0,5)]=a;});
+  const dim=new Date(year,month,0).getDate();
+  const days=[];
+  for(let d=1;d<=dim;d++){
+    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const working=staff?isNurseWorkingClinicDay(staff,ds,index):isCommonDay(ds);
+    const slots=BC_WINDOW.map(t=>({time:t,appt:bySlot[ds+'|'+t]||null}));
+    if(!working&&!slots.some(x=>x.appt))continue;   // skip off days with no bookings
+    days.push({ds,working,slots});
+  }
+  return days;
+}
 async function openBookedBirdsEye(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
-  const {year,month}=ctx;
-  const byDate={};
-  (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
-  const dim=new Date(year,month,0).getDate();
-  const firstDow=(new Date(year,month-1,1).getDay()+6)%7;   // Monday-based
-  const dows=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  let cells='';
-  for(let i=0;i<firstDow;i++)cells+=`<div class="be-day blank"></div>`;
-  for(let d=1;d<=dim;d++){
-    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const list=(byDate[ds]||[]).slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
-    const off=!list.length&&bookedDayOff(ctx,ds);
-    const items=list.map(a=>{const p=a.patients||{};const nm=`${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'. ':''}${p.surname||p.first_name||'Patient'}`.trim();return `<div class="be-appt"><b>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</b> ${htmlSafe(nm)}</div>`;}).join('');
-    cells+=`<div class="be-day${list.length?' has':(off?' off':'')}"><div class="be-dnum">${d}</div>${items}</div>`;
-  }
+  const days=birdsEyeSlotDays(s,ctx);
+  const body=days.length?days.map(day=>`
+    <div class="be-day-sec">
+      <div class="be-day-h">${htmlSafe(fmtShortDate(day.ds))}${day.working?'':' · off (has bookings)'}</div>
+      <div class="be-slots">${day.slots.map(sl=>{
+        if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';return `<div class="be-slot booked"><span class="be-slot-t">${sl.time}</span><span class="be-slot-p">${htmlSafe(nm)}${p.id_card?' · '+htmlSafe(p.id_card):''}</span></div>`;}
+        return `<div class="be-slot free"><span class="be-slot-t">${sl.time}</span><span class="be-slot-p" style="color:var(--muted);">Available</span></div>`;
+      }).join('')}</div>
+    </div>`).join(''):'<div class="report-note">No clinic days for this nurse and month.</div>';
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🦅 Bird's-eye view — ${htmlSafe(s.owner)}</h2>
-    <div class="msub">${followupMonthName(month)} ${year} · ${(s.booked||[]).length} booked</div>
-    <div class="be-grid">${dows.map(d=>`<div class="be-dow">${d}</div>`).join('')}${cells}</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print</button></div>`;
+    <div class="msub">${followupMonthName(ctx.month)} ${ctx.year} · every clinic day's 09:00–11:30 slots, booked and available</div>
+    ${body}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print sheet</button></div>`;
   openMo();
 }
+// The printable planning sheet: each clinic day's slots as bordered boxes —
+// booked ones filled, empty ones blank with the time, sized so a 50x25mm label
+// can be stuck straight onto an empty slot by hand.
 async function printBookedPatients(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
-  const {year,month}=ctx;
-  const byDate={};
-  (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
-  const dim=new Date(year,month,0).getDate();
-  const firstDow=(new Date(year,month-1,1).getDay()+6)%7;
-  const dows=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  // Build a 7-column calendar grid as table rows (weeks).
-  let cells=[];
-  for(let i=0;i<firstDow;i++)cells.push('<td class="pd-blank"></td>');
-  for(let d=1;d<=dim;d++){
-    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const list=(byDate[ds]||[]).slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
-    const off=!list.length&&bookedDayOff(ctx,ds);
-    const items=list.map(a=>{const p=a.patients||{};const nm=`${p.surname||''} ${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'.':''}`.trim()||'Patient';return `<div class="pd-appt"><b>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</b> ${htmlSafe(nm)}</div>`;}).join('');
-    cells.push(`<td class="${off?'pd-off':''}"><div class="pd-num">${d}</div>${items}</td>`);
-  }
-  while(cells.length%7)cells.push('<td class="pd-blank"></td>');
-  let rows='';
-  for(let i=0;i<cells.length;i+=7)rows+=`<tr>${cells.slice(i,i+7).join('')}</tr>`;
-  bcPrintWindow(`Bird's-eye view — ${s.owner}`,
+  const days=birdsEyeSlotDays(s,ctx);
+  const body=days.length?days.map(day=>`
+    <div class="be-day-h">${htmlSafe(fmtShortDate(day.ds))}</div>
+    <div class="be-slots">${day.slots.map(sl=>{
+      if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';return `<div class="be-pslot filled"><div class="t">${sl.time}</div><div class="p">${htmlSafe(nm)}</div><div class="i">${htmlSafe(p.id_card||'')}</div></div>`;}
+      return `<div class="be-pslot"><div class="t">${sl.time}</div></div>`;
+    }).join('')}</div>`).join(''):'<div class="sub">No clinic days for this nurse and month.</div>';
+  bcPrintWindow(`Booking sheet — ${s.owner}`,
     `<style>
-      .pdcal{width:100%;border-collapse:collapse;table-layout:fixed;} .pdcal th{background:#eef2f7;border:1px solid #cfd8e3;padding:4px;font-size:10px;text-transform:uppercase;}
-      .pdcal td{border:1px solid #cfd8e3;vertical-align:top;height:90px;padding:3px;font-size:9px;}
-      .pdcal td.pd-blank{background:#fafafa;border:none;} .pdcal td.pd-off{background:#eef1f4;}
-      .pd-num{font-weight:bold;font-size:11px;margin-bottom:2px;} .pd-appt{border-bottom:1px dotted #cfd8e3;padding:1px 0;} .pd-appt b{color:#0d7377;}
+      .be-day-h{font-weight:bold;font-size:12pt;border-bottom:2px solid #000;margin:6mm 0 3mm;padding-bottom:1mm;}
+      .be-slots{display:flex;flex-wrap:wrap;gap:3mm;}
+      .be-pslot{width:62mm;height:26mm;border:1.2px solid #000;box-sizing:border-box;padding:2mm;overflow:hidden;font-family:Arial,sans-serif;}
+      .be-pslot .t{font-weight:bold;font-size:8pt;color:#333;} .be-pslot .p{font-weight:bold;font-size:11pt;margin-top:1.5mm;} .be-pslot .i{font-size:9pt;}
+      .be-pslot.filled{background:#f2f7f4;}
      </style>
-     <h1>Bird's-eye view — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(month))} ${year} · ${(s.booked||[]).length} booked</div>
-     <table class="pdcal"><thead><tr>${dows.map(d=>`<th>${d}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`);
+     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 slots · stick a label on any empty box</div>${body}`);
 }
 /* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
    printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
