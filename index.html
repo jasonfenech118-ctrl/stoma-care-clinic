@@ -7555,42 +7555,79 @@ async function openBookedBirdsEye(){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print sheet</button></div>`;
   openMo();
 }
-// The printable sheet: each slot is its own dotted-outline label box carrying a
-// prominent date and a faded time — booked ones show the patient, empty ones are
-// blank so a printed label can be stuck straight onto the dotted contour.
+// The printable booking sheet: a full-month table — every day of the month a
+// row, the six 09:00–11:30 slots across. Each empty slot is a dashed "Stick
+// label here" box so a printed Zebra label goes straight onto it; booked slots
+// show the patient. Day rows are coloured by type so the clinic days stand out
+// and the ordinary weekdays stay quiet: Sundays & public holidays red, Saturdays
+// blue, the nurse's off/rest days grey, and every other weekday a faint light so
+// it is not distracting to the eye.
 async function printBookedPatients(){
   const s=fpView;
   const ctx=await bookedGridContext(s);
-  const days=birdsEyeSlotDays(s,ctx);
-  const monthShort=followupMonthName(ctx.month).slice(0,3);
-  const boxes=days.length?days.flatMap(day=>{
-    const dnum=Number(day.ds.slice(8,10));
-    const dow=new Date(day.ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'});
-    return day.slots.map(sl=>{
-      const p=sl.appt?sl.appt.patients||{}:null;
-      const nm=p?`${p.surname||''} ${p.first_name||''}`.trim():'';
-      return `<div class="lbox">
-        <div class="lh"><span class="ld">${dow} ${dnum} ${htmlSafe(monthShort)}</span><span class="lt">${sl.time}</span></div>
-        <div class="lp">${p?htmlSafe(nm)+(p.id_card?'<br><span class=\"li\">'+htmlSafe(p.id_card)+'</span>':''):''}</div>
-      </div>`;
-    });
-  }).join(''):'<div class="sub">No clinic days for this nurse and month.</div>';
-  bcPrintWindow(`Booking sheet — ${s.owner}`,
+  const {year,month}=ctx;
+  const monthName=followupMonthName(month);
+  const dim=new Date(year,month,0).getDate();
+  const bySlot={};
+  (s.booked||[]).forEach(a=>{bySlot[a.appt_date+'|'+String(a.appt_slot||'').slice(0,5)]=a;});
+  const rows=[];
+  for(let d=1;d<=dim;d++){
+    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dObj=new Date(ds+'T12:00:00');
+    const dowShort=dObj.toLocaleDateString('en-GB',{weekday:'short'});
+    const sun=isSunday(ds), hol=!!holidays[ds], sat=dObj.getDay()===6, off=bookedDayOff(ctx,ds);
+    const cls=(sun||hol)?'d-clinic':(off?'d-off':(sat?'d-sat':'d-week'));
+    const cells=BC_WINDOW.map(t=>{
+      const a=bySlot[ds+'|'+t];
+      if(a){
+        const p=a.patients||{};
+        const fi=(p.first_name||'').charAt(0);
+        const nm=`${p.surname||''}${fi?' '+fi+'.':''}`.trim()||'Patient';
+        return `<td class="bk"><span class="bn">${htmlSafe(nm)}</span>${p.id_card?`<span class="bi">${htmlSafe(p.id_card)}</span>`:''}</td>`;
+      }
+      if(off)return `<td class="off"></td>`;
+      return `<td class="sl">Stick label here</td>`;
+    }).join('');
+    rows.push(`<tr class="${cls}"><td class="dt">${d}</td><td class="dy">${htmlSafe(dowShort)}</td>${cells}</tr>`);
+  }
+  const head=`<tr><th class="dt">Date</th><th class="dy">Day</th>${BC_WINDOW.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+  bcPrintWindow(`Booking sheet — ${s.owner} — ${monthName} ${year}`,
     `<style>
-      @page{size:A4 portrait;margin:8mm;}
-      .lwrap{display:flex;flex-wrap:wrap;gap:3mm;}
-      .lbox{width:60mm;height:26mm;border:1.4px dashed #444;border-radius:2mm;box-sizing:border-box;padding:2mm 2.5mm;overflow:hidden;font-family:Arial,sans-serif;}
-      .lh{display:flex;justify-content:space-between;align-items:baseline;}
-      .lh .ld{font-weight:bold;font-size:12pt;color:#000;}
-      .lh .lt{font-size:8pt;color:#bbb;font-weight:bold;}
-      .lp{font-weight:bold;font-size:11pt;margin-top:2mm;} .lp .li{font-size:8pt;font-weight:normal;color:#333;}
+      @page{size:A4 portrait;margin:7mm;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
+      .bs-head{display:flex;align-items:baseline;gap:4mm;border-bottom:2.5px solid #000;padding-bottom:2mm;margin-bottom:3mm;}
+      .bs-head .bs-mo{font-size:34pt;font-weight:900;letter-spacing:1px;line-height:1;}
+      .bs-head .bs-yr{font-size:20pt;font-weight:700;color:#555;}
+      .bs-head .bs-t{margin-left:auto;font-size:13pt;font-weight:700;}
+      table.bs{width:100%;border-collapse:collapse;table-layout:fixed;}
+      table.bs th,table.bs td{border:0.5px solid #e2e2e2;padding:1mm 0.6mm;font-size:7.5pt;text-align:center;vertical-align:middle;}
+      table.bs th{background:#f2f2f2;font-size:8pt;font-weight:700;color:#000;}
+      table.bs th.dt,table.bs td.dt{width:7%;} table.bs th.dy,table.bs td.dy{width:9%;}
+      table.bs td.dt{font-weight:800;font-size:10.5pt;} table.bs td.dy{font-weight:600;}
+      table.bs td.sl{color:#cccccc;font-size:6.3pt;font-style:italic;border:0.8px dashed #dcdcdc;}
+      table.bs td.bk{border:0.9px solid #7ba98a;background:#e9f8ef;}
+      table.bs td.bk .bn{display:block;font-weight:700;font-size:7.5pt;color:#0a5e33;line-height:1.05;}
+      table.bs td.bk .bi{display:block;font-size:6pt;color:#555;}
+      table.bs td.off{background:#e6e6e6;}
+      /* off / rest days — grey and quiet */
+      table.bs tr.d-off{background:#eee;} table.bs tr.d-off td.dt,table.bs tr.d-off td.dy{background:#dadada;color:#8a8a8a;}
+      /* Sundays & public holidays — the clinic days, red */
+      table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{background:#f6ccd2;color:#a1172a;font-weight:800;}
+      table.bs tr.d-clinic td.sl{color:#e39aa4;border-color:#efbcc4;}
+      /* Saturdays — blue */
+      table.bs tr.d-sat td.dt,table.bs tr.d-sat td.dy{background:#cfe1f6;color:#194a82;font-weight:800;}
+      table.bs tr.d-sat td.sl{color:#9fc2e8;border-color:#c0d9f2;}
+      /* ordinary weekdays — faint, so they do not distract the eye */
+      table.bs tr.d-week td.dt,table.bs tr.d-week td.dy{color:#9a9a9a;}
+      table.bs tr.d-week td.sl{color:#dcdcdc;border-color:#e8e8e8;}
      </style>
-     <h1>Booking sheet — ${htmlSafe(s.owner)}</h1><div class="sub">${htmlSafe(followupMonthName(ctx.month))} ${ctx.year} · 09:00–11:30 · stick a label on any empty box</div>
-     <div class="lwrap">${boxes}</div>`);
+     <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">Booking sheet — ${htmlSafe(s.owner)}</span></div>
+     <table class="bs"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`);
 }
-/* One 50 x 25 mm label per booked patient, sized for a Zebra desktop label
-   printer (e.g. GK/GX420). Each label is its own page so it lands on one label;
-   set the printer's stock to 50 x 25 mm and print at 100% (no scaling). */
+/* One 50 x 20 mm (5 cm x 2 cm) label per booked patient, sized for a Zebra
+   desktop label printer (e.g. GK/GX420). Each label is its own page so it lands
+   on one label; set the printer's stock to 50 x 20 mm and print at 100% (no
+   scaling). */
 function patientLabelHTML(a){
   const p=a.patients||{};
   const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';
@@ -7605,16 +7642,16 @@ function printLabelsWindow(inner){
   const w=window.open('','_blank');
   if(!w){alert('Please allow pop-ups to print the labels.');return;}
   w.document.write(`<html><head><title>Patient labels</title><style>
-    @page{size:50mm 25mm;margin:0;}
+    @page{size:50mm 20mm;margin:0;}
     *{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
     html,body{margin:0;padding:0;}
-    .label{width:50mm;height:25mm;padding:1.6mm 2.2mm;page-break-after:always;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#000;display:flex;flex-direction:column;justify-content:center;}
-    .l-nm{font-weight:bold;font-size:11pt;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .l-id{font-size:9pt;margin-top:0.8mm;} .l-dt{font-size:9.5pt;font-weight:bold;margin-top:0.5mm;} .l-nu{font-size:8pt;color:#333;margin-top:0.4mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .label{width:50mm;height:20mm;padding:1.1mm 2mm;page-break-after:always;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#000;display:flex;flex-direction:column;justify-content:center;}
+    .l-nm{font-weight:bold;font-size:9.5pt;line-height:1.02;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .l-id{font-size:7.5pt;margin-top:0.4mm;} .l-dt{font-size:8pt;font-weight:bold;margin-top:0.3mm;} .l-nu{font-size:6.5pt;color:#333;margin-top:0.2mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   </style></head><body onload="setTimeout(function(){window.focus();window.print();},250)">${inner}</body></html>`);
   w.document.close();
 }
-// Bulk: one 50 x 25 mm label per already-booked patient (Zebra desktop printer).
+// Bulk: one 50 x 20 mm label per already-booked patient (Zebra desktop printer).
 function printPatientLabels(){
   const list=(fpView.booked||[]).slice().sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`));
   if(!list.length){alert('No booked patients to print labels for.');return;}
