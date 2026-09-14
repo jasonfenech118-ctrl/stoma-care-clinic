@@ -6701,9 +6701,11 @@ function bcDayViewHTML(){
       return `<div class="bc-slot filled"><span class="bc-time">${t}</span><span>${htmlSafe(nm)}</span></div>`;}
     return `<div class="bc-slot free" data-date="${ds}" data-slot="${t}" onclick="bcSlotTap('${ds}','${t}')"><span class="bc-time">${t}</span><span style="color:var(--muted);">Free — drop or tap a patient here</span></div>`;
   }).join('');
+  const sp=bookCalState.selId?bookCalState.patients.find(x=>String(x.id)===String(bookCalState.selId)):null;
+  const spName=sp?`${sp.first_name||''} ${sp.surname||''}`.trim():'the selected patient';
   return `<div class="bc-head"><h4>${htmlSafe(fmtShortDate(ds))}</h4>
       <div class="bc-nav"><button onclick="bcBackToMonth()">‹ Month</button></div></div>
-    ${bookCalState.selId?`<div class="bc-pickhint">Tap a free slot to book the selected patient.</div>`:''}
+    ${bookCalState.selId?`<div class="bc-pickhint">Tap a free slot to book <strong>${htmlSafe(spName)}</strong>.</div>`:''}
     ${slots}`;
 }
 function bcListHTML(){
@@ -6726,7 +6728,11 @@ function bcSlotTap(ds,slot){
 async function bcBook(ds,slot,patientId){
   const p=bookCalState.patients.find(x=>String(x.id)===String(patientId));
   if(!p)return;
-  const row={patient_id:patientId,appt_date:ds,appt_slot:String(slot).slice(0,5),status:'booked',assigned_to:null,bank_staff_id:null};
+  const slot5=String(slot).slice(0,5);
+  // Never allow two patients in the same time slot for this nurse's column.
+  const clash=bookCalState.bookings.some(a=>a.appt_date===ds&&String(a.appt_slot||'').slice(0,5)===slot5&&String(a.status||'')!=='cancelled'&&bcColumnMatch(a,bookCalState.calOwner));
+  if(clash){alert(`${slot5} on ${fmtShortDate(ds)} is already booked for this nurse. Choose another time.`);return;}
+  const row={patient_id:patientId,appt_date:ds,appt_slot:slot5,status:'booked',assigned_to:null,bank_staff_id:null};
   const staff=(bookCalState.calOwner!=='Common')?ownerStaffForCapacity(bookCalState.calOwner):null;
   if(staff)row.assigned_to=staff.id;
   const{data,error}=await SB.from('appointments').insert(row).select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').single();
@@ -6772,28 +6778,41 @@ function bcPointerMove(e){
   }
   bcDrag.ghost.style.left=(e.clientX+12)+'px';
   bcDrag.ghost.style.top=(e.clientY+12)+'px';
-  document.querySelectorAll('#bc-left .bc-slot.free').forEach(s=>s.classList.remove('drop'));
-  const t=bcSlotUnder(e.clientX,e.clientY);
-  if(t)t.classList.add('drop');
+  bcClearDropHi();
+  const t=bcDropUnder(e.clientX,e.clientY);
+  if(t)t.el.classList.add('drop');
 }
 function bcPointerUp(e){
   if(!bcDrag)return;
   const drag=bcDrag;bcDrag=null;
   if(drag.ghost)drag.ghost.remove();
   drag.el.onpointermove=null;drag.el.onpointerup=null;drag.el.onpointercancel=null;
-  document.querySelectorAll('#bc-left .bc-slot.free').forEach(s=>s.classList.remove('drop'));
+  bcClearDropHi();
   if(drag.moved){
-    const t=bcSlotUnder(e.clientX,e.clientY);
-    if(t)bcBook(t.getAttribute('data-date'),t.getAttribute('data-slot'),drag.id);
+    const t=bcDropUnder(e.clientX,e.clientY);
+    if(t&&t.type==='slot'){bcBook(t.el.getAttribute('data-date'),t.el.getAttribute('data-slot'),drag.id);}
+    else if(t&&t.type==='day'){
+      // Dropped on a day in the month view: open it with the patient held, so a
+      // specific time can be picked next.
+      bookCalState.selId=String(drag.id);
+      bcOpenDay(t.el.getAttribute('data-date'));
+    }
   }else{
     // A tap toggles selection.
     bookCalState.selId=(bookCalState.selId===String(drag.id))?null:String(drag.id);
     renderBookingCalendar();
   }
 }
-function bcSlotUnder(x,y){
+function bcClearDropHi(){document.querySelectorAll('#bc-left .drop').forEach(s=>s.classList.remove('drop'));}
+// A drop lands on a free time slot (in a day) or, from the month, an open day.
+function bcDropUnder(x,y){
   const el=document.elementFromPoint(x,y);
-  return el?el.closest('#bc-left .bc-slot.free'):null;
+  if(!el)return null;
+  const slot=el.closest('#bc-left .bc-slot.free');
+  if(slot)return {type:'slot',el:slot};
+  const day=el.closest('#bc-left .bc-day[data-date]');
+  if(day)return {type:'day',el:day};
+  return null;
 }
 function bcPrintWindow(title,inner){
   const w=window.open('','_blank');
