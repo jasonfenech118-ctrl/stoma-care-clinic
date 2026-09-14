@@ -1517,6 +1517,17 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .bc-legend span{display:inline-flex;align-items:center;gap:4px;}
 .bc-legend i{width:12px;height:12px;border-radius:3px;display:inline-block;}
 
+/* ── BIRD'S-EYE CALENDAR (booked patients, month grid) ─────────────────── */
+.be-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.be-dow{font-size:10px;font-weight:900;text-transform:uppercase;text-align:center;color:var(--muted);padding:2px 0;}
+.be-day{min-height:66px;border:1px solid var(--border);border-radius:8px;padding:3px 4px;background:#fff;font-size:10px;overflow:hidden;}
+.be-day.blank{border:none;background:transparent;}
+.be-day.has{background:#f0faf3;border-color:#bfe6c9;}
+.be-day .be-dnum{font-weight:900;color:var(--navy);font-size:11px;margin-bottom:2px;}
+.be-appt{background:#e8f5f4;border-radius:4px;padding:1px 3px;margin-bottom:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.be-appt b{color:#0d7377;}
+@media(max-width:520px){.be-day{min-height:56px;font-size:9px;}.be-day .be-dnum{font-size:10px;}}
+
 /* ── MOBILE NAV DRAWER ── */
 .mob-ham{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:38px;padding:8px;border:none;background:rgba(255,255,255,.12);border-radius:9px;cursor:pointer;flex-shrink:0;}
 .mob-ham span{display:block;width:100%;height:2.5px;background:white;border-radius:2px;transition:all .2s;}
@@ -7468,18 +7479,26 @@ function openFollowupStats(){
 }
 function openBookedBirdsEye(){
   const s=fpView;
+  const year=Number(s.year)||new Date().getFullYear();
+  let month=Number(s.month)||0;
+  if(!month)month=(s.booked&&s.booked[0])?Number(String(s.booked[0].appt_date).slice(5,7)):(new Date().getMonth()+1);
   const byDate={};
   (s.booked||[]).forEach(a=>{(byDate[a.appt_date]||(byDate[a.appt_date]=[])).push(a);});
-  const dates=Object.keys(byDate).sort();
-  const body=dates.length?dates.map(d=>`
-    <div style="margin-bottom:14px;">
-      <div style="font-weight:900;color:var(--navy);border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:6px;">${htmlSafe(fmtShortDate(d))} — ${byDate[d].length} booked</div>
-      ${byDate[d].slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||''))).map(a=>{const p=a.patients||{};const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';return `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px dotted #e5e9ef;font-size:13px;"><span style="font-weight:800;min-width:54px;">${htmlSafe(String(a.appt_slot||'').slice(0,5))}</span><span style="flex:1;"><strong>${htmlSafe(nm)}</strong>${p.id_card?' · '+htmlSafe(p.id_card):''}${p.phone_number?' · '+htmlSafe(p.phone_number):''}</span><span style="color:var(--muted);">${htmlSafe(appointmentNurseLabel(a))}</span></div>`;}).join('')}
-    </div>`).join(''):'<div class="report-note">No booked appointments for this nurse and period.</div>';
+  const dim=new Date(year,month,0).getDate();
+  const firstDow=(new Date(year,month-1,1).getDay()+6)%7;   // Monday-based
+  const dows=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let cells='';
+  for(let i=0;i<firstDow;i++)cells+=`<div class="be-day blank"></div>`;
+  for(let d=1;d<=dim;d++){
+    const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const list=(byDate[ds]||[]).slice().sort((a,b)=>String(a.appt_slot||'').localeCompare(String(b.appt_slot||'')));
+    const items=list.map(a=>{const p=a.patients||{};const nm=`${(p.first_name||'').charAt(0)?(p.first_name||'').charAt(0)+'. ':''}${p.surname||p.first_name||'Patient'}`.trim();return `<div class="be-appt"><b>${htmlSafe(String(a.appt_slot||'').slice(0,5))}</b> ${htmlSafe(nm)}</div>`;}).join('');
+    cells+=`<div class="be-day${list.length?' has':''}"><div class="be-dnum">${d}</div>${items}</div>`;
+  }
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🦅 Bird's-eye view — ${htmlSafe(s.owner)}</h2>
-    <div class="msub">Booked appointments · ${htmlSafe(s.month?followupMonthName(s.month):String(s.year))} ${s.year} · ${(s.booked||[]).length} total</div>
-    ${body}
+    <div class="msub">${followupMonthName(month)} ${year} · ${(s.booked||[]).length} booked</div>
+    <div class="be-grid">${dows.map(d=>`<div class="be-dow">${d}</div>`).join('')}${cells}</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printBookedPatients()">🖨 Print</button></div>`;
   openMo();
 }
