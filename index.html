@@ -13862,7 +13862,12 @@ async function loadHandover(){
   await attachHandoverApplianceLines(rows);
   // Siting patients whose surgery day has arrived show at the top as "awaiting
   // surgery", automatically, until the outcome is recorded from the handover.
-  const awaiting=await handoverAwaitingSitings();
+  const awaitingAll=await handoverAwaitingSitings();
+  // A siting session whose patient is already an inpatient on the sheet is a
+  // duplicate — the operation is done and they were admitted — so drop it. The
+  // "Awaiting surgery" row then disappears on its own once they are on the ward.
+  const onWardIds=new Set(rows.map(r=>normaliseIdCard(r.id_card||'')).filter(Boolean));
+  const awaiting=awaitingAll.filter(s=>!onWardIds.has(normaliseIdCard(s.id_card||'')));
   // Patients whose proposed reversal day has arrived ride at the top too, so the
   // ward sees them on the morning of the operation without anyone adding them.
   const revDue=await handoverAwaitingReversals(rows.map(r=>r.id));
@@ -15373,18 +15378,19 @@ async function saveSitingStomaPatient(){
   sitingStomaCtx=null;
   try{refreshReminders();}catch(e){}
   // Hand off to the Open inpatient visit wizard, which takes the ward, bed and
-  // admission date and puts the patient on the Handover.
+  // admission date (defaulted to the surgery date) and puts them on the Handover.
   const{data:freshPat}=await fetchPatientById(pid);
-  if(freshPat&&sd&&!freshPat.inpatient_since)freshPat.inpatient_since=sd;   // default admission to the surgery date
-  await openInpatientVisitFor(pid,freshPat||null);
+  await openInpatientVisitFor(pid,freshPat||null,sd);
 }
 // Open the "Open inpatient visit" wizard for a specific patient (used right
 // after a siting operation is recorded), loading the state the wizard reads.
-async function openInpatientVisitFor(pid,pat){
+// admitDate, when given, forces the admission date (the surgery date here).
+async function openInpatientVisitFor(pid,pat,admitDate){
   clrState.patientId=pid;
   clrState.patient=pat;
   try{await loadClinicalRecords(pid);}catch(e){clrState.rows=[];}
   await openInpatientVisit();
+  if(admitDate&&ivWizard){ivWizard.admitted=admitDate;renderInpatientStep();}
 }
 async function createSitingInpatientEpisode(pid,surgeryDate){
   const made=await createInpatientEpisodeFor(pid,surgeryDate);
