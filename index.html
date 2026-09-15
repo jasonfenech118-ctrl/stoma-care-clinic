@@ -1197,6 +1197,12 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .hv-appl:hover{background:#e8f1fb;border-color:#0b5aa2;}
 .hv-appl-empty{color:#8a97a6;font-weight:600;font-style:italic;}
 .hv-note{width:100%;box-sizing:border-box;margin-top:5px;}
+/* Infection alert (CRE / VRE / +ve) — the whole appliance/notes cell goes bright
+   red so it is impossible to miss on the handover. */
+td.hv-inf{background:#ff2b2b!important;}
+td.hv-inf .hv-appl{background:#ff2b2b;color:#fff;border-color:#c40000;font-weight:800;}
+td.hv-inf .hv-inp,td.hv-inf .hv-note{background:#fff;color:#b00000;font-weight:800;border-color:#c40000;}
+td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 /* The picked appliance and the typed note always sit one above the other, on
    the phone card as well as in the desktop grid. */
 .hv-applwrap{display:flex;flex-direction:column;align-items:stretch;}
@@ -13806,6 +13812,15 @@ async function cycleHandoverDoc(patientId,kind){
   if(error){await loadHandover();return;}
   await refreshDocDateLine(patientId,kind);
 }
+// An infection-control flag: a note mentioning CRE, VRE (whole words) or
+// anything "+ve" (MRSA +ve, ESBL +ve, …) turns the handover cell bright red.
+function hvIsInfectionNote(t){return /\bcre\b|\bvre\b|\+\s*ve\b/i.test(String(t||''));}
+// Live: re-colour the Appliance/notes cell as the nurse types in the note.
+function hvNoteInput(el){
+  const td=el.closest('td'); if(!td)return;
+  const appl=td.querySelector('.hv-appl')?.getAttribute('data-appliance')||'';
+  td.classList.toggle('hv-inf',hvIsInfectionNote(el.value)||hvIsInfectionNote(appl));
+}
 async function saveHandoverField(patientId,field,value){
   const{error}=await SB.from('patients').update({[field]:value===''?null:value}).eq('id',patientId);
   if(error){
@@ -14136,6 +14151,9 @@ function handoverRowHTML(p,cls){
   const rawAppl=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
   const applLine=stripHandoverFlangeDue(rawAppl);
   const cmpCount=parseComplications(p).length;
+  // Infection alert — a note (or appliance line) carrying CRE, VRE or anything
+  // "+ve" turns the Appliance/notes cell bright red so it cannot be missed.
+  const infAlert=hvIsInfectionNote(p.inpatient_nurse_notes)||hvIsInfectionNote(applLine);
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim())"/><span
@@ -14144,14 +14162,14 @@ function handoverRowHTML(p,cls){
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
-    <td data-label="Appliance + notes">
+    <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}">
       <div class="hv-applwrap">
         <button type="button" class="hv-appl" data-appliance="${htmlSafe(applLine)}"
           title="Set appliance" onclick="openHandoverAppliance('${p.id}')">${applLine
             ?htmlSafe(applLine)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
+          oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
         <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication or a ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
