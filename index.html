@@ -7191,13 +7191,15 @@ async function getSitingReminders(){
 /* Patients with a ROD (stoma rod / bridge) removal date that has come round.
    Chased until the date is cleared, which the nurse does once the rod is out. */
 async function getRodDueReminders(){
+  const base='id,first_name,surname,id_card,consultant,rod_removal_date,inpatient_ward,inpatient_bed';
   try{
-    const{data,error}=await SB.from('patients')
-      .select('id,first_name,surname,id_card,consultant,rod_removal_date,inpatient_ward,inpatient_bed')
-      .lte('rod_removal_date',TODAY);
-    if(error)return [];   // the column is not in the database yet
-    return (data||[])
-      .filter(p=>p.rod_removal_date)
+    // Prefer selecting rod_removed_date too; if that column is not in the
+    // database yet the select errors, so retry with the base columns.
+    let res=await SB.from('patients').select(base+',rod_removed_date').lte('rod_removal_date',TODAY);
+    if(res.error)res=await SB.from('patients').select(base).lte('rod_removal_date',TODAY);
+    if(res.error)return [];   // the rod_removal_date column is not in the database yet
+    return (res.data||[])
+      .filter(p=>p.rod_removal_date&&!p.rod_removed_date)   // a removed rod drops off
       .map(p=>({...p,kind:'rod',eff:String(p.rod_removal_date)}));
   }catch(e){return [];}
 }
@@ -7238,7 +7240,12 @@ function renderSitingReminderList(items){
       return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
         <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">ROD REMOVAL</span></div>
         <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${wb?' · '+htmlSafe(wb):''} · remove rod ${htmlSafe(fmtShortDate(r.rod_removal_date))}</div>
-        <div style="margin-top:5px;"><button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="closeReminderPanel();closeModal();openComplicationPicker('${r.id}','Handover')">Open / clear</button></div>
+        <div style="font-size:11px;font-weight:700;color:var(--navy);margin-top:5px;">Rod removed?</div>
+        <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${r.id}')">✓ Yes, removed</button>
+          <button class="ncb-btn" style="background:#f1f5f9;color:#334155;" onclick="rodNotRemoved()">Not yet</button>
+          <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="closeReminderPanel();closeModal();openComplicationPicker('${r.id}','Handover')">Edit date</button>
+        </div>
       </div>`;
     }
     const kindTag=r.kind==='postop'
@@ -11845,22 +11852,33 @@ async function openComplicationPicker(patientId,source){
   const list=parseComplications(pat);
   // The ROD removal date is a newer column, so read it on its own and tolerate
   // it not being in the database yet.
-  let rod='';
-  try{const{data}=await SB.from('patients').select('rod_removal_date').eq('id',patientId).maybeSingle();
-    rod=data&&data.rod_removal_date?String(data.rod_removal_date).slice(0,10):'';}catch(e){}
+  let rod='',rodRemoved='';
+  try{const{data,error}=await SB.from('patients').select('rod_removal_date,rod_removed_date').eq('id',patientId).maybeSingle();
+    if(error)throw error;
+    rod=data&&data.rod_removal_date?String(data.rod_removal_date).slice(0,10):'';
+    rodRemoved=data&&data.rod_removed_date?String(data.rod_removed_date).slice(0,10):'';
+  }catch(e){
+    try{const{data}=await SB.from('patients').select('rod_removal_date').eq('id',patientId).maybeSingle();
+      rod=data&&data.rod_removal_date?String(data.rod_removal_date).slice(0,10):'';}catch(e2){}
+  }
   const mb=document.getElementById('mb');mb.className='mb';
   mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
     ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover')}
     <div class="cmp-rod">
-      <div class="cmp-rod-head">🩹 ROD removal date</div>
-      <div class="cmp-rod-row">
-        <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
-        <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
-        ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
-      </div>
-      <div class="cmp-rod-hint">A reminder pops up on this date (and stays until cleared). Clear it once the rod is removed.</div>
+      <div class="cmp-rod-head">🩹 ROD removal</div>
+      ${rodRemoved
+        ? `<div class="cmp-rod-row"><span style="color:#0a5e33;font-weight:800;">✓ Rod removed on ${htmlSafe(fmtShortDate(rodRemoved))}</span>
+            <button type="button" class="ncb-btn" style="background:#f1f5f9;color:#334155;" onclick="undoRodRemoved('${patientId}')">Undo</button></div>
+           <div class="cmp-rod-hint">Recorded as removed, so it no longer appears in the reminders.</div>`
+        : `<div class="cmp-rod-row">
+            <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
+            <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
+            ${rod?`<button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${patientId}')">✓ Rod removed</button>`:''}
+            ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
+          </div>
+          <div class="cmp-rod-hint">Set the planned date to raise a reminder. When the rod is out, press <strong>✓ Rod removed</strong> — it records the removal and stops the reminder.</div>`}
     </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
@@ -11887,6 +11905,31 @@ async function saveRodRemovalDate(patientId){
 function clearRodRemovalDate(patientId){
   const el=document.getElementById('rod-date'); if(el)el.value='';
   saveRodRemovalDate(patientId);
+}
+/* Rod removed — yes/no. "Yes" records the removal date (today) so it stays on
+   the record and drops off the reminders; "Not yet" leaves it chasing. */
+async function markRodRemoved(patientId){
+  const{error,dropped}=await updatePatientTolerant(patientId,{rod_removed_date:TODAY});
+  if(error){alert('Could not record the rod removal: '+(error.message||error));return;}
+  if(dropped&&dropped.includes('rod_removed_date')){
+    // The column is not in the database yet — clear the due date so it still
+    // drops off the reminders, and point the user at the migration.
+    await updatePatientTolerant(patientId,{rod_removal_date:null});
+    alert('Marked as removed.\n\nTip: run sql/add-rod-removed-date.sql once in Supabase to also keep the removal date on the record.');
+  }
+  closeReminderPanel();closeModal();
+  try{await refreshReminders();}catch(e){}
+  if(document.getElementById('hv-body'))try{await loadHandover();}catch(e){}
+}
+function rodNotRemoved(){
+  alert('Kept on the reminders — it will keep showing until you mark the rod removed.');
+}
+async function undoRodRemoved(patientId){
+  const{error}=await updatePatientTolerant(patientId,{rod_removed_date:null});
+  if(error){alert('Could not undo: '+(error.message||error));return;}
+  try{await refreshReminders();}catch(e){}
+  if(document.getElementById('hv-body'))try{await loadHandover();}catch(e){}
+  openComplicationPicker(patientId,'Handover');   // reopen so it re-reads state
 }
 /* The Stoma outcomes tab: the reversal / deceased outcome, a stoma-by-stoma
    present-vs-reversed summary, and the running complications list with its
