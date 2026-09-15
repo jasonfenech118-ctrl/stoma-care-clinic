@@ -7175,8 +7175,14 @@ async function getSitingReminders(){
   try{
     const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen','did_not_attend']);
     if(error)return {items:[],total:0,today:0};
+    // A siting whose patient is already an inpatient has already had the stoma
+    // performed and been admitted, so it must not keep nagging "record post-op".
+    let onWard=new Set();
+    try{const{data:inp}=await SB.from('patients').select('id_card').eq('is_inpatient',true);
+      onWard=new Set((inp||[]).map(p=>normaliseIdCard(p.id_card||'')).filter(Boolean));}catch(e){}
     const items=[];
     (data||[]).forEach(r=>{
+      if(onWard.has(normaliseIdCard(r.id_card||'')))return;   // already admitted → done
       const sd=String(r.session_date||''), surg=String(r.surgery_date||'');
       // The siting appointment day — until the patient has been seen.
       if(r.status==='booked'&&sd&&sd<=TODAY)items.push({...r,kind:'siting',eff:sd});
