@@ -7631,6 +7631,7 @@ function openBookingPrintOptions(blank){
     </div>
     <p class="report-note" style="margin-top:12px;">All six times stay together on A4 landscape. Selected days use cells about 4.1 cm wide and at least 2.2 cm high; 5 cm labels extend beyond the cell width. Whole month uses smaller cells on one page.</p>
     <div id="booking-print-dates" hidden>
+      <p id="booking-print-duty-status" class="report-note">Loading duty highlights…</p>
       <p class="report-note">Tick any extra dates or untick dates you do not need. Print selected days combines every checked date.</p>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0;">${Array.from({length:days},(_,i)=>{
         const ds=`${year}-${String(month).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`;
@@ -7640,6 +7641,38 @@ function openBookingPrintOptions(blank){
     </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
+  highlightBookingPrintDutyDays(document.getElementById('booking-print-dates'),fpView);
+}
+function bookingPrintDutyLabel(ctx,ds){
+  if(!ctx.staff||!ctx.index)return '';
+  const key=`${ctx.staff.id}_${ds}`,idx=ctx.index;
+  if(idx.tilByKey[key]?.off)return 'TIL-off';
+  if(!isNurseWorkingClinicDay(ctx.staff,ds,idx))return '';
+  if(idx.tilByKey[key]?.in)return 'TIL-in';
+  const bankOT=(idx.bankByDate[ds]||[]).some(b=>{
+    const core=findCoreStaffByName(b.bank_staff?.full_name);
+    return core&&String(core.id)===String(ctx.staff.id);
+  });
+  if(idx.coreOtByKey[key]||idx.rosterByKey[key]?.status==='overtime'||bankOT)return 'OT';
+  return 'Duty';
+}
+async function highlightBookingPrintDutyDays(picker,view){
+  try{
+    const ctx=await bookedGridContext(view);
+    if(!picker.isConnected)return;
+    if(!ctx.staff||!ctx.index)throw Error('Roster unavailable');
+    picker.querySelectorAll('input[name="booking-print-day"]').forEach(input=>{
+      const label=input.closest('label'),type=bookingPrintDutyLabel(ctx,input.value);
+      const colours=type==='OT'?['#fff3cd','#854d0e']:type==='TIL-in'?['#cffafe','#155e75']:type==='Duty'?['#dcfce7','#166534']:['#f3f4f6','#6b7280'];
+      label.style.cssText=`display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:7px;border-radius:6px;background:${colours[0]};color:${colours[1]};font-weight:${type&&type!=='TIL-off'?700:400};`;
+      const badge=document.createElement('span');
+      badge.textContent=type||'Off';badge.style.cssText='font-size:10px;margin-left:auto;';
+      label.appendChild(badge);
+    });
+    picker.querySelector('#booking-print-duty-status').textContent='Green: duty · Gold: OT · Blue: TIL-in · Grey: off. Tick the dates you want to print.';
+  }catch(e){
+    if(picker.isConnected)picker.querySelector('#booking-print-duty-status').textContent='Duty highlights unavailable. You can still select dates manually.';
+  }
 }
 async function addBookingPrintDutyDays(button){
   const picker=document.getElementById('booking-print-dates');
