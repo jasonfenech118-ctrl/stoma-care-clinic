@@ -7629,7 +7629,7 @@ function openBookingPrintOptions(blank){
       <button class="btn-save" onclick="document.getElementById('booking-print-dates').hidden=false">Select specific days</button>
       <button class="btn-save" onclick="printBookingSheet(${blank},'month')">Whole month — one page</button>
     </div>
-    <p class="report-note" style="margin-top:12px;">Selected days use boxes at least 5.2 × 2.2 cm for labels. Whole month uses smaller cells on one A4 landscape page.</p>
+    <p class="report-note" style="margin-top:12px;">All six times stay together on A4 landscape. Selected days use cells about 4.1 cm wide and at least 2.2 cm high; 5 cm labels extend beyond the cell width. Whole month uses smaller cells on one page.</p>
     <div id="booking-print-dates" hidden>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0;">${Array.from({length:days},(_,i)=>{
         const ds=`${year}-${String(month).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`;
@@ -7686,11 +7686,10 @@ async function printBookingSheet(blank,mode='month',selectedDays=[]){
     rows.push({day:d,cls,cells,date:`<td class="dt">${String(d).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year}</td><td class="dy">${htmlSafe(dowShort)}${holName?`<span class="hol">${htmlSafe(holName)}</span>`:''}</td>`});
   }
   if(!rows.length){alert('No matching days to print for this nurse and month.');return;}
-  // Three 52 mm slots plus 38 mm for dates fit the 194 mm printable width.
-  // Each date block has two sheets covering all six appointment times.
+  // Keep all six times together; selected dates continue vertically, seven per page.
   const pages=[];
-  const wholeMonth=mode==='month',slotsPerPage=wholeMonth?BC_WINDOW.length:3;
-  const blocks=wholeMonth?1:Math.ceil(rows.length/11);
+  const wholeMonth=mode==='month',slotsPerPage=BC_WINDOW.length;
+  const blocks=wholeMonth?1:Math.ceil(rows.length/7);
   for(let block=0;block<blocks;block++){
     const day=Math.floor(block*rows.length/blocks),end=Math.floor((block+1)*rows.length/blocks);
     for(let slot=0;slot<BC_WINDOW.length;slot+=slotsPerPage){
@@ -7699,15 +7698,15 @@ async function printBookingSheet(blank,mode='month',selectedDays=[]){
       pages.push(`<section class="bs-page">
         <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">${htmlSafe(s.owner)}</span></div>
         <div class="bs-range">Dates ${rows[day].day}–${rows[end-1].day} · ${times[0]}–${times[times.length-1]} · Page ${pages.length+1}</div>
-        <table class="bs"><colgroup><col style="width:22mm"><col style="width:16mm">${times.map(()=>`<col${wholeMonth?'':' style="width:52mm"'}>`).join('')}</colgroup><thead>${head}</thead><tbody>${rows.slice(day,end).map(r=>`<tr class="${r.cls}">${r.date}${r.cells.slice(slot,slot+slotsPerPage).join('')}</tr>`).join('')}</tbody></table>
+        <table class="bs"><colgroup><col style="width:22mm"><col style="width:16mm">${times.map(()=>'<col>').join('')}</colgroup><thead>${head}</thead><tbody>${rows.slice(day,end).map(r=>`<tr class="${r.cls}">${r.date}${r.cells.slice(slot,slot+slotsPerPage).join('')}</tr>`).join('')}</tbody></table>
       </section>`);
     }
   }
   bcPrintWindow(`${blank?'Booking calendar':'Booking sheet'} — ${s.owner} — ${monthName} ${year}`,
     `<style>
-      @page{size:A4 portrait;margin:8mm;}
+      @page{size:A4 landscape;margin:5mm;}
       *{box-sizing:border-box;}
-      html,body{width:194mm;margin:0;padding:0;overflow:visible;}
+      html,body{width:287mm;margin:0;padding:0;overflow:visible;}
       .bs-page{break-after:page;}
       .bs-page:last-child{break-after:auto;}
       .bs-range{font-size:9pt;margin-bottom:2mm;}
@@ -7716,7 +7715,7 @@ async function printBookingSheet(blank,mode='month',selectedDays=[]){
       .bs-head .bs-mo{font-size:22pt;font-weight:900;letter-spacing:1px;line-height:1;}
       .bs-head .bs-yr{font-size:16pt;font-weight:700;color:#555;}
       .bs-head .bs-t{margin-left:auto;font-size:12pt;font-weight:700;}
-      table.bs{width:194mm;height:260mm;border-collapse:collapse;table-layout:fixed;}
+      table.bs{width:287mm;height:180mm;border-collapse:collapse;table-layout:fixed;}
       table.bs th,table.bs td{border:0.5px solid #e2e2e2;padding:0.25mm 0.4mm;text-align:center;vertical-align:middle;overflow:hidden;}
       table.bs thead tr{height:7mm;}
       table.bs tbody tr{height:22mm;break-inside:avoid;}
