@@ -14585,9 +14585,34 @@ function applySitingPatches(rows){
   });
   return rows;
 }
+/* Self-heal: a siting session whose patient is already an inpatient (and whose
+   surgery day has passed) has clearly had the stoma performed — even when the
+   patient was recorded another way, so the session was never completed. Mark it
+   done and link the patient, so it leaves the Siting Session list and appears on
+   Performed Stoma. Idempotent: a done session no longer matches. */
+async function reconcileSitedInpatients(){
+  try{
+    const{data:sess}=await SB.from('siting_sessions').select('id,id_card,surgery_date,session_date,stoma_formed,status');
+    const pending=(sess||[]).filter(r=>r&&r.stoma_formed!==true&&r.status!=='cancelled'
+      &&(!r.surgery_date||String(r.surgery_date)<=TODAY));
+    if(!pending.length)return false;
+    const{data:inp}=await SB.from('patients').select('id,id_card').eq('is_inpatient',true);
+    const byId={};(inp||[]).forEach(p=>{const k=normaliseIdCard(p.id_card||'');if(k)byId[k]=p.id;});
+    let changed=false;
+    for(const r of pending){
+      const pid=byId[normaliseIdCard(r.id_card||'')];
+      if(!pid)continue;
+      const{error}=await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,status:'done',
+        patient_id:pid,surgery_date:r.surgery_date||r.session_date||TODAY,updated_at:new Date().toISOString()}).eq('id',r.id);
+      if(!error)changed=true;
+    }
+    return changed;
+  }catch(e){return false;}
+}
 async function loadSitingSessions(){
   const body=document.getElementById('siting-body');
   if(!body)return;
+  await reconcileSitedInpatients();
   const{data,error}=await SB.from('siting_sessions').select('*')
     .order('session_date',{ascending:true}).order('session_slot',{ascending:true});
   if(error){
@@ -15463,6 +15488,7 @@ async function loadNoStomaOps(){
 async function loadStomaPerformed(){
   const body=document.getElementById('stomaperformed-body');
   if(!body)return;
+  await reconcileSitedInpatients();
   const{data,error}=await SB.from('siting_sessions').select('*').order('surgery_date',{ascending:false});
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
