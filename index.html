@@ -7615,11 +7615,37 @@ async function openBookedBirdsEye(){
 // The booked-patient sheet (blank=false) fills each slot with any patient
 // booked there; the blank calendar (blank=true) is the same month grid with no
 // names — a plain sheet to write on or stick labels straight onto.
-async function printBookedPatients(){ return printBookingSheet(false); }
-async function printBlankCalendar(){ return printBookingSheet(true); }
-async function printBookingSheet(blank){
+async function printBookedPatients(){ return openBookingPrintOptions(false); }
+async function printBlankCalendar(){ return openBookingPrintOptions(true); }
+function openBookingPrintOptions(blank){
+  if(!FOLLOWUP_OWNERS.includes(fpView.owner)||fpView.owner==='Common')return printBookingSheet(blank,'month');
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  const {year,month}=bookedGridMonth(fpView);
+  const days=new Date(year,month,0).getDate();
+  mb.innerHTML=`<h2>Print planning — ${htmlSafe(fpView.owner)}</h2>
+    <div class="msub">${htmlSafe(followupMonthName(month))} ${year}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-save" onclick="printBookingSheet(${blank},'duty')">Duty Sundays &amp; public holidays</button>
+      <button class="btn-save" onclick="document.getElementById('booking-print-dates').hidden=false">Select specific days</button>
+      <button class="btn-save" onclick="printBookingSheet(${blank},'month')">Whole month — one page</button>
+    </div>
+    <p class="report-note" style="margin-top:12px;">Selected days use boxes at least 5.2 × 2.2 cm for labels. Whole month uses smaller cells on one A4 landscape page.</p>
+    <div id="booking-print-dates" hidden>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0;">${Array.from({length:days},(_,i)=>{
+        const ds=`${year}-${String(month).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`;
+        return `<label><input type="checkbox" name="booking-print-day" value="${ds}"> ${String(i+1).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year} ${new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</label>`;
+      }).join('')}</div>
+      <button class="btn-save" onclick="printBookingSheet(${blank},'selected',Array.from(document.querySelectorAll('input[name=booking-print-day]:checked'),el=>el.value))">Print selected days</button>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+}
+async function printBookingSheet(blank,mode='month',selectedDays=[]){
   const s=fpView;
   const ctx=await bookedGridContext(s);
+  if(s.owner==='Common')mode='month';
+  if(mode==='duty'&&(!ctx.staff||!ctx.index)){alert('Could not load this nurse’s duty roster. Please refresh and try again.');return;}
+  if(mode==='selected'&&!selectedDays.length){alert('Select at least one date to print.');return;}
   const {year,month}=ctx;
   const monthName=followupMonthName(month);
   const dim=new Date(year,month,0).getDate();
@@ -7639,6 +7665,8 @@ async function printBookingSheet(blank){
     // that stays clear on a black-and-white print; Sundays & public holidays
     // also keep the red date column.
     const duty=ctx.staff?!bookedDayOff(ctx,ds):true;
+    if(mode==='duty'&&(!(sun||hol)||!duty))continue;
+    if(mode==='selected'&&!selectedDays.includes(ds))continue;
     let cls;
     if(!duty)cls='d-off';
     else if(sun||hol)cls='d-duty d-clinic';
@@ -7655,20 +7683,23 @@ async function printBookingSheet(blank){
       return `<td class="sl">Stick label here</td>`;
     });
     const holName=holidays[ds]||'';
-    rows.push({cls,cells,date:`<td class="dt">${String(d).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year}</td><td class="dy">${htmlSafe(dowShort)}${holName?`<span class="hol">${htmlSafe(holName)}</span>`:''}</td>`});
+    rows.push({day:d,cls,cells,date:`<td class="dt">${String(d).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year}</td><td class="dy">${htmlSafe(dowShort)}${holName?`<span class="hol">${htmlSafe(holName)}</span>`:''}</td>`});
   }
+  if(!rows.length){alert('No matching days to print for this nurse and month.');return;}
   // Three 52 mm slots plus 38 mm for dates fit the 194 mm printable width.
   // Each date block has two sheets covering all six appointment times.
   const pages=[];
-  for(let block=0;block<3;block++){
-    const day=Math.floor(block*dim/3),end=Math.floor((block+1)*dim/3);
-    for(let slot=0;slot<BC_WINDOW.length;slot+=3){
-      const times=BC_WINDOW.slice(slot,slot+3);
+  const wholeMonth=mode==='month',slotsPerPage=wholeMonth?BC_WINDOW.length:3;
+  const blocks=wholeMonth?1:Math.ceil(rows.length/11);
+  for(let block=0;block<blocks;block++){
+    const day=Math.floor(block*rows.length/blocks),end=Math.floor((block+1)*rows.length/blocks);
+    for(let slot=0;slot<BC_WINDOW.length;slot+=slotsPerPage){
+      const times=BC_WINDOW.slice(slot,slot+slotsPerPage);
       const head=`<tr><th class="dt">Date</th><th class="dy">Day</th>${times.map(t=>`<th class="tm">${t}</th>`).join('')}</tr>`;
       pages.push(`<section class="bs-page">
         <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">${htmlSafe(s.owner)}</span></div>
-        <div class="bs-range">Days ${day+1}–${end} · ${times[0]}–${times[times.length-1]} · Page ${pages.length+1}</div>
-        <table class="bs"><colgroup><col style="width:22mm"><col style="width:16mm">${times.map(()=>'<col style="width:52mm">').join('')}</colgroup><thead>${head}</thead><tbody>${rows.slice(day,end).map(r=>`<tr class="${r.cls}">${r.date}${r.cells.slice(slot,slot+3).join('')}</tr>`).join('')}</tbody></table>
+        <div class="bs-range">Dates ${rows[day].day}–${rows[end-1].day} · ${times[0]}–${times[times.length-1]} · Page ${pages.length+1}</div>
+        <table class="bs"><colgroup><col style="width:22mm"><col style="width:16mm">${times.map(()=>`<col${wholeMonth?'':' style="width:52mm"'}>`).join('')}</colgroup><thead>${head}</thead><tbody>${rows.slice(day,end).map(r=>`<tr class="${r.cls}">${r.date}${r.cells.slice(slot,slot+slotsPerPage).join('')}</tr>`).join('')}</tbody></table>
       </section>`);
     }
   }
@@ -7712,6 +7743,18 @@ async function printBookingSheet(blank){
       table.bs tr.d-clinic td.sl{color:#000;font-size:8.5pt;font-weight:700;border:1.6px dashed #000;}
       /* The public-holiday name, shown under the weekday in the day column. */
       table.bs td.dy .hol{display:block;font-size:5pt;font-weight:700;font-style:italic;line-height:1;margin-top:0.2mm;white-space:normal;}
+      ${wholeMonth?`
+      @page{size:A4 landscape;margin:5mm;}
+      html,body{width:287mm;}
+      table.bs{width:287mm;height:180mm;}
+      table.bs tbody tr,table.bs tbody td{height:auto;}
+      table.bs tbody tr{height:${173/dim}mm;}
+      table.bs td.bk{padding:0.2mm 0.4mm;}
+      table.bs td.bk .bn{font-size:6.5pt;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      table.bs td.bk .bi,table.bs td.bk .bl{display:inline;font-size:5.5pt;line-height:1;}
+      table.bs td.bk .bi::after{content:' · ';}
+      table.bs td.dy .hol{white-space:nowrap;font-size:4pt;letter-spacing:-0.1px;}
+      `:''}
      </style>
      ${pages.join('')}`);
 }
