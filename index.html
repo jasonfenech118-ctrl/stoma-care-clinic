@@ -7648,43 +7648,46 @@ async function printBookingSheet(blank){
   const head=`<tr><th class="dt">Date</th><th class="dy">Day</th>${BC_WINDOW.map(t=>`<th class="tm">${t}</th>`).join('')}</tr>`;
   bcPrintWindow(`${blank?'Booking calendar':'Booking sheet'} — ${s.owner} — ${monthName} ${year}`,
     `<style>
-      @page{size:A4 portrait;margin:6mm;}
-      html,body{height:100%;}
-      body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;display:flex;flex-direction:column;}
-      .bs-head{flex:0 0 auto;display:flex;align-items:baseline;gap:4mm;border-bottom:2.5px solid #000;padding-bottom:2mm;margin-bottom:2.5mm;}
-      .bs-head .bs-mo{font-size:36pt;font-weight:900;letter-spacing:1px;line-height:1;}
-      .bs-head .bs-yr{font-size:22pt;font-weight:700;color:#555;}
-      .bs-head .bs-t{margin-left:auto;font-size:14pt;font-weight:700;}
-      .bs-wrap{flex:1 1 auto;min-height:0;}
-      table.bs{width:100%;height:100%;border-collapse:collapse;table-layout:fixed;}
-      table.bs th,table.bs td{border:0.5px solid #e2e2e2;padding:0.8mm 0.6mm;text-align:center;vertical-align:middle;}
+      /* Landscape gives the slot columns their widest — the clinic days (where
+         labels are actually stuck) get tall, near-label-sized cells; the ordinary
+         weekdays stay compact so the whole month keeps to about two pages. */
+      @page{size:A4 landscape;margin:5mm;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
+      .bs-head{display:flex;align-items:baseline;gap:4mm;border-bottom:2.5px solid #000;padding-bottom:1.5mm;margin-bottom:2mm;}
+      .bs-head .bs-mo{font-size:26pt;font-weight:900;letter-spacing:1px;line-height:1;}
+      .bs-head .bs-yr{font-size:16pt;font-weight:700;color:#555;}
+      .bs-head .bs-t{margin-left:auto;font-size:12pt;font-weight:700;}
+      table.bs{width:100%;border-collapse:collapse;table-layout:fixed;}
+      table.bs th,table.bs td{border:0.5px solid #e2e2e2;padding:0.5mm 0.6mm;text-align:center;vertical-align:middle;}
+      table.bs td{height:6mm;}                                  /* compact default: weekdays / off */
       table.bs th{background:#ececec;font-weight:700;color:#000;}
-      table.bs th.tm{font-size:12pt;font-weight:800;color:#000;letter-spacing:0.5px;border-bottom:1.5px solid #888;}
-      table.bs th.dt,table.bs td.dt{width:7%;} table.bs th.dy,table.bs td.dy{width:12%;}
-      table.bs th.dt,table.bs th.dy{font-size:8.5pt;}
-      table.bs td.dt{font-weight:800;font-size:13pt;} table.bs td.dy{font-weight:600;font-size:9pt;}
+      table.bs th.tm{font-size:11pt;font-weight:800;color:#000;letter-spacing:0.5px;border-bottom:1.5px solid #888;}
+      table.bs th.dt,table.bs td.dt{width:4%;} table.bs th.dy,table.bs td.dy{width:7%;}
+      table.bs th.dt,table.bs th.dy{font-size:8pt;}
+      table.bs td.dt{font-weight:800;font-size:12pt;} table.bs td.dy{font-weight:600;font-size:8.5pt;}
       table.bs td.bk{border:1px solid #6fa382;background:#e9f8ef;padding:1mm 0.8mm;}
       table.bs td.bk .bn{display:block;font-weight:800;font-size:8pt;color:#0a5e33;line-height:1.08;}
       table.bs td.bk .bi{display:block;font-size:6.5pt;color:#333;font-family:monospace;}
       table.bs td.bk .bl{display:block;font-size:6.5pt;color:#555;}
-      /* Days OFF — a solid grey row all the way across; every slot still reads
-         "Off day" with a faint cross, so it is unmistakably not a day to stick a
-         label on. */
+      /* Days OFF — compact solid grey; every slot reads "Off day" with a faint
+         cross, so it is unmistakably not a day to stick a label on. */
       table.bs tr.d-off td{background-color:#d4d4d4;} table.bs tr.d-off td.dt,table.bs tr.d-off td.dy{color:#6d6d6d;}
       table.bs td.off{color:#666;font-size:6.5pt;font-weight:600;font-style:italic;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 10 10'%3E%3Cpath d='M0 0L10 10M10 0L0 10' stroke='%23bcbcbc' stroke-width='0.5' fill='none'/%3E%3C/svg%3E");background-size:100% 100%;background-repeat:no-repeat;}
-      /* Ordinary working weekdays — quiet grey: a grey date column and a grey
-         dashed sticker box, so they do not compete with the clinic days. */
+      /* Ordinary working weekdays — compact, quiet grey sticker box so they do
+         not compete with the clinic days and do not run the page count up. */
       table.bs tr.d-duty td.dt,table.bs tr.d-duty td.dy{color:#6a6a6a;}
-      table.bs tr.d-duty td.sl{color:#6a6a6a;font-size:7pt;font-weight:600;font-style:normal;border:1px dashed #9a9a9a;}
-      /* Sundays & public holidays — the clinic days, in bold BLACK (date column
-         and sticker box) so they stand out even on a black-and-white print. */
-      table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{color:#000;font-weight:800;}
-      table.bs tr.d-clinic td.sl{color:#000;font-weight:700;border:1.5px dashed #000;}
+      table.bs tr.d-duty td.sl{color:#8a8a8a;font-size:6.5pt;font-weight:600;font-style:normal;border:1px dashed #a8a8a8;}
+      /* CLINIC days (Sundays & public holidays) — TALL, near-label-sized cells so
+         a real 5 cm x 2 cm Zebra label fits the black dashed box, in bold black
+         for a clear black-and-white print. */
+      table.bs tr.d-clinic td{height:19mm;}
+      table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{color:#000;font-weight:800;font-size:13pt;}
+      table.bs tr.d-clinic td.sl{color:#000;font-size:8.5pt;font-weight:700;border:1.6px dashed #000;}
       /* The public-holiday name, shown under the weekday in the day column. */
-      table.bs td.dy .hol{display:block;font-size:5.5pt;font-weight:700;font-style:italic;line-height:1.05;margin-top:0.4mm;white-space:normal;}
+      table.bs td.dy .hol{display:block;font-size:6pt;font-weight:700;font-style:italic;line-height:1.05;margin-top:0.4mm;white-space:normal;}
      </style>
      <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">Booking sheet — ${htmlSafe(s.owner)}</span></div>
-     <div class="bs-wrap"><table class="bs"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table></div>`);
+     <table class="bs"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`);
 }
 /* One 50 x 20 mm (5 cm x 2 cm) label per booked patient, sized for a Zebra
    desktop label printer (e.g. GK/GX420). Each label is its own page so it lands
