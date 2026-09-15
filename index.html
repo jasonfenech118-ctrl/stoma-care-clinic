@@ -15840,31 +15840,43 @@ function printHandover(){
   const fpx=HANDOVER_FONT_PX;
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
+  /* Every size on the sheet keys off one CSS variable (--fs). The front-page-only
+     rule means the whole list has to land on a single A4 sheet, so after the
+     window lays out, a small script measures the sheet and shrinks --fs — which
+     scales the type, the row height and everything with it — until it fits one
+     page. When the list is short it never shrinks and prints at the usual size. */
   w.document.write(`<!DOCTYPE html><html><head><title>Inpatients Handover ${htmlSafe(TODAY)}</title><style>
     @page{size:A4 landscape;margin:7mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     *{box-sizing:border-box}
+    :root{--fs:${fpx}px;}
     body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:5mm 4mm;}
-    h1{font-size:${fpx+3}px;font-weight:800;margin:0 0 5px;}
-    table{width:100%;border-collapse:collapse;font-size:${fpx}px;table-layout:fixed;}
+    #sheet{width:100%;}
+    h1{font-size:calc(var(--fs) + 3px);font-weight:800;margin:0 0 5px;}
+    table{width:100%;border-collapse:collapse;font-size:var(--fs);table-layout:fixed;}
     /* Everything reads left-aligned, and a long name wraps onto a second line
        inside its narrow column rather than widening it. */
     th,td{border:0.75pt solid #000;padding:3px 4px;text-align:left;vertical-align:top;
       overflow-wrap:break-word;word-wrap:break-word;line-height:1.25;}
-    tbody td{height:34px;padding-top:5px;padding-bottom:5px;}
-    thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:${fpx+4}px;border-color:#000;}
+    tr{page-break-inside:avoid;}
+    /* Row height and vertical padding scale with the font, so shrinking to fit
+       pulls the rows in with the type instead of leaving tall gaps. */
+    tbody td{height:calc(var(--fs) * 2.6);padding-top:calc(var(--fs) * 0.34);padding-bottom:calc(var(--fs) * 0.34);}
+    thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:calc(var(--fs) + 4px);border-color:#000;}
     thead .cols th{background:#000;color:#fff;text-align:left;font-weight:800;}
     /* An emoji prints faint and thin on a mono laser printer, so the two
        document columns are headed with bold letters the legend spells out. */
     thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;
-      font-size:${fpx+2}px;font-weight:800;letter-spacing:0.5px;}
-    td.cbx{text-align:center;font-size:${fpx+9}px;font-weight:700;line-height:1;}
-    td.cbx .cbx-d{font-size:${fpx-2}px;font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
+      font-size:calc(var(--fs) + 2px);font-weight:800;letter-spacing:0.5px;}
+    td.cbx{text-align:center;font-size:calc(var(--fs) + 9px);font-weight:700;line-height:1;}
+    td.cbx .cbx-d{font-size:calc(var(--fs) - 2px);font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
     td.capp b{font-weight:800;}
     /* Widths live in the colgroup above; these classes carry the other styling. */
     tbody tr.wg-odd td{background:#cfcfcf;}
     tbody tr.wg-even td{background:#fff;}
-    tbody tr.wgblank td{background:#fff;height:34px;}
+    tbody tr.wgblank td{background:#fff;height:calc(var(--fs) * 2.6);}
+    .hv-legend{margin-top:6px;font-size:calc(var(--fs) - 2px);color:#333;}
   </style></head><body>
+    <div id="sheet">
     <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
     <table>
       <!-- The date banner is one colspan cell, so with table-layout:fixed the
@@ -15883,11 +15895,37 @@ function printHandover(){
       </thead>
       <tbody>${rows}${blanks}</tbody>
     </table>
-    <div style="margin-top:6px;font-size:${Math.max(8,fpx-2)}px;color:#333;">
+    <div class="hv-legend">
       <b>DL</b> = care discharge letter &nbsp;&nbsp; <b>S5</b> = Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done &nbsp; · a signed permit shows its Signed date
     </div>
+    </div>
+    <script>
+    (function(){
+      var PXMM=96/25.4;                       // CSS px per mm at layout resolution
+      // The sheet must sit inside one A4 landscape page: page height minus the
+      // @page margins (7mm) minus the body's own top/bottom padding (5mm).
+      var budgetH=(210 - 2*7 - 2*5)*PXMM - 6; // small safety cushion
+      // Pin the sheet to the exact printed content width (page width minus the
+      // margins and the body side padding) so its on-screen wrapping and height
+      // match the printout regardless of how wide this browser window happens to
+      // be — then the measured height is a true stand-in for the printed height.
+      var contentW=(297 - 2*7 - 2*4)*PXMM;
+      var root=document.documentElement, sheet=document.getElementById('sheet');
+      function fit(){
+        sheet.style.width=contentW+'px';
+        var fs=${fpx}, guard=0;
+        while(sheet.getBoundingClientRect().height>budgetH && fs>6 && guard<120){
+          fs-=0.5; root.style.setProperty('--fs',fs+'px'); guard++;
+        }
+        sheet.style.width='';                 // hand the width back to the page box for print
+        setTimeout(function(){window.focus();window.print();},60);
+      }
+      if(document.readyState==='complete')fit();
+      else window.addEventListener('load',fit);
+    })();
+    <\/script>
   </body></html>`);
-  w.document.close();w.focus();setTimeout(()=>w.print(),250);
+  w.document.close();
 }
 
 /* ------------------------------------------------------------------------- *
