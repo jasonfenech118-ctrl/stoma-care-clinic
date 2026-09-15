@@ -4258,7 +4258,7 @@ function isStaffAvailableForClinicSlot(staff,dateStr,rosterByKey,tilByKey,coreOt
    once so per-day staffing questions are cheap to answer. */
 async function loadClinicStaffingIndex(startDate,endDate){
   const rosterByKey={},tilByKey={},coreOtByKey={},bankByDate={};
-  const{data:rosterRows}=await SB.from('roster').select('staff_id,roster_date,status').gte('roster_date',startDate).lte('roster_date',endDate);
+  const{data:rosterRows}=await SB.from('roster').select('staff_id,roster_date,status,notes').gte('roster_date',startDate).lte('roster_date',endDate);
   (rosterRows||[]).forEach(r=>{rosterByKey[`${r.staff_id}_${r.roster_date}`]=r;});
   const{data:otRows}=await SB.from('leave_records').select('staff_id,start_date,notes,leave_type').eq('leave_type','overtime').gte('start_date',startDate).lte('start_date',endDate);
   (otRows||[]).forEach(r=>{
@@ -7647,13 +7647,15 @@ function bookingPrintDutyLabel(ctx,ds){
   if(!ctx.staff||!ctx.index)return '';
   const key=`${ctx.staff.id}_${ds}`,idx=ctx.index;
   if(idx.tilByKey[key]?.off)return 'TIL-off';
-  if(!isNurseWorkingClinicDay(ctx.staff,ds,idx))return '';
+  const cod=getCODViceInfo(idx.rosterByKey[key]?.notes,ds);
+  if(!isNurseWorkingClinicDay(ctx.staff,ds,idx))return cod?.label==='COD-off'?'COD-off':'';
   if(idx.tilByKey[key]?.in)return 'TIL-in';
   const bankOT=(idx.bankByDate[ds]||[]).some(b=>{
     const core=findCoreStaffByName(b.bank_staff?.full_name);
     return core&&String(core.id)===String(ctx.staff.id);
   });
   if(idx.coreOtByKey[key]||idx.rosterByKey[key]?.status==='overtime'||bankOT)return 'OT';
+  if(cod?.label==='COD-in')return 'COD-in';
   return 'Duty';
 }
 async function highlightBookingPrintDutyDays(picker,view){
@@ -7663,13 +7665,13 @@ async function highlightBookingPrintDutyDays(picker,view){
     if(!ctx.staff||!ctx.index)throw Error('Roster unavailable');
     picker.querySelectorAll('input[name="booking-print-day"]').forEach(input=>{
       const label=input.closest('label'),type=bookingPrintDutyLabel(ctx,input.value);
-      const colours=type==='OT'?['#fff3cd','#854d0e']:type==='TIL-in'?['#cffafe','#155e75']:type==='Duty'?['#dcfce7','#166534']:['#f3f4f6','#6b7280'];
+      const colours=type==='COD-in'?['#0284c7','#fff']:type==='COD-off'?['#b45309','#fff']:type==='OT'?['#fff3cd','#854d0e']:type==='TIL-in'?['#cffafe','#155e75']:type==='Duty'?['#dcfce7','#166534']:['#f3f4f6','#6b7280'];
       label.style.cssText=`display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:7px;border-radius:6px;background:${colours[0]};color:${colours[1]};font-weight:${type&&type!=='TIL-off'?700:400};`;
       const badge=document.createElement('span');
       badge.textContent=type||'Off';badge.style.cssText='font-size:10px;margin-left:auto;';
       label.appendChild(badge);
     });
-    picker.querySelector('#booking-print-duty-status').textContent='Green: duty · Gold: OT · Blue: TIL-in · Grey: off. Tick the dates you want to print.';
+    picker.querySelector('#booking-print-duty-status').textContent='Green: duty · Gold: OT · Light blue: TIL-in · Blue: COD-in · Brown: COD-off · Grey: off. Tick the dates you want to print.';
   }catch(e){
     if(picker.isConnected)picker.querySelector('#booking-print-duty-status').textContent='Duty highlights unavailable. You can still select dates manually.';
   }
