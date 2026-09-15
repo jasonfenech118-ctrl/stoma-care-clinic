@@ -15305,14 +15305,6 @@ function renderSitingStomaForm(){
   body.innerHTML=`<div class="ap-card">
     <div class="registry-lookup-note found" style="margin-bottom:12px;">Stoma formed at this operation. Fill in the operation, findings and stoma details. On saving, this patient is created and <strong>added to the Handover as an inpatient</strong>. This is part of the siting workflow and is separate from Add Patient.</div>
     ${patientFormHTML(sitingStomaCtx.prefill,'sop')}
-    <div class="pf-inpatient-here" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:12px;background:#f8fafc;">
-      <div style="font-weight:800;color:var(--navy);margin-bottom:8px;">🛏 Where is the patient now — Handover</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="fg" style="flex:1;min-width:130px;margin:0;"><label>Ward</label><input type="text" id="sop-ward" placeholder="e.g. ITU, SW2" autocomplete="off"/></div>
-        <div class="fg" style="min-width:90px;margin:0;"><label>Bed</label><input type="text" id="sop-bed" placeholder="e.g. 11" autocomplete="off"/></div>
-      </div>
-      <div class="report-note" style="margin-top:6px;">On saving, they go on the Handover under this ward and bed and the "Awaiting surgery" row clears automatically.</div>
-    </div>
     <div id="sop-error"></div>
     <div class="ap-actions">
       <button class="btn-cancel" onclick="cancelSitingStomaForm()">Cancel</button>
@@ -15335,24 +15327,21 @@ async function saveSitingStomaPatient(){
   if(miss.length){say(`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`);return;}
   const refErr=refashioningError(payload);
   if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
-  // Where the patient is now — carried onto the Handover so the row changes from
-  // "Awaiting surgery" to the ward and bed automatically.
-  const ipWard=(document.getElementById('sop-ward')?.value||'').trim();
-  const ipBed=(document.getElementById('sop-bed')?.value||'').trim();
   say('<div class="registry-lookup-note">Checking the registry…</div>');
   const{data:existing,error:lookErr}=await SB.from('patients')
     .select('id,first_name,surname').eq('id_card',payload.id_card).maybeSingle();
   if(lookErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(lookErr))}</div>`);return;}
+  const sd=payload.surgery_date||ctx.surgery_date||null;
+  let pid=null;
   if(existing){
     // The patient already has a record (an earlier stoma). Rather than block and
     // force a manual re-add (which made duplicates), add THIS operation as a new
-    // stoma formation on their existing record and put them back on the Handover.
+    // stoma formation on their existing record.
     const{data:existingPat,error:pErr}=await fetchPatientById(existing.id);
     if(pErr||!existingPat){say(`<div class="registry-lookup-note error">Could not open the existing record for ${htmlSafe(payload.id_card)}.</div>`);return;}
     const nm=`${existingPat.first_name||existing.first_name||''} ${existingPat.surname||existing.surname||''}`.trim()||'this patient';
-    if(!confirm(`${payload.id_card} is already on file as ${nm}.\n\nAdd this operation as a NEW stoma formation on their existing record and place them on the Handover?`))return;
+    if(!confirm(`${payload.id_card} is already on file as ${nm}.\n\nAdd this operation as a NEW stoma formation on their existing record, then open an inpatient visit?`))return;
     say('<div class="registry-lookup-note">Adding the new stoma to the record…</div>');
-    const sd=payload.surgery_date||ctx.surgery_date||null;
     // The operation just entered becomes new-stoma-formation entries appended to
     // the patient's stoma history — their earlier stomas are left untouched.
     const baseStoma={uid:newStomaUid(),type:payload.stoma_type||null,location:payload.stoma_location||null,
@@ -15363,40 +15352,39 @@ async function saveSitingStomaPatient(){
       location:s.location||null,formed_date:sd,discharge_date:s.discharge_date||null,reversal_date:s.reversal_date||null,
       reversal_notes:s.reversal_notes||null,findings:s.findings||null,mucus_fistula:!!s.mucus_fistula}));
     const mergedExtra=parseStomas(existingPat).concat([baseStoma]).concat(alsoStomas).concat(payload.extra_stomas||[]);
-    const patch={extra_stomas:mergedExtra,is_inpatient:true,
-      inpatient_since:existingPat.inpatient_since||sd||TODAY,
-      inpatient_ward:ipWard||existingPat.inpatient_ward||null,
-      inpatient_bed:ipBed||existingPat.inpatient_bed||null};
+    const patch={extra_stomas:mergedExtra};
     if((payload.extra_refashionings||[]).length)
       patch.extra_refashionings=parseRefashionings(existingPat).concat(payload.extra_refashionings);
     patch.followup_status=derivedFollowupStatus({...existingPat,extra_stomas:mergedExtra});
     const{error:uErr,dropped:uDrop}=await updatePatientTolerant(existing.id,patch);
     if(uErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(uErr))}</div>`);return;}
     if(uDrop&&uDrop.length)alert(`Saved, except for: ${uDrop.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
-    sitingStomaCtx=null;
-    await createSitingInpatientEpisode(existing.id,sd);
-    try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:existing.id,surgery_date:sd,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
-    refreshReminders();
-    alert(`${nm}: this operation was added as a new stoma on their existing record, and they are on the Handover as an inpatient.`);
-    switchTab('handover');
-    return;
+    pid=existing.id;
+  }else{
+    const{data:made,error,dropped}=await insertPatientTolerant(payload);
+    if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
+    if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
+    if(!made||!made.id){say('<div class="registry-lookup-note error">Saved, but the new patient id could not be read.</div>');return;}
+    pid=made.id;
   }
-  payload.is_inpatient=true;
-  if(!payload.inpatient_since)payload.inpatient_since=TODAY;
-  if(ipWard)payload.inpatient_ward=ipWard;
-  if(ipBed)payload.inpatient_bed=ipBed;
-  const{data:made,error,dropped}=await insertPatientTolerant(payload);
-  if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
-  if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
+  // The stoma is now on the record, so the pre-op siting session is done — the
+  // "Awaiting surgery" row clears on its own.
+  try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:pid,surgery_date:sd,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
   sitingStomaCtx=null;
-  if(made&&made.id){
-    await createSitingInpatientEpisode(made.id,ctx.surgery_date);
-    try{await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:true,patient_id:made.id,surgery_date:ctx.surgery_date,status:'done',updated_at:new Date().toISOString()}).eq('id',ctx.sessionId);}catch(e){}
-  }
-  refreshReminders();
-  const nmi=`${payload.first_name||''} ${payload.surname||''}`.trim();
-  alert(`${nmi} added and placed on the Handover as an inpatient.`);
-  switchTab('handover');
+  try{refreshReminders();}catch(e){}
+  // Hand off to the Open inpatient visit wizard, which takes the ward, bed and
+  // admission date and puts the patient on the Handover.
+  const{data:freshPat}=await fetchPatientById(pid);
+  if(freshPat&&sd&&!freshPat.inpatient_since)freshPat.inpatient_since=sd;   // default admission to the surgery date
+  await openInpatientVisitFor(pid,freshPat||null);
+}
+// Open the "Open inpatient visit" wizard for a specific patient (used right
+// after a siting operation is recorded), loading the state the wizard reads.
+async function openInpatientVisitFor(pid,pat){
+  clrState.patientId=pid;
+  clrState.patient=pat;
+  try{await loadClinicalRecords(pid);}catch(e){clrState.rows=[];}
+  await openInpatientVisit();
 }
 async function createSitingInpatientEpisode(pid,surgeryDate){
   const made=await createInpatientEpisodeFor(pid,surgeryDate);
