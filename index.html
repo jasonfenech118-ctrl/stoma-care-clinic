@@ -7625,12 +7625,13 @@ function openBookingPrintOptions(blank){
   mb.innerHTML=`<h2>Print planning — ${htmlSafe(fpView.owner)}</h2>
     <div class="msub">${htmlSafe(followupMonthName(month))} ${year}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn-save" onclick="printBookingSheet(${blank},'duty')">Duty Sundays &amp; public holidays</button>
+      <button class="btn-save" onclick="addBookingPrintDutyDays(this)">Add duty Sundays &amp; public holidays</button>
       <button class="btn-save" onclick="document.getElementById('booking-print-dates').hidden=false">Select specific days</button>
       <button class="btn-save" onclick="printBookingSheet(${blank},'month')">Whole month — one page</button>
     </div>
     <p class="report-note" style="margin-top:12px;">All six times stay together on A4 landscape. Selected days use cells about 4.1 cm wide and at least 2.2 cm high; 5 cm labels extend beyond the cell width. Whole month uses smaller cells on one page.</p>
     <div id="booking-print-dates" hidden>
+      <p class="report-note">Tick any extra dates or untick dates you do not need. Print selected days combines every checked date.</p>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0;">${Array.from({length:days},(_,i)=>{
         const ds=`${year}-${String(month).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`;
         return `<label><input type="checkbox" name="booking-print-day" value="${ds}"> ${String(i+1).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year} ${new Date(ds+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</label>`;
@@ -7639,6 +7640,27 @@ function openBookingPrintOptions(blank){
     </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
+}
+async function addBookingPrintDutyDays(button){
+  const picker=document.getElementById('booking-print-dates');
+  if(!picker)return;
+  picker.hidden=false;
+  button.disabled=true;
+  try{
+    const ctx=await bookedGridContext(fpView);
+    if(!picker.isConnected)return;
+    if(!ctx.staff||!ctx.index){alert('Could not load this nurse’s duty roster. Please refresh and try again.');return;}
+    let matches=0;
+    picker.querySelectorAll('input[name="booking-print-day"]').forEach(input=>{
+      const ds=input.value;
+      if((isSunday(ds)||!!holidays[ds])&&!bookedDayOff(ctx,ds)){
+        input.checked=true;
+        matches++;
+      }
+    });
+    if(!matches)alert('No duty Sundays or public holidays this month. Your selected dates have been kept.');
+  }catch(e){alert('Could not load duty days. Your selected dates have been kept. Please try again.');}
+  finally{button.disabled=false;}
 }
 async function printBookingSheet(blank,mode='month',selectedDays=[]){
   const s=fpView;
