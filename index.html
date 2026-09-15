@@ -15305,6 +15305,14 @@ function renderSitingStomaForm(){
   body.innerHTML=`<div class="ap-card">
     <div class="registry-lookup-note found" style="margin-bottom:12px;">Stoma formed at this operation. Fill in the operation, findings and stoma details. On saving, this patient is created and <strong>added to the Handover as an inpatient</strong>. This is part of the siting workflow and is separate from Add Patient.</div>
     ${patientFormHTML(sitingStomaCtx.prefill,'sop')}
+    <div class="pf-inpatient-here" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:12px;background:#f8fafc;">
+      <div style="font-weight:800;color:var(--navy);margin-bottom:8px;">🛏 Where is the patient now — Handover</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="fg" style="flex:1;min-width:130px;margin:0;"><label>Ward</label><input type="text" id="sop-ward" placeholder="e.g. ITU, SW2" autocomplete="off"/></div>
+        <div class="fg" style="min-width:90px;margin:0;"><label>Bed</label><input type="text" id="sop-bed" placeholder="e.g. 11" autocomplete="off"/></div>
+      </div>
+      <div class="report-note" style="margin-top:6px;">On saving, they go on the Handover under this ward and bed and the "Awaiting surgery" row clears automatically.</div>
+    </div>
     <div id="sop-error"></div>
     <div class="ap-actions">
       <button class="btn-cancel" onclick="cancelSitingStomaForm()">Cancel</button>
@@ -15327,6 +15335,10 @@ async function saveSitingStomaPatient(){
   if(miss.length){say(`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`);return;}
   const refErr=refashioningError(payload);
   if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
+  // Where the patient is now — carried onto the Handover so the row changes from
+  // "Awaiting surgery" to the ward and bed automatically.
+  const ipWard=(document.getElementById('sop-ward')?.value||'').trim();
+  const ipBed=(document.getElementById('sop-bed')?.value||'').trim();
   say('<div class="registry-lookup-note">Checking the registry…</div>');
   const{data:existing,error:lookErr}=await SB.from('patients')
     .select('id,first_name,surname').eq('id_card',payload.id_card).maybeSingle();
@@ -15352,7 +15364,9 @@ async function saveSitingStomaPatient(){
       reversal_notes:s.reversal_notes||null,findings:s.findings||null,mucus_fistula:!!s.mucus_fistula}));
     const mergedExtra=parseStomas(existingPat).concat([baseStoma]).concat(alsoStomas).concat(payload.extra_stomas||[]);
     const patch={extra_stomas:mergedExtra,is_inpatient:true,
-      inpatient_since:existingPat.inpatient_since||sd||TODAY};
+      inpatient_since:existingPat.inpatient_since||sd||TODAY,
+      inpatient_ward:ipWard||existingPat.inpatient_ward||null,
+      inpatient_bed:ipBed||existingPat.inpatient_bed||null};
     if((payload.extra_refashionings||[]).length)
       patch.extra_refashionings=parseRefashionings(existingPat).concat(payload.extra_refashionings);
     patch.followup_status=derivedFollowupStatus({...existingPat,extra_stomas:mergedExtra});
@@ -15369,6 +15383,8 @@ async function saveSitingStomaPatient(){
   }
   payload.is_inpatient=true;
   if(!payload.inpatient_since)payload.inpatient_since=TODAY;
+  if(ipWard)payload.inpatient_ward=ipWard;
+  if(ipBed)payload.inpatient_bed=ipBed;
   const{data:made,error,dropped}=await insertPatientTolerant(payload);
   if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
   if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
