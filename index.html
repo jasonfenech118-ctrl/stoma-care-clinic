@@ -14281,8 +14281,18 @@ function handoverAwaitingRowHTML(s){
     <td class="hv-actions-cell"><div class="followup-actions">
       <button class="ncb-btn" style="background:#e8f5ee;color:#127a3e;" onclick="handoverSitingStoma('${s.id}')">Stoma performed</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="handoverSitingNoStoma('${s.id}','${jsSafe(nm)}')">No stoma performed</button>
+      <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="handoverRemoveAwaiting('${s.id}','${jsSafe(nm)}')" title="Already recorded another way (e.g. already an inpatient) — take this awaiting row off the handover">Remove</button>
     </div></td>
   </tr>`;
+}
+/* Remove a stale awaiting-surgery row — for a patient already recorded another
+   way (e.g. already an inpatient). Cancels the siting session and refreshes the
+   handover, without filing a no-stoma record or touching the patient. */
+async function handoverRemoveAwaiting(id,name){
+  if(!confirm(`Remove ${name||'this patient'} from Awaiting surgery?\n\nUse this only when they are already recorded another way (e.g. already an inpatient). The siting session is cancelled and the row comes off the handover.`))return;
+  const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){alert('Could not remove: '+(error.message||error));return;}
+  loadHandover();refreshReminders();
 }
 /* Stoma performed → continue into the siting-stoma patient form, which creates
    the patient as an inpatient and puts them on the handover proper. */
