@@ -8006,11 +8006,14 @@ async function loadStaffAudit(){
     .sort((a,b)=>`${a.appt_date} ${String(a.appt_slot||'')}`.localeCompare(`${b.appt_date} ${String(b.appt_slot||'')}`))
     .forEach(a=>{if(!nextByPatient[a.patient_id])nextByPatient[a.patient_id]=a;});
 
-  // KPIs reflect the owner's appointment activity for the whole YEAR, independent
-  // of the due-month filter (which scopes only the patient list below). Otherwise
-  // picking a month zeroed the counts even though patients had been seen.
+  // KPIs cover the selected planning period so they always match what is on
+  // screen: the chosen month when a month is picked (a future month such as
+  // October reads 0 across the board, because nothing has been booked or seen
+  // yet), or the whole year when no month is chosen. The due-month filter still
+  // scopes only the patient list below.
+  const kpiPeriod=month?followupMonthName(month):String(year);
   const kpiOwnerIds=(selectedFollowupOwner==='All Patients'?allPatients:allPatients.filter(p=>(p.followup_owner||'Common')===selectedFollowupOwner)).map(p=>p.id).filter(Boolean);
-  const kpiAppts=kpiOwnerIds.length?await getAppointmentRowsForPatients(kpiOwnerIds,year,''):[];
+  const kpiAppts=kpiOwnerIds.length?await getAppointmentRowsForPatients(kpiOwnerIds,year,month):[];
   const total=kpiAppts.length;
   const booked=kpiAppts.filter(a=>a.status==='booked').length;
   const attended=kpiAppts.filter(a=>a.status==='attended').length;
@@ -8020,11 +8023,11 @@ async function loadStaffAudit(){
   const stats=document.getElementById('followup-stats');
   if(stats){
     stats.innerHTML=`
-      <div class="sbox"><div class="sl">Total Booked</div><div class="sv">${total}</div><div class="ss">${selectedFollowupOwner} · ${year}</div></div>
-      <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen</div></div>
-      <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled</div></div>
-      <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU</div></div>
-      <div class="sbox"><div class="sl">Available Slots</div><div class="sv" style="color:var(--teal)">${avail.free}</div><div class="ss">Sun &amp; public holidays · ${htmlSafe(month?followupMonthName(month):String(year))}</div></div>`;
+      <div class="sbox"><div class="sl">Total Appointments</div><div class="sv">${total}</div><div class="ss">${htmlSafe(selectedFollowupOwner)} · ${htmlSafe(kpiPeriod)}</div></div>
+      <div class="sbox"><div class="sl">Attended</div><div class="sv">${attended}</div><div class="ss" style="color:var(--green)">seen · ${htmlSafe(kpiPeriod)}</div></div>
+      <div class="sbox"><div class="sl">Cancelled</div><div class="sv">${cancelled}</div><div class="ss" style="color:var(--red)">cancelled · ${htmlSafe(kpiPeriod)}</div></div>
+      <div class="sbox"><div class="sl">Did Not Turn Up</div><div class="sv">${dntu}</div><div class="ss" style="color:var(--orange)">DNTU · ${htmlSafe(kpiPeriod)}</div></div>
+      <div class="sbox"><div class="sl">Available Slots</div><div class="sv" style="color:var(--teal)">${avail.free}</div><div class="ss">Sun &amp; public holidays · ${htmlSafe(kpiPeriod)}</div></div>`;
   }
 
   const ownerTitle=document.getElementById('followup-owner-title'); if(ownerTitle)ownerTitle.textContent=selectedFollowupOwner;
