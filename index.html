@@ -14794,8 +14794,11 @@ function applySitingPatches(rows){
    Performed Stoma. Idempotent: a done session no longer matches. */
 async function reconcileSitedInpatients(){
   try{
-    const{data:sess}=await SB.from('siting_sessions').select('id,id_card,surgery_date,session_date,stoma_formed,status');
-    const pending=(sess||[]).filter(r=>r&&r.stoma_formed!==true&&r.status!=='cancelled'
+    const{data:sess}=await SB.from('siting_sessions').select('id,id_card,surgery_date,session_date,stoma_formed,surgery_performed,status');
+    // Never touch a session whose surgery outcome is already decided — a
+    // cancelled, done, or operated session (stoma or no stoma) stays as recorded.
+    const pending=(sess||[]).filter(r=>r&&r.stoma_formed!==true&&r.surgery_performed!==true
+      &&r.status!=='cancelled'&&r.status!=='done'
       &&(!r.surgery_date||String(r.surgery_date)<=TODAY));
     if(!pending.length)return false;
     const{data:inp}=await SB.from('patients').select('id,id_card').eq('is_inpatient',true);
@@ -14824,9 +14827,14 @@ async function loadSitingSessions(){
       : `<div class="report-note">Could not load siting sessions: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  // A session drops off this list once it is cancelled or has produced a stoma —
-  // a stoma-formed patient now lives on the Performed Stoma tab (and the Handover).
-  const rows=applySitingPatches(data||[]).filter(r=>r.status!=='cancelled'&&r.stoma_formed!==true);
+  // A session drops off this list once it is resolved: cancelled, marked done,
+  // or the surgery has been performed — whether or not a stoma was formed. A
+  // stoma-formed patient now lives on the Performed Stoma tab (and the Handover);
+  // an operated patient with NO stoma is filed to the No-stoma Ops list. Only
+  // sessions still in progress (booked / seen / awaiting a date / to rebook)
+  // belong here, so an "operated — no stoma" row no longer lingers on the list.
+  const rows=applySitingPatches(data||[]).filter(r=>
+    r.status!=='cancelled'&&r.status!=='done'&&r.stoma_formed!==true&&r.surgery_performed!==true);
   sitingState.rows=rows;
   if(!rows.length){
     body.innerHTML=emptyStateHTML('📍','No siting sessions booked',
