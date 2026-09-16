@@ -6729,13 +6729,23 @@ async function loadBookingCalendar(){
     // Page through every row — an unbounded select silently caps at 1000, which
     // was dropping patients past the cap from the month list.
     const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,newstoma_findings,locality,surgery_date'));
-    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
-    const booked=new Set((future||[]).map(r=>String(r.patient_id)));
+    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date').gte('appt_date',TODAY).neq('status','cancelled'));
+    // Earliest future appointment per patient. A patient counts as booked — and so
+    // leaves the to-book list — only when that appointment actually covers this due
+    // month (on or before the due month plus one month of grace), exactly as the
+    // recall reminders judge it. A patient whose only future appointment sits past
+    // that window is treated as mis-booked and stays on the list to be re-booked,
+    // instead of silently vanishing the way a plain "has any appointment" test hid
+    // them before.
+    const earliestFuture={};
+    (future||[]).forEach(r=>{const k=String(r.patient_id);if(!earliestFuture[k]||r.appt_date<earliestFuture[k])earliestFuture[k]=r.appt_date;});
+    const coversDue=monthKeyToEndDate(addMonthsToKey(year*100+month,LATE_BOOKING_GRACE_MONTHS));
     bookCalState.patients=(pats||[]).filter(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
       if(Number(p.followup_due_month)!==month||Number(p.followup_year)!==year)return false;
       if(owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
-      return !booked.has(String(p.id));
+      const appt=earliestFuture[String(p.id)];
+      return !(appt&&appt<=coversDue);
     }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
     // Existing bookings in the month + the roster staffing index for greying.
     const{rows:appts}=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').gte('appt_date',first).lte('appt_date',last));
