@@ -15715,27 +15715,36 @@ async function loadStomaPerformed(){
   // were sited for. Older records (saved before the siting_for column existed)
   // have no sited-for, so the patient's stoma type keeps the column populated.
   const pids=[...new Set(rows.map(r=>r.patient_id).filter(Boolean))];
-  const stomaById={};
+  // Pull the patient's stoma type plus the operation performed and findings. If a
+  // database has not got the operation/findings columns yet, fall back to just the
+  // stoma type so those columns simply read blank rather than breaking the list.
+  const patById={};
   if(pids.length){
-    try{const{data:pats}=await SB.from('patients').select('id,stoma_type').in('id',pids);
-      (pats||[]).forEach(p=>{stomaById[p.id]=p.stoma_type||'';});}catch(e){}
+    try{
+      let{data:pats,error:pe}=await SB.from('patients').select('id,stoma_type,procedure_performed,findings').in('id',pids);
+      if(pe){({data:pats}=await SB.from('patients').select('id,stoma_type').in('id',pids));}
+      (pats||[]).forEach(p=>{patById[p.id]=p;});
+    }catch(e){}
   }
+  const pv=(id,k)=>(id&&patById[id]&&patById[id][k])||'';
   const trs=rows.map(r=>`<tr>
     <td data-label="Surgery date">${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(r.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
-    <td data-label="Stoma">${htmlSafe((r.patient_id&&stomaById[r.patient_id])||r.siting_for||'—')}</td>
+    <td data-label="Stoma">${htmlSafe(pv(r.patient_id,'stoma_type')||r.siting_for||'—')}</td>
+    <td data-label="Operation Performed">${htmlSafe(pv(r.patient_id,'procedure_performed')||'—')}</td>
+    <td data-label="Findings">${htmlSafe(pv(r.patient_id,'findings'))}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
       ${r.patient_id?`<button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="openPatientDatesModal('${r.patient_id}')">Open patient</button>`:'<span style="color:var(--muted);font-size:11px;">—</span>'}
     </div></td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="stomaperformed-table">
-    <colgroup><col style="width:104px"><col style="width:104px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"></colgroup>
+    <colgroup><col style="width:100px"><col style="width:100px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:120px"><col style="width:16%"><col><col style="width:110px"></colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="7"><span class="hv-date">Performed Stoma</span><span class="hv-count">${rows.length} record${rows.length===1?'':'s'}</span></th></tr>
-      <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Stoma</th><th></th></tr>
+      <tr class="hv-bannerrow"><th colspan="9"><span class="hv-date">Performed Stoma</span><span class="hv-count">${rows.length} record${rows.length===1?'':'s'}</span></th></tr>
+      <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Stoma</th><th>Operation Performed</th><th>Findings</th><th></th></tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
 async function loadPostopDischarges(){
