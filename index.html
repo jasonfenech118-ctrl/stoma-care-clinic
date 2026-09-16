@@ -7625,7 +7625,7 @@ async function printBookingSheet(blank){
   const dim=new Date(year,month,0).getDate();
   const bySlot={};
   if(!blank)(s.booked||[]).forEach(a=>{bySlot[a.appt_date+'|'+String(a.appt_slot||'').slice(0,5)]=a;});
-  const rows=[];
+  const dayRows=[];
   for(let d=1;d<=dim;d++){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dObj=new Date(ds+'T12:00:00');
@@ -7655,51 +7655,75 @@ async function printBookingSheet(blank){
       return `<td class="sl">Stick label here</td>`;
     }).join('');
     const holName=holidays[ds]||'';
-    rows.push(`<tr class="${cls}"><td class="dt">${d}</td><td class="dy">${htmlSafe(dowShort)}${holName?`<span class="hol">${htmlSafe(holName)}</span>`:''}</td>${cells}</tr>`);
+    // A weight per row so the whole month fills the page's height in proportion:
+    // clinic days (Sundays / holidays) take the tallest slice so a 5 cm label
+    // fits, ordinary working days a normal slice, off days the smallest.
+    const weight=!duty?0.78:((sun||hol)?1.75:1);
+    dayRows.push({cls,weight,inner:`<td class="dt">${d}</td><td class="dy">${htmlSafe(dowShort)}${holName?`<span class="hol">${htmlSafe(holName)}</span>`:''}</td>${cells}`});
   }
   const head=`<tr><th class="dt">Date</th><th class="dy">Day</th>${BC_WINDOW.map(t=>`<th class="tm">${t}</th>`).join('')}</tr>`;
+  // Split the month across balanced pages, then let each page fill a whole sheet.
+  const pageCount=dim>16?2:1;
+  const perPage=Math.ceil(dim/pageCount);
+  const pageChunks=[];
+  for(let i=0;i<dayRows.length;i+=perPage)pageChunks.push(dayRows.slice(i,i+perPage));
+  const bsHeadHTML=`<div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">Booking sheet — ${htmlSafe(s.owner)}</span></div>`;
+  const pagesHTML=pageChunks.map((chunk,idx)=>{
+    const sum=chunk.reduce((a,r)=>a+r.weight,0)||1;
+    // Each row's height is its share of the page, so the rows together fill the
+    // sheet from top to bottom with nothing left blank.
+    const body=chunk.map(r=>`<tr class="${r.cls}" style="height:${(r.weight/sum*100).toFixed(3)}%">${r.inner}</tr>`).join('');
+    const brk=idx<pageChunks.length-1?' pg-break':'';
+    const first=idx===0?' pg-first':'';
+    return `<div class="pg${first}${brk}">${idx===0?bsHeadHTML:''}<table class="bs"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  }).join('');
   bcPrintWindow(`${blank?'Booking calendar':'Booking sheet'} — ${s.owner} — ${monthName} ${year}`,
     `<style>
-      /* Landscape gives the slot columns their widest — the clinic days (where
-         labels are actually stuck) get tall, near-label-sized cells; the ordinary
-         weekdays stay compact so the whole month keeps to about two pages. */
+      /* Landscape gives the slot columns their widest, and each page is made to
+         fill a whole sheet (100vh): the month is split into balanced pages and
+         the rows stretch to use every bit of the page, with no blank band left
+         at the bottom. Clinic days take the largest share so a 5 cm label fits. */
       @page{size:A4 landscape;margin:5mm;}
-      body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
+      html,body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:0;}
+      /* One sheet per page, filled top to bottom (100vh = one printed page). */
+      .pg{height:100vh;box-sizing:border-box;overflow:hidden;}
+      .pg.pg-break{page-break-after:always;break-after:page;}
       .bs-head{display:flex;align-items:baseline;gap:4mm;border-bottom:2.5px solid #000;padding-bottom:1.5mm;margin-bottom:2mm;}
       .bs-head .bs-mo{font-size:26pt;font-weight:900;letter-spacing:1px;line-height:1;}
       .bs-head .bs-yr{font-size:16pt;font-weight:700;color:#555;}
       .bs-head .bs-t{margin-left:auto;font-size:12pt;font-weight:700;}
-      table.bs{width:100%;border-collapse:collapse;table-layout:fixed;}
+      /* The table is given the page's height so its rows stretch to fill it; each
+         row then takes its weighted share, so the sheet is used edge to edge. On
+         the first page the title band above takes ~16mm off that height. */
+      table.bs{width:100%;height:100vh;border-collapse:collapse;table-layout:fixed;}
+      .pg-first table.bs{height:calc(100vh - 16mm);}
       table.bs th,table.bs td{border:0.5px solid #e2e2e2;padding:0.5mm 0.6mm;text-align:center;vertical-align:middle;}
-      table.bs td{height:10mm;}                                 /* weekdays / off — sized so the month fills two balanced pages */
       table.bs th{background:#ececec;font-weight:700;color:#000;}
+      table.bs thead tr{height:1px;}                            /* header stays compact; the day rows take the rest */
       table.bs th.tm{font-size:11pt;font-weight:800;color:#000;letter-spacing:0.5px;border-bottom:1.5px solid #888;}
       table.bs th.dt,table.bs td.dt{width:4%;} table.bs th.dy,table.bs td.dy{width:7%;}
       table.bs th.dt,table.bs th.dy{font-size:8pt;}
-      table.bs td.dt{font-weight:800;font-size:12pt;} table.bs td.dy{font-weight:600;font-size:8.5pt;}
+      table.bs td.dt{font-weight:800;font-size:13pt;} table.bs td.dy{font-weight:600;font-size:9pt;}
       table.bs td.bk{border:1px solid #6fa382;background:#e9f8ef;padding:1mm 0.8mm;}
-      table.bs td.bk .bn{display:block;font-weight:800;font-size:8pt;color:#0a5e33;line-height:1.08;}
-      table.bs td.bk .bi{display:block;font-size:6.5pt;color:#333;font-family:monospace;}
-      table.bs td.bk .bl{display:block;font-size:6.5pt;color:#555;}
-      /* Days OFF — compact solid grey; every slot reads "Off day" with a faint
-         cross, so it is unmistakably not a day to stick a label on. */
+      table.bs td.bk .bn{display:block;font-weight:800;font-size:9pt;color:#0a5e33;line-height:1.1;}
+      table.bs td.bk .bi{display:block;font-size:7pt;color:#333;font-family:monospace;}
+      table.bs td.bk .bl{display:block;font-size:7pt;color:#555;}
+      /* Days OFF — solid grey; every slot reads "Off day" with a faint cross, so
+         it is unmistakably not a day to stick a label on. */
       table.bs tr.d-off td{background-color:#d4d4d4;} table.bs tr.d-off td.dt,table.bs tr.d-off td.dy{color:#6d6d6d;}
-      table.bs td.off{color:#666;font-size:6.5pt;font-weight:600;font-style:italic;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 10 10'%3E%3Cpath d='M0 0L10 10M10 0L0 10' stroke='%23bcbcbc' stroke-width='0.5' fill='none'/%3E%3C/svg%3E");background-size:100% 100%;background-repeat:no-repeat;}
-      /* Ordinary working weekdays — compact, quiet grey sticker box so they do
-         not compete with the clinic days and do not run the page count up. */
+      table.bs td.off{color:#666;font-size:7pt;font-weight:600;font-style:italic;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 10 10'%3E%3Cpath d='M0 0L10 10M10 0L0 10' stroke='%23bcbcbc' stroke-width='0.5' fill='none'/%3E%3C/svg%3E");background-size:100% 100%;background-repeat:no-repeat;}
+      /* Ordinary working weekdays — a quiet grey sticker box. */
       table.bs tr.d-duty td.dt,table.bs tr.d-duty td.dy{color:#6a6a6a;}
-      table.bs tr.d-duty td.sl{color:#8a8a8a;font-size:7pt;font-weight:600;font-style:normal;border:1px dashed #a8a8a8;}
-      /* CLINIC days (Sundays & public holidays) — TALL, near-label-sized cells so
-         a real 5 cm x 2 cm Zebra label fits the black dashed box, in bold black
-         for a clear black-and-white print. */
-      table.bs tr.d-clinic td{height:20mm;}
-      table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{color:#000;font-weight:800;font-size:13pt;}
-      table.bs tr.d-clinic td.sl{color:#000;font-size:8.5pt;font-weight:700;border:1.6px dashed #000;}
+      table.bs tr.d-duty td.sl{color:#8a8a8a;font-size:8pt;font-weight:600;font-style:normal;border:1px dashed #a8a8a8;}
+      /* CLINIC days (Sundays & public holidays) — the tallest rows so a real
+         5 cm x 2 cm Zebra label fits the black dashed box, in bold black for a
+         clear black-and-white print. */
+      table.bs tr.d-clinic td.dt,table.bs tr.d-clinic td.dy{color:#000;font-weight:800;font-size:14pt;}
+      table.bs tr.d-clinic td.sl{color:#000;font-size:9pt;font-weight:700;border:1.6px dashed #000;}
       /* The public-holiday name, shown under the weekday in the day column. */
-      table.bs td.dy .hol{display:block;font-size:6pt;font-weight:700;font-style:italic;line-height:1.05;margin-top:0.4mm;white-space:normal;}
+      table.bs td.dy .hol{display:block;font-size:6.5pt;font-weight:700;font-style:italic;line-height:1.05;margin-top:0.4mm;white-space:normal;}
      </style>
-     <div class="bs-head"><span class="bs-mo">${htmlSafe(monthName.toUpperCase())}</span><span class="bs-yr">${year}</span><span class="bs-t">Booking sheet — ${htmlSafe(s.owner)}</span></div>
-     <table class="bs"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`);
+     ${pagesHTML}`);
 }
 /* One 50 x 20 mm (5 cm x 2 cm) label per booked patient, sized for a Zebra
    desktop label printer (e.g. GK/GX420). Each label is its own page so it lands
