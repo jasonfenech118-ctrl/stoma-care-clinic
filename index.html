@@ -1625,6 +1625,8 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 
 </style>
 <style id="followup-design-review">
+#page-handover.hv-manual #hv-table,
+#page-handover.hv-manual #hv-table :is(td,th,input,textarea,.hv-appl,.hv-note,.hv-wbin,.hs-btn,.hs-date-line){font-size:var(--handover-manual-font)!important;}
 /* Follow-up Planning review: screen-only presentation, scoped to this page. */
 @media screen{
   #page-staff-audit{max-width:1480px;margin:0 auto;color:#19334a;}
@@ -2334,6 +2336,12 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <div><h2>🏥 Handover</h2><p>The patients on the wards right now — ward, appliance and what still has to be signed</p></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-add" id="hv-newtab" onclick="openHandoverInNewTab()" style="background:var(--navy);">↗ Open handover page</button>
+          <div role="group" aria-label="Handover font size" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <button class="btn-add" aria-label="Decrease handover font size" onclick="changeHandoverFont(-1)">A−</button>
+            <output id="hv-font-value" aria-live="polite">Auto</output>
+            <button class="btn-add" aria-label="Increase handover font size" onclick="changeHandoverFont(1)">A+</button>
+            <button class="btn-add" onclick="setHandoverFont(null)">Auto</button>
+          </div>
           <button class="btn-add" onclick="printHandover()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadHandover()">Refresh</button>
         </div>
@@ -14110,6 +14118,17 @@ async function loadHandover(){
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
 const HANDOVER_FONT_PX=13;
+let handoverManualFont=null;
+function setHandoverFont(value){
+  handoverManualFont=value===null?null:Math.max(8,Math.min(24,Number(value)||HANDOVER_FONT_PX));
+  const page=document.getElementById('page-handover');
+  page.classList.toggle('hv-manual',handoverManualFont!==null);
+  if(handoverManualFont===null)page.style.removeProperty('--handover-manual-font');
+  else page.style.setProperty('--handover-manual-font',handoverManualFont+'px');
+  document.getElementById('hv-font-value').textContent=handoverManualFont===null?'Auto':handoverManualFont+' px';
+  fitAllWardBed();
+}
+function changeHandoverFont(delta){setHandoverFont((handoverManualFont??HANDOVER_FONT_PX)+delta);}
 /* How many rows fit on one A4 landscape sheet at that size, title, date banner,
    column header and footer taken off. The printed sheet is padded out to this
    and never past it. */
@@ -16015,7 +16034,8 @@ function printHandover(){
   const blanks=Array.from({length:blankCount},()=>
     `<tr class="wgblank"><td class="cwb"></td><td></td><td></td><td></td><td class="capp"></td><td class="cbx"></td><td class="cbx"></td></tr>`
   ).join('');
-  const fpx=HANDOVER_FONT_PX;
+  const fpx=handoverManualFont??HANDOVER_FONT_PX;
+  const autoFit=handoverManualFont===null;
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
   /* Every size on the sheet keys off one CSS variable (--fs). The front-page-only
@@ -16092,7 +16112,7 @@ function printHandover(){
       function fit(){
         sheet.style.width=contentW+'px';
         var fs=${fpx}, guard=0;
-        while(sheet.getBoundingClientRect().height>budgetH && fs>6 && guard<120){
+        while(${autoFit} && sheet.getBoundingClientRect().height>budgetH && fs>6 && guard<120){
           fs-=0.5; root.style.setProperty('--fs',fs+'px'); guard++;
         }
         sheet.style.width='';                 // hand the width back to the page box for print
