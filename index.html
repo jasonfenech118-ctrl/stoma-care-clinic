@@ -476,18 +476,30 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .dntu-locked-pill{display:inline-block;padding:5px 10px;border-radius:14px;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-size:10px;font-weight:900;white-space:nowrap;}
 .dntu-modal-alert{margin:10px 0 12px;padding:10px 12px;border-radius:10px;background:#fff8e1;border:1px solid #f2df9f;color:#856404;font-size:11px;font-weight:800;line-height:1.35;}
 .dntu-choice-card{grid-column:1 / -1;border:1px solid var(--border);background:#fafafa;border-radius:12px;padding:12px;margin-bottom:2px;}
+.dntu-current-event{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;margin-bottom:12px;border:1px solid #b5e0dd;border-radius:10px;background:#eef9f8;}
+.dntu-current-copy{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.dntu-current-label{font-size:9px;font-weight:900;letter-spacing:.55px;text-transform:uppercase;color:var(--teal);}
+.dntu-current-copy strong{font-size:12px;color:var(--navy);}
+.dntu-current-status{flex:0 0 auto;max-width:180px;padding:5px 8px;border-radius:12px;background:var(--teal);color:white;font-size:9.5px;font-weight:900;text-align:center;line-height:1.25;}
 .dntu-choice-title{font-size:12px;font-weight:900;color:var(--navy);margin-bottom:5px;}
-.dntu-choice-help{font-size:11px;color:var(--muted);line-height:1.35;margin-bottom:10px;}
-.dntu-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.dntu-choice-btn{border:2px solid var(--border);background:white;color:var(--navy);border-radius:12px;padding:12px 14px;font-size:14px;font-weight:900;cursor:pointer;font-family:'Inter',sans-serif;text-align:left;transition:all .15s;}
+.dntu-choice-help{font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;}
+.dntu-choice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.dntu-choice-btn{border:2px solid var(--border);background:white;color:var(--navy);border-radius:10px;padding:9px 8px;font-size:18px;font-weight:900;cursor:pointer;font-family:'Inter',sans-serif;text-align:center;transition:all .15s;}
 .dntu-choice-btn:hover{border-color:var(--teal);transform:translateY(-1px);box-shadow:0 4px 12px rgba(13,115,119,.12);}
 .dntu-choice-btn.active{background:#fff3cd;border-color:var(--orange);color:#856404;box-shadow:0 4px 12px rgba(230,126,34,.16);}
 .dntu-choice-btn.warn.active{background:#f8d7da;border-color:var(--red);color:#721c24;}
 .dntu-choice-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
-.dntu-choice-sub{display:block;font-size:10px;font-weight:700;line-height:1.25;margin-top:4px;color:inherit;opacity:.8;}
+.dntu-choice-sub{display:block;font-size:9px;font-weight:800;line-height:1.2;margin-top:2px;color:inherit;opacity:.8;text-transform:uppercase;letter-spacing:.25px;}
+.dntu-count-equation{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:6px;margin-top:10px;}
+.dntu-count-part{padding:8px 5px;border:1px solid var(--border);border-radius:9px;background:white;text-align:center;color:var(--muted);font-size:9px;font-weight:800;line-height:1.2;}
+.dntu-count-part strong{display:block;margin-bottom:1px;color:var(--navy);font-size:17px;line-height:1;}
+.dntu-count-part.total{border-color:#efc36a;background:#fff8e1;color:#856404;}
+.dntu-count-part.total strong{color:#856404;}
+.dntu-count-symbol{color:var(--muted);font-size:15px;font-weight:900;}
 .dntu-target-fields{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .dntu-target-note{margin-top:10px;padding:8px 10px;border-radius:9px;background:#fff8e1;border:1px solid #f2df9f;color:#856404;font-size:11px;font-weight:800;line-height:1.35;}
-@media(max-width:720px){.dntu-choice-grid,.dntu-target-fields{grid-template-columns:1fr;}}
+.dntu-target-note.complete{background:#eef9f8;border-color:#b5e0dd;color:#0d7377;}
+@media(max-width:520px){.dntu-current-event{align-items:flex-start;flex-direction:column;}.dntu-current-status{max-width:none;}.dntu-target-fields{grid-template-columns:1fr;}}
 
 
 /* REPORTS & CHARTS */
@@ -4545,69 +4557,117 @@ async function setAS(id,status){
 async function openDntuAppointmentModal(apptId,currentStreak){
   await openOutcomeFollowupModal(apptId,'did_not_attend',{dntuEditMode:true,currentStreak:Number(currentStreak)||0});
 }
-function dntuSelectionHTML(currentStreak,pendingCurrentDntu=0){
-  const streak=Number(currentStreak)||0;
+function dntuSelectionHTML(currentStreak,pendingCurrentDntu=0,apptDate='',apptSlot='',alreadyRecorded=false){
+  const streak=Math.max(0,Number(currentStreak)||0);
   const pending=Number(pendingCurrentDntu)||0;
-  const baseAfterSave=Math.min(3,streak+pending);
-  const disable2=streak>=2?'disabled':'';
-  const disable3=streak>=3?'disabled':'';
-  const help=streak>0?`Database currently shows ${streak>=3?'3+':streak} DNTU${streak===1?'':'s'}. ${pending?`Saving this appointment as DNTU will bring the count to ${baseAfterSave>=3?'3+':baseAfterSave}. `:''}Choose the count shown in the real clinical records, then enter only the missing historical DNTU date/time below.`:`${pending?'Saving this appointment as DNTU will create the 1st DNTU in the database. ':''}Choose the DNTU count from the real clinical records.`;
-  return `<div class="edit-seen-section">DNTU record correction</div>
+  // The saved total always includes the appointment being edited. What the user
+  // chooses below is only the history that occurred before this appointment.
+  const baseAfterSave=Math.max(1,Math.min(3,streak+pending));
+  const recordedPrevious=Math.max(0,Math.min(2,baseAfterSave-1));
+  const eventWhen=[apptDate,String(apptSlot||'').slice(0,5)].filter(Boolean).join(' · ')||'Current appointment';
+  const eventState=alreadyRecorded?'Already recorded as DNTU':'Will be recorded as DNTU when saved';
+  const historyText=recordedPrevious
+    ?`The database already contains ${recordedPrevious} previous consecutive DNTU${recordedPrevious===1?'':'s'} before this appointment.`
+    :'No previous consecutive DNTU is currently recorded before this appointment.';
+  const buttons=[0,1,2].map(previous=>{
+    const target=previous+1;
+    const disabled=previous<recordedPrevious?'disabled':'';
+    const active=previous===recordedPrevious?'active':'';
+    return `<button type="button" id="dntu-previous-${previous}" class="dntu-choice-btn ${target===3?'warn':''} ${active}" ${disabled} onclick="selectDntuPreviousCount(${previous},${recordedPrevious},${baseAfterSave},${alreadyRecorded?'true':'false'})">${previous}<span class="dntu-choice-sub">previous</span></button>`;
+  }).join('');
+  const currentAction=alreadyRecorded?'This appointment is the':'Saving will record this appointment as the';
+  return `<div class="edit-seen-section">DNTU history</div>
     <div class="edit-seen-grid">
-      <div class="dntu-choice-card">
-        <div class="dntu-choice-title">DNTU button selection</div>
-        <div class="dntu-choice-help">${htmlSafe(help)} This keeps the normal Edit / DNTU appointment form, including patient details, appointment details, follow-up due month and the availability donut.</div>
-        <input type="hidden" id="of-dntu-target" value=""/>
-        <div class="dntu-choice-grid">
-          <button type="button" id="dntu-target-2" class="dntu-choice-btn" ${disable2} onclick="selectDntuTarget(2,${streak},${baseAfterSave})">2 DNTU<span class="dntu-choice-sub">Set the record to two consecutive did-not-turn-up events.</span></button>
-          <button type="button" id="dntu-target-3" class="dntu-choice-btn warn" ${disable3} onclick="selectDntuTarget(3,${streak},${baseAfterSave})">3 DNTU<span class="dntu-choice-sub">Set the record to three consecutive did-not-turn-up events.</span></button>
+      <div class="dntu-choice-card" data-current-recorded="${alreadyRecorded?'1':'0'}">
+        <div class="dntu-current-event">
+          <div class="dntu-current-copy"><span class="dntu-current-label">Current appointment</span><strong>${htmlSafe(eventWhen)}</strong></div>
+          <span class="dntu-current-status">${htmlSafe(eventState)}</span>
+        </div>
+        <div class="dntu-choice-title">How many consecutive DNTUs happened before this appointment?</div>
+        <div class="dntu-choice-help">Choose the previous count from the clinical record. <strong>The current appointment is added automatically.</strong><br/>${htmlSafe(historyText)}</div>
+        <input type="hidden" id="of-dntu-target" value="${baseAfterSave}"/>
+        <div class="dntu-choice-grid">${buttons}</div>
+        <div class="dntu-count-equation" aria-live="polite">
+          <div class="dntu-count-part"><strong id="dntu-preview-previous">${recordedPrevious}</strong>previous</div>
+          <span class="dntu-count-symbol">+</span>
+          <div class="dntu-count-part"><strong>1</strong>this appointment</div>
+          <span class="dntu-count-symbol">=</span>
+          <div class="dntu-count-part total"><strong id="dntu-preview-total">${baseAfterSave}</strong>consecutive DNTU${baseAfterSave===1?'':'s'}</div>
         </div>
         <div id="dntu-target-fields" class="dntu-target-fields"></div>
-        <div id="dntu-target-note" class="dntu-target-note">Select <strong>2 DNTU</strong> or <strong>3 DNTU</strong>, then confirm the missing historical DNTU date/time before saving.</div>
+        <div id="dntu-target-note" class="dntu-target-note complete">No earlier DNTU events need to be added. ${currentAction} <strong>${dntuOrdinal(baseAfterSave)} consecutive DNTU</strong>.</div>
       </div>
     </div>`;
 }
 function toggleDntuFollowupPlanning(target){
   const t=Number(target)||0;
-  const wrap=document.getElementById('of-followup-planning-wrap');
+  const wrap=document.getElementById('of-followup-section')||document.getElementById('of-followup-planning-wrap');
   if(wrap)wrap.style.display=(t===3)?'none':'';
   const status=document.getElementById('of-followup-status');
-  if(status&&t===3)status.value='paused';
+  if(status){
+    if(!status.dataset.dntuOriginalValue)status.dataset.dntuOriginalValue=status.value||'active';
+    if(t===3)status.value='paused';
+    else if(status.value==='paused')status.value=status.dataset.dntuOriginalValue||'active';
+  }
+  if(typeof updateFollowupChangeWarning==='function')updateFollowupChangeWarning();
 }
-function selectDntuTarget(target,currentStreak,baseAfterSave){
-  const t=Number(target)||0;
-  const streak=Number(currentStreak)||0;
-  const base=Number(baseAfterSave)||streak;
+function selectDntuPreviousCount(previousCount,recordedPreviousCount,baseAfterSave,alreadyRecorded=false){
+  const previous=Math.max(0,Math.min(2,Number(previousCount)||0));
+  const recordedPrevious=Math.max(0,Math.min(2,Number(recordedPreviousCount)||0));
+  const base=Math.max(1,Math.min(3,Number(baseAfterSave)||1));
+  if(previous<recordedPrevious)return;
+  const target=previous+1;
   const hidden=document.getElementById('of-dntu-target');
   const fields=document.getElementById('dntu-target-fields');
   const note=document.getElementById('dntu-target-note');
-  document.getElementById('dntu-target-2')?.classList.toggle('active',t===2);
-  document.getElementById('dntu-target-3')?.classList.toggle('active',t===3);
-  if(hidden)hidden.value=String(t);
-  toggleDntuFollowupPlanning(t);
+  [0,1,2].forEach(n=>document.getElementById(`dntu-previous-${n}`)?.classList.toggle('active',n===previous));
+  if(hidden)hidden.value=String(target);
+  const previousPreview=document.getElementById('dntu-preview-previous');
+  const totalPreview=document.getElementById('dntu-preview-total');
+  if(previousPreview)previousPreview.textContent=String(previous);
+  if(totalPreview)totalPreview.textContent=String(target);
+  const totalPart=totalPreview?.parentElement;
+  if(totalPart)totalPart.lastChild.textContent=`consecutive DNTU${target===1?'':'s'}`;
+  toggleDntuFollowupPlanning(target);
   if(!fields)return;
-  if(t<=base){
+  const currentAction=alreadyRecorded?'This appointment remains recorded as':'Saving will record this appointment as';
+  if(target<=base){
     fields.innerHTML='';
     if(note){
-      const planningText=t===3?' The follow-up planning section is hidden because the patient will be paused after 3 DNTUs.':' Follow-up planning remains visible for 2 DNTU.';
-      if(t>streak)note.innerHTML=`Saving this appointment as DNTU will bring the record to ${t} DNTU. No extra historical DNTU row is needed.${planningText}`;
-      else note.innerHTML=`The database already shows ${streak>=3?'3+':streak} DNTU. No extra historical DNTU row is needed for ${t} DNTU.${planningText}`;
+      note.classList.add('complete');
+      const planningText=target===3?' Follow-up planning is hidden because the third consecutive DNTU pauses follow-up.':'';
+      note.innerHTML=`No earlier DNTU events need to be added. ${currentAction} <strong>${dntuOrdinal(target)} consecutive DNTU</strong>.${planningText}`;
     }
     return;
   }
   const missing=[];
-  for(let n=base+1;n<=t;n++)missing.push(n);
-  fields.innerHTML=missing.map(n=>`<div class="fg"><label>${n} DNTU date *</label><input type="date" id="dntu-missing-date-${n}" max="${TODAY}"/></div><div class="fg"><label>${n} DNTU time / slot *</label><select id="dntu-missing-slot-${n}">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>`).join('');
-  if(note)note.innerHTML=`${missing.length} missing historical DNTU record${missing.length!==1?'s':''} will be added when you save this form. Use the exact date/time from your real records.${t===3?' Follow-up planning is hidden because 3 DNTUs pauses the patient and no further appointment planning is needed.':' Follow-up planning remains visible for 2 DNTU.'}`;
+  for(let n=base+1;n<=target;n++)missing.push(n);
+  const currentDate=document.getElementById('of-date')?.value||TODAY;
+  fields.innerHTML=missing.map(n=>{
+    const previousNumber=n-1;
+    return `<div class="fg"><label>Previous DNTU ${previousNumber} date *</label><input type="date" id="dntu-missing-date-${n}" max="${htmlSafe(currentDate)}"/></div><div class="fg"><label>Previous DNTU ${previousNumber} time / slot *</label><select id="dntu-missing-slot-${n}">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>`;
+  }).join('');
+  if(note){
+    note.classList.remove('complete');
+    note.innerHTML=`Add ${missing.length===1?'the missing previous DNTU event':`the ${missing.length} missing previous DNTU events`} from the clinical record. Enter multiple events in date order, oldest first. ${currentAction} <strong>${dntuOrdinal(target)} consecutive DNTU</strong>.${target===3?' Follow-up planning is hidden because the third consecutive DNTU pauses follow-up.':''}`;
+  }
 }
 function validateMissingDntuFieldsBeforeSave(targetCount){
   const target=Number(targetCount)||0;
   const base=Number(document.getElementById('mb')?.dataset?.dntuBaseAfterSave)||0;
+  const currentDate=document.getElementById('of-date')?.value||'';
+  const currentSlot=String(document.getElementById('of-slot')?.value||'').slice(0,5);
+  let lastKey='';
   for(let n=base+1;n<=target;n++){
     const date=document.getElementById(`dntu-missing-date-${n}`)?.value||'';
     const slot=document.getElementById(`dntu-missing-slot-${n}`)?.value||'';
-    if(!date||!slot){alert(`Please enter the date and time/slot for ${n} DNTU.`);return false;}
-    if(date>TODAY){alert(`${n} DNTU date cannot be in the future.`);return false;}
+    const previousNumber=n-1;
+    if(!date||!slot){alert(`Please enter the date and time/slot for previous DNTU ${previousNumber}.`);return false;}
+    if(date>TODAY){alert(`Previous DNTU ${previousNumber} cannot be in the future.`);return false;}
+    const key=`${date} ${String(slot).slice(0,5)}`;
+    if(lastKey&&key<=lastKey){alert('Enter the missing previous DNTU events in date and time order, oldest first.');return false;}
+    if(currentDate&&key>=`${currentDate} ${currentSlot}`){alert(`Previous DNTU ${previousNumber} must be earlier than the current appointment.`);return false;}
+    lastKey=key;
   }
   return true;
 }
@@ -4624,8 +4684,9 @@ async function createMissingDntuRowsFromEditForm(patientId,targetCount,sourceApp
   for(let n=current+1;n<=target;n++){
     const date=document.getElementById(`dntu-missing-date-${n}`)?.value||'';
     const slot=document.getElementById(`dntu-missing-slot-${n}`)?.value||'';
-    if(!date||!slot){alert(`Please enter the date and time/slot for ${n} DNTU.`);return false;}
-    if(date>TODAY){alert(`${n} DNTU date cannot be in the future.`);return false;}
+    const previousNumber=n-1;
+    if(!date||!slot){alert(`Please enter the date and time/slot for previous DNTU ${previousNumber}.`);return false;}
+    if(date>TODAY){alert(`Previous DNTU ${previousNumber} cannot be in the future.`);return false;}
     const payload={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),status:'did_not_attend',assigned_to:null,bank_staff_id:null};
     if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
     if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
@@ -5043,8 +5104,11 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   mb.dataset.initialFollowupMonth=String(defaultMonth||'');
   mb.dataset.initialFollowupYear=String(defaultYear||'');
   mb.dataset.followupType=String(p.followup_type||'follow_up');
-  const modalTitle=isDntuEditMode?'Edit / DNTU Appointment — Did Not Turn Up':'Edit / Seen Appointment';
-  const modalSub=isDntuEditMode?'Update patient details, clinic column, DNTU count and follow-up planning in one card.':'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
+  const currentDntuAlreadyRecorded=appt.status==='did_not_attend';
+  const modalTitle=isDntuEditMode?(currentDntuAlreadyRecorded?'Edit DNTU appointment':'Record DNTU appointment'):'Edit / Seen Appointment';
+  const modalSub=isDntuEditMode
+    ?(currentDntuAlreadyRecorded?'This appointment is already recorded as a DNTU event. Review its details and any previous consecutive DNTUs.':'This appointment will be recorded as the current DNTU event. Add any previous consecutive DNTUs below.')
+    :'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
   const outcomeControl=isDntuEditMode?
     `<div class="fg"><label>Appointment outcome</label><input type="text" value="DNTU — Did Not Turn Up" readonly style="background:#f8fafc;font-weight:800;color:#856404;"/><input type="hidden" id="of-status" value="did_not_attend"/></div>`:
     `<div class="fg"><label>Appointment outcome</label><select id="of-status" onchange="updateApplianceVisibility();esOnOutcomeChange()">
@@ -5054,8 +5118,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         <option value="cancelled" ${requestedStatus==='cancelled'?'selected':''}>Cancelled</option>
       </select></div>`;
   const pendingCurrentDntu=(isDntuEditMode && appt.status!=='did_not_attend')?1:0;
-  mb.dataset.dntuBaseAfterSave=String(Math.min(3,dntuCurrentStreak+pendingCurrentDntu));
-  const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu):'';
+  mb.dataset.dntuBaseAfterSave=String(Math.max(1,Math.min(3,dntuCurrentStreak+pendingCurrentDntu)));
+  const dntuSelectionSection=isDntuEditMode?dntuSelectionHTML(dntuCurrentStreak,pendingCurrentDntu,appt.appt_date,appt.appt_slot,currentDntuAlreadyRecorded):'';
   const applianceSection=visitApplianceSummaryHTML(appt,p);
   // The running complications, read fresh so the section opens with what is on
   // the card (the appointment join may not carry the column).
@@ -5116,9 +5180,11 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       ${dntuSelectionSection}
       ${applianceSection}
       ${complicationsSection}
-      <div class="edit-seen-section">Follow-up planning</div>
-      ${followupBlock}
-      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">Save Edit / DNTU Appointment</button></div>`;
+      <div id="of-followup-section">
+        <div class="edit-seen-section">Follow-up planning</div>
+        ${followupBlock}
+      </div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveOutcomeFollowup('${apptId}','${appt.patient_id||''}')">${currentDntuAlreadyRecorded?'Save DNTU changes':'Save current DNTU event'}</button></div>`;
   }else{
     // ── The three-step Attendance → Clinical review → Follow-up workflow. ──
     const fuStatus=derivedFollowupStatus(p);
@@ -5185,6 +5251,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="mact" id="es-footer"></div>`;
   }
   openMo();
+  if(isDntuEditMode)toggleDntuFollowupPlanning(Number(document.getElementById('of-dntu-target')?.value)||1);
   const ofMonth=document.getElementById('of-month');
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
