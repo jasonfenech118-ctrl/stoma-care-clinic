@@ -11,6 +11,8 @@
 <script src="assets/dntu-workflow.js"></script>
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
+<link rel="stylesheet" href="assets/daily-attendance.css"/>
+<script src="assets/daily-attendance.js"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1893,6 +1895,46 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       </div>
     </div>
 
+    <!-- DAILY STAFF ATTENDANCE -->
+    <div class="page" id="page-daily-attendance">
+      <div class="phdr">
+        <div><h2>Daily Attendance</h2><p>Record actual staff attendance against the planned duty</p></div>
+        <button class="da-button" onclick="dailyAttendanceOpenRoster()">Open Monthly Roster</button>
+      </div>
+      <div class="da-workflow-note">
+        <span>The sheet is created from the roster, duty changes, overtime and leave. Attendance, times and remarks save automatically.</span>
+        <span class="da-autosave" id="da-autosave" role="status">Loading…</span>
+      </div>
+      <div class="da-toolbar">
+        <label for="da-date">Attendance date</label>
+        <div class="da-day-controls">
+          <button class="da-button" onclick="DailyAttendance.changeDay(-1)" aria-label="Previous day">←</button>
+          <input type="date" id="da-date" onchange="loadDailyAttendance()" aria-describedby="da-help">
+          <button class="da-button" onclick="DailyAttendance.changeDay(1)" aria-label="Next day">→</button>
+        </div>
+        <button class="da-button" onclick="DailyAttendance.today()">Today</button>
+        <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
+      </div>
+      <h3 id="da-date-label"></h3>
+      <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
+      <div id="da-holiday" hidden></div>
+      <div class="da-summary" id="da-summary"></div>
+      <div id="da-results" aria-live="polite"></div>
+    </div>
+
+    <!-- SAVED STAFF ATTENDANCE -->
+    <div class="page" id="page-attendance-records">
+      <div class="phdr"><div><h2>Attendance Records</h2><p>Automatically saved daily staff attendance sheets</p></div></div>
+      <div class="da-toolbar">
+        <label for="ar-date">Find a date</label>
+        <input type="date" id="ar-date" onchange="loadAttendanceRecords()">
+        <button class="da-button" onclick="DailyAttendance.clearRecordFilter()">Show all</button>
+        <button class="da-button" onclick="loadAttendanceRecords()">Refresh</button>
+      </div>
+      <div class="da-summary" id="ar-summary"></div>
+      <div id="ar-results" aria-live="polite"></div>
+    </div>
+
     <!-- APPOINTMENTS — MULTI-COLUMN -->
     <div class="page" id="page-appointments">
       <div class="phdr"><div><h2>Patient Appointments</h2><p>08:30 – 13:30 · 30 min slots · One column per nurse working</p></div></div>
@@ -3042,6 +3084,8 @@ const TAB_GROUPS=[
   {key:'calendar',label:'Clinic Calendar',icon:'📅',color:'#7c3aed',
    pages:[
      {tab:'roster',label:'Monthly Roster',icon:'🗓',color:'#7c3aed'},
+     {tab:'daily-attendance',label:'Daily Attendance',icon:'✅',color:'#0d7377'},
+     {tab:'attendance-records',label:'Attendance Records',icon:'📚',color:'#0369a1'},
      {tab:'cod',label:'Change of Duty',icon:'🔄',color:'#e67e22'}
    ]},
   {key:'appointments',label:'Appointments',icon:'🕘',color:'#2980b9',
@@ -3178,6 +3222,8 @@ function switchTab(name){
   if(name==='phone')openPhoneLookup();
   if(name==='appointments')loadAppts();
   if(name==='roster')renderRoster();
+  if(name==='daily-attendance')loadDailyAttendance();
+  if(name==='attendance-records')loadAttendanceRecords();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
 }
 // ── MOBILE NAV ──
@@ -3233,6 +3279,31 @@ async function loadStaff(){
   await ensureCoreStaff();
   const{data}=await SB.from('staff').select('*').eq('is_active',true);
   staffList=data||[];
+}
+
+// DAILY STAFF ATTENDANCE — save actual attendance without changing the rota.
+function dailyAttendanceSaveOptions(){
+  return {db:SB,fetchRows:fetchAllRows,defaultCode,holiday:isHol,formatDate:fmtLabel,actor:getCurrentUserForAudit};
+}
+function loadDailyAttendance(){return DailyAttendance.load(dailyAttendanceSaveOptions());}
+function loadAttendanceRecords(){
+  return DailyAttendance.loadRecords({db:SB,fetchRows:fetchAllRows});
+}
+function openDailyAttendanceRecord(date){
+  const input=document.getElementById('da-date');
+  if(input){input.value=date;input.dataset.initialized='true';}
+  switchTab('daily-attendance');
+}
+function dailyAttendanceOpenRoster(){
+  const date=document.getElementById('da-date')?.value;
+  if(!DailyAttendance.validDate(date))return;
+  selectedJumpDate=date;
+  const day=new Date(date+'T12:00:00');
+  curMonth=new Date(day.getFullYear(),day.getMonth(),1);
+  document.getElementById('jump-date').value=date;
+  snapCurrentDate=date;
+  switchTab('roster');
+  loadTodaySnapshot();
 }
 
 // JUMP TO DATE
