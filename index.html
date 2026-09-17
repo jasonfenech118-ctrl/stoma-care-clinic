@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css"/>
 <script src="assets/dntu-workflow.js"></script>
+<link rel="stylesheet" href="assets/cancellations.css"/>
+<script src="assets/cancellations.js"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2171,6 +2173,17 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       <div class="kpi-row" id="report-kpis"></div>
 
       <div class="report-card wide" style="min-height:auto;">
+        <div class="filter-row"><h3>Cancellations</h3><button class="btn-add" onclick="exportCancellations()">Export CSV</button></div>
+        <p class="report-note">Patient and clinic cancellations for the selected month or year. Cancellation is a separate outcome from DNTU.</p>
+        <div class="filter-row">
+          <label for="cancel-report-source">Cancelled by:</label><select id="cancel-report-source" onchange="cancellationReportSourceChanged()"><option value="all">All cancellations</option><option value="patient">Patient</option><option value="clinic">Clinic</option><option value="unknown">Source not recorded</option></select>
+          <label for="cancel-report-reason">Reason:</label><select id="cancel-report-reason" onchange="renderCancellationReport()"><option value="all">All reasons</option></select>
+          <label for="cancel-report-search">Search:</label><input id="cancel-report-search" placeholder="Patient, ID or note" oninput="renderCancellationReport()"/>
+        </div>
+        <div id="cancellation-report-body"></div>
+      </div>
+
+      <div class="report-card wide" style="min-height:auto;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <h3 style="margin:0;">👥 Patients Booked for Selected Month / Period</h3>
           <button class="btn-add" onclick="printReportPatientList()" style="padding:7px 14px;">Print List</button>
@@ -2211,7 +2224,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
     <!-- ANNUAL REPORT -->
     <div class="page" id="page-annual-report">
       <div class="phdr">
-        <div><h2>📄 Annual Report</h2><p>Full-year clinic activity summary — one printable page per year</p></div>
+        <div><h2>📄 Annual Report</h2><p>Printable full-year clinic activity and cancellation summary</p></div>
         <div style="display:flex;gap:8px;align-items:center;">
           <label style="font-size:12px;font-weight:700;color:var(--navy);">Year:</label>
           <select id="annual-year" onchange="loadAnnualReport()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;"></select>
@@ -2500,6 +2513,7 @@ const FOLLOWUP_OWNER_FILTERS=['Common','Jacqueline','Jason','Lorraine','Tracey']
 const AUTO_AVAILABILITY_VALUE='auto_availability';
 let reportCharts={};
 let reportPatientRows=[];
+let reportLoadRequest=0;
 
 function normaliseFollowupOwner(owner){
   const raw=String(owner||'Common').trim();
@@ -3447,9 +3461,9 @@ async function loadTodaySnapshot(){
     ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
     <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
     <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
-      ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setAS('${a.id}','attended')">✅</button>`:''}
+      ${a.status!=='attended'&&a.status!=='cancelled'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setAS('${a.id}','attended')">✅</button>`:''}
       ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setAS('${a.id}','did_not_attend')">DNTU</button>`:''}
-      ${a.status!=='cancelled'?`<button class="ncb-btn ncb-cancel" title="Cancel" onclick="setAS('${a.id}','cancelled')">✖</button>`:''}
+      ${a.status==='booked'?`<button class="ncb-btn ncb-cancel" title="Cancel" onclick="setAS('${a.id}','cancelled')">✖</button>`:''}
       <button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button>
       <button class="ncb-btn ncb-del" title="Delete" onclick="delApp('${a.id}')">🗑</button>
     </div>
@@ -3710,11 +3724,10 @@ function cancelledSlotHistoryHTML(cancelledRows){
     const id=a.patients?.id_card?htmlSafe(a.patients.id_card):'No ID';
     const phone=a.patients?.phone_number?htmlSafe(a.patients.phone_number):'No phone';
     return `<div class="cancel-history-item">
-      <span class="cancel-chip">CANCELLED</span>
+      <span class="cancel-chip">${htmlSafe(cancellationSourceLabel(a))}</span>
       <span class="cancel-text"><strong>${htmlSafe(nm)}</strong><br/><span style="font-weight:900;">ID ${id}</span> · <span style="font-weight:900;">☎ ${phone}</span></span>
       <span class="cancel-history-actions">
         <button class="cancel-history-btn edit" title="Edit cancelled appointment" onclick="editAppointment('${a.id}')">Edit</button>
-        <button class="cancel-history-btn delete" title="Delete cancelled appointment" onclick="delApp('${a.id}')">🗑</button>
       </span>
     </div>`;
   }).join('');
@@ -3916,9 +3929,9 @@ async function loadAppts(){
           ${followupStatusBadge(appt.patients?.followup_status)}
           ${cancelledSlotHistoryHTML(cancelledHere)}
           <div class="appt-action-row">
-            ${appt.status!=='attended'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
+            ${appt.status!=='attended'&&appt.status!=='cancelled'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
-            ${appt.status!=='cancelled'?`<button title="Cancel" onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">✖</button>`:''}
+            ${appt.status==='booked'?`<button title="Cancel" onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">✖</button>`:''}
             <button onclick="editAppointment('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#e8f5f4;color:#0d7377;">Edit</button>
             <button title="Delete" onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
           </div>
@@ -4544,6 +4557,7 @@ async function refreshOutcomeMonthOptions(){
 }
 async function setAS(id,status){
   try{
+    if(status==='cancelled'){await openCancellationForm(id);return;}
     if(status==='did_not_attend'){
       await openDntuNurseModal(id);
       return;
@@ -5077,9 +5091,11 @@ async function updateAppointmentTolerant(apptId,payload,protectedCols){
   return{error:{message:'Too many missing columns to save.'},dropped,protectedMissing:null};
 }
 async function openOutcomeFollowupModal(apptId,status,options={}){
+  if(status==='cancelled')return openCancellationForm(apptId);
   if(options.dntuEditMode)return openDntuNurseModal(apptId);
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
   if(error||!raw){alert('Could not load this appointment.');return;}
+  if(raw.status==='cancelled')return showCancellationDetails(apptId);
   const appt=(await enrichAppointments([raw]))[0]||raw;
   const p=appt.patients||{};
   const now=new Date();
@@ -5111,7 +5127,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     :'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
   const outcomeControl=isDntuEditMode?
     `<div class="fg"><label>Appointment outcome</label><input type="text" value="DNTU — Did Not Turn Up" readonly style="background:#f8fafc;font-weight:800;color:#856404;"/><input type="hidden" id="of-status" value="did_not_attend"/></div>`:
-    `<div class="fg"><label>Appointment outcome</label><select id="of-status" onchange="updateApplianceVisibility();esOnOutcomeChange()">
+    `<div class="fg"><label>Appointment outcome</label><select id="of-status" onchange="if(this.value==='cancelled'){openCancellationForm('${jsSafe(apptId)}')}else{updateApplianceVisibility();esOnOutcomeChange()}">
         <option value="booked" ${requestedStatus==='booked'?'selected':''}>Booked</option>
         <option value="attended" ${requestedStatus==='attended'?'selected':''}>Seen / Attended</option>
         <option value="did_not_attend" ${requestedStatus==='did_not_attend'?'selected':''}>DNTU</option>
@@ -5943,6 +5959,7 @@ async function correctApptAppliance(apptId,patientId){
 }
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
+  if(status==='cancelled')return openCancellationForm(apptId);
   const year=document.getElementById('of-year')?.value;
   const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
@@ -6013,6 +6030,7 @@ async function saveOutcomeFollowup(apptId,patientId){
   return commitOutcomeFollowup(pending,[]);
 }
 async function commitOutcomeFollowup(v,stomaRows){
+  if(v.status==='cancelled')return openCancellationForm(v.apptId);
   const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth}=v;
   const flat=list=>[...new Set((stomaRows||[]).flatMap(r=>r[list]||[]))];
   const currentUser=await getCurrentUserForAudit();
@@ -6113,6 +6131,7 @@ async function saveEditedAppointment(apptId,patientId){
   const slot=document.getElementById('e-slot').value;
   const nurse=document.getElementById('e-nurse').value;
   const status=document.getElementById('e-status').value;
+  if(status==='cancelled')return openCancellationForm(apptId);
   const followupStatus=document.getElementById('e-followup-status')?.value||'active';
   const followupOwner=document.getElementById('e-followup-owner')?.value||'Common';
   const followupType=document.getElementById('e-followup-type')?.value||'follow_up';
@@ -6152,7 +6171,7 @@ async function searchPatientsForRebook(){
   box.innerHTML=matches.map(p=>{
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
     const latest=appts.find(a=>String(a.patient_id)===String(p.id));
-    const latestText=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
+    const latestText=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status,latest)}`:'No appointment history';
     return `<div class="patient-search-result">
       <div><div class="ps-name">${htmlSafe(nm)}</div><div class="ps-meta">ID: ${htmlSafe(p.id_card||'—')} · Phone: ${htmlSafe(p.phone_number||'—')} · Owner: ${htmlSafe(p.followup_owner||'Common')} · Due: ${followupMonthName(p.followup_due_month)} ${htmlSafe(p.followup_year||'')}</div><div class="ps-meta">Latest: ${htmlSafe(latestText)}</div></div>
       <div class="ps-actions"><button class="ncb-btn" onclick="openPatientRebookModal('${p.id}')" style="background:#e8f5f4;color:var(--teal);">Rebook</button><button class="ncb-btn" onclick="openFollowupHistory('${p.id}')" style="background:#edf1f5;color:var(--navy);">History</button></div>
@@ -6246,7 +6265,7 @@ function updateRebookDayPreview(){
   if(!load){note.innerHTML=`<div class="registry-lookup-note found">${htmlSafe(clinicDayLabel(chosen,owner))} — available day.</div>`;return;}
   note.innerHTML=availabilityPreviewHTML({...load,clinicDays:1},{label:clinicDayLabel(chosen,owner)},Number(String(chosen).slice(5,7)));
 }
-async function openPatientRebookModal(patientId){
+async function openPatientRebookModal(patientId,cancelledAppointmentId=null){
   const{data:pat,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle();
   if(error||!pat){alert('Could not open this patient for rebooking.');return;}
   if(normaliseFollowupStatus(pat.followup_status)==='deceased'){alert('This patient is marked as deceased and is kept in the separate deceased register. Change the status first before rebooking.');return;}
@@ -6272,6 +6291,7 @@ async function openPatientRebookModal(patientId){
   const mb=document.getElementById('mb');
   mb.className='mb';
   mb.innerHTML=`<h2>Rebook Patient</h2>
+    <input type="hidden" id="rb-source-cancellation" value="${htmlSafe(cancelledAppointmentId||'')}"/>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}<br/>
       Follow-up owner: <strong>${htmlSafe(owner)}</strong> · Due: <strong>${htmlSafe(dueLabel)}</strong><br/>
       Patient details are already on file — no need to re-enter the ID card. This creates a new booked appointment and keeps the full history.</div>
@@ -6306,6 +6326,8 @@ async function savePatientRebook(patientId){
     if(!confirm(`${fmtLabel(date)} is outside this list's normal days — ${rule}.\n\nBook it anyway?`))return;
   }
   const payload={patient_id:patientId,appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status:'booked'};
+  const cancellationSourceId=document.getElementById('rb-source-cancellation')?.value;
+  if(cancellationSourceId)payload.rebooked_from_appointment_id=cancellationSourceId;
   if(nurse.startsWith('core:'))payload.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:'))payload.bank_staff_id=nurse.replace('bank:','');
   const{data:patCheck}=await SB.from('patients').select('followup_status').eq('id',patientId).maybeSingle();
@@ -6314,6 +6336,7 @@ async function savePatientRebook(patientId){
   if(aErr){
     const msg=String(aErr.message||'');
     const detail=String(aErr.details||aErr.detail||'');
+    if(msg.includes('appointments_one_active_replacement_idx')){alert('This cancellation already has a replacement appointment. Open the cancellation details to review it.');return;}
     if(msg.toLowerCase().includes('duplicate')||msg.toLowerCase().includes('unique')){
       alert('Booking blocked by a database slot rule.\n\nThe slot still has an old unique constraint, so a cancelled appointment blocks reuse and two nurses cannot share the same time.\n\nFix: open the Supabase SQL Editor and run sql/fix-appointment-slot-constraint.sql from the repository (once). Cancelled records are kept as history.');
     }else if(msg.toLowerCase().includes('check')||detail.toLowerCase().includes('check')||msg.toLowerCase().includes('constraint')){
@@ -8160,7 +8183,7 @@ async function openFollowupHistory(patientId){
   const rows=appts.length?appts.map(a=>`<tr>
     <td>${a.appt_date}</td><td><strong>${String(a.appt_slot||'').slice(0,5)}</strong></td>
     <td>${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'))}</td>
-    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span>${followupStatusBadge(a.patients?.followup_status)}</td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status,a)}</span>${followupStatusBadge(a.patients?.followup_status)}</td>
     <td>${visitPillsByStomaHTML(a)}</td>
     <td><button class="ncb-btn" onclick="editAppointment('${a.id}')" style="background:#e8f5f4;color:var(--teal);">Edit</button></td>
   </tr>`).join(''):'<tr><td colspan="6" class="empty">No appointment history found</td></tr>';
@@ -8293,15 +8316,7 @@ function compareAppointmentDesc(a,b){
   return String(b?.appt_slot||'').localeCompare(String(a?.appt_slot||''));
 }
 function currentDntuStreakForPatientAppointments(rows){
-  const sorted=[...(rows||[])].sort(compareAppointmentDesc);
-  let streak=0;
-  for(const a of sorted){
-    if(a.status==='did_not_attend')streak++;
-    else if(a.status==='attended'||a.status==='cancelled')break;
-    else if(a.status==='booked')continue;
-    else break;
-  }
-  return streak;
+  return dntuSequence(rows||[]).length;
 }
 function appointmentOutcomeEffectiveFollowupStatus(patient,streak){
   const manual=normaliseFollowupStatus(patient?.followup_status);
@@ -8415,7 +8430,7 @@ async function loadAppointmentOutcomes(){
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
       <td>${htmlSafe(latestLabel)}</td>
-      <td><span class="status-badge ${latest.status==='attended'?'sb-attended':latest.status==='cancelled'?'sb-cancelled':latest.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(latest.status)}</span></td>
+      <td><span class="status-badge ${latest.status==='attended'?'sb-attended':latest.status==='cancelled'?'sb-cancelled':latest.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(latest.status,latest)}</span></td>
       <td>${followupStatusBadge(r.followupStatus,true)}${followupTypeBadge(p.followup_type)}${r.streak>=3&&r.followupStatus!=='deceased'?`<br/><span class="dntu-streak paused" style="margin-top:4px;">${r.streak} DNTU streak</span>`:''}</td>
       <td>${htmlSafe(nurse)}</td>
       <td onclick="event.stopPropagation();"><select class="followup-small-select" id="ao-status-${r.patientId}">${statusOptions}</select><button class="ncb-btn" style="margin-left:4px;background:#e8f5f4;color:var(--teal);" onclick="saveAppointmentOutcomeFollowupStatus('${r.patientId}')">Save</button></td>
@@ -8433,37 +8448,7 @@ async function saveAppointmentOutcomeFollowupStatus(patientId){
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 async function openCancelledAppointmentModal(apptId,patientId){
-  const[{data:raw,error},{data:pat}]=await Promise.all([
-    SB.from('appointments').select('*').eq('id',apptId).single(),
-    SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').eq('id',patientId).maybeSingle()
-  ]);
-  if(error||!raw){alert('Could not load this cancelled appointment.');return;}
-  const appt=(await enrichAppointments([raw]))[0]||raw;
-  const p=pat||appt.patients||{};
-  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed Patient';
-  const nurse=appt.staff?.full_name||appt.bank_staff?.full_name||(!appt.assigned_to&&!appt.bank_staff_id?'Common':'—');
-  const mb=document.getElementById('mb');
-  mb.className='mb';
-  mb.innerHTML=`<h2 style="color:#b91c1c;">Cancelled Appointment</h2>
-    <div class="msub" style="background:#fff1f2;border-left:4px solid #f87171;padding:10px 12px;border-radius:6px;margin-bottom:12px;">
-      <strong>${htmlSafe(nm)}</strong> · ${htmlSafe(p.id_card||'No ID')} · ${htmlSafe(p.phone_number||'No phone')}<br/>
-      This appointment was cancelled. Use the actions below to rebook or restore it.
-    </div>
-    <div class="edit-seen-grid" style="margin-bottom:14px;">
-      <div class="fg"><label>Date</label><input type="text" value="${htmlSafe(appt.appt_date||'—')}" readonly style="background:#f8fafc;"/></div>
-      <div class="fg"><label>Time</label><input type="text" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5)||'—')}" readonly style="background:#f8fafc;"/></div>
-      <div class="fg"><label>Nurse / Column</label><input type="text" value="${htmlSafe(nurse)}" readonly style="background:#f8fafc;"/></div>
-      <div class="fg"><label>Follow-up Owner</label><input type="text" value="${htmlSafe(normaliseFollowupOwner(p.followup_owner||'Common'))}" readonly style="background:#f8fafc;"/></div>
-      <div class="fg"><label>Due Month / Year</label><input type="text" value="${htmlSafe(followupMonthName(p.followup_due_month)+(p.followup_year?' '+p.followup_year:''))}" readonly style="background:#f8fafc;"/></div>
-      <div class="fg"><label>Follow-up Status</label><input type="text" value="${htmlSafe(followupStatusText(normaliseFollowupStatus(p.followup_status||'active')))}" readonly style="background:#f8fafc;"/></div>
-    </div>
-    <div class="mact" style="gap:8px;flex-wrap:wrap;">
-      <button class="btn-cancel" onclick="closeModal()">Close</button>
-      <button class="ncb-btn" onclick="closeModal();openFollowupHistory('${patientId}')" style="padding:8px 16px;font-size:13px;background:#edf1f5;color:var(--navy);">View Full History</button>
-      <button class="ncb-btn" onclick="closeModal();setTimeout(()=>openOutcomeFollowupModal('${apptId}',null),50)" style="padding:8px 16px;font-size:13px;background:#e8f5f4;color:var(--teal);">Edit / Restore</button>
-      <button class="btn-save" onclick="closeModal();setTimeout(()=>openPatientRebookModal('${patientId}'),50)">Rebook Patient</button>
-    </div>`;
-  openMo();
+  return showCancellationDetails(apptId);
 }
 
 // CLINIC AUDIT
@@ -8485,7 +8470,7 @@ function ensureClinicMonthYear(){
 function clinicMonthLabel(month,year){return `${CLINIC_MONTHS[month]||month} ${year}`;}
 function clinicNurseName(a){return a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');}
 function clinicStatusText(status){return {booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
-function clinicBadge(status){return `<span class="clinic-badge ${htmlSafe(status||'booked')}">${clinicStatusText(status)}</span>`;}
+function clinicBadge(status,appointment){return `<span class="clinic-badge ${htmlSafe(status||'booked')}">${htmlSafe(statusLabel(status,appointment))}</span>`;}
 function clinicPatientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function groupClinicByDate(rows){
   const grouped={};
@@ -8539,7 +8524,7 @@ function renderClinicCalendar(data,month,year){
     const shown=appts.slice(0,5);
     html+=`<div class="clinic-day ${appts.length?'has-appts':''}">
       <div class="clinic-day-num"><span>${d}</span>${appts.length?`<span class="clinic-day-count">${appts.length}</span>`:''}</div>
-      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status)}<br/>${followupStatusBadge(a.patients?.followup_status)}</div>`).join('')}
+      ${shown.map(a=>`<div class="clinic-cal-appt"><strong>${String(a.appt_slot||'').slice(0,5)}</strong> ${htmlSafe(clinicPatientName(a))}<br/><span style="font-size:9px;color:var(--muted);font-weight:700;">👩‍⚕️ ${htmlSafe(clinicNurseName(a))}</span><br/>${clinicBadge(a.status,a)}<br/>${followupStatusBadge(a.patients?.followup_status)}</div>`).join('')}
       ${appts.length>5?`<div class="clinic-more">+ ${appts.length-5} more</div>`:''}
     </div>`;
   }
@@ -8559,13 +8544,13 @@ function renderClinicMonthlyList(data){
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(a.patients?.id_card||'')}</td>
       <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
       <td>${htmlSafe(clinicNurseName(a))}</td>
-      <td>${clinicBadge(a.status)}${followupStatusBadge(a.patients?.followup_status)}</td>
+      <td>${clinicBadge(a.status,a)}${followupStatusBadge(a.patients?.followup_status)}</td>
       <td style="white-space:nowrap;">
-        ${a.status!=='attended'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setOutcome('${a.id}','attended')">✅</button>`:''}
-        ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" title="DNTU" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>`:''}
-        ${a.status!=='cancelled'?`<button class="ncb-btn ncb-cancel" title="Cancel" onclick="setOutcome('${a.id}','cancelled')" style="margin-left:3px;">✖</button>`:''}
+        ${a.status!=='attended'&&a.status!=='cancelled'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setOutcome('${a.id}','attended')">✅</button>`:''}
+        ${a.status!=='did_not_attend'&&a.status!=='cancelled'?`<button class="ncb-btn ncb-dna" title="DNTU" onclick="setOutcome('${a.id}','did_not_attend')" style="margin-left:3px;">DNTU</button>`:''}
+        ${a.status==='booked'?`<button class="ncb-btn ncb-cancel" title="Cancel" onclick="setOutcome('${a.id}','cancelled')" style="margin-left:3px;">✖</button>`:''}
         <button class="ncb-btn" title="Edit" onclick="editAppointment('${a.id}')" style="margin-left:3px;background:#e8f5f4;color:var(--teal);">Edit</button>
-        <button class="ncb-btn ncb-del" title="Delete" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">🗑</button>
+        ${a.status!=='cancelled'&&!cancellationHistory(a).length?`<button class="ncb-btn ncb-del" title="Delete" onclick="delFromAudit('${a.id}')" style="margin-left:3px;">🗑</button>`:''}
       </td>
     </tr>`).join('');
     return `<tr class="clinic-list-date"><td colspan="7">${htmlSafe(label)} — ${grouped[ds].length} appointment${grouped[ds].length!==1?'s':''}</td></tr>${rows}`;
@@ -8618,8 +8603,13 @@ function printMonthlyList(){
 </style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment List — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div>${buildPrintableClinicList()}</body></html>`);
   w.document.close();w.focus();w.print();
 }
-async function setOutcome(id,status){if(status==='did_not_attend'){await openDntuNurseModal(id);return;}await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
-async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
+async function setOutcome(id,status){
+  if(status==='cancelled'){await openCancellationForm(id);return;}
+  if(status==='did_not_attend'){await openDntuNurseModal(id);return;}
+  const{error}=await SB.from('appointments').update({status}).eq('id',id);
+  if(error){alert(error.message);return;}refreshAppointmentViews();
+}
+async function delFromAudit(id){await delApp(id);}
 
 
 // DNTU POLICY — patient grouped view
@@ -8644,15 +8634,7 @@ function dntuOwnerForGroup(rows){
   return 'Common';
 }
 function calculateCurrentDntuStreak(rows){
-  const completed=[...rows]
-    .filter(a=>a.status!=='booked')
-    .sort((a,b)=>String(b.appt_date||'').localeCompare(String(a.appt_date||''))||String(b.appt_slot||'').localeCompare(String(a.appt_slot||'')));
-  let streak=0;
-  for(const a of completed){
-    if(a.status==='did_not_attend')streak++;
-    else break;
-  }
-  return streak;
+  return dntuSequence(rows||[]).length;
 }
 function latestDntuAppointment(rows){
   return [...rows]
@@ -8748,7 +8730,7 @@ function openDntuEventModal(patientId,currentStreak,patientName,idCard,phone){
     <div class="dntu-modal-alert">Current streak: <strong>${dntuOrdinal(streak)} DNTU</strong><br/>This will record the <strong>${dntuOrdinal(next)} consecutive DNTU</strong>${next>=3?' and trigger the existing 3-DNTU warning rule.':'.'}</div>
     <div class="fg"><label>DNTU Date *</label><input type="date" id="dntu-event-date" value="${TODAY}" max="${TODAY}"/></div>
     <div class="fg"><label>DNTU Time / Slot *</label><select id="dntu-event-slot">${SLOTS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
-    <div class="dntu-note">This saves a new appointment outcome with status <strong>DNTU</strong>. The system still calculates the DNTU count automatically; Seen or Cancelled outcomes still break the consecutive DNTU streak.</div>
+    <div class="dntu-note">This saves a new appointment outcome with status <strong>DNTU</strong>. Seen appointments start a new DNTU count. Cancellations do not change the count.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveDntuEvent('${jsSafe(patientId)}',${streak})">Save DNTU Event</button></div>`;
   openMo();
 }
@@ -8788,13 +8770,9 @@ async function deleteDntuEntry(apptId){
 }
 async function getPatientCurrentDntuStreak(patientId){
   if(!patientId)return 0;
-  const{data}=await SB.from('appointments').select('status,appt_date,appt_slot').eq('patient_id',patientId).neq('status','booked').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
-  let streak=0;
-  for(const a of(data||[])){
-    if(a.status==='did_not_attend')streak++;
-    else break;
-  }
-  return streak;
+  const{rows,error}=await fetchAllRows(()=>SB.from('appointments').select('id,status,appt_date,appt_slot').eq('patient_id',patientId).neq('status','booked').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false}).order('id'));
+  if(error)throw new Error('Could not load DNTU history.');
+  return dntuSequence(rows).length;
 }
 async function checkDntuThresholdForPatient(patientId){
   if(!patientId)return;
@@ -8864,7 +8842,7 @@ function makeMultiChart(id,type,labels,datasets,extra={}){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}},...extra}
   });
 }
-function statusLabel(status){return {booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—';}
+function statusLabel(status,appointment){return status==='cancelled'&&appointment?cancellationSourceLabel(appointment):({booked:'Booked',attended:'Attended',cancelled:'Cancelled',did_not_attend:'DNTU'}[status]||status||'—');}
 function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
 
@@ -8876,24 +8854,33 @@ async function getCurrentUserForAudit(){
   }catch(e){return {email:'',name:'Logged-in user'};}
 }
 function reportNurseColumn(a){return a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—');}
-function reportEventType(a){return statusLabel(a.status);}
+function reportEventType(a){return statusLabel(a.status,a);}
 function reportFollowupDue(a){return `${followupMonthName(a.patients?.followup_due_month)} ${a.patients?.followup_year||''}`.trim();}
 function reportSeenRecordedBy(a){return a.outcome_recorded_by_name||a.outcome_recorded_by_email||((a.status==='attended'||a.status==='did_not_attend'||a.status==='cancelled')?reportNurseColumn(a):'—');}
 
 async function loadReports(){
+  const request=++reportLoadRequest;
   const year=document.getElementById('rep-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('rep-month')?.value||'';
   const start=month?`${year}-${month}-01`:`${year}-01-01`;
   const end=month?monthEndDate(year,month):`${year}-12-31`;
 
-  const{data:rawReportAppts}=await SB.from('appointments')
+  const{rows:rawReportAppts,error:reportError}=await fetchAllRows(()=>SB.from('appointments')
     .select('*')
     .gte('appt_date',start)
     .lte('appt_date',end)
     .order('appt_date',{ascending:true})
-    .order('appt_slot',{ascending:true});
+    .order('appt_slot',{ascending:true}).order('id'));
+  if(reportError){
+    if(request!==reportLoadRequest)return;
+    cancellationReportRows=[];cancellationReportRequest++;
+    document.getElementById('cancellation-report-body').innerHTML='<p class="report-note">Could not load cancellation records. Please refresh.</p>';
+    return;
+  }
 
   const appts=await enrichAppointments(rawReportAppts||[]);
+  if(request!==reportLoadRequest)return;
+  cancellationReportSourceChanged();loadCancellationReport(appts);
   const total=appts.length;
   const attended=appts.filter(a=>a.status==='attended').length;
   const cancelled=appts.filter(a=>a.status==='cancelled').length;
@@ -9028,7 +9015,7 @@ async function loadAnnualReport(){
   try{const{rows}=await getRecallWorklistRows();recallCount=rows.length;}catch(e){}
   try{const{count}=await SB.from('patients').select('id',{count:'exact',head:true});registered=count??'—';}catch(e){}
 
-  annualReportData={year,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
+  annualReportData={year,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels,cancellationsHTML:cancellationAnnualHTML(appts)};
   renderAnnualReport();
 }
 function annualKpi(label,value,sub,accent){
@@ -9095,6 +9082,7 @@ function renderAnnualReport(){
       ${monthTable}
       <h3 class="annual-h3">By nurse / column</h3>
       ${ownerTable}
+      ${d.cancellationsHTML||''}
       <div class="annual-foot">Follow-up split counts the column each appointment was booked into. DNTU = did not turn up. Attended rate is of all appointments that month, cancelled included.</div>
     </div>`;
 }
@@ -13740,7 +13728,7 @@ async function openPatientRecord(patientId){
   const age=psmAge(pat.date_of_birth);
   const demo=[htmlSafe(pat.id_card||'No ID'),age!=null?age+' years':null,htmlSafe(pat.sex||'')].filter(Boolean).join(' · ');
   const staffName=a=>htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'));
-  const badge=a=>`<span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status)}</span>`;
+  const badge=a=>`<span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status,a)}</span>`;
   const today=new Date().toISOString().slice(0,10);
   const upcoming=appts.filter(a=>String(a.appt_date)>=today&&a.status==='booked')
                       .sort((a,b)=>String(a.appt_date+(a.appt_slot||'')).localeCompare(String(b.appt_date+(b.appt_slot||''))));
@@ -17667,7 +17655,7 @@ function renderReportPatientList(){
   if(col!=='all')rows=rows.filter(a=>reportNurseColumn(a)===col);
   if(event!=='all')rows=rows.filter(a=>a.status===event);
   if(search){
-    rows=rows.filter(a=>[patientName(a),a.patients?.id_card,a.patients?.phone_number,reportAllocatedOwner(a),reportNurseColumn(a),statusLabel(a.status)].join(' ').toLowerCase().includes(search));
+    rows=rows.filter(a=>[patientName(a),a.patients?.id_card,a.patients?.phone_number,reportAllocatedOwner(a),reportNurseColumn(a),statusLabel(a.status,a)].join(' ').toLowerCase().includes(search));
   }
   if(summary)summary.textContent=`Showing ${rows.length} booking record${rows.length!==1?'s':''}. Use the filters above to view seen patients, DNTU, cancelled or booked patients.`;
   if(!rows.length){tbody.innerHTML='<tr><td colspan="10" class="empty">No patients match the selected filters.</td></tr>';return;}
@@ -17679,7 +17667,7 @@ function renderReportPatientList(){
     <td>${htmlSafe(a.patients?.phone_number||'—')}</td>
     <td>${htmlSafe(reportAllocatedOwner(a))}</td>
     <td>${htmlSafe(reportNurseColumn(a))}</td>
-    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${htmlSafe(statusLabel(a.status))}</span></td>
+    <td><span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${htmlSafe(statusLabel(a.status,a))}</span></td>
     <td>${htmlSafe(reportFollowupDue(a)||'—')}</td>
     <td>${followupStatusBadge(a.patients?.followup_status,true)}${followupTypeBadge(a.patients?.followup_type)}</td>
   </tr>`).join('');
@@ -17761,7 +17749,7 @@ async function loadReversalRegister(){
   tbody.innerHTML=patients.map(p=>{
     const latest=latestByPatient[p.id];
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-    const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status)}`:'No appointment history';
+    const latestLabel=latest?`${latest.appt_date} ${String(latest.appt_slot||'').slice(0,5)} · ${statusLabel(latest.status,latest)}`:'No appointment history';
     const nurse=latest?.staff?.full_name||latest?.bank_staff?.full_name||(!latest?.assigned_to&&!latest?.bank_staff_id&&latest?'Common':'—');
     return `<tr class="followup-click-row" onclick="openFollowupHistory('${p.id}')" title="Open full history">
       <td><strong>${htmlSafe(nm)}</strong>${followupStatusBadge(derivedFollowupStatus(p),true)}<br/><span style="font-size:10px;color:var(--muted);">Click row for full history</span></td>

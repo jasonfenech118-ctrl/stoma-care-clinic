@@ -39,10 +39,14 @@ test('history-only uses all known current DNTUs, including the selected already 
   const s=state([],'did_not_attend');s.mode='history';s.targets.history=2;s.drafts.history=[earlier('2026-09-01')];
   const p=plan(s);assert.equal(p.current,null);assert.equal(p.rows.length,1);assert.equal(p.streak,2);
 });
-test('Seen and Cancelled reset the sequence; dates across a reset cannot satisfy a higher count',()=>{
-  for(const status of ['attended','cancelled']){
-    const s=state([appt('reset','2026-09-10',status)]);s.targets.record=2;s.drafts.record=[earlier('2026-09-01')];
-    assert.throws(()=>plan(s),/breaks this sequence/);
+test('Seen resets the sequence; dates across a reset cannot satisfy a higher count',()=>{
+  const s=state([appt('reset','2026-09-10','attended')]);s.targets.record=2;s.drafts.record=[earlier('2026-09-01')];
+  assert.throws(()=>plan(s),/breaks this sequence/);
+});
+test('patient, clinic and legacy cancellations never increment or reset a DNTU sequence',()=>{
+  for(const source of ['patient','clinic',null]){
+    const s=state([appt('past','2026-09-01'),{...appt('cancel','2026-09-10','cancelled'),cancellation_source:source}]);s.targets.record=2;
+    const p=plan(s);assert.equal(p.streak,2);assert.equal(p.rows.length,0);
   }
 });
 test('correcting an older appointment does not pause a patient who attended later',()=>{

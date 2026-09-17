@@ -9,7 +9,7 @@ function dntuWhen(date,slot=''){
   return label+(slot?` at ${String(slot).slice(0,5)}`:'');
 }
 function dntuSequence(rows){
-  const ordered=rows.filter(a=>a.status!=='booked').sort((a,b)=>dntuEventKey(b).localeCompare(dntuEventKey(a)));
+  const ordered=rows.filter(a=>a.status!=='booked'&&a.status!=='cancelled').sort((a,b)=>dntuEventKey(b).localeCompare(dntuEventKey(a)));
   const sequence=[];
   for(const a of ordered){if(a.status!=='did_not_attend')break;sequence.push(a);}
   return sequence;
@@ -32,6 +32,7 @@ async function openDntuNurseModal(apptId,mode='record'){
   try{
     const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
     if(error||!raw)throw new Error('Could not load this appointment.');
+    if(raw.status==='cancelled')return showCancellationDetails(apptId);
     if(!raw.patient_id)throw new Error('This appointment needs a linked patient before a DNTU can be recorded.');
     const appt=(await enrichAppointments([raw]))[0]||raw;
     const p=appt.patients||{};
@@ -129,7 +130,7 @@ function dntuRenderForm(){
   const target=Math.max(c.base,s.targets[s.mode]||Math.max(1,c.base));
   s.targets[s.mode]=target;
   const missing=Math.max(0,target-c.base);
-  const latest=!record||!s.history.some(a=>String(a.id)!==String(s.appt.id)&&a.status!=='booked'&&dntuEventKey(a)>dntuEventKey(c.current));
+  const latest=!record||!s.history.some(a=>String(a.id)!==String(s.appt.id)&&!['booked','cancelled'].includes(a.status)&&dntuEventKey(a)>dntuEventKey(c.current));
   const willPause=target>=3&&latest&&!isClosedFollowupStatus(s.p.followup_status);
   const p=s.p,name=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const already=s.appt.status==='did_not_attend';
@@ -161,7 +162,7 @@ function dntuRenderForm(){
       <div class="fg dw-full"><label for="dw-nurse">Nurse / clinic column</label><select id="dw-nurse">${dntuNurseOptions(s.nurse)}</select></div>
     </div></section>`:`<p class="dw-context">${htmlSafe(dntuWhen(s.appt.appt_date,s.appt.appt_slot))} stays <strong>${htmlSafe(outcomeLabel(s.appt.status))}</strong>.</p>`}
     <fieldset class="dw-choices"><legend>${record?'Which missed appointment is this?':'How many missed appointments should the history show?'}</legend>
-      <p class="dw-help">Count appointments missed in a row. A Seen or Cancelled appointment starts a new count.</p>
+      <p class="dw-help">Count appointments missed in a row. A Seen appointment starts a new count. Cancellations do not change the count.</p>
       ${choices.map(n=>`<label class="${n===target?'selected':''} ${n<c.base?'unavailable':''}"><input type="radio" name="dw-count" value="${n}" ${n===target?'checked':''} ${n<c.base?'disabled':''} onchange="dntuChooseCount(this.value)"/><span><strong>${record?`${labels[n]||dntuOrdinal(n)} missed appointment`:`${n} missed appointment${n===1?'':'s'}`}</strong><small>${record?(n===1?'No earlier appointments were missed.':`${n-1===1?'One':n-1===2?'Two':n-1} earlier appointment${n===2?' was':'s were'} missed.`):`${n<=c.base?'Already recorded.':`${n-c.base} earlier record${n-c.base===1?'':'s'} to add.`}`}${n<c.base?' Already recorded history cannot be reduced here.':''}</small></span></label>`).join('')}
     </fieldset>
     ${c.sequence.length?`<details class="dw-recorded"><summary>View recorded missed appointments (${c.sequence.length})</summary><ul>${c.sequence.map(a=>`<li>${htmlSafe(dntuWhen(a.appt_date,a.appt_slot))}</li>`).join('')}</ul></details>`:''}
@@ -201,7 +202,7 @@ function dntuBuildSavePlan(s,today=TODAY){
   }
   const projected=[...s.history.filter(a=>!record||String(a.id)!==String(s.appt.id)),...rows,...(record?[current]:[])];
   const sequenceRows=record?projected.filter(a=>dntuEventKey(a)<=dntuEventKey(current)):projected;
-  if(dntuSequence(sequenceRows).length!==target)throw new Error('A Seen or Cancelled appointment breaks this sequence. Check the earlier dates and choose the matching DNTU count.');
+  if(dntuSequence(sequenceRows).length!==target)throw new Error('A Seen appointment breaks this sequence. Check the earlier dates and choose the matching DNTU count.');
   const streak=dntuSequence(projected).length;
   const pause=streak>=3&&!isClosedFollowupStatus(s.p.followup_status);
   if(record&&s.changeFollowup&&!pause&&(!s.month||!s.year))throw new Error('Choose a follow-up month and year, or untick “Change the follow-up plan”.');
