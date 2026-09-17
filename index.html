@@ -11,6 +11,8 @@
 <script src="assets/dntu-workflow.js"></script>
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
+<link rel="stylesheet" href="assets/daily-attendance.css"/>
+<script src="assets/daily-attendance.js"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -108,13 +110,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 /* ROSTER TABLE */
 .roster-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border);background:white;box-shadow:0 2px 8px rgba(0,0,0,.06);}
-/* Daily Attendance controls */
-.att-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:0 0 8px;}
-.att-datelbl{font-size:12px;font-weight:800;color:var(--navy);display:flex;gap:8px;align-items:center;}
-.att-datelbl input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;}
-.att-bar-actions{display:flex;gap:8px;flex-wrap:wrap;}
-.att-sub{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 8px;}
-#att-table .att-sel,#att-table .att-note{padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;width:100%;max-width:220px;}
 .rt{border-collapse:collapse;min-width:100%;}
 .rt thead tr th{padding:4px 3px;text-align:center;font-size:10px;font-weight:600;color:rgba(255,255,255,.85);background:var(--navy);border-right:1px solid rgba(255,255,255,.07);white-space:nowrap;position:sticky;top:0;z-index:10;line-height:1.3;}
 .rt thead tr th.th-name{text-align:left;padding-left:16px;min-width:150px;font-size:11px;}
@@ -1900,6 +1895,46 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       </div>
     </div>
 
+    <!-- DAILY STAFF ATTENDANCE -->
+    <div class="page" id="page-daily-attendance">
+      <div class="phdr">
+        <div><h2>Daily Attendance</h2><p>Record actual staff attendance against the planned duty</p></div>
+        <button class="da-button" onclick="dailyAttendanceOpenRoster()">Open Monthly Roster</button>
+      </div>
+      <div class="da-workflow-note">
+        <span>The sheet is created from the roster, duty changes, overtime and leave. Attendance, times and remarks save automatically.</span>
+        <span class="da-autosave" id="da-autosave" role="status">Loading…</span>
+      </div>
+      <div class="da-toolbar">
+        <label for="da-date">Attendance date</label>
+        <div class="da-day-controls">
+          <button class="da-button" onclick="DailyAttendance.changeDay(-1)" aria-label="Previous day">←</button>
+          <input type="date" id="da-date" onchange="loadDailyAttendance()" aria-describedby="da-help">
+          <button class="da-button" onclick="DailyAttendance.changeDay(1)" aria-label="Next day">→</button>
+        </div>
+        <button class="da-button" onclick="DailyAttendance.today()">Today</button>
+        <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
+      </div>
+      <h3 id="da-date-label"></h3>
+      <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
+      <div id="da-holiday" hidden></div>
+      <div class="da-summary" id="da-summary"></div>
+      <div id="da-results" aria-live="polite"></div>
+    </div>
+
+    <!-- SAVED STAFF ATTENDANCE -->
+    <div class="page" id="page-attendance-records">
+      <div class="phdr"><div><h2>Attendance Records</h2><p>Automatically saved daily staff attendance sheets</p></div></div>
+      <div class="da-toolbar">
+        <label for="ar-date">Find a date</label>
+        <input type="date" id="ar-date" onchange="loadAttendanceRecords()">
+        <button class="da-button" onclick="DailyAttendance.clearRecordFilter()">Show all</button>
+        <button class="da-button" onclick="loadAttendanceRecords()">Refresh</button>
+      </div>
+      <div class="da-summary" id="ar-summary"></div>
+      <div id="ar-results" aria-live="polite"></div>
+    </div>
+
     <!-- APPOINTMENTS — MULTI-COLUMN -->
     <div class="page" id="page-appointments">
       <div class="phdr"><div><h2>Patient Appointments</h2><p>08:30 – 13:30 · 30 min slots · One column per nurse working</p></div></div>
@@ -2006,18 +2041,6 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <table class="cod-table"><thead><tr><th>Staff</th><th>Sunday Off</th><th>Sunday Worked</th><th>Notes</th><th>Recorded</th></tr></thead>
         <tbody id="cod-tbody-sunday"><tr><td colspan="5" class="empty">No Sunday swaps</td></tr></tbody></table>
       </div>
-    </div>
-
-    <!-- DAILY STAFF ATTENDANCE -->
-    <div class="page" id="page-attendance">
-      <div class="phdr"><div><h2>Daily Attendance</h2><p>Mark who actually attended each day — download the sheet as a PDF and it is kept in Attendance Records</p></div></div>
-      <div id="attendance-root"><div class="report-note">Loading…</div></div>
-    </div>
-
-    <!-- ARCHIVED DAILY ATTENDANCE SHEETS -->
-    <div class="page" id="page-attendance-records">
-      <div class="phdr"><div><h2>Attendance Records</h2><p>Every downloaded daily attendance sheet, kept by date</p></div></div>
-      <div id="attendance-records-root"><div class="report-note">Loading…</div></div>
     </div>
 
     <!-- STAFF AUDIT / FOLLOW-UP OWNER VIEW -->
@@ -3061,9 +3084,9 @@ const TAB_GROUPS=[
   {key:'calendar',label:'Clinic Calendar',icon:'📅',color:'#7c3aed',
    pages:[
      {tab:'roster',label:'Monthly Roster',icon:'🗓',color:'#7c3aed'},
-     {tab:'cod',label:'Change of Duty',icon:'🔄',color:'#e67e22'},
-     {tab:'attendance',label:'Daily Attendance',icon:'✅',color:'#0d7377'},
-     {tab:'attendance-records',label:'Attendance Records',icon:'🗂',color:'#0d7377'}
+     {tab:'daily-attendance',label:'Daily Attendance',icon:'✅',color:'#0d7377'},
+     {tab:'attendance-records',label:'Attendance Records',icon:'📚',color:'#0369a1'},
+     {tab:'cod',label:'Change of Duty',icon:'🔄',color:'#e67e22'}
    ]},
   {key:'appointments',label:'Appointments',icon:'🕘',color:'#2980b9',
    pages:[
@@ -3199,177 +3222,9 @@ function switchTab(name){
   if(name==='phone')openPhoneLookup();
   if(name==='appointments')loadAppts();
   if(name==='roster')renderRoster();
-  if(name==='cod'){populateCODDropdowns();loadCOD();}
-  if(name==='attendance')renderDailyAttendance();
+  if(name==='daily-attendance')loadDailyAttendance();
   if(name==='attendance-records')loadAttendanceRecords();
-}
-/* ── DAILY STAFF ATTENDANCE ───────────────────────────────────────────────────
-   Who actually turned up each day, marked against the roster. The sheet downloads
-   as a PDF, and every download keeps a dated copy in Attendance Records. Two
-   tables: staff_attendance (the live marks) and attendance_records (the archived
-   sheets) — sql/add-attendance.sql. */
-const ATT_STATUSES=[
-  {v:'present',l:'Present'},
-  {v:'absent',l:'Absent'},
-  {v:'sick_leave',l:'Sick leave'},
-  {v:'annual_leave',l:'Annual leave'},
-  {v:'study_leave',l:'Study leave'},
-  {v:'maternity_leave',l:'Maternity'},
-  {v:'off',l:'Off / Rest'},
-  {v:'overtime',l:'Overtime'}
-];
-function attStatusLabel(v){const m=ATT_STATUSES.find(s=>s.v===v);return m?m.l:(v||'—');}
-function rosterCodeLabel(code){const m=CODES.find(c=>c.v===code);return m?m.s:(code||'—');}
-// The code a staff member is rostered for on a day — the "expected" column, and
-// the sensible default for their attendance (a rostered leave/off carries over;
-// a working day defaults to Present).
-function attRosterCodeFor(staff,ds){
-  const entry=rCache[`${staff.id}_${ds}`];
-  return (entry?entry.status:defaultCode(staff,ds))||'working';
-}
-function attDefaultFor(rosterStatus){
-  if(rosterStatus==='working')return 'present';
-  if(rosterStatus==='overtime')return 'overtime';
-  return rosterStatus;   // off or any leave carries straight over
-}
-let attendanceState={date:'',rows:[]};
-let attRecordsCache={};
-async function renderDailyAttendance(){
-  const root=document.getElementById('attendance-root');
-  if(!root)return;
-  const ds=attendanceState.date||TODAY;
-  attendanceState.date=ds;
-  root.innerHTML='<div class="report-note">Loading attendance…</div>';
-  try{if((!staffList||!staffList.length)&&typeof loadStaff==='function')await loadStaff();}catch(e){}
-  // Roster rows for the date so the expected code is right.
-  try{const{data:rd}=await SB.from('roster').select('*').eq('roster_date',ds);
-    (rd||[]).forEach(r=>{rCache[`${r.staff_id}_${r.roster_date}`]=r;});}catch(e){}
-  // Any attendance already saved for the day.
-  let saved={},missing=false;
-  try{const{data,error}=await SB.from('staff_attendance').select('*').eq('attendance_date',ds);
-    if(error)throw error;
-    (data||[]).forEach(a=>{saved[a.staff_id||a.staff_name]=a;});
-  }catch(e){if(/staff_attendance|relation|does not exist|column/i.test(String(e&&e.message||e)))missing=true;}
-  if(missing){root.innerHTML=handoverMissingHTML('The attendance table is not in the database yet. Run <strong>sql/add-attendance.sql</strong> once in Supabase to turn Daily Attendance on.');return;}
-  const staff=(staffList||[]).slice().sort((a,b)=>String(a.full_name||'').localeCompare(String(b.full_name||'')));
-  attendanceState.rows=staff.map(st=>{
-    const rc=attRosterCodeFor(st,ds);
-    const sv=saved[st.id]||saved[st.full_name];
-    return {staff_id:st.id,staff_name:st.full_name,role:st.role||'',expected:rc,
-      status:sv?sv.status:attDefaultFor(rc),notes:sv?(sv.notes||''):''};
-  });
-  const trs=attendanceState.rows.map((r,i)=>`<tr>
-    <td data-label="Staff"><strong>${htmlSafe(r.staff_name)}</strong></td>
-    <td data-label="Role">${htmlSafe(r.role||'—')}</td>
-    <td data-label="Rostered">${htmlSafe(rosterCodeLabel(r.expected))}</td>
-    <td data-label="Attendance"><select class="att-sel" data-i="${i}">${ATT_STATUSES.map(s=>`<option value="${s.v}" ${s.v===r.status?'selected':''}>${s.l}</option>`).join('')}</select></td>
-    <td data-label="Notes"><input type="text" class="att-note" data-i="${i}" value="${htmlSafe(r.notes||'')}" placeholder="Optional…"/></td>
-  </tr>`).join('');
-  root.innerHTML=`
-    <div class="att-bar">
-      <label class="att-datelbl">Date <input type="date" id="att-date" value="${htmlSafe(ds)}" max="${htmlSafe(TODAY)}" onchange="attendanceState.date=this.value;renderDailyAttendance();"/></label>
-      <div class="att-bar-actions">
-        <button class="btn-save" onclick="saveDailyAttendance(true)">Save attendance</button>
-        <button class="btn-add" style="background:var(--navy);" onclick="downloadDailyAttendance()">⤓ Download daily attendance (PDF)</button>
-      </div>
-    </div>
-    <div class="att-sub">${htmlSafe(fmtLabel(ds))} · ${attendanceState.rows.length} staff</div>
-    <div class="roster-wrap"><table class="hv-xl" id="att-table">
-      <thead><tr><th>Staff</th><th>Role</th><th>Rostered</th><th>Attendance</th><th>Notes</th></tr></thead>
-      <tbody>${trs||'<tr><td colspan="5" class="empty">No active staff.</td></tr>'}</tbody></table></div>`;
-}
-// Read the selects/notes back into state before a save or download.
-function attReadUI(){
-  document.querySelectorAll('#att-table .att-sel').forEach(sel=>{const i=+sel.dataset.i;if(attendanceState.rows[i])attendanceState.rows[i].status=sel.value;});
-  document.querySelectorAll('#att-table .att-note').forEach(inp=>{const i=+inp.dataset.i;if(attendanceState.rows[i])attendanceState.rows[i].notes=inp.value.trim();});
-}
-async function saveDailyAttendance(announce){
-  attReadUI();
-  const ds=attendanceState.date||TODAY;
-  if(!attendanceState.rows.length){if(announce)alert('There is no staff to record.');return false;}
-  let who='';try{const u=await getCurrentUserForAudit();who=u?.name||u?.email||'';}catch(e){}
-  const rows=attendanceState.rows.map(r=>({attendance_date:ds,staff_id:r.staff_id||null,staff_name:r.staff_name,
-    role:r.role||null,status:r.status,expected:r.expected||null,notes:r.notes||null,recorded_by:who||null,updated_at:new Date().toISOString()}));
-  const{error}=await SB.from('staff_attendance').upsert(rows,{onConflict:'attendance_date,staff_id'});
-  if(error){alert('Could not save attendance: '+(error.message||error)+'\n\nIf this is the first use, run sql/add-attendance.sql once in Supabase.');return false;}
-  if(announce)alert('✅ Attendance saved for '+fmtShortDate(ds)+'.');
-  return true;
-}
-// The printable sheet, shared by the live download and by re-downloading a record.
-function attendanceSheetHTML(ds,rows){
-  const present=rows.filter(r=>r.status==='present'||r.status==='overtime').length;
-  const trs=rows.map(r=>{
-    const cls=(r.status==='present'||r.status==='overtime')?'att-pr':(r.status==='absent'?'att-ab':'att-lv');
-    return `<tr class="${cls}"><td>${htmlSafe(r.staff_name)}</td><td>${htmlSafe(r.role||'')}</td>
-      <td style="text-align:center;">${htmlSafe(rosterCodeLabel(r.expected))}</td>
-      <td style="text-align:center;font-weight:800;">${htmlSafe(attStatusLabel(r.status))}</td>
-      <td>${htmlSafe(r.notes||'')}</td></tr>`;
-  }).join('');
-  return `<style>
-    @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
-    h1{font-size:18px;margin:0 0 2px;} .att-sub{color:#555;font-size:12px;margin:0 0 10px;}
-    table{width:100%;border-collapse:collapse;} th,td{border:1px solid #000;padding:5px 7px;text-align:left;font-size:12px;}
-    th{background:#e8f1fb;font-weight:800;}
-    tr.att-ab td{background:#fdecea;} tr.att-lv td{background:#fff6e0;}
-    .att-tot{margin-top:10px;font-weight:800;font-size:13px;}
-  </style>
-  <h1>MDH Stoma Care Clinic — Daily Attendance</h1>
-  <div class="att-sub">${htmlSafe(fmtLabel(ds))}</div>
-  <table><thead><tr><th>Staff</th><th>Role</th><th>Rostered</th><th>Attendance</th><th>Notes</th></tr></thead><tbody>${trs}</tbody></table>
-  <div class="att-tot">Present / working: ${present} of ${rows.length}</div>`;
-}
-async function downloadDailyAttendance(){
-  attReadUI();
-  const ds=attendanceState.date||TODAY;
-  const rows=attendanceState.rows.slice();
-  if(!rows.length){alert('There is no staff to download.');return;}
-  // Save the marks first so the sheet and the archived copy match the screen.
-  if(!await saveDailyAttendance(false))return;
-  let who='';try{const u=await getCurrentUserForAudit();who=u?.name||u?.email||'';}catch(e){}
-  const present=rows.filter(r=>r.status==='present'||r.status==='overtime').length;
-  const snap={date:ds,present,total:rows.length,rows:rows.map(r=>({staff_name:r.staff_name,role:r.role,expected:r.expected,status:r.status,notes:r.notes}))};
-  // Keep a dated copy in Attendance Records (one per day, replaced on re-download).
-  try{
-    const{error}=await SB.from('attendance_records').upsert({record_date:ds,snapshot:snap,present_count:present,total_count:rows.length,created_by:who||null,created_at:new Date().toISOString()},{onConflict:'record_date'});
-    if(error&&/attendance_records|relation|does not exist|column/i.test(String(error.message||'')))
-      alert('The attendance records table is not in the database yet — the PDF still opens, but it was not archived.\n\nRun sql/add-attendance.sql once in Supabase to keep copies.');
-    else if(error)alert('The PDF opens, but the copy could not be archived: '+error.message);
-  }catch(e){}
-  bcPrintWindow(`Daily Attendance — ${fmtLabel(ds)}`, attendanceSheetHTML(ds,rows));
-  if(document.getElementById('attendance-records-root'))try{loadAttendanceRecords();}catch(e){}
-}
-async function loadAttendanceRecords(){
-  const root=document.getElementById('attendance-records-root');
-  if(!root)return;
-  root.innerHTML='<div class="report-note">Loading…</div>';
-  const{data,error}=await SB.from('attendance_records').select('*').order('record_date',{ascending:false});
-  if(error){
-    const missing=/attendance_records|relation|does not exist|column/i.test(String(error.message||''));
-    root.innerHTML=missing?handoverMissingHTML('The attendance records table is not in the database yet. Run <strong>sql/add-attendance.sql</strong> once in Supabase.')
-      :`<div class="report-note">Could not load attendance records: ${htmlSafe(error.message||'')}</div>`;
-    return;
-  }
-  const rows=data||[];
-  if(!rows.length){root.innerHTML=emptyStateHTML('🗂','No attendance sheets saved yet','A dated copy is kept here each time you press “Download daily attendance”.');return;}
-  attRecordsCache={};rows.forEach(r=>{attRecordsCache[r.id]=r;});
-  const trs=rows.map(r=>`<tr>
-    <td data-label="Date"><strong>${htmlSafe(fmtShortDate(r.record_date))}</strong></td>
-    <td data-label="Present">${r.present_count!=null?r.present_count:'—'} / ${r.total_count!=null?r.total_count:'—'}</td>
-    <td data-label="Saved by">${htmlSafe(r.created_by||'—')}</td>
-    <td data-label="Saved">${r.created_at?htmlSafe(fmtShortDate(String(r.created_at).slice(0,10))):'—'}</td>
-    <td class="hv-actions-cell"><button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;" onclick="downloadAttendanceRecord('${r.id}')">⤓ Download</button></td>
-  </tr>`).join('');
-  root.innerHTML=`<div class="roster-wrap"><table class="hv-xl">
-    <thead><tr><th>Date</th><th>Present</th><th>Saved by</th><th>Saved</th><th></th></tr></thead>
-    <tbody>${trs}</tbody></table></div>`;
-}
-function downloadAttendanceRecord(id){
-  const rec=attRecordsCache[id];
-  if(!rec){alert('Could not find this record.');return;}
-  let snap=rec.snapshot;if(typeof snap==='string'){try{snap=JSON.parse(snap);}catch(e){snap=null;}}
-  if(!snap||!Array.isArray(snap.rows)){alert('This record has no saved sheet.');return;}
-  bcPrintWindow(`Daily Attendance — ${fmtLabel(rec.record_date)}`, attendanceSheetHTML(rec.record_date,snap.rows));
+  if(name==='cod'){populateCODDropdowns();loadCOD();}
 }
 // ── MOBILE NAV ──
 function openMobileNav(){
@@ -3424,6 +3279,31 @@ async function loadStaff(){
   await ensureCoreStaff();
   const{data}=await SB.from('staff').select('*').eq('is_active',true);
   staffList=data||[];
+}
+
+// DAILY STAFF ATTENDANCE — save actual attendance without changing the rota.
+function dailyAttendanceSaveOptions(){
+  return {db:SB,fetchRows:fetchAllRows,defaultCode,holiday:isHol,formatDate:fmtLabel,actor:getCurrentUserForAudit};
+}
+function loadDailyAttendance(){return DailyAttendance.load(dailyAttendanceSaveOptions());}
+function loadAttendanceRecords(){
+  return DailyAttendance.loadRecords({db:SB,fetchRows:fetchAllRows});
+}
+function openDailyAttendanceRecord(date){
+  const input=document.getElementById('da-date');
+  if(input){input.value=date;input.dataset.initialized='true';}
+  switchTab('daily-attendance');
+}
+function dailyAttendanceOpenRoster(){
+  const date=document.getElementById('da-date')?.value;
+  if(!DailyAttendance.validDate(date))return;
+  selectedJumpDate=date;
+  const day=new Date(date+'T12:00:00');
+  curMonth=new Date(day.getFullYear(),day.getMonth(),1);
+  document.getElementById('jump-date').value=date;
+  snapCurrentDate=date;
+  switchTab('roster');
+  loadTodaySnapshot();
 }
 
 // JUMP TO DATE
