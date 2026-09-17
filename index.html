@@ -1191,6 +1191,7 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .hv-flange-soon{background:#fff6e0;color:#8a5a00;border-color:#e8c579;}
 .hv-flange-due{background:#fff1c9;color:#7a4a00;border-color:#e0a83a;}
 .hv-flange-over{background:#fdecea;color:#a3241a;border-color:#e39a92;}
+.hv-rod-done{background:#e6f7ec;color:#0a5e33;border-color:#93d4ab;}
 .clr-head-open{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#0d7377;
   background:#e8f5f4;border:1px solid #b5e0dd;border-radius:8px;padding:6px 10px;}
 .clr-head-open svg{width:15px;height:15px;}
@@ -14157,7 +14158,7 @@ function handoverShouldAutoLeave(p){
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
+  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -14492,7 +14493,7 @@ function handoverRowHTML(p,cls){
             ?htmlSafe(applLine)
             :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}
+          oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${rodChipHTML(p)}
         <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication or a ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
@@ -14815,6 +14816,42 @@ async function saveFlangeDueInline(pid,el){
   const box=el.closest('.hv-flangebox');
   const ok=await saveHandoverField(pid,'flange_due',val);
   if(!ok)return;
+  if(box){const m=flangeDueMeta(val);
+    box.className='hv-flangebox hv-flange-'+m.cls;
+    const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
+}
+/* The rod (bridge) removal date on its own chip, next to the flange chip, so it
+   reads at a glance on the sheet instead of only living in a note. It shows for a
+   patient who has a rod date on file: the due date is editable and colour-coded
+   (due / soon / overdue) just like the flange chip, and once the rod is actually
+   removed it reads a green "Rod out · <date>". A patient with no rod shows nothing. */
+function rodChipHTML(p){
+  const due=p&&p.rod_removal_date?String(p.rod_removal_date).slice(0,10):'';
+  const removed=p&&p.rod_removed_date?String(p.rod_removed_date).slice(0,10):'';
+  if(!due&&!removed)return '';
+  if(removed)
+    return `<span class="hv-flangebox hv-rod-done" title="Rod removed">
+      <span class="hv-flange-cap">Rod out</span>
+      <span class="hv-flange-note">${htmlSafe(fmtShortDate(removed))}</span>
+    </span>`;
+  const m=flangeDueMeta(due);
+  return `<label class="hv-flangebox hv-flange-${m.cls}" title="Rod removal due — type or pick a date">
+    <span class="hv-flange-cap">Rod due</span>
+    <input type="date" class="hv-inp hv-flange-date hv-rod-date" value="${htmlSafe(due)}"
+      onchange="saveRodDueInline('${p.id}',this)"/>
+    <span class="hv-flange-note">${htmlSafe(m.note)}</span>
+  </label>`;
+}
+/* Save the rod removal-due date straight from the row, recolouring in place. Uses
+   the tolerant update so it still works before the rod columns are migrated. */
+async function saveRodDueInline(pid,el){
+  const val=el.value||'';
+  const box=el.closest('.hv-flangebox');
+  const{error,dropped}=await updatePatientTolerant(pid,{rod_removal_date:val||null});
+  if(error||(dropped&&dropped.includes('rod_removal_date'))){
+    alert('Could not save the rod date — run sql/add-rod-removed-date.sql once in Supabase if the rod columns are missing.');
+    return;
+  }
   if(box){const m=flangeDueMeta(val);
     box.className='hv-flangebox hv-flange-'+m.cls;
     const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
