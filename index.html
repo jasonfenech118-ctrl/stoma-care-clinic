@@ -1038,6 +1038,39 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .cmp-add select{grid-column:1/-1;}
 .cmp-add-btn{grid-column:1/-1;margin:0;white-space:nowrap;}
 @media (max-width:640px){.cmp-add{grid-template-columns:1fr;}}
+/* ── Complications manager (record page + modal): tied to a stoma, with a
+   timeline of dated updates and an open/resolved lifecycle. ── */
+.cmp-sum-row{display:flex;align-items:flex-start;gap:9px;padding:6px 0;}
+.cmp-sum-resolved{font-size:11.5px;color:var(--muted);margin-top:4px;}
+.cmp-trend{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;vertical-align:middle;}
+.cmp-tr-up{background:#e6f7ec;color:#0a5e33;}
+.cmp-tr-down{background:#fdecea;color:#a3241a;}
+.cmp-tr-flat{background:#eef2f6;color:#33506b;}
+.cmp-tr-new{background:#e8f1fb;color:#0b5aa2;}
+.cmp-tr-done{background:#ede9fe;color:#5b21b6;}
+.cmp-tr-open{background:#fff4d6;color:#8a5a00;}
+.cmp-add-card{border:1.5px dashed var(--border);border-radius:12px;padding:10px 12px;margin:2px 0 12px;background:#fbfdff;}
+.cmp-add-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:8px;}
+.cmp-add-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.cmp-add-grid select,.cmp-add-grid input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;min-width:0;max-width:100%;}
+.cmp-add-grid #cmpm-type,.cmp-add-grid button{grid-column:1/-1;}
+.cmp-card{border:1px solid var(--border);border-radius:12px;padding:11px 13px;margin:0 0 11px;background:#fff;}
+.cmp-card-resolved{opacity:.82;background:#faf9fc;}
+.cmp-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.cmp-card-title{font-size:14px;font-weight:800;color:var(--navy);}
+.cmp-card-stoma{font-size:11px;font-weight:700;color:#0b5aa2;background:#e8f1fb;padding:1px 8px;border-radius:999px;}
+.cmp-timeline{border-left:2px solid #e2e8f0;margin:2px 0 8px;padding:2px 0 2px 11px;display:flex;flex-direction:column;gap:7px;}
+.cmp-ev-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.cmp-ev-date{font-size:11.5px;font-weight:800;color:var(--navy);}
+.cmp-ev-by{font-size:10.5px;color:var(--muted);}
+.cmp-ev-note{font-size:12.5px;color:var(--navy);margin-top:1px;}
+.cmp-upd-grid{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin:6px 0;}
+.cmp-upd-grid input,.cmp-upd-grid select{padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;min-width:0;max-width:100%;}
+.cmp-upd-grid button{grid-column:1/-1;}
+.cmp-card-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px;}
+.cmp-resolved-on{font-size:12px;font-weight:800;color:#5b21b6;margin-right:auto;}
+.cmp-resolved-head{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);margin:6px 0 8px;}
+@media (max-width:640px){.cmp-add-grid,.cmp-upd-grid{grid-template-columns:1fr;}}
 /* ROD (stoma rod / bridge) removal date, under the complications add row. */
 .cmp-rod{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);}
 .cmp-rod-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:6px;}
@@ -11948,46 +11981,76 @@ function parseComplications(pat){
   let v=pat&&pat.complications;
   if(typeof v==='string'){try{v=JSON.parse(v);}catch(_){v=[];}}
   if(!Array.isArray(v))return [];
-  return v.filter(x=>x&&(x.text||x.name)).map(x=>({
-    id:x.id||('c'+Math.random().toString(36).slice(2,9)),
-    text:String(x.text||x.name||'').trim(),
-    date:x.date||x.on||'',
-    note:String(x.note||'').trim(),
-    source:x.source||'',
-    by:x.by||''
-  }));
+  return v.filter(x=>x&&(x.text||x.name)).map(x=>{
+    // The timeline of updates. Older records have no events array — their single
+    // note is shown as the first "noted" entry so nothing is lost.
+    let events=Array.isArray(x.events)?x.events.filter(e=>e&&(e.note||e.trend||e.date)).map(e=>({
+      id:e.id||('e'+Math.random().toString(36).slice(2,8)),
+      date:e.date||'',trend:String(e.trend||'').trim(),
+      note:String(e.note||'').trim(),by:e.by||''
+    })):[];
+    const status=x.status==='resolved'?'resolved':'open';
+    const note=String(x.note||'').trim();
+    if(!events.length&&(note||x.date||x.on))
+      events=[{id:'e'+Math.random().toString(36).slice(2,8),date:x.date||x.on||'',trend:'noted',note,by:x.by||''}];
+    return {
+      id:x.id||('c'+Math.random().toString(36).slice(2,9)),
+      text:String(x.text||x.name||'').trim(),
+      stoma:String(x.stoma||'').trim(),
+      date:x.date||x.on||'',
+      status,
+      resolved_date:x.resolved_date||'',
+      note,
+      events,
+      source:x.source||'',
+      by:x.by||''
+    };
+  });
 }
 /* Append one complication to a patient and save. Returns {list} on success, or
    {missing:true} when the column has not been created yet (the write is dropped
    rather than the whole record), or {error} on any other failure. */
+/* Write the whole complications list back and confirm it landed. Every change
+   appends a timeline event with a fresh id; passing that id here reads the record
+   back and checks the event is really there, so a database that quietly refuses
+   the write (a row-level-security rule returns no error and changes no rows) is
+   reported instead of silently losing the change. */
+async function saveComplicationsWithEvent(patientId,list,verifyEventId){
+  const{error,dropped}=await updatePatientTolerant(patientId,{complications:list});
+  if(error)return{error};
+  if(dropped&&dropped.includes('complications'))return{missing:true};
+  if(verifyEventId){
+    try{
+      const{data:check}=await fetchPatientById(patientId);
+      if(check&&!parseComplications(check).some(c=>(c.events||[]).some(e=>e.id===verifyEventId)))
+        return{error:{message:'the database accepted the request but did not store it. This is almost always a row-level-security / permissions rule on the patients table in Supabase — the same rule would block editing a handover note too. Check the update policy on public.patients.'}};
+    }catch(_){/* read-back is best-effort; a failure here does not undo the save */}
+  }
+  return{list};
+}
 async function addComplicationToPatient(patientId,entry){
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat)return{error:error||{message:'This patient is no longer in the registry.'}};
   const list=parseComplications(pat);
   const user=await getCurrentUserForAudit();
-  const newId='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const by=user.name||user.email||'';
+  const onset=entry.date||TODAY;
+  const note=String(entry.note||'').trim();
+  const evId='e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
   list.push({
-    id:newId,
+    id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
     text:String(entry.text||'').trim(),
-    date:entry.date||TODAY,
-    note:String(entry.note||'').trim(),
+    stoma:String(entry.stoma||'').trim(),
+    date:onset,
+    status:'open',
+    resolved_date:'',
+    note,
     source:entry.source||'',
-    by:user.name||user.email||''
+    by,
+    // The onset is the first entry on the complication's timeline.
+    events:[{id:evId,date:onset,trend:'noted',note,by}]
   });
-  const{error:e2,dropped}=await updatePatientTolerant(patientId,{complications:list});
-  if(e2)return{error:e2};
-  if(dropped&&dropped.includes('complications'))return{missing:true};
-  // Verify it actually landed. An update the database quietly refuses — most
-  // often a row-level-security policy on the patients table — comes back with no
-  // error and no rows changed, so the save looks fine but nothing is stored and
-  // it is gone on the next reload. Read the record back and confirm the new entry
-  // is really there before telling the caller it saved.
-  try{
-    const{data:check}=await fetchPatientById(patientId);
-    if(check&&!parseComplications(check).some(c=>c.id===newId))
-      return{error:{message:'the database accepted the request but did not store it. This is almost always a row-level-security / permissions rule on the patients table in Supabase — the same rule would block editing a note here too. Check the update policy on public.patients.'}};
-  }catch(_){/* read-back is best-effort; a failure here does not undo the save */}
-  return{list};
+  return await saveComplicationsWithEvent(patientId,list,evId);
 }
 async function removeComplicationFromPatient(patientId,id){
   const{data:pat,error}=await fetchPatientById(patientId);
@@ -12130,7 +12193,216 @@ function refreshComplicationViews(patientId,list){
     clrState.patient.complications=list;
     const host=document.getElementById('psm-outcomes');
     if(host&&!host.hidden)host.innerHTML=stomaOutcomesPanelHTML(clrState.patient);
+    const sum=document.getElementById('psm-cmp-card');
+    if(sum)sum.innerHTML=complicationsSummaryHTML(clrState.patient);
   }
+  // Repaint the complications manager modal if it is open for this patient — so a
+  // complication added through the separation popup lands there straight away.
+  if(cmpMgrPatient&&String(cmpMgrPatient.id)===String(patientId)){
+    cmpMgrPatient.complications=list;
+    const mgr=document.getElementById('cmp-mgr-body'); if(mgr)mgr.innerHTML=complicationsManagerBodyHTML(cmpMgrPatient);
+  }
+}
+/* ── Complications manager ────────────────────────────────────────────────────
+   A complication is tied to a stoma and carries a timeline: it is noted, then
+   updated as it improves, holds or deteriorates, and finally resolved (closed)
+   — or reopened if it returns. Several run at once, each on its own timeline,
+   until each is resolved. Everything lives in the patient's `complications`
+   JSON, so no new database column is needed. */
+const CMP_TRENDS=[
+  {v:'improving',label:'Improving'},
+  {v:'unchanged',label:'Unchanged'},
+  {v:'deteriorating',label:'Deteriorating'}
+];
+function cmpTrendMeta(trend){
+  const t=String(trend||'').toLowerCase();
+  if(t==='noted')return{label:'Noted',cls:'cmp-tr-new'};
+  if(t==='resolved')return{label:'Resolved',cls:'cmp-tr-done'};
+  if(t==='reopened')return{label:'Reopened',cls:'cmp-tr-new'};
+  if(t==='improving')return{label:'Improving',cls:'cmp-tr-up'};
+  if(t==='deteriorating')return{label:'Deteriorating',cls:'cmp-tr-down'};
+  if(t==='unchanged')return{label:'Unchanged',cls:'cmp-tr-flat'};
+  return{label:t?t:'Update',cls:'cmp-tr-flat'};
+}
+function cmpTrendChip(trend){const m=cmpTrendMeta(trend);return `<span class="cmp-trend ${m.cls}">${htmlSafe(m.label)}</span>`;}
+// The stoma a complication is tied to, worded for a person: "Stoma 1 · Colostomy".
+function cmpStomaLabel(pat,ref){
+  if(!ref)return '';
+  const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  const s=list.find(x=>String(x.number)===String(ref)||String(x.slot)===String(ref));
+  if(!s)return 'Stoma '+ref;
+  return 'Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'');
+}
+function cmpStomaOptions(pat,selected){
+  const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  const opts=['<option value="">— not tied to a stoma —</option>'];
+  list.forEach(s=>{
+    const lbl='Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'')+(s.present?'':' (reversed)');
+    opts.push(`<option value="${htmlSafe(String(s.number))}" ${String(selected)===String(s.number)?'selected':''}>${htmlSafe(lbl)}</option>`);
+  });
+  return opts.join('');
+}
+// The Overview card summary: open complications first, each with its latest
+// movement, then a muted count of resolved ones.
+function complicationsSummaryHTML(pat){
+  const list=parseComplications(pat);
+  const addBtn=`<button type="button" class="pf-add-btn" style="margin-top:8px;" onclick="openComplicationsManager('${pat.id}')">＋ Add / manage complications</button>`;
+  if(!list.length)return `<div class="clr-empty">No complications recorded.</div>${addBtn}`;
+  const open=list.filter(c=>c.status!=='resolved');
+  const resolved=list.filter(c=>c.status==='resolved');
+  const rowOf=c=>{
+    const last=(c.events||[])[(c.events||[]).length-1]||{};
+    const when=last.date?fmtShortDate(last.date):(c.date?fmtShortDate(c.date):'');
+    const st=cmpStomaLabel(pat,c.stoma);
+    return `<div class="cmp-sum-row">
+      <span class="cmp-dot" aria-hidden="true"></span>
+      <div class="cmp-copy">
+        <span class="cmp-title">${htmlSafe(c.text)} ${last.trend&&last.trend!=='noted'?cmpTrendChip(last.trend):''}</span>
+        <span class="cmp-meta">${[st,when?('last '+when):''].filter(Boolean).join(' · ')}</span>
+      </div>
+    </div>`;
+  };
+  return `${open.map(rowOf).join('')||'<div class="clr-empty">No open complications.</div>'}
+    ${resolved.length?`<div class="cmp-sum-resolved">✓ ${resolved.length} resolved</div>`:''}
+    ${addBtn}`;
+}
+let cmpMgrPatient=null;
+async function openComplicationsManager(patientId){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat){alert('Could not open this patient.');return;}
+  cmpMgrPatient=pat;
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>⚠️ Complications</h2>
+    <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat.id_card?' · '+htmlSafe(pat.id_card):''} — each is tied to a stoma and kept on a timeline; resolve one when it settles.</div>
+    <div id="cmp-mgr-body">${complicationsManagerBodyHTML(pat)}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
+  openMo();
+}
+function complicationsManagerBodyHTML(pat){
+  const list=parseComplications(pat);
+  const open=list.filter(c=>c.status!=='resolved');
+  const resolved=list.filter(c=>c.status==='resolved');
+  const addForm=`<div class="cmp-add-card">
+    <div class="cmp-add-head">＋ New complication</div>
+    <div class="cmp-add-grid">
+      <select id="cmpm-type" onchange="onComplicationSelect(this,'${pat.id}','Record')">${complicationOptions('','')}</select>
+      <select id="cmpm-stoma">${cmpStomaOptions(pat,'')}</select>
+      <input type="date" id="cmpm-date" value="${TODAY}"/>
+      <input type="text" id="cmpm-note" placeholder="First note (optional)"/>
+      <button type="button" class="pf-add-btn" onclick="mgrAddComplication('${pat.id}')">Add complication</button>
+    </div>
+  </div>`;
+  const cards=list.length
+    ? `${open.map(c=>complicationCardHTML(pat,c)).join('')||'<div class="clr-empty" style="margin:4px 0 10px;">No open complications.</div>'}
+       ${resolved.length?`<div class="cmp-resolved-head">Resolved</div>${resolved.map(c=>complicationCardHTML(pat,c)).join('')}`:''}`
+    : '<div class="clr-empty" style="margin-top:8px;">No complications recorded yet.</div>';
+  return addForm+cards;
+}
+function complicationCardHTML(pat,c){
+  const resolved=c.status==='resolved';
+  const st=cmpStomaLabel(pat,c.stoma);
+  const events=(c.events||[]).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const timeline=events.map(e=>`<div class="cmp-ev">
+      <div class="cmp-ev-line"><span class="cmp-ev-date">${e.date?htmlSafe(fmtShortDate(e.date)):'—'}</span>${cmpTrendChip(e.trend)}${e.by?`<span class="cmp-ev-by">${htmlSafe(e.by)}</span>`:''}</div>
+      ${e.note?`<div class="cmp-ev-note">${htmlSafe(e.note)}</div>`:''}
+    </div>`).join('')||'<div class="clr-empty">No updates yet.</div>';
+  const actions=resolved
+    ? `<div class="cmp-card-foot"><span class="cmp-resolved-on">✓ Resolved${c.resolved_date?' '+htmlSafe(fmtShortDate(c.resolved_date)):''}</span>
+        <button type="button" class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="mgrReopenComplication('${pat.id}','${c.id}')">Reopen</button>
+        <button type="button" class="ncb-btn danger" style="background:#fdecea;color:#c0392b;" onclick="mgrRemoveComplication('${pat.id}','${c.id}')">Remove</button></div>`
+    : `<div class="cmp-upd" id="cmpu-${c.id}">
+        <div class="cmp-upd-grid">
+          <input type="date" class="cmp-upd-date" value="${TODAY}"/>
+          <select class="cmp-upd-trend">${CMP_TRENDS.map(t=>`<option value="${t.v}">${t.label}</option>`).join('')}</select>
+          <input type="text" class="cmp-upd-note" placeholder="Update note (optional)"/>
+          <button type="button" class="pf-add-btn" onclick="mgrAddUpdate('${pat.id}','${c.id}')">Add update</button>
+        </div>
+        <div class="cmp-card-foot">
+          <button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="mgrResolveComplication('${pat.id}','${c.id}')">✓ Resolve / close</button>
+          <button type="button" class="ncb-btn danger" style="background:#fdecea;color:#c0392b;" onclick="mgrRemoveComplication('${pat.id}','${c.id}')">Remove</button>
+        </div>
+      </div>`;
+  return `<div class="cmp-card${resolved?' cmp-card-resolved':''}">
+    <div class="cmp-card-head">
+      <span class="cmp-card-title">${htmlSafe(c.text)}</span>
+      ${st?`<span class="cmp-card-stoma">${htmlSafe(st)}</span>`:''}
+      <span class="cmp-trend ${resolved?'cmp-tr-done':'cmp-tr-open'}">${resolved?'Resolved':'Open'}</span>
+    </div>
+    <div class="cmp-timeline">${timeline}</div>
+    ${actions}
+  </div>`;
+}
+// Re-read and repaint the manager modal plus the record views after a change.
+async function cmpMgrRefresh(patientId){
+  const{data:pat}=await fetchPatientById(patientId);
+  if(!pat)return;
+  cmpMgrPatient=pat;
+  const body=document.getElementById('cmp-mgr-body'); if(body)body.innerHTML=complicationsManagerBodyHTML(pat);
+  refreshComplicationViews(patientId,parseComplications(pat));
+}
+// Mutate one complication by id (the mutator appends the verify event) and save.
+async function cmpMutate(patientId,compId,mutator){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat)return{error:error||{message:'Patient not found.'}};
+  const list=parseComplications(pat);
+  const c=list.find(x=>x.id===compId);
+  if(!c)return{error:{message:'This complication is no longer on the record.'}};
+  const user=await getCurrentUserForAudit();
+  const ctx={evId:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),by:user.name||user.email||''};
+  mutator(c,ctx);
+  return await saveComplicationsWithEvent(patientId,list,ctx.evId);
+}
+function cmpSaveAlert(res){
+  if(res&&res.missing){alert('This could not be saved — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then try again.');return false;}
+  if(res&&res.error){alert('Could not save: '+(res.error.message||res.error));return false;}
+  return true;
+}
+async function mgrAddComplication(patientId){
+  const sel=document.getElementById('cmpm-type');
+  const type=String(sel&&sel.value||'').trim();
+  if(!type||type==='__add__'){alert('Choose a complication type first.');return;}
+  const stoma=document.getElementById('cmpm-stoma')?.value||'';
+  const date=document.getElementById('cmpm-date')?.value||TODAY;
+  const note=document.getElementById('cmpm-note')?.value||'';
+  const res=await addComplicationToPatient(patientId,{text:type,stoma,date,note,source:'Record'});
+  if(!cmpSaveAlert(res))return;
+  await cmpMgrRefresh(patientId);
+}
+async function mgrAddUpdate(patientId,compId){
+  const card=document.getElementById('cmpu-'+compId);
+  const date=card?.querySelector('.cmp-upd-date')?.value||TODAY;
+  const trend=card?.querySelector('.cmp-upd-trend')?.value||'unchanged';
+  const note=String(card?.querySelector('.cmp-upd-note')?.value||'').trim();
+  const res=await cmpMutate(patientId,compId,(c,ctx)=>{c.events.push({id:ctx.evId,date,trend,note,by:ctx.by});});
+  if(!cmpSaveAlert(res))return;
+  await cmpMgrRefresh(patientId);
+}
+async function mgrResolveComplication(patientId,compId){
+  if(!confirm('Mark this complication as resolved / closed?\n\nIt moves to the Resolved list and stops being an open concern. You can reopen it if it returns.'))return;
+  const card=document.getElementById('cmpu-'+compId);
+  const date=card?.querySelector('.cmp-upd-date')?.value||TODAY;
+  const note=String(card?.querySelector('.cmp-upd-note')?.value||'').trim();
+  const res=await cmpMutate(patientId,compId,(c,ctx)=>{
+    c.status='resolved';c.resolved_date=date;
+    c.events.push({id:ctx.evId,date,trend:'resolved',note,by:ctx.by});
+  });
+  if(!cmpSaveAlert(res))return;
+  await cmpMgrRefresh(patientId);
+}
+async function mgrReopenComplication(patientId,compId){
+  const res=await cmpMutate(patientId,compId,(c,ctx)=>{
+    c.status='open';c.resolved_date='';
+    c.events.push({id:ctx.evId,date:TODAY,trend:'reopened',note:'',by:ctx.by});
+  });
+  if(!cmpSaveAlert(res))return;
+  await cmpMgrRefresh(patientId);
+}
+async function mgrRemoveComplication(patientId,compId){
+  if(!confirm('Remove this complication and its whole timeline from the record?'))return;
+  const res=await removeComplicationFromPatient(patientId,compId);
+  if(res.error){alert('Could not remove it: '+(res.error.message||res.error));return;}
+  await cmpMgrRefresh(patientId);
 }
 // A standalone picker, used from the handover: pick, add, and it saves at once.
 async function openComplicationPicker(patientId,source){
@@ -12152,6 +12424,7 @@ async function openComplicationPicker(patientId,source){
   mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
+    <div style="margin:4px 0 2px;"><button type="button" class="ncb-btn" style="background:#ede9fe;color:#5b21b6;" onclick="closeModal();openComplicationsManager('${patientId}')">🗂 Open timeline · tie to a stoma · resolve</button></div>
     ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover')}
     <div class="cmp-rod">
       <div class="cmp-rod-head">🩹 ROD removal</div>
@@ -13802,6 +14075,10 @@ async function openPatientRecord(patientId){
           ${dItem('Address',pat.address,true)}
           ${dItem('Firm',pat.consultant)}
         </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}</div>
+      </div>
+      <div>
+        <div class="psm-sec-head"><h3>Complications</h3><span class="psm-badge">Tied to a stoma · with a timeline</span></div>
+        <div class="psm-card" id="psm-cmp-card">${complicationsSummaryHTML(pat)}</div>
       </div>
     </section>
 
