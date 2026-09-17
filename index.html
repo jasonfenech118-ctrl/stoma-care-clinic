@@ -16139,8 +16139,10 @@ function printHandover(){
   // black-and-white printout: a tick for done/signed, a filled square for a permit
   // left in the ward, an empty box for not done.
   const box={'':'☐','done':'✔','signed':'✔','in_ward':'■'};
-  // Bold the "flange due …" note the way the ward sheet does.
-  const notes=t=>htmlSafe(t).replace(/(flange due[^,;·]*)/ig,'<b>$1</b>');
+  // Bold the "flange due …" and "rod due/out …" notes the way the ward sheet does.
+  const notes=t=>htmlSafe(t)
+    .replace(/(flange due[^,;·]*)/ig,'<b>$1</b>')
+    .replace(/(rod (?:due|out)[^,;·]*)/ig,'<b>$1</b>');
   // Shade by ward group (like the Excel sheet): each ward's block of rows keeps
   // one shade, and the shade flips to the next ward — not per-row zebra striping.
   let prevWard=null, wg=0;
@@ -16157,9 +16159,16 @@ function printHandover(){
       const av=a?String(a.dataset.appliance||'').trim():'';
       const nv=n?String(n.value||'').trim():'';
       // The next flange change date prints with the appliance, and is bolded.
-      const fd=c.querySelector('.hv-flange-date');
+      const fd=c.querySelector('.hv-flange-date:not(.hv-rod-date)');
       const fv=fd&&fd.value?('flange due '+fmtShortDate(fd.value)):'';
-      return [av,nv,fv].filter(Boolean).join(' · ');
+      // The rod removal date prints too: "rod due <date>" while pending, or
+      // "rod out <date>" once removed. Both are bolded like the flange note.
+      let rv='';
+      const rd=c.querySelector('.hv-rod-date');
+      if(rd&&rd.value)rv='rod due '+fmtShortDate(rd.value);
+      else{const rdone=c.querySelector('.hv-rod-done .hv-flange-note');
+        if(rdone&&rdone.textContent.trim())rv='rod out '+rdone.textContent.trim();}
+      return [av,nv,fv,rv].filter(Boolean).join(' · ');
     };
     const val=i=>cell(i)?.querySelector('.hs-btn')?.dataset.value||'';
     // The dated line under each document button prints beneath its mark.
