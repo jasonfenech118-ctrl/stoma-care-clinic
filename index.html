@@ -1914,6 +1914,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         </div>
         <button class="da-button" onclick="DailyAttendance.today()">Today</button>
         <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
+        <button class="da-button" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="downloadDailyAttendancePdf()">⤓ Download daily attendance (PDF)</button>
       </div>
       <h3 id="da-date-label"></h3>
       <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
@@ -3288,6 +3289,57 @@ function dailyAttendanceSaveOptions(){
 function loadDailyAttendance(){return DailyAttendance.load(dailyAttendanceSaveOptions());}
 function loadAttendanceRecords(){
   return DailyAttendance.loadRecords({db:SB,fetchRows:fetchAllRows});
+}
+/* Download a day's attendance as a printable A4 PDF. The sheet is already saved
+   automatically as you edit it (and kept in Attendance Records), so download just
+   produces the printable copy — of the day on screen, or of any saved day. */
+const DA_STATUS_LABELS={not_recorded:'Not recorded',present:'Present',late:'Late',left_early:'Left early',absent:'Absent',off_leave:'Off / leave'};
+function attendanceSheetPrintHTML(dateStr,rows){
+  const present=rows.filter(r=>r.status==='present').length;
+  const trs=rows.map(r=>{
+    const cls=r.status==='absent'?'da-ab':(r.status==='present'?'da-pr':((r.status==='late'||r.status==='left_early')?'da-at':'da-lv'));
+    const t=[r.time_in,r.time_out].filter(Boolean).join(' – ');
+    return `<tr class="${cls}"><td>${htmlSafe(r.name)}</td><td>${htmlSafe(r.role||'')}</td>
+      <td>${htmlSafe(r.planned||'')}</td><td style="font-weight:800;">${htmlSafe(DA_STATUS_LABELS[r.status]||r.status||'')}</td>
+      <td style="text-align:center;">${htmlSafe(t)}</td><td>${htmlSafe(r.remarks||'')}</td></tr>`;
+  }).join('');
+  return `<style>
+    @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
+    h1{font-size:18px;margin:0 0 2px;} .da-sub{color:#555;font-size:12px;margin:0 0 10px;}
+    table{width:100%;border-collapse:collapse;} th,td{border:1px solid #000;padding:5px 7px;text-align:left;font-size:12px;}
+    th{background:#e8f1fb;font-weight:800;}
+    tr.da-ab td{background:#fdecea;} tr.da-at td{background:#fff6e0;} tr.da-lv td{background:#eef2f6;}
+    .da-tot{margin-top:10px;font-weight:800;font-size:13px;}
+  </style>
+  <h1>MDH Stoma Care Clinic — Daily Attendance</h1>
+  <div class="da-sub">${htmlSafe(fmtLabel(dateStr))}</div>
+  <table><thead><tr><th>Staff member</th><th>Role</th><th>Planned duty</th><th>Attendance</th><th>Time in / out</th><th>Remarks</th></tr></thead><tbody>${trs}</tbody></table>
+  <div class="da-tot">Present: ${present} of ${rows.length}</div>`;
+}
+function downloadDailyAttendancePdf(){
+  const date=document.getElementById('da-date')?.value||'';
+  if(!DailyAttendance.validDate(date)){alert('Choose a valid date first.');return;}
+  const rows=[...document.querySelectorAll('#da-results tr[data-attendance-key]')].map(tr=>({
+    name:(tr.querySelector('td[data-label="Staff member"]')?.innerText||'').trim(),
+    role:(tr.querySelector('td[data-label="Role"]')?.innerText||'').trim(),
+    planned:(tr.querySelector('.da-duty')?.childNodes[0]?.textContent||'').trim(),
+    status:tr.querySelector('[data-field="attendance_status"]')?.value||'',
+    time_in:tr.querySelector('[data-field="time_in"]')?.value||'',
+    time_out:tr.querySelector('[data-field="time_out"]')?.value||'',
+    remarks:tr.querySelector('[data-field="remarks"]')?.value||''
+  }));
+  if(!rows.length){alert('There is no attendance to download for this day.');return;}
+  bcPrintWindow(`Daily Attendance — ${fmtLabel(date)}`, attendanceSheetPrintHTML(date,rows));
+}
+async function downloadAttendanceRecordPdf(date){
+  if(!DailyAttendance.validDate(date)){alert('Invalid date.');return;}
+  const{data,error}=await SB.from('daily_attendance').select('*').eq('attendance_date',date).order('staff_name');
+  if(error){alert('Could not load that day: '+(error.message||error));return;}
+  const rows=(data||[]).map(r=>({name:r.staff_name,role:r.staff_role,planned:r.planned_duty,status:r.attendance_status,
+    time_in:String(r.time_in||'').slice(0,5),time_out:String(r.time_out||'').slice(0,5),remarks:r.remarks}));
+  if(!rows.length){alert('No saved rows for that day.');return;}
+  bcPrintWindow(`Daily Attendance — ${fmtLabel(date)}`, attendanceSheetPrintHTML(date,rows));
 }
 function openDailyAttendanceRecord(date){
   const input=document.getElementById('da-date');
