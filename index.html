@@ -14065,6 +14065,17 @@ function loadDischargeLetters(){
   if(f&&!f.getAttribute('src'))f.setAttribute('src',f.dataset.src);
 }
 function openDischargeFull(){window.open('discharge-letter.html','_blank');}
+/* True when an inpatient's stoma has been reversed and none is left — the most
+   recent stoma is ended on or before today, with no new or refashioned stoma
+   still present. Such a patient has nothing to hand over about, so they leave
+   the stoma handover on their own. A future-dated reversal (not done yet) or a
+   patient who still carries a stoma does not qualify. */
+function handoverReversedGone(p){
+  if(hasStomaNow(p))return false;
+  const ends=stomaEndDates(p);
+  if(!ends.length)return false;
+  return String(ends[ends.length-1])<=TODAY;
+}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
@@ -14086,7 +14097,19 @@ async function loadHandover(){
       : `<div class="report-note">Could not load the handover list: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const rows=(data||[]).slice().sort(handoverByWard);
+  const rowsAll=(data||[]).slice().sort(handoverByWard);
+  // Self-heal: a patient whose stoma has been reversed (recorded from the reversal
+  // reminder or the record) no longer belongs on the stoma handover, so they come
+  // off the sheet the moment the reversal is on file and the ward flag is cleared
+  // so it stays that way — no separate discharge step needed. Patients who still
+  // have a stoma, or a later new/refashioned one, are left exactly as they are.
+  const reversedGone=rowsAll.filter(handoverReversedGone);
+  let rows=rowsAll;
+  if(reversedGone.length){
+    const goneIds=new Set(reversedGone.map(p=>p.id));
+    rows=rowsAll.filter(p=>!goneIds.has(p.id));
+    try{await Promise.all(reversedGone.map(p=>SB.from('patients').update({is_inpatient:false}).eq('id',p.id)));}catch(e){}
+  }
   await attachHandoverApplianceLines(rows);
   // Siting patients whose surgery day has arrived show at the top as "awaiting
   // surgery", automatically, until the outcome is recorded from the handover.
