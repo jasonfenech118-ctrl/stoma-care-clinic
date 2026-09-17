@@ -14143,10 +14143,21 @@ function handoverReversedGone(p){
   if(!ends.length)return false;
   return String(ends[ends.length-1])<=TODAY;
 }
+/* A patient who has died is no longer on the ward, so they come off the handover
+   the moment they are marked deceased — by a recorded date of death or a deceased
+   follow-up status. */
+function handoverDeceased(p){
+  return !!(p&&(p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased'));
+}
+/* Everyone who should drop off the handover on their own: a fully reversed
+   patient or a deceased one. */
+function handoverShouldAutoLeave(p){
+  return handoverDeceased(p)||handoverReversedGone(p);
+}
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
+  const HV_COLS='id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -14165,17 +14176,18 @@ async function loadHandover(){
     return;
   }
   const rowsAll=(data||[]).slice().sort(handoverByWard);
-  // Self-heal: a patient whose stoma has been reversed (recorded from the reversal
-  // reminder or the record) no longer belongs on the stoma handover, so they come
-  // off the sheet the moment the reversal is on file and the ward flag is cleared
-  // so it stays that way — no separate discharge step needed. Patients who still
-  // have a stoma, or a later new/refashioned one, are left exactly as they are.
-  const reversedGone=rowsAll.filter(handoverReversedGone);
+  // Self-heal: a patient who no longer belongs on the ward comes off the sheet on
+  // their own and the ward flag is cleared so it stays that way — no separate
+  // discharge step needed. That covers a patient whose stoma has been reversed
+  // (recorded from the reversal reminder or the record) and a patient marked
+  // deceased. Patients who still have a stoma, or a later new/refashioned one,
+  // are left exactly as they are.
+  const autoGone=rowsAll.filter(handoverShouldAutoLeave);
   let rows=rowsAll;
-  if(reversedGone.length){
-    const goneIds=new Set(reversedGone.map(p=>p.id));
+  if(autoGone.length){
+    const goneIds=new Set(autoGone.map(p=>p.id));
     rows=rowsAll.filter(p=>!goneIds.has(p.id));
-    try{await Promise.all(reversedGone.map(p=>SB.from('patients').update({is_inpatient:false}).eq('id',p.id)));}catch(e){}
+    try{await Promise.all(autoGone.map(p=>SB.from('patients').update({is_inpatient:false}).eq('id',p.id)));}catch(e){}
   }
   await attachHandoverApplianceLines(rows);
   // Siting patients whose surgery day has arrived show at the top as "awaiting
