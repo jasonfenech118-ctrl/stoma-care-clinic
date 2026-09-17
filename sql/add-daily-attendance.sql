@@ -104,13 +104,14 @@ CREATE TRIGGER daily_attendance_touch_updated_at
   BEFORE UPDATE ON public.daily_attendance
   FOR EACH ROW EXECUTE FUNCTION public.touch_daily_attendance_updated_at();
 
--- Match the access pattern used by the rest of this signed-in clinic app.
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.daily_attendance TO anon, authenticated;
+-- Staff attendance is available only after a clinic user has signed in.
+REVOKE ALL ON public.daily_attendance FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.daily_attendance TO authenticated;
 ALTER TABLE public.daily_attendance ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS daily_attendance_all ON public.daily_attendance;
 CREATE POLICY daily_attendance_all
   ON public.daily_attendance
-  FOR ALL TO anon, authenticated
+  FOR ALL TO authenticated
   USING (true)
   WITH CHECK (true);
 
