@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="assets/dntu-workflow.css"/>
+<script src="assets/dntu-workflow.js"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -4543,10 +4545,7 @@ async function refreshOutcomeMonthOptions(){
 async function setAS(id,status){
   try{
     if(status==='did_not_attend'){
-      const{data:raw,error}=await SB.from('appointments').select('id,patient_id,status').eq('id',id).single();
-      if(error||!raw){alert('Could not load this appointment.');return;}
-      const currentStreak=raw.patient_id?await getPatientCurrentDntuStreak(raw.patient_id):0;
-      await openOutcomeFollowupModal(id,'did_not_attend',{dntuEditMode:true,currentStreak:Number(currentStreak)||0});
+      await openDntuNurseModal(id);
       return;
     }
     await openOutcomeFollowupModal(id,status);
@@ -4555,7 +4554,7 @@ async function setAS(id,status){
 }
 
 async function openDntuAppointmentModal(apptId,currentStreak){
-  await openOutcomeFollowupModal(apptId,'did_not_attend',{dntuEditMode:true,currentStreak:Number(currentStreak)||0});
+  await openDntuNurseModal(apptId,'history');
 }
 function dntuSelectionHTML(currentStreak,pendingCurrentDntu=0,apptDate='',apptSlot='',alreadyRecorded=false){
   const streak=Math.max(0,Number(currentStreak)||0);
@@ -5078,6 +5077,7 @@ async function updateAppointmentTolerant(apptId,payload,protectedCols){
   return{error:{message:'Too many missing columns to save.'},dropped,protectedMissing:null};
 }
 async function openOutcomeFollowupModal(apptId,status,options={}){
+  if(options.dntuEditMode)return openDntuNurseModal(apptId);
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
   if(error||!raw){alert('Could not load this appointment.');return;}
   const appt=(await enrichAppointments([raw]))[0]||raw;
@@ -6101,6 +6101,7 @@ async function delApp(id){
 async function editAppointment(id){
   const{data:appt}=await SB.from('appointments').select('id,status,patient_id').eq('id',id).maybeSingle();
   if(appt&&appt.status==='cancelled'){await openCancelledAppointmentModal(id,appt.patient_id);return;}
+  if(appt&&appt.status==='did_not_attend'){await openDntuNurseModal(id);return;}
   await openOutcomeFollowupModal(id,null);
 }
 async function saveEditedAppointment(apptId,patientId){
@@ -8617,7 +8618,7 @@ function printMonthlyList(){
 </style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Monthly Appointment List — ${clinicMonthLabel(month,year)}</h2><div class="stats"><div class="stat"><span>Total</span><b>${totals.total}</b></div><div class="stat"><span>Booked</span><b>${totals.booked}</b></div><div class="stat"><span>Seen</span><b>${totals.attended}</b></div><div class="stat"><span>Cancelled</span><b>${totals.cancelled}</b></div><div class="stat"><span>DNTU</span><b>${totals.dntu}</b></div></div>${buildPrintableClinicList()}</body></html>`);
   w.document.close();w.focus();w.print();
 }
-async function setOutcome(id,status){await SB.from('appointments').update({status}).eq('id',id);if(status==='did_not_attend')await checkDntuThresholdForAppointment(id);refreshAppointmentViews();}
+async function setOutcome(id,status){if(status==='did_not_attend'){await openDntuNurseModal(id);return;}await SB.from('appointments').update({status}).eq('id',id);refreshAppointmentViews();}
 async function delFromAudit(id){if(!confirm('Delete this appointment?'))return;await SB.from('appointments').delete().eq('id',id);refreshAppointmentViews();}
 
 
@@ -8669,7 +8670,7 @@ function dntuActionHTML(r){
   if(!r?.patientId)return '<span class="dntu-locked-pill">No patient ID</span>';
   if((Number(r.streak)||0)>=3)return '<span class="dntu-locked-pill">3+ rule reached</span>';
   if(!r.latestDntuId)return '<span class="dntu-locked-pill">No DNTU appointment</span>';
-  return `<button class="dntu-action-btn ${Number(r.streak)>=2?'warn':''}" onclick="openDntuAppointmentModal('${jsSafe(r.latestDntuId)}',${Number(r.streak)||0})">DNTU</button>`;
+  return `<button class="dntu-action-btn ${Number(r.streak)>=2?'warn':''}" onclick="openDntuAppointmentModal('${jsSafe(r.latestDntuId)}',${Number(r.streak)||0})">Review DNTU history</button>`;
 }
 
 async function loadDntuPolicy(){
