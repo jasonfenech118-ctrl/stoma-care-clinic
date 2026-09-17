@@ -11965,8 +11965,9 @@ async function addComplicationToPatient(patientId,entry){
   if(error||!pat)return{error:error||{message:'This patient is no longer in the registry.'}};
   const list=parseComplications(pat);
   const user=await getCurrentUserForAudit();
+  const newId='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
   list.push({
-    id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+    id:newId,
     text:String(entry.text||'').trim(),
     date:entry.date||TODAY,
     note:String(entry.note||'').trim(),
@@ -11976,6 +11977,16 @@ async function addComplicationToPatient(patientId,entry){
   const{error:e2,dropped}=await updatePatientTolerant(patientId,{complications:list});
   if(e2)return{error:e2};
   if(dropped&&dropped.includes('complications'))return{missing:true};
+  // Verify it actually landed. An update the database quietly refuses — most
+  // often a row-level-security policy on the patients table — comes back with no
+  // error and no rows changed, so the save looks fine but nothing is stored and
+  // it is gone on the next reload. Read the record back and confirm the new entry
+  // is really there before telling the caller it saved.
+  try{
+    const{data:check}=await fetchPatientById(patientId);
+    if(check&&!parseComplications(check).some(c=>c.id===newId))
+      return{error:{message:'the database accepted the request but did not store it. This is almost always a row-level-security / permissions rule on the patients table in Supabase — the same rule would block editing a note here too. Check the update policy on public.patients.'}};
+  }catch(_){/* read-back is best-effort; a failure here does not undo the save */}
   return{list};
 }
 async function removeComplicationFromPatient(patientId,id){
