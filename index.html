@@ -1246,6 +1246,11 @@ table.np tbody tr:hover td{background:#f4fbfa;}
   background:#f4f8fb;color:#0b5aa2;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;line-height:1.3;}
 .hv-appl:hover{background:#e8f1fb;border-color:#0b5aa2;}
 .hv-appl-empty{color:#8a97a6;font-weight:600;font-style:italic;}
+/* A new admission with no appliance set yet — awaiting its first review. Amber
+   so the ward can see at a glance who still needs to be seen. */
+.hv-appl.hv-appl-await{background:#fff6e0;border-color:#e0a83a;color:#8a5a00;}
+.hv-appl.hv-appl-await:hover{background:#ffeec2;border-color:#c78a1f;}
+.hv-appl-await-txt{font-weight:800;font-style:normal;}
 .hv-note{width:100%;box-sizing:border-box;margin-top:5px;}
 /* Infection alert (CRE / VRE / +ve) — the whole appliance/notes cell goes bright
    red so it is impossible to miss on the handover. */
@@ -5179,7 +5184,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
       <div id="of-cmp-list">${complicationListHTML(complicationsNow,{removable:true,patientId:p.id})}</div>
-      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`,p.id,'Appointment')}
+      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`,p.id,'Appointment','',cmpStomaOptions(p,''))}
     </div>`:'';
   // ── Shared field fragments (identical IDs whichever layout is used, so the
   //    save engine — saveOutcomeFollowup / commitOutcomeFollowup — is untouched).
@@ -12077,11 +12082,14 @@ function complicationListHTML(entries,opts={}){
    Add button's onclick is passed in, because who to tell afterwards differs by
    where it is shown; patientId and source let the separation popup save straight
    away. The common problems all live in the dropdown itself. */
-function complicationAddFormHTML(prefix,onclickJs,patientId,source,stomaType){
+function complicationAddFormHTML(prefix,onclickJs,patientId,source,stomaType,stomaOptionsHTML){
   const note=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="grid-column:1/-1;margin:2px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
   const pid=patientId||'',src=source||'Handover',st=stomaType||'';
+  // Tie the complication to a stoma right here — the same link the record uses.
+  const stomaSel=stomaOptionsHTML?`<select id="${prefix}-cmp-stoma" style="grid-column:1/-1;">${stomaOptionsHTML}</select>`:'';
   return `<div class="cmp-add">
     <select id="${prefix}-cmp-sel" data-stoma-type="${htmlSafe(st)}" onchange="onComplicationSelect(this,'${jsSafe(pid)}','${jsSafe(src)}')">${complicationOptions('',st)}</select>
+    ${stomaSel}
     <input type="date" id="${prefix}-cmp-date" value="${TODAY}"/>
     <input type="text" id="${prefix}-cmp-note" placeholder="Note (optional)"/>
     <button type="button" class="pf-add-btn cmp-add-btn" onclick="${onclickJs}">＋ Add complication</button>
@@ -12171,11 +12179,13 @@ async function readAndAddComplication(prefix,patientId,source){
   if(!text||text==='__add__'){alert('Choose a complication first.');return null;}
   const date=document.getElementById(prefix+'-cmp-date')?.value||TODAY;
   const note=document.getElementById(prefix+'-cmp-note')?.value||'';
-  const res=await addComplicationToPatient(patientId,{text,date,note,source});
+  const stoma=document.getElementById(prefix+'-cmp-stoma')?.value||'';
+  const res=await addComplicationToPatient(patientId,{text,stoma,date,note,source});
   if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return null;}
   if(res.error){alert('Could not save the complication: '+res.error.message);return null;}
   if(sel)sel.value='';
   const n=document.getElementById(prefix+'-cmp-note'); if(n)n.value='';
+  const stomaEl=document.getElementById(prefix+'-cmp-stoma'); if(stomaEl)stomaEl.value='';
   if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.complications=res.list;
   return res.list;
 }
@@ -12425,7 +12435,7 @@ async function openComplicationPicker(patientId,source){
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
     <div style="margin:4px 0 2px;"><button type="button" class="ncb-btn" style="background:#ede9fe;color:#5b21b6;" onclick="closeModal();openComplicationsManager('${patientId}')">🗂 Open timeline · tie to a stoma · resolve</button></div>
-    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover')}
+    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover','',cmpStomaOptions(pat,''))}
     <div class="cmp-rod">
       <div class="cmp-rod-head">🩹 ROD removal</div>
       ${rodRemoved
@@ -13516,8 +13526,12 @@ async function openInpatientVisit(){
     // A patient is often entered a day or two after they came in, so the date of
     // admission is asked for rather than assumed to be today.
     admitted:pat?.inpatient_since||TODAY,
-    system:'',appliances:prev?prev.appliances:[],accessories:prev?prev.accessories:[],notes:'',
-    reuse:!!prev,multi,stomas};
+    // A new admission starts with NO appliance chosen: the patient is reviewed
+    // first, so they go on the Handover as "Awaiting first review" and the
+    // appliance is set from there once seen. The last admission's appliance is
+    // kept in `prev` so it can be reused from the appliance step if wanted.
+    system:'',appliances:[],accessories:[],notes:'',
+    reuse:false,prev,multi,stomas};
   renderInpatientStep();
 }
 /* The pages depend on the appliance system: one-piece is a single list, a
@@ -13555,7 +13569,7 @@ function renderInpatientStep(){
   if(w.step==='ward'){
     const carry=w.multi
       ?`<div class="vw-carry" style="grid-column:1 / -1;">This patient has more than one stoma (a mucus fistula). You will set the appliances and accessories for <strong>each stoma</strong> next.</div>`
-      :w.reuse?`<div class="vw-carry" style="grid-column:1 / -1;">Appliances and accessories are carried over from the last admission — only the ward and bed are needed. Change them later from the record if they differ.</div>`:'';
+      :`<div class="vw-carry" style="grid-column:1 / -1;">The patient goes on the Handover as <strong>Awaiting first review</strong> with no appliance set — review them, then set the appliance from the Handover. Or press <strong>Set appliance now</strong> to record it during admission.</div>`;
     body=`<div class="edit-seen-grid">${carry}
       <div class="fg"><label>Ward *</label><select id="iv-ward">${wardOptions(w.ward)}</select></div>
       <div class="fg"><label>Bed number</label><input type="text" id="iv-bed" value="${htmlSafe(w.bed||'')}" placeholder="e.g. 15"/></div>
@@ -13601,8 +13615,11 @@ function renderInpatientStep(){
     <div class="vw-steps">${dots}</div>
     <div class="edit-seen-section">${IV_TITLES[w.step]}</div>
     ${body}
-    <div class="mact"><button class="btn-cancel" onclick="ivBack()">${w.step==='ward'?'Cancel':'Back'}</button>
-      <button class="btn-save" onclick="ivNext()"${w.step==='system'&&!w.system?' disabled':''}>${w.multi?'Admit, then set appliances':(isLast&&w.step!=='system')?'Open inpatient visit':'Next'}</button></div>`;
+    <div class="mact">${w.step==='ward'
+      ? (w.multi
+          ? `<button class="btn-cancel" onclick="ivBack()">Cancel</button><button class="btn-save" onclick="ivNext()">Admit, then set appliances</button>`
+          : `<button class="btn-cancel" onclick="ivBack()">Cancel</button><button class="btn-cancel" onclick="ivNext()">Set appliance now ›</button><button class="btn-save" onclick="admitAwaitingReview()">Admit — awaiting first review</button>`)
+      : `<button class="btn-cancel" onclick="ivBack()">Back</button><button class="btn-save" onclick="ivNext()"${w.step==='system'&&!w.system?' disabled':''}>${(isLast&&w.step!=='system')?'Open inpatient visit':'Next'}</button>`}</div>`;
   openMo();
   if(['onepiece','flange','bag','dressing'].includes(w.step)){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
   if(w.step==='accessory')updateApplianceSummary();
@@ -13665,6 +13682,18 @@ function ivNext(){
   if(i>=steps.length-1){saveInpatientVisit();return;}
   w.step=steps[i+1];
   renderInpatientStep();
+}
+/* Admit the patient onto the Handover with NO appliance set — they are awaiting
+   their first review, and the appliance is chosen from the Handover once seen. */
+function admitAwaitingReview(){
+  if(!ivWizard)return;
+  captureInpatientStep();
+  const w=ivWizard;
+  if(!w.ward){alert('Please choose the ward.');return;}
+  if(!w.admitted){alert('Please give the date of admission.');return;}
+  if(w.admitted>TODAY){alert('The date of admission cannot be in the future.');return;}
+  w.appliances=[];w.accessories=[];w.notes='';
+  saveInpatientVisit();
 }
 async function saveInpatientVisit(){
   const w=ivWizard;
@@ -14765,10 +14794,10 @@ function handoverRowHTML(p,cls){
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
     <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}">
       <div class="hv-applwrap">
-        <button type="button" class="hv-appl" data-appliance="${htmlSafe(applLine)}"
-          title="Set appliance" onclick="openHandoverAppliance('${p.id}')">${applLine
+        <button type="button" class="hv-appl${applLine?'':' hv-appl-await'}" data-appliance="${htmlSafe(applLine)}"
+          title="${applLine?'Set appliance':'Awaiting first review — tap to set the appliance once the patient is seen'}" onclick="openHandoverAppliance('${p.id}')">${applLine
             ?htmlSafe(applLine)
-            :'<span class="hv-appl-empty">Tap to set appliance</span>'}</button>
+            :'<span class="hv-appl-await-txt">🔎 Awaiting first review — tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
           oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${rodChipHTML(p)}
         <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication or a ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
@@ -16444,7 +16473,10 @@ function printHandover(){
       const c=cell(4); if(!c)return '';
       const a=c.querySelector('.hv-appl'), n=c.querySelector('.hv-note');
       if(!a&&!n)return (c.innerText||'').trim();          // awaiting-surgery rows
-      const av=a?String(a.dataset.appliance||'').trim():'';
+      // A new admission with no appliance yet prints "Awaiting first review" so
+      // the ward copy shows who still has to be seen.
+      let av=a?String(a.dataset.appliance||'').trim():'';
+      if(!av&&a&&a.classList.contains('hv-appl-await'))av='Awaiting first review';
       const nv=n?String(n.value||'').trim():'';
       // The next flange change date prints with the appliance, and is bolded.
       const fd=c.querySelector('.hv-flange-date:not(.hv-rod-date)');
