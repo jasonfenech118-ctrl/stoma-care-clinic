@@ -12282,10 +12282,12 @@ async function openComplicationsManager(patientId){
   if(error||!pat){alert('Could not open this patient.');return;}
   cmpMgrPatient=pat;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const{rod,rodRemoved}=await rodDatesFor(patientId);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>⚠️ Complications</h2>
+  mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat.id_card?' · '+htmlSafe(pat.id_card):''} — each is tied to a stoma and kept on a timeline; resolve one when it settles.</div>
     <div id="cmp-mgr-body">${complicationsManagerBodyHTML(pat)}</div>
+    ${rodSectionHTML(patientId,rod,rodRemoved)}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
 }
@@ -12414,13 +12416,9 @@ async function mgrRemoveComplication(patientId,compId){
   if(res.error){alert('Could not remove it: '+(res.error.message||res.error));return;}
   await cmpMgrRefresh(patientId);
 }
-// A standalone picker, used from the handover: pick, add, and it saves at once.
-async function openComplicationPicker(patientId,source){
-  const{data:pat}=await fetchPatientById(patientId);
-  const nm=pat?`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient':'this patient';
-  const list=parseComplications(pat);
-  // The ROD removal date is a newer column, so read it on its own and tolerate
-  // it not being in the database yet.
+// The ROD removal date is a newer column, so read it on its own and tolerate it
+// not being in the database yet. Shared by the manager and the ROD-edit picker.
+async function rodDatesFor(patientId){
   let rod='',rodRemoved='';
   try{const{data,error}=await SB.from('patients').select('rod_removal_date,rod_removed_date').eq('id',patientId).maybeSingle();
     if(error)throw error;
@@ -12430,26 +12428,48 @@ async function openComplicationPicker(patientId,source){
     try{const{data}=await SB.from('patients').select('rod_removal_date').eq('id',patientId).maybeSingle();
       rod=data&&data.rod_removal_date?String(data.rod_removal_date).slice(0,10):'';}catch(e2){}
   }
+  return {rod,rodRemoved};
+}
+// The controls inside the "🩹 ROD removal" section. Wrapped in #cmp-rod-body so a
+// ROD change repaints just this block, wherever it is shown (manager or picker).
+function rodSectionInnerHTML(patientId,rod,rodRemoved){
+  return rodRemoved
+    ? `<div class="cmp-rod-row"><span style="color:#0a5e33;font-weight:800;">✓ Rod removed on ${htmlSafe(fmtShortDate(rodRemoved))}</span>
+        <button type="button" class="ncb-btn" style="background:#f1f5f9;color:#334155;" onclick="undoRodRemoved('${patientId}')">Undo</button></div>
+       <div class="cmp-rod-hint">Recorded as removed, so it no longer appears in the reminders.</div>`
+    : `<div class="cmp-rod-row">
+        <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
+        <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
+        ${rod?`<button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${patientId}')">✓ Rod removed</button>`:''}
+        ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
+      </div>
+      <div class="cmp-rod-hint">Set the planned date to raise a reminder. When the rod is out, press <strong>✓ Rod removed</strong> — it records the removal and stops the reminder.</div>`;
+}
+function rodSectionHTML(patientId,rod,rodRemoved){
+  return `<div class="cmp-rod"><div class="cmp-rod-head">🩹 ROD removal</div>
+    <div id="cmp-rod-body">${rodSectionInnerHTML(patientId,rod,rodRemoved)}</div></div>`;
+}
+// Repaint the ROD block in place after a change (manager or picker), and the
+// Handover behind it. From the reminder there is no ROD block open, so it just
+// refreshes the Handover.
+async function refreshRodHost(patientId){
+  if(document.getElementById('hv-body'))try{await loadHandover();}catch(e){}
+  const body=document.getElementById('cmp-rod-body');
+  if(body){try{const d=await rodDatesFor(patientId);body.innerHTML=rodSectionInnerHTML(patientId,d.rod,d.rodRemoved);}catch(e){}}
+}
+// A standalone ROD-edit picker (still used from the reminder "Edit date").
+async function openComplicationPicker(patientId,source){
+  const{data:pat}=await fetchPatientById(patientId);
+  const nm=pat?`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient':'this patient';
+  const list=parseComplications(pat);
+  const{rod,rodRemoved}=await rodDatesFor(patientId);
   const mb=document.getElementById('mb');mb.className='mb';
   mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
     <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
     <div style="margin:4px 0 2px;"><button type="button" class="ncb-btn" style="background:#ede9fe;color:#5b21b6;" onclick="closeModal();openComplicationsManager('${patientId}')">🗂 Open timeline · tie to a stoma · resolve</button></div>
     ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover','',cmpStomaOptions(pat,''))}
-    <div class="cmp-rod">
-      <div class="cmp-rod-head">🩹 ROD removal</div>
-      ${rodRemoved
-        ? `<div class="cmp-rod-row"><span style="color:#0a5e33;font-weight:800;">✓ Rod removed on ${htmlSafe(fmtShortDate(rodRemoved))}</span>
-            <button type="button" class="ncb-btn" style="background:#f1f5f9;color:#334155;" onclick="undoRodRemoved('${patientId}')">Undo</button></div>
-           <div class="cmp-rod-hint">Recorded as removed, so it no longer appears in the reminders.</div>`
-        : `<div class="cmp-rod-row">
-            <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
-            <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
-            ${rod?`<button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${patientId}')">✓ Rod removed</button>`:''}
-            ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
-          </div>
-          <div class="cmp-rod-hint">Set the planned date to raise a reminder. When the rod is out, press <strong>✓ Rod removed</strong> — it records the removal and stops the reminder.</div>`}
-    </div>
+    ${rodSectionHTML(patientId,rod,rodRemoved)}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
 }
@@ -12469,8 +12489,7 @@ async function saveRodRemovalDate(patientId){
     alert('The ROD removal date column is not in the database yet.\n\nRun sql/add-rod-removal-date.sql once in Supabase, then set it again.');return;}
   alert(v?`✅ ROD removal date set to ${fmtShortDate(v)}. A reminder will pop up on that day.`:'ROD removal date cleared.');
   try{await refreshReminders();}catch(e){}
-  if(document.getElementById('hv-body'))await loadHandover();
-  openComplicationPicker(patientId,'Handover');   // reopen so Clear appears/updates
+  await refreshRodHost(patientId);   // repaint the ROD block in place (manager or picker)
 }
 function clearRodRemovalDate(patientId){
   const el=document.getElementById('rod-date'); if(el)el.value='';
@@ -12487,9 +12506,13 @@ async function markRodRemoved(patientId){
     await updatePatientTolerant(patientId,{rod_removal_date:null});
     alert('Marked as removed.\n\nTip: run sql/add-rod-removed-date.sql once in Supabase to also keep the removal date on the record.');
   }
-  closeReminderPanel();closeModal();
+  closeReminderPanel();
+  // If a ROD block is open (manager or picker) repaint it in place to show the
+  // removed state; if this came from the reminder, just close it and refresh.
+  const inBlock=!!document.getElementById('cmp-rod-body');
+  if(!inBlock)closeModal();
   try{await refreshReminders();}catch(e){}
-  if(document.getElementById('hv-body'))try{await loadHandover();}catch(e){}
+  await refreshRodHost(patientId);
 }
 function rodNotRemoved(){
   alert('Kept on the reminders — it will keep showing until you mark the rod removed.');
@@ -12498,8 +12521,7 @@ async function undoRodRemoved(patientId){
   const{error}=await updatePatientTolerant(patientId,{rod_removed_date:null});
   if(error){alert('Could not undo: '+(error.message||error));return;}
   try{await refreshReminders();}catch(e){}
-  if(document.getElementById('hv-body'))try{await loadHandover();}catch(e){}
-  openComplicationPicker(patientId,'Handover');   // reopen so it re-reads state
+  await refreshRodHost(patientId);   // repaint the ROD block in place
 }
 /* The Stoma outcomes tab: the reversal / deceased outcome, a stoma-by-stoma
    present-vs-reversed summary, and the running complications list with its
@@ -14800,7 +14822,7 @@ function handoverRowHTML(p,cls){
             :'<span class="hv-appl-await-txt">🔎 Awaiting first review — tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
           oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${rodChipHTML(p)}
-        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a complication or a ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
+        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="Complications timeline (tied to a stoma) and the ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
