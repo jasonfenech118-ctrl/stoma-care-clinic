@@ -3290,56 +3290,113 @@ function loadDailyAttendance(){return DailyAttendance.load(dailyAttendanceSaveOp
 function loadAttendanceRecords(){
   return DailyAttendance.loadRecords({db:SB,fetchRows:fetchAllRows});
 }
-/* Download a day's attendance as a printable A4 PDF. The sheet is already saved
-   automatically as you edit it (and kept in Attendance Records), so download just
-   produces the printable copy — of the day on screen, or of any saved day. */
-const DA_STATUS_LABELS={not_recorded:'Not recorded',present:'Present',late:'Late',left_early:'Left early',absent:'Absent',off_leave:'Off / leave'};
-function attendanceSheetPrintHTML(dateStr,rows){
-  const present=rows.filter(r=>r.status==='present').length;
-  const trs=rows.map(r=>{
-    const cls=r.status==='absent'?'da-ab':(r.status==='present'?'da-pr':((r.status==='late'||r.status==='left_early')?'da-at':'da-lv'));
-    const t=[r.time_in,r.time_out].filter(Boolean).join(' – ');
-    return `<tr class="${cls}"><td>${htmlSafe(r.name)}</td><td>${htmlSafe(r.role||'')}</td>
-      <td>${htmlSafe(r.planned||'')}</td><td style="font-weight:800;">${htmlSafe(DA_STATUS_LABELS[r.status]||r.status||'')}</td>
-      <td style="text-align:center;">${htmlSafe(t)}</td><td>${htmlSafe(r.remarks||'')}</td></tr>`;
-  }).join('');
-  return `<style>
-    @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
-    h1{font-size:18px;margin:0 0 2px;} .da-sub{color:#555;font-size:12px;margin:0 0 10px;}
-    table{width:100%;border-collapse:collapse;} th,td{border:1px solid #000;padding:5px 7px;text-align:left;font-size:12px;}
-    th{background:#e8f1fb;font-weight:800;}
-    tr.da-ab td{background:#fdecea;} tr.da-at td{background:#fff6e0;} tr.da-lv td{background:#eef2f6;}
-    .da-tot{margin-top:10px;font-weight:800;font-size:13px;}
-  </style>
-  <h1>MDH Stoma Care Clinic — Daily Attendance</h1>
-  <div class="da-sub">${htmlSafe(fmtLabel(dateStr))}</div>
-  <table><thead><tr><th>Staff member</th><th>Role</th><th>Planned duty</th><th>Attendance</th><th>Time in / out</th><th>Remarks</th></tr></thead><tbody>${trs}</tbody></table>
-  <div class="da-tot">Present: ${present} of ${rows.length}</div>`;
+/* Download the day's attendance as a printable A4 PDF laid out EXACTLY like the
+   ward's own sheet: Ward Name header, the Name/Grade/Duty + P·SL·VL·ABS·COD·O.T·
+   TOIL columns, and the Day Duty / Night Duty / Constant Watch sections. The data
+   is already auto-saved, so download just renders the saved day. */
+const ATT_COLS=['P','SL','VL','ABS','COD','O.T','TOIL'];
+// Grades and the ward's own name order, so the sheet reads exactly like the paper
+// copy. Known staff are fixed; anyone else is derived from their role and appended.
+const ATT_GRADE_BY_NAME={'jacqueline sammut':'PN','jason fenech':'PN','lorraine stivala':'SN','tracey galea':'SSN','katrina gauci':'SSN','erika psaila':'SSN'};
+const ATT_ORDER_BY_NAME={'jacqueline sammut':1,'jason fenech':2,'lorraine stivala':3,'tracey galea':4,'katrina gauci':5,'erika psaila':6};
+function attNameKey(n){return String(n||'').trim().toLowerCase().replace(/\s+/g,' ');}
+function attGrade(name,role){
+  const k=attNameKey(name); if(ATT_GRADE_BY_NAME[k])return ATT_GRADE_BY_NAME[k];
+  const r=String(role||'').toLowerCase();
+  if(r.includes('senior'))return 'SSN';
+  if(r.includes('staff nurse'))return 'SN';
+  if(r.includes('practice'))return 'PN';
+  if(r.includes('nursing officer'))return 'NO';
+  if(r.includes('midwife'))return 'SN';
+  return role?role.split(/\s+/).filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,3):'';
 }
-function downloadDailyAttendancePdf(){
+function attOrder(name){return ATT_ORDER_BY_NAME[attNameKey(name)]||99;}
+function attDMY(ds){const d=new Date(ds+'T12:00:00');if(isNaN(d))return ds;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+// Map one saved attendance row to the ward columns.
+function attMarksFor(r){
+  const st=r.attendance_status||'not_recorded', pc=r.planned_code||'';
+  const cod=/^COD-/.test(String(r.roster_notes||''))||/change of duty/i.test(String(r.planned_source||''));
+  const m={duty:'',P:'',SL:'',VL:'',ABS:'',COD:'',OT:'',TOIL:''};
+  if(pc==='working'||pc==='overtime')m.duty='B'; else if(pc==='off')m.duty='O';
+  if(st==='present')m.P='P';
+  else if(st==='late')m.P='P (late'+(r.time_in?' '+String(r.time_in).slice(0,5):'')+')';
+  else if(st==='left_early')m.P='P (early'+(r.time_out?' '+String(r.time_out).slice(0,5):'')+')';
+  else if(st==='absent')m.ABS='X';
+  else {
+    if(pc==='sick_leave')m.SL='X';
+    else if(pc==='annual_leave')m.VL='X';
+    else if(pc==='maternity_leave')m.VL='Maternity Leave';
+    else if(pc==='study_leave')m.VL='Study Leave';
+    else if(pc==='public_holiday')m.VL='PH';
+    else if(pc==='overtime')m.OT=r.planned_hours||'X';
+    else if(pc==='til_in')m.OT='TIL-In'+(r.planned_hours?' '+r.planned_hours:'');
+    else if(pc==='til_off')m.TOIL='X';
+  }
+  if(st==='present'||st==='late'||st==='left_early'){
+    if(pc==='overtime'&&!m.OT)m.OT=r.planned_hours||'X';
+    else if(pc==='til_in'&&!m.OT)m.OT='TIL-In'+(r.planned_hours?' '+r.planned_hours:'');
+  }
+  if(cod)m.COD='X';
+  return m;
+}
+function attFormRowHTML(r){
+  const g=attGrade(r.staff_name,r.staff_role), m=attMarksFor(r);
+  const tk=v=>`<td class="tk">${htmlSafe(v||'')}</td>`;
+  return `<tr><td class="nm">${htmlSafe(r.staff_name||'')}</td><td class="gr">${htmlSafe(g)}</td><td class="du">${htmlSafe(m.duty)}</td>`+
+    tk(m.P)+tk(m.SL)+tk(m.VL)+tk(m.ABS)+tk(m.COD)+tk(m.OT)+tk(m.TOIL)+`</tr>`;
+}
+function attBlankRowsHTML(n){
+  const cells='<td class="nm"></td><td class="gr"></td><td class="du"></td>'+ATT_COLS.map(()=>'<td class="tk"></td>').join('');
+  let s='';for(let i=0;i<n;i++)s+='<tr>'+cells+'</tr>';return s;
+}
+function attSectionHTML(label){return `<tr class="sec"><td colspan="${3+ATT_COLS.length}">${htmlSafe(label)}</td></tr>`;}
+function attendanceSheetPrintHTML(dateStr,dbRows,who){
+  const day=(dbRows||[]).slice().sort((a,b)=>attOrder(a.staff_name)-attOrder(b.staff_name)||String(a.staff_name||'').localeCompare(String(b.staff_name||'')));
+  const head=`<tr class="cols"><th class="nm">Name &amp; Surname</th><th class="gr">Grade</th><th class="du">Duty</th>${ATT_COLS.map(c=>`<th class="tk">${htmlSafe(c)}</th>`).join('')}</tr>`;
+  const grade=who&&who.name?attGrade(who.name,who.role):'';
+  return `<style>
+    @page{size:A4 portrait;margin:9mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;font-size:11px;}
+    .ah{margin:0 0 6px;font-size:13px;} .ah b{font-weight:800;} .ah .u{font-weight:800;}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;}
+    th,td{border:1px solid #000;padding:2px 4px;font-size:10.5px;}
+    th{background:#eef2f7;font-weight:800;text-align:center;}
+    td.nm,th.nm{width:27%;text-align:left;} td.gr,th.gr{width:7%;text-align:center;} td.du,th.du{width:6%;text-align:center;}
+    td.tk,th.tk{text-align:center;} td.nm{height:17px;}
+    tr.sec td{background:#000;color:#fff;font-weight:800;text-align:left;}
+    .sig{margin-top:12px;font-size:11.5px;} .sig .ln{display:inline-block;border-bottom:1px solid #000;min-width:170px;padding:0 4px;}
+  </style>
+  <div class="ah"><b>Ward Name:</b> <span class="u">Stoma Care Unit ${htmlSafe(attDMY(dateStr))}</span></div>
+  <table>
+    ${head}
+    ${attSectionHTML('Day Duty')}
+    ${day.map(attFormRowHTML).join('')}${attBlankRowsHTML(Math.max(2,16-day.length))}
+    ${attSectionHTML('Night Duty')}
+    ${attBlankRowsHTML(7)}
+    ${attSectionHTML('Constant Watch (if any)')}
+    ${attBlankRowsHTML(6)}
+  </table>
+  <div class="sig"><span class="ln">${htmlSafe(who&&who.name?who.name:'')}</span> &nbsp;&nbsp;&nbsp; Grade: <span class="ln">${htmlSafe(grade)}</span></div>`;
+}
+async function attFetchDayRows(date){
+  const{data,error}=await SB.from('daily_attendance').select('*').eq('attendance_date',date).order('staff_name');
+  if(error)throw error;
+  return data||[];
+}
+async function downloadDailyAttendancePdf(){
   const date=document.getElementById('da-date')?.value||'';
   if(!DailyAttendance.validDate(date)){alert('Choose a valid date first.');return;}
-  const rows=[...document.querySelectorAll('#da-results tr[data-attendance-key]')].map(tr=>({
-    name:(tr.querySelector('td[data-label="Staff member"]')?.innerText||'').trim(),
-    role:(tr.querySelector('td[data-label="Role"]')?.innerText||'').trim(),
-    planned:(tr.querySelector('.da-duty')?.childNodes[0]?.textContent||'').trim(),
-    status:tr.querySelector('[data-field="attendance_status"]')?.value||'',
-    time_in:tr.querySelector('[data-field="time_in"]')?.value||'',
-    time_out:tr.querySelector('[data-field="time_out"]')?.value||'',
-    remarks:tr.querySelector('[data-field="remarks"]')?.value||''
-  }));
-  if(!rows.length){alert('There is no attendance to download for this day.');return;}
-  bcPrintWindow(`Daily Attendance — ${fmtLabel(date)}`, attendanceSheetPrintHTML(date,rows));
+  let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load the sheet: '+(e.message||e)+'\n\nRun sql/add-daily-attendance.sql once in Supabase, and make sure you are signed in.');return;}
+  if(!rows.length){alert('No attendance is saved for this day yet — open the sheet (it saves automatically), then download.');return;}
+  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
+  bcPrintWindow(`Daily Attendance — ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
 async function downloadAttendanceRecordPdf(date){
   if(!DailyAttendance.validDate(date)){alert('Invalid date.');return;}
-  const{data,error}=await SB.from('daily_attendance').select('*').eq('attendance_date',date).order('staff_name');
-  if(error){alert('Could not load that day: '+(error.message||error));return;}
-  const rows=(data||[]).map(r=>({name:r.staff_name,role:r.staff_role,planned:r.planned_duty,status:r.attendance_status,
-    time_in:String(r.time_in||'').slice(0,5),time_out:String(r.time_out||'').slice(0,5),remarks:r.remarks}));
+  let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load that day: '+(e.message||e));return;}
   if(!rows.length){alert('No saved rows for that day.');return;}
-  bcPrintWindow(`Daily Attendance — ${fmtLabel(date)}`, attendanceSheetPrintHTML(date,rows));
+  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
+  bcPrintWindow(`Daily Attendance — ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
 function openDailyAttendanceRecord(date){
   const input=document.getElementById('da-date');
