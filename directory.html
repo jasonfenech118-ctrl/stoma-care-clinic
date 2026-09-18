@@ -51,6 +51,11 @@
   .sheet-card ol{margin:8px 0 0;padding-left:20px;line-height:1.6;font-size:14.5px;}
   .sheet-card .ic{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:6px;
     padding:0 6px;font-weight:700;}
+  .sheet-h{font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:6px;}
+  .sheet-plat{display:none;}
+  body[data-plat="android"] .sheet-plat.android{display:block;}
+  body[data-plat="ios"] .sheet-plat.ios{display:block;}
+  body[data-plat="other"] .sheet-plat.other{display:block;}
   .sheet-close{margin-top:16px;width:100%;min-height:46px;border:0;border-radius:11px;background:var(--teal);
     color:#fff;font-weight:800;font-size:15px;cursor:pointer;}
   .search{margin-top:11px;position:relative;}
@@ -143,7 +148,30 @@
   <div id="sheet" class="sheet" hidden>
     <div class="sheet-card" role="dialog" aria-modal="true" aria-label="Add to Home Screen">
       <div class="sheet-title">Add the Directory to your Home Screen</div>
-      <div id="sheet-body"></div>
+      <div class="sheet-plat android">
+        <div class="sheet-h">On Android — Chrome</div>
+        <ol>
+          <li>Tap the menu <span class="ic">⋮</span> at the top-right of Chrome.</li>
+          <li>Tap <b>Add to Home screen</b> (or <b>Install app</b>).</li>
+          <li>Tap <b>Add</b> / <b>Install</b> — a Directory button appears on your home screen.</li>
+        </ol>
+      </div>
+      <div class="sheet-plat ios">
+        <div class="sheet-h">On iPhone / iPad — Safari</div>
+        <ol>
+          <li>Tap the <b>Share</b> button <span class="ic">↑</span> at the bottom of the screen.</li>
+          <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+          <li>Tap <b>Add</b> — a Directory button appears on your home screen.</li>
+        </ol>
+      </div>
+      <div class="sheet-plat other">
+        <div class="sheet-h">On this device</div>
+        <ol>
+          <li>Open your browser's menu.</li>
+          <li>Choose <b>Install</b> or <b>Add to Home screen</b>.</li>
+          <li>Confirm — a Directory button is added.</li>
+        </ol>
+      </div>
       <button class="sheet-close" type="button" onclick="closeSheet()">Got it</button>
     </div>
   </div>
@@ -268,20 +296,33 @@
   function showInstall(){ if(installBtn && !isStandalone()) installBtn.hidden=false; }
   window.addEventListener('beforeinstallprompt',function(e){ e.preventDefault(); deferredPrompt=e; showInstall(); });
   window.addEventListener('appinstalled',function(){ if(installBtn)installBtn.hidden=true; deferredPrompt=null; });
+  // When Chrome/Android has a native install prompt ready, tapping fires the
+  // real "Add <name> to Home screen?" dialog. Otherwise the button shows the
+  // per-platform steps (the sheet content is static, so it is never blank).
   installBtn.addEventListener('click',function(){
-    if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.then(function(){ deferredPrompt=null; installBtn.hidden=true; }); return; }
+    if(deferredPrompt){ var ev=deferredPrompt; deferredPrompt=null; ev.prompt(); if(ev.userChoice&&ev.userChoice.catch)ev.userChoice.catch(function(){}); return; }
     openSheet();
   });
-  function openSheet(){
-    document.getElementById('sheet-body').innerHTML = isIOS()
-      ? 'On iPhone or iPad, in <b>Safari</b>:<ol><li>Tap the <b>Share</b> button <span class="ic">↑</span> at the bottom of the screen.</li><li>Scroll down and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b> — a Directory button appears on your home screen.</li></ol>'
-      : 'On Android, in <b>Chrome</b>:<ol><li>Tap the menu <span class="ic">⋮</span> at the top-right.</li><li>Tap <b>Add to Home screen</b> (or <b>Install app</b>).</li><li>Confirm — a Directory button appears on your home screen.</li></ol>';
-    document.getElementById('sheet').hidden=false;
+  function platform(){
+    if(isIOS())return 'ios';
+    if(/android/i.test(navigator.userAgent))return 'android';
+    return 'other';
   }
+  document.body.setAttribute('data-plat', platform());
+  function openSheet(){ document.getElementById('sheet').hidden=false; }
   window.closeSheet=function(){ document.getElementById('sheet').hidden=true; };
   document.getElementById('sheet').addEventListener('click',function(e){ if(e.target===this)closeSheet(); });
-  // iOS gives no install event, so reveal the button (with instructions) anyway.
-  if(isIOS()) showInstall();
+  // Offer the button whenever the app is not already installed.
+  if(!isStandalone()) showInstall();
+
+  // A tiny service worker (scoped to this page only, never the clinic app) makes
+  // the browser reliably offer the native install prompt, and lets the page open
+  // even with no signal once added.
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',function(){
+      navigator.serviceWorker.register('sw.js',{scope:'directory.html'}).catch(function(){});
+    });
+  }
 
   fetch('assets/directory.csv',{cache:'no-cache'})
     .then(function(res){ if(!res.ok)throw new Error('HTTP '+res.status); return res.text(); })
