@@ -654,10 +654,10 @@
         '<td data-label="Off / leave">' + group.off + '</td>' +
         '<td data-label="Not recorded">' + group.pending + '</td>' +
         '<td data-label="Last saved">' + escape(formatStamp(group.last_saved)) + '</td>' +
-        '<td data-label="Open"><button class="da-open-record" onclick="openDailyAttendanceRecord(\'' +
-        escape(group.date) + '\')">Open</button> ' +
-        '<button class="da-open-record" onclick="downloadAttendanceRecordPdf(\'' +
-        escape(group.date) + '\')">⤓ Download</button></td></tr>'
+        '<td data-label="Open"><button class="da-open-record" onclick="downloadAttendanceRecordPdf(\'' +
+        escape(group.date) + '\')">⤓ Open PDF</button> ' +
+        '<button class="da-open-record da-open-edit" onclick="openDailyAttendanceRecord(\'' +
+        escape(group.date) + '\')">Edit</button></td></tr>'
       ).join('') + '</tbody></table></div>';
   }
 
