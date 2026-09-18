@@ -1,7 +1,7 @@
 /* Service worker for the MDH Directory home-screen app only.
    Registered with scope "directory.html", so it never controls the clinic app.
    Network-first: always try the live file, fall back to the cached copy offline. */
-var CACHE = 'mdh-directory-v1';
+var CACHE = 'medilink-v2';
 var ASSETS = [
   'directory.html',
   'assets/directory.csv',
