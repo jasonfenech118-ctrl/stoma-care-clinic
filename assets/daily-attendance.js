@@ -261,24 +261,27 @@
       const stored = saved.get(planned.person_key);
       if (!stored) return planned;
       saved.delete(planned.person_key);
+      // Keep only what the nurse actually recorded (attendance, times, remarks).
+      // The planned duty always follows the CURRENT roster, so overtime, leave
+      // and duty changes made after the sheet was first opened show up live
+      // instead of the sheet freezing at its first save. A row whose planned
+      // info has moved is flagged so the saved copy (and the PDF) refresh too.
+      const plannedChanged =
+        (stored.planned_code || '') !== (planned.planned_code || '') ||
+        (stored.planned_duty || '') !== (planned.planned_duty || '') ||
+        (stored.planned_source || '') !== (planned.planned_source || '') ||
+        (stored.planned_hours || '') !== (planned.planned_hours || '') ||
+        (stored.roster_notes || '') !== (planned.roster_notes || '');
       return {
         ...planned,
         id: stored.id,
-        staff_id: stored.staff_id || planned.staff_id,
-        bank_staff_id: stored.bank_staff_id || planned.bank_staff_id,
-        name: stored.staff_name || planned.name,
-        role: stored.staff_role || planned.role,
-        planned_code: stored.planned_code || planned.planned_code,
-        planned_duty: stored.planned_duty || planned.planned_duty,
-        planned_source: stored.planned_source || planned.planned_source,
-        planned_hours: stored.planned_hours || planned.planned_hours,
-        roster_notes: stored.roster_notes || planned.roster_notes,
         attendance_status: STATUS_LABELS[stored.attendance_status] ? stored.attendance_status : 'not_recorded',
         time_in: String(stored.time_in || '').slice(0, 5),
         time_out: String(stored.time_out || '').slice(0, 5),
         remarks: stored.remarks || '',
         updated_at: stored.updated_at,
-        is_new: false
+        is_new: false,
+        needsResave: plannedChanged
       };
     });
 
@@ -438,13 +441,15 @@
   }
 
   async function persistInitialRows(rows, date, options, request) {
-    const fresh = rows.filter(row => row.is_new);
+    // New rows, plus rows whose planned duty has moved on the roster since they
+    // were saved — both are written so the stored sheet matches the roster.
+    const fresh = rows.filter(row => row.is_new || row.needsResave);
     if (!fresh.length) {
       setGlobalSave('All changes saved', 'saved');
       return true;
     }
 
-    setGlobalSave('Creating today’s attendance sheet…', 'saving');
+    setGlobalSave(fresh.some(row => row.is_new) ? 'Creating today’s attendance sheet…' : 'Updating from the roster…', 'saving');
     fresh.forEach(row => setRowSave(row.person_key, 'Saving…', 'saving'));
     const actor = await actorFrom(options);
     const {error} = await options.db.from(TABLE).upsert(
@@ -461,6 +466,7 @@
 
     fresh.forEach(row => {
       row.is_new = false;
+      row.needsResave = false;
       setRowSave(row.person_key, 'Saved', 'saved');
     });
     setGlobalSave('All changes saved', 'saved');
