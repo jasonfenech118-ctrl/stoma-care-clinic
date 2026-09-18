@@ -38,6 +38,16 @@
     }[char]));
   }
 
+  // The ward's own name order (defined in the page as attOrder). Falls back to
+  // alphabetical when it is not available, so the sheet always reads the same way
+  // as the roster / attendance PDF rather than plain A–Z.
+  function nameOrder(name) {
+    return typeof root.attOrder === 'function' ? root.attOrder(name) : 99;
+  }
+  function byWardOrder(left, right) {
+    return (nameOrder(left.name) - nameOrder(right.name)) || left.name.localeCompare(right.name);
+  }
+
   function localDate(date = new Date()) {
     return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') +
       '-' + String(date.getDate()).padStart(2, '0');
@@ -237,7 +247,7 @@
         remarks: '',
         is_new: true
       };
-    }).sort((left, right) => left.name.localeCompare(right.name));
+    }).sort(byWardOrder);
   }
 
   function mergeSavedRows(plannedRows, savedRows) {
@@ -290,7 +300,7 @@
       });
     });
 
-    return merged.sort((left, right) => left.name.localeCompare(right.name));
+    return merged.sort(byWardOrder);
   }
 
   function statusOptions(selected) {

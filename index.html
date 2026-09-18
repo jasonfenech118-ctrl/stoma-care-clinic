@@ -3339,44 +3339,66 @@ function attMarksFor(r){
   if(cod)m.COD='X';
   return m;
 }
-function attFormRowHTML(r){
+function attFormRowHTML(r,idx){
   const g=attGrade(r.staff_name,r.staff_role), m=attMarksFor(r);
-  const tk=v=>`<td class="tk">${htmlSafe(v||'')}</td>`;
-  return `<tr><td class="nm">${htmlSafe(r.staff_name||'')}</td><td class="gr">${htmlSafe(g)}</td><td class="du">${htmlSafe(m.duty)}</td>`+
-    tk(m.P)+tk(m.SL)+tk(m.VL)+tk(m.ABS)+tk(m.COD)+tk(m.OT)+tk(m.TOIL)+`</tr>`;
+  const cells=[['P',m.P,'p'],['SL',m.SL,'sl'],['VL',m.VL,'vl'],['ABS',m.ABS,'ab'],['COD',m.COD,'cod'],['O.T',m.OT,'ot'],['TOIL',m.TOIL,'toil']];
+  const tks=cells.map(c=>`<td class="tk${c[1]?' mk mk-'+c[2]:''}">${htmlSafe(c[1]||'')}</td>`).join('');
+  return `<tr class="${idx%2?'alt':''}"><td class="nm">${htmlSafe(r.staff_name||'')}</td><td class="gr">${htmlSafe(g)}</td><td class="du">${htmlSafe(m.duty)}</td>${tks}</tr>`;
 }
-function attBlankRowsHTML(n){
+function attBlankRowsHTML(n,start){
   const cells='<td class="nm"></td><td class="gr"></td><td class="du"></td>'+ATT_COLS.map(()=>'<td class="tk"></td>').join('');
-  let s='';for(let i=0;i<n;i++)s+='<tr>'+cells+'</tr>';return s;
+  let s='';for(let i=0;i<n;i++)s+=`<tr class="${((start||0)+i)%2?'alt':''}">`+cells+'</tr>';return s;
 }
 function attSectionHTML(label){return `<tr class="sec"><td colspan="${3+ATT_COLS.length}">${htmlSafe(label)}</td></tr>`;}
+// A section that does not apply for this ward on this day — a big, faint,
+// watermark-style "Not Applicable" instead of empty ruled rows.
+function attNASectionHTML(label){
+  return attSectionHTML(label)+`<tr class="na-row"><td colspan="${3+ATT_COLS.length}" class="na"><span class="na-txt">Not&nbsp;Applicable</span></td></tr>`;
+}
 function attendanceSheetPrintHTML(dateStr,dbRows,who){
   const day=(dbRows||[]).slice().sort((a,b)=>attOrder(a.staff_name)-attOrder(b.staff_name)||String(a.staff_name||'').localeCompare(String(b.staff_name||'')));
   const head=`<tr class="cols"><th class="nm">Name &amp; Surname</th><th class="gr">Grade</th><th class="du">Duty</th>${ATT_COLS.map(c=>`<th class="tk">${htmlSafe(c)}</th>`).join('')}</tr>`;
   const grade=who&&who.name?attGrade(who.name,who.role):'';
   return `<style>
-    @page{size:A4 portrait;margin:9mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;font-size:11px;}
-    .ah{margin:0 0 6px;font-size:13px;} .ah b{font-weight:800;} .ah .u{font-weight:800;}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;}
-    th,td{border:1px solid #000;padding:2px 4px;font-size:10.5px;}
-    th{background:#eef2f7;font-weight:800;text-align:center;}
-    td.nm,th.nm{width:27%;text-align:left;} td.gr,th.gr{width:7%;text-align:center;} td.du,th.du{width:6%;text-align:center;}
-    td.tk,th.tk{text-align:center;} td.nm{height:17px;}
-    tr.sec td{background:#000;color:#fff;font-weight:800;text-align:left;}
-    .sig{margin-top:12px;font-size:11.5px;} .sig .ln{display:inline-block;border-bottom:1px solid #000;min-width:170px;padding:0 4px;}
+    @page{size:A4 portrait;margin:8mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
+    body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#1f2937;margin:0;font-size:11px;}
+    .doc-head{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,#12304f,#0d5c66);color:#fff;border-radius:8px;padding:9px 14px;margin:0 0 9px;}
+    .doc-head .dh-ward{font-size:15px;font-weight:800;letter-spacing:.3px;}
+    .doc-head .dh-sub{font-size:10.5px;opacity:.85;margin-top:1px;}
+    .doc-head .dh-date{font-size:15px;font-weight:800;background:rgba(255,255,255,.16);padding:5px 12px;border-radius:6px;}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #b9c4d0;border-radius:8px;overflow:hidden;}
+    th,td{border:1px solid #d3dbe4;padding:3px 5px;font-size:10.5px;}
+    thead th,tr.cols th{background:#12304f;color:#fff;font-weight:700;text-align:center;border-color:#22456a;}
+    td.nm,th.nm{width:28%;text-align:left;} td.gr,th.gr{width:7%;text-align:center;} td.du,th.du{width:6%;text-align:center;font-weight:800;}
+    td.tk,th.tk{text-align:center;} td.nm{height:18px;font-weight:600;}
+    tbody tr.alt td{background:#f4f8fc;}
+    tr.sec td{background:#0d7377;color:#fff;font-weight:800;letter-spacing:.4px;text-transform:uppercase;font-size:10.5px;text-align:left;}
+    td.mk{font-weight:800;}
+    td.mk-p{background:#e6f7ec;color:#0a5e33;} td.mk-ab{background:#fdecea;color:#a3241a;}
+    td.mk-sl{background:#fff4d6;color:#8a5a00;} td.mk-vl{background:#fff1c9;color:#7a4a00;}
+    td.mk-cod{background:#ede9fe;color:#5b21b6;} td.mk-ot{background:#e0f2f1;color:#0b6b64;} td.mk-toil{background:#e0f2f1;color:#0b6b64;}
+    tr.na-row td.na{height:82px;text-align:center;background:repeating-linear-gradient(45deg,#fbfcfe,#fbfcfe 12px,#f4f7fb 12px,#f4f7fb 24px);}
+    .na-txt{font-size:34px;font-weight:900;letter-spacing:8px;color:#d5dde7;text-transform:uppercase;}
+    .foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14px;font-size:11px;}
+    .foot .sig .ln{display:inline-block;border-bottom:1.5px solid #12304f;min-width:180px;padding:0 6px 1px;font-weight:700;}
+    .legend{font-size:9px;color:#6b7280;text-align:right;line-height:1.5;}
+    .legend b{color:#374151;}
   </style>
-  <div class="ah"><b>Ward Name:</b> <span class="u">Stoma Care Unit ${htmlSafe(attDMY(dateStr))}</span></div>
+  <div class="doc-head">
+    <div><div class="dh-ward">Ward Name: Stoma Care Unit</div><div class="dh-sub">MDH Stoma Care Clinic · Daily Staff Attendance</div></div>
+    <div class="dh-date">${htmlSafe(attDMY(dateStr))}</div>
+  </div>
   <table>
     ${head}
     ${attSectionHTML('Day Duty')}
-    ${day.map(attFormRowHTML).join('')}${attBlankRowsHTML(Math.max(2,16-day.length))}
-    ${attSectionHTML('Night Duty')}
-    ${attBlankRowsHTML(7)}
-    ${attSectionHTML('Constant Watch (if any)')}
-    ${attBlankRowsHTML(6)}
+    ${day.map(attFormRowHTML).join('')}${attBlankRowsHTML(Math.max(3,10-day.length),day.length)}
+    ${attNASectionHTML('Night Duty')}
+    ${attNASectionHTML('Constant Watch (if any)')}
   </table>
-  <div class="sig"><span class="ln">${htmlSafe(who&&who.name?who.name:'')}</span> &nbsp;&nbsp;&nbsp; Grade: <span class="ln">${htmlSafe(grade)}</span></div>`;
+  <div class="foot">
+    <div class="sig">Completed by <span class="ln">${htmlSafe(who&&who.name?who.name:'')}</span> &nbsp; Grade <span class="ln">${htmlSafe(grade)}</span></div>
+    <div class="legend"><b>P</b> Present · <b>SL</b> Sick leave · <b>VL</b> Vacation leave · <b>ABS</b> Absent<br><b>COD</b> Change of duty · <b>O.T</b> Overtime · <b>TOIL</b> Time off in lieu · <b>B</b> On duty · <b>O</b> Off</div>
+  </div>`;
 }
 async function attFetchDayRows(date){
   const{data,error}=await SB.from('daily_attendance').select('*').eq('attendance_date',date).order('staff_name');
