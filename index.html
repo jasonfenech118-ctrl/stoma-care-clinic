@@ -3311,6 +3311,21 @@ function attGrade(name,role){
   return role?role.split(/\s+/).filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,3):'';
 }
 function attOrder(name){return ATT_ORDER_BY_NAME[attNameKey(name)]||99;}
+// The person who completed the sheet, as a real name rather than a login email:
+// "jason.fenech@gov.mt" -> "Jason Fenech", preferring an exact staff spelling.
+function attDisplayName(who){
+  const raw=String((who&&(who.name||who.email))||'').trim();
+  if(!raw||/^logged-in user$/i.test(raw))return '';
+  // A proper name already (has a space, not an email) — keep it as given.
+  if(!raw.includes('@')&&/\s/.test(raw))return raw;
+  const local=raw.includes('@')?raw.split('@')[0]:raw;
+  const name=local.replace(/[._-]+/g,' ').trim().split(/\s+/)
+    .map(w=>w?w[0].toUpperCase()+w.slice(1).toLowerCase():'').join(' ');
+  try{const k=name.toLowerCase();
+    const st=(staffList||[]).find(s=>String(s.full_name||'').trim().toLowerCase()===k);
+    if(st)return st.full_name;}catch(e){}
+  return name;
+}
 function attDMY(ds){const d=new Date(ds+'T12:00:00');if(isNaN(d))return ds;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
 // Map one saved attendance row to the ward columns.
 function attMarksFor(r){
@@ -3358,7 +3373,8 @@ function attNASectionHTML(label){
 function attendanceSheetPrintHTML(dateStr,dbRows,who){
   const day=(dbRows||[]).slice().sort((a,b)=>attOrder(a.staff_name)-attOrder(b.staff_name)||String(a.staff_name||'').localeCompare(String(b.staff_name||'')));
   const head=`<tr class="cols"><th class="nm">Name &amp; Surname</th><th class="gr">Grade</th><th class="du">Duty</th>${ATT_COLS.map(c=>`<th class="tk">${htmlSafe(c)}</th>`).join('')}</tr>`;
-  const grade=who&&who.name?attGrade(who.name,who.role):'';
+  const signer=attDisplayName(who);
+  const grade=signer?attGrade(signer,who&&who.role):'';
   return `<style>
     @page{size:A4 portrait;margin:8mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box;}
     body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:#1f2937;margin:0;font-size:11px;}
@@ -3396,7 +3412,7 @@ function attendanceSheetPrintHTML(dateStr,dbRows,who){
     ${attNASectionHTML('Constant Watch (if any)')}
   </table>
   <div class="foot">
-    <div class="sig">Completed by <span class="ln">${htmlSafe(who&&who.name?who.name:'')}</span> &nbsp; Grade <span class="ln">${htmlSafe(grade)}</span></div>
+    <div class="sig">Completed by <span class="ln">${htmlSafe(signer)}</span> &nbsp; Grade <span class="ln">${htmlSafe(grade)}</span></div>
     <div class="legend"><b>P</b> Present · <b>SL</b> Sick leave · <b>VL</b> Vacation leave · <b>ABS</b> Absent<br><b>COD</b> Change of duty · <b>O.T</b> Overtime · <b>TOIL</b> Time off in lieu · <b>B</b> On duty · <b>O</b> Off</div>
   </div>`;
 }
