@@ -6421,11 +6421,21 @@ async function searchPatientsForRebook(){
   if(!box)return;
   if(q.length<2){box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';return;}
   box.innerHTML='<div class="patient-search-empty">Searching patients...</div>';
-  const{data,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type').order('surname',{ascending:true}).limit(700);
+  // Search the WHOLE registry, not just the first page of it. The old query
+  // read only the first 700 patients by surname, so anyone further down the
+  // alphabet could never be found here. Instead, every typed word must match a
+  // name, ID card or phone number somewhere on the patient, and the match runs
+  // in the database — so "abela anthony" and a surname late in the alphabet are
+  // both found, with no row cap to hide people behind.
+  const terms=q.split(/\s+/).filter(Boolean).slice(0,6);
+  let query=SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type');
+  terms.forEach(t=>{
+    const like='%'+t.replace(/[%,()]/g,'')+'%';
+    query=query.or(`first_name.ilike.${like},surname.ilike.${like},id_card.ilike.${like},phone_number.ilike.${like}`);
+  });
+  const{data,error}=await query.order('surname',{ascending:true}).limit(50);
   if(error){console.error('Patient search error:',error);box.innerHTML='<div class="patient-search-empty">Could not search patients.</div>';return;}
-  const matches=(data||[]).filter(p=>[
-    p.first_name,p.surname,p.id_card,p.phone_number,`${p.first_name||''} ${p.surname||''}`
-  ].join(' ').toLowerCase().includes(q)).slice(0,20);
+  const matches=(data||[]).slice(0,20);
   if(!matches.length){box.innerHTML='<div class="patient-search-empty">No matching patients found.</div>';return;}
   const ids=matches.map(p=>p.id);
   let appts=[];
@@ -19283,21 +19293,21 @@ function plOpen(id){
       ${parseInitialStomas(p).map(s=>f('Also at 1st op',`${s.type||'Stoma'}${s.location?' — '+s.location:''}${s.reversal_date?' · reversed '+fmtShortDate(s.reversal_date):''}`)).join('')}
       ${d('Surgery date',p.surgery_date)}
       ${disc('Discharge date',p.discharge_date)}
-      ${rflags.first?'':d('Reversed on',p.reversal_date)}
+      ${(!rflags.first&&p.reversal_date)?d('Reversed on',p.reversal_date):''}
       ${f('Operation and findings',p.findings,true)}
     </div>
     ${(()=>{let num=1;return evs.map((e,i)=>{const r=e.r;return `<div class="pl-sec">
       <h3>${e.kind==='ref'?'Stoma refashioning':'Stoma '+(++num)+' · new stoma'}</h3>
       ${e.kind==='ref'
         ? `${d('Refashioned on',r.formed_date)}${d('Stoma reversal date',r.closure_date)}${disc('Discharge date',r.discharge_date)}${f('Operation and findings',r.findings,true)}`
-        : `${f('Stoma type',r.type)}${d('Formed on',r.formed_date)}${f('Stoma location',r.location)}${disc('Discharge date',r.discharge_date)}${e.refashioned?'':d('Reversed on',r.reversal_date)}${f('Operation and findings',r.findings,true)}`}
+        : `${f('Stoma type',r.type)}${d('Formed on',r.formed_date)}${f('Stoma location',r.location)}${disc('Discharge date',r.discharge_date)}${(!e.refashioned&&r.reversal_date)?d('Reversed on',r.reversal_date):''}${f('Operation and findings',r.findings,true)}`}
     </div>`;}).join('');})()}
     <div class="pl-sec">
       <h3>Follow-up</h3>
       ${f('Status',outText)}
       ${f('Owner',p.followup_owner)}
       ${f('Due',Number(p.followup_due_month)?`${followupMonthName(Number(p.followup_due_month))} ${p.followup_year||''}`.trim():'')}
-      ${d('Date of death',p.deceased_date)}
+      ${p.deceased_date?d('Date of death',p.deceased_date):''}
       ${f('Locality',p.locality)}
       ${d('Date of birth',p.date_of_birth)}
     </div>
