@@ -16,16 +16,21 @@
     til_off: 'Time off in lieu',
     check: 'Needs checking'
   };
+  // Attendance is only marked for people on duty: tap Present (or Absent if a
+  // rostered person did not come in). Anyone who is off or on leave is left with
+  // no selection — their status already comes from the roster.
   const STATUS_OPTIONS = [
-    {value: 'not_recorded', label: 'Not recorded'},
+    {value: 'not_recorded', label: '—'},
     {value: 'present', label: 'Present'},
-    {value: 'late', label: 'Late'},
-    {value: 'left_early', label: 'Left early'},
-    {value: 'absent', label: 'Absent'},
-    {value: 'off_leave', label: 'Off / leave'}
+    {value: 'absent', label: 'Absent'}
   ];
   const STATUS_LABELS = Object.fromEntries(STATUS_OPTIONS.map(option => [option.value, option.label]));
   const LEAVE_CODES = new Set(['sick_leave', 'maternity_leave', 'study_leave', 'annual_leave', 'public_holiday']);
+  // A person the roster shows as not working today (off, or on any leave).
+  function isPlannedOff(row) {
+    return row.working === false || row.planned_code === 'off' ||
+      row.planned_code === 'til_off' || LEAVE_CODES.has(row.planned_code);
+  }
   let loadRequest = 0;
   let recordRequest = 0;
   let rowsByKey = new Map();
@@ -241,7 +246,7 @@
         planned_hours: hours,
         roster_notes: notes,
         working,
-        attendance_status: working === false ? 'off_leave' : 'not_recorded',
+        attendance_status: 'not_recorded',
         time_in: '',
         time_out: '',
         remarks: '',
@@ -343,14 +348,12 @@
   }
 
   function countsFromRows(rows) {
-    const counts = {total: rows.length, present: 0, late: 0, early: 0, absent: 0, off: 0, pending: 0};
+    const counts = {total: rows.length, present: 0, absent: 0, off: 0, pending: 0};
     rows.forEach(row => {
       if (row.attendance_status === 'present') counts.present++;
-      else if (row.attendance_status === 'late') counts.late++;
-      else if (row.attendance_status === 'left_early') counts.early++;
       else if (row.attendance_status === 'absent') counts.absent++;
-      else if (row.attendance_status === 'off_leave') counts.off++;
-      else counts.pending++;
+      else if (isPlannedOff(row)) counts.off++;   // rostered off / on leave — no mark needed
+      else counts.pending++;                       // rostered on duty, not yet marked
     });
     return counts;
   }
@@ -361,10 +364,10 @@
       '</strong><span>Staff listed</span></div>' +
       '<div class="da-stat da-stat-present"><strong>' + counts.present +
       '</strong><span>Present</span></div>' +
-      '<div class="da-stat da-stat-attention"><strong>' + (counts.late + counts.early) +
-      '</strong><span>Late / left early</span></div>' +
       '<div class="da-stat da-stat-absent"><strong>' + counts.absent +
       '</strong><span>Absent</span></div>' +
+      '<div class="da-stat"><strong>' + counts.off +
+      '</strong><span>Off / leave</span></div>' +
       '<div class="da-stat"><strong>' + counts.pending +
       '</strong><span>Not recorded</span></div>';
   }
@@ -608,7 +611,6 @@
           date: row.attendance_date,
           rows: 0,
           present: 0,
-          attention: 0,
           absent: 0,
           off: 0,
           pending: 0,
@@ -618,9 +620,8 @@
       const group = groups.get(row.attendance_date);
       group.rows++;
       if (row.attendance_status === 'present') group.present++;
-      else if (row.attendance_status === 'late' || row.attendance_status === 'left_early') group.attention++;
       else if (row.attendance_status === 'absent') group.absent++;
-      else if (row.attendance_status === 'off_leave') group.off++;
+      else if (isPlannedOff(row)) group.off++;
       else group.pending++;
       const stamp = row.updated_at || row.created_at || '';
       if (stamp > group.last_saved) group.last_saved = stamp;
@@ -643,13 +644,12 @@
       return '<div class="da-message" role="status">No saved attendance sheets match this date.</div>';
     }
     return '<div class="da-records-wrap"><table class="da-records">' +
-      '<thead><tr><th>Date</th><th>Staff</th><th>Present</th><th>Late / left early</th>' +
+      '<thead><tr><th>Date</th><th>Staff</th><th>Present</th>' +
       '<th>Absent</th><th>Off / leave</th><th>Not recorded</th><th>Last saved</th><th></th></tr></thead>' +
       '<tbody>' + groups.map(group =>
         '<tr><td data-label="Date"><strong>' + escape(group.date) + '</strong></td>' +
         '<td data-label="Staff">' + group.rows + '</td>' +
         '<td data-label="Present">' + group.present + '</td>' +
-        '<td data-label="Late / left early">' + group.attention + '</td>' +
         '<td data-label="Absent">' + group.absent + '</td>' +
         '<td data-label="Off / leave">' + group.off + '</td>' +
         '<td data-label="Not recorded">' + group.pending + '</td>' +
