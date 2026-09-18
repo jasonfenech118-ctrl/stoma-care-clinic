@@ -3332,7 +3332,12 @@ function attMarksFor(r){
   const st=r.attendance_status||'not_recorded', pc=r.planned_code||'';
   const cod=/^COD-/.test(String(r.roster_notes||''))||/change of duty/i.test(String(r.planned_source||''));
   const m={duty:'',P:'',SL:'',VL:'',ABS:'',COD:'',OT:'',TOIL:''};
-  if(pc==='working'||pc==='overtime')m.duty='B'; else if(pc==='off')m.duty='O';
+  // Duty shows the rostered baseline. A working day — and any leave taken off a
+  // working day (sick, annual, maternity, study, public holiday) — is a "B"
+  // baseline duty. Only a genuine rest/off day (or time off in lieu) is "O".
+  const OFF_CODES={off:1,til_off:1};
+  const DUTY_CODES={working:1,overtime:1,sick_leave:1,annual_leave:1,maternity_leave:1,study_leave:1,public_holiday:1,til_in:1};
+  if(OFF_CODES[pc])m.duty='O'; else if(DUTY_CODES[pc])m.duty='B';
   if(st==='present')m.P='P';
   else if(st==='late')m.P='P (late'+(r.time_in?' '+String(r.time_in).slice(0,5):'')+')';
   else if(st==='left_early')m.P='P (early'+(r.time_out?' '+String(r.time_out).slice(0,5):'')+')';
