@@ -6936,7 +6936,15 @@ async function fetchAllRows(buildQuery){
   const out=[];
   for(let page=0;page<50;page++){
     const from=page*SUPABASE_PAGE_SIZE;
-    const{data,error}=await buildQuery().range(from,from+SUPABASE_PAGE_SIZE-1);
+    // A stable sort key is essential when paging with range()/OFFSET. Without a
+    // deterministic order, Postgres may hand back rows in a different order on
+    // each page, which quietly returns some rows twice and DROPS others — so a
+    // registry of over 1000 patients would come back missing a random handful
+    // every time it loads, and the same patient could be present one moment and
+    // gone the next. Ordering by the primary key as the final tiebreaker makes
+    // the pages line up so the whole table is read exactly once. Every table
+    // read through here (patients, appointments) has an id column.
+    const{data,error}=await buildQuery().order('id',{ascending:true}).range(from,from+SUPABASE_PAGE_SIZE-1);
     if(error)return {rows:out,error};
     const batch=data||[];
     out.push(...batch);
