@@ -3435,14 +3435,14 @@ async function downloadDailyAttendancePdf(){
   let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load the sheet: '+(e.message||e)+'\n\nRun sql/add-daily-attendance.sql once in Supabase, and make sure you are signed in.');return;}
   if(!rows.length){alert('No attendance is saved for this day yet — open the sheet (it saves automatically), then download.');return;}
   let who={};try{who=await getCurrentUserForAudit();}catch(e){}
-  bcPrintWindow(`Daily Attendance — ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
+  await downloadHtmlAsPdf(`Daily Attendance ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
 async function downloadAttendanceRecordPdf(date){
   if(!DailyAttendance.validDate(date)){alert('Invalid date.');return;}
   let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load that day: '+(e.message||e));return;}
   if(!rows.length){alert('No saved rows for that day.');return;}
   let who={};try{who=await getCurrentUserForAudit();}catch(e){}
-  bcPrintWindow(`Daily Attendance — ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
+  await downloadHtmlAsPdf(`Daily Attendance ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
 function openDailyAttendanceRecord(date){
   const input=document.getElementById('da-date');
@@ -7329,6 +7329,50 @@ function bcDropUnder(x,y){
   const day=el.closest('#bc-left .bc-day[data-date]');
   if(day)return {type:'day',el:day};
   return null;
+}
+function ensureJsPDF(){
+  if(window.jspdf&&window.jspdf.jsPDF)return Promise.resolve(window.jspdf);
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+    s.onload=()=>window.jspdf&&window.jspdf.jsPDF?resolve(window.jspdf):reject(new Error('PDF library failed to load'));
+    s.onerror=()=>reject(new Error('Could not load the PDF library — check the connection.'));
+    document.head.appendChild(s);
+  });
+}
+// Save a self-contained sheet as a real PDF file (download, no print dialog).
+// The sheet is laid out inside a hidden iframe so its <style> stays isolated
+// from the live page, photographed with html2canvas, then written to an A4 PDF.
+// Falls back to the print window if the libraries cannot be reached (offline).
+async function downloadHtmlAsPdf(filename,inner){
+  let H,JS;
+  try{H=await ensureHtml2Canvas();JS=await ensureJsPDF();}
+  catch(e){bcPrintWindow(filename,inner);return;}
+  const iframe=document.createElement('iframe');
+  iframe.setAttribute('aria-hidden','true');
+  iframe.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  try{
+    const doc=iframe.contentDocument||iframe.contentWindow.document;
+    doc.open();
+    doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body>'+inner+'</body></html>');
+    doc.close();
+    await new Promise(r=>setTimeout(r,300));
+    const canvas=await H(doc.body,{backgroundColor:'#ffffff',scale:2,useCORS:true,windowWidth:794});
+    const img=canvas.toDataURL('image/jpeg',0.95);
+    const pdf=new JS.jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),M=16;
+    const iw=pw-M*2,ih=canvas.height*(iw/canvas.width);
+    if(ih<=ph-M*2){pdf.addImage(img,'JPEG',M,M,iw,ih);}
+    else{
+      const fih=canvas.height*(pw/canvas.width);
+      pdf.addImage(img,'JPEG',0,0,pw,fih);
+      let yy=ph;
+      while(yy<fih){pdf.addPage();pdf.addImage(img,'JPEG',0,-yy,pw,fih);yy+=ph;}
+    }
+    pdf.save(String(filename||'download').replace(/[\/\\:*?"<>|]+/g,'-')+'.pdf');
+  }catch(e){bcPrintWindow(filename,inner);}
+  finally{iframe.remove();}
 }
 function bcPrintWindow(title,inner){
   const w=window.open('','_blank');
