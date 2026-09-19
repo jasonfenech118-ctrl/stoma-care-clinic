@@ -4,6 +4,14 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MDH Stoma Care Clinic — Roster</title>
+<!-- Home-screen install for the Quick Look patient lookup (opens at #lookup). -->
+<link rel="manifest" href="quicklook.webmanifest"/>
+<link rel="apple-touch-icon" href="apple-touch-quicklook.png"/>
+<meta name="theme-color" content="#12304f"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="Quick Look"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -603,6 +611,22 @@ body.pl-only .pl-wrap{padding-top:14px;}
 .pl-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 12px;}
 .pl-title{font-size:18px;font-weight:900;color:var(--navy);}
 .pl-exit{padding:9px 13px;min-height:40px;border:1.5px solid var(--border);border-radius:10px;background:#fff;color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+#ql-install-btn{background:#4338ca;border-color:#4338ca;color:#fff;white-space:nowrap;}
+body.qli-standalone #ql-install-btn{display:none;}
+.qli-sheet{position:fixed;inset:0;z-index:9000;background:rgba(15,23,32,.55);display:none;align-items:flex-end;justify-content:center;}
+.qli-sheet.show{display:flex;}
+.qli-card{background:#fff;color:#1f2937;width:100%;max-width:460px;border-radius:16px 16px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -6px 24px rgba(0,0,0,.25);font-family:'Inter',sans-serif;}
+.qli-title{font-weight:800;font-size:16px;margin-bottom:6px;}
+.qli-plat{display:none;}
+.qli-sheet[data-plat="android"] .qli-plat.android{display:block;}
+.qli-sheet[data-plat="ios"] .qli-plat.ios{display:block;}
+.qli-sheet[data-plat="other"] .qli-plat.other{display:block;}
+.qli-h{font-weight:700;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;margin-top:6px;}
+.qli-card ol{margin:8px 0 0;padding-left:20px;line-height:1.6;font-size:14.5px;}
+.qli-ic{display:inline-block;background:#eef2f7;border:1px solid #e2e8f0;border-radius:6px;padding:0 6px;font-weight:700;}
+.qli-close{margin-top:16px;width:100%;min-height:46px;border:0;border-radius:11px;background:#4338ca;color:#fff;
+  font-weight:800;font-size:15px;cursor:pointer;font-family:'Inter',sans-serif;}
 .pl-search{position:relative;margin-bottom:12px;}
 .pl-search input{width:100%;height:52px;padding:0 44px 0 15px;font-size:16px;font-weight:600;color:var(--navy);
   border:2px solid var(--border);border-radius:14px;background:#fff;font-family:'Inter',sans-serif;-webkit-appearance:none;}
@@ -2433,9 +2457,28 @@ body.on-quicklook .ql-fab{display:none !important;}
       <div class="pl-wrap">
         <div class="pl-top">
           <div class="pl-title">📱 Quick Look</div>
-          <button class="pl-exit" onclick="exitPhoneLookup()">Full app</button>
+          <button class="pl-exit" id="ql-install-btn" onclick="qlInstall()">＋ Add to phone</button>
         </div>
         <div id="pl-body"><div class="pl-note">Loading the registry…</div></div>
+      </div>
+    </div>
+
+    <!-- Add Quick Look to the home screen (like MediLink) -->
+    <div id="ql-sheet" class="qli-sheet" onclick="if(event.target===this)qlCloseSheet()">
+      <div class="qli-card" role="dialog" aria-modal="true" aria-label="Add Quick Look to Home screen">
+        <div class="qli-title">Add Quick Look to your Home Screen</div>
+        <div class="qli-plat android"><div class="qli-h">On Android — Chrome</div>
+          <ol><li>Tap the menu <span class="qli-ic">⋮</span> at the top-right.</li>
+          <li>Tap <b>Add to Home screen</b> (or <b>Install app</b>).</li>
+          <li>Tap <b>Add</b> / <b>Install</b> — a Quick Look button appears on your home screen.</li></ol></div>
+        <div class="qli-plat ios"><div class="qli-h">On iPhone / iPad — Safari</div>
+          <ol><li>Tap the <b>Share</b> button <span class="qli-ic">↑</span> at the bottom.</li>
+          <li>Scroll and tap <b>Add to Home Screen</b>.</li>
+          <li>Tap <b>Add</b> — a Quick Look button appears on your home screen.</li></ol></div>
+        <div class="qli-plat other"><div class="qli-h">On this device</div>
+          <ol><li>Open your browser's menu.</li>
+          <li>Choose <b>Install</b> or <b>Add to Home screen</b>.</li></ol></div>
+        <button class="qli-close" type="button" onclick="qlCloseSheet()">Got it</button>
       </div>
     </div>
 
@@ -19224,7 +19267,11 @@ function printRegistryMap(){
 let plRows=[], plLoaded=false, plTimer=null;
 async function openPhoneLookup(){
   document.body.classList.add('pl-only');
-  if(location.hash!=='#lookup')history.replaceState(null,'','#lookup');
+  // pushState (not replace) so the phone's Back button leaves Quick Look — this
+  // is the way out now that the "Full app" button is gone.
+  if(location.hash!=='#lookup'&&location.hash!=='#phone')history.pushState(null,'','#lookup');
+  const ib=document.getElementById('ql-install-btn');
+  if(ib&&qlIsStandalone())document.body.classList.add('qli-standalone');
   const body=document.getElementById('pl-body');
   if(!plLoaded){
     if(body)body.innerHTML='<div class="pl-note">Loading the registry…</div>';
@@ -19243,6 +19290,29 @@ function exitPhoneLookup(){
   if(location.hash)history.replaceState(null,'','#');
   switchTab('patients');
 }
+/* ── Add Quick Look to the Home Screen (mirrors MediLink) ──────────────────────
+   The button fires the browser's native "Add to Home screen?" prompt when it is
+   offered, otherwise it shows the per-platform steps. Installed from #lookup, the
+   home-screen icon opens straight to Quick Look. */
+var qlDeferred=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();qlDeferred=e;});
+function qlIsIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
+function qlPlatform(){return qlIsIOS()?'ios':(/android/i.test(navigator.userAgent)?'android':'other');}
+function qlIsStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}catch(e){return false;}}
+function qlInstall(){
+  if(qlDeferred){var e=qlDeferred;qlDeferred=null;e.prompt();if(e.userChoice&&e.userChoice.catch)e.userChoice.catch(function(){});return;}
+  var s=document.getElementById('ql-sheet');
+  if(s){s.setAttribute('data-plat',qlPlatform());s.classList.add('show');}
+}
+function qlCloseSheet(){var s=document.getElementById('ql-sheet');if(s)s.classList.remove('show');}
+// Back button (or any hash change away from Quick Look) leaves the locked view.
+window.addEventListener('hashchange',function(){
+  var h=location.hash||'';
+  if(document.body.classList.contains('pl-only')&&!/^#(lookup|phone)$/.test(h)){
+    document.body.classList.remove('pl-only');
+    switchTab('patients');
+  }
+});
 function plRenderSearch(keep){
   const body=document.getElementById('pl-body');
   if(!body)return;
