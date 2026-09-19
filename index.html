@@ -3408,6 +3408,15 @@ function attDisplayName(who){
   return name;
 }
 function attDMY(ds){const d=new Date(ds+'T12:00:00');if(isNaN(d))return ds;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+// A clean "HH:MM–HH:MM" window for the sheet: the rostered TIL / overtime hours
+// (planned_hours) when known, otherwise whatever time in / time out was recorded.
+// Used so lieu and overtime cells show real timing instead of a bare "X".
+function attTimeRange(r){
+  const planned=String(r.planned_hours||'').trim();
+  if(planned)return planned;
+  const a=String(r.time_in||'').slice(0,5), b=String(r.time_out||'').slice(0,5);
+  return a&&b?a+'–'+b:(a||b||'');
+}
 // Map one saved attendance row to the ward columns.
 function attMarksFor(r){
   const st=r.attendance_status||'not_recorded', pc=r.planned_code||'';
@@ -3429,13 +3438,13 @@ function attMarksFor(r){
     else if(pc==='maternity_leave')m.VL='Maternity Leave';
     else if(pc==='study_leave')m.VL='Study Leave';
     else if(pc==='public_holiday')m.VL='PH';
-    else if(pc==='overtime')m.OT=r.planned_hours||'X';
-    else if(pc==='til_in')m.OT='TIL-In'+(r.planned_hours?' '+r.planned_hours:'');
-    else if(pc==='til_off')m.TOIL='X';
+    else if(pc==='overtime')m.OT=attTimeRange(r)||'X';
+    else if(pc==='til_in')m.OT='TIL-In'+(attTimeRange(r)?' '+attTimeRange(r):'');
+    else if(pc==='til_off')m.TOIL='TIL-Off'+(attTimeRange(r)?' '+attTimeRange(r):'');
   }
   if(st==='present'||st==='late'||st==='left_early'){
-    if(pc==='overtime'&&!m.OT)m.OT=r.planned_hours||'X';
-    else if(pc==='til_in'&&!m.OT)m.OT='TIL-In'+(r.planned_hours?' '+r.planned_hours:'');
+    if(pc==='overtime'&&!m.OT)m.OT=attTimeRange(r)||'X';
+    else if(pc==='til_in'&&!m.OT)m.OT='TIL-In'+(attTimeRange(r)?' '+attTimeRange(r):'');
   }
   if(cod)m.COD='X';
   return m;
@@ -3479,6 +3488,7 @@ function attendanceSheetPrintHTML(dateStr,dbRows,who){
     td.mk-p{background:#e6f7ec;color:#0a5e33;} td.mk-ab{background:#fdecea;color:#a3241a;}
     td.mk-sl{background:#fff4d6;color:#8a5a00;} td.mk-vl{background:#fff1c9;color:#7a4a00;}
     td.mk-cod{background:#ede9fe;color:#5b21b6;} td.mk-ot{background:#e0f2f1;color:#0b6b64;} td.mk-toil{background:#e0f2f1;color:#0b6b64;}
+    td.mk-ot,td.mk-toil{font-size:9px;line-height:1.15;letter-spacing:0;font-weight:700;word-break:keep-all;}
     tr.na-row td.na{height:82px;text-align:center;background:repeating-linear-gradient(45deg,#fbfcfe,#fbfcfe 12px,#f4f7fb 12px,#f4f7fb 24px);}
     .na-txt{font-size:34px;font-weight:900;letter-spacing:8px;color:#d5dde7;text-transform:uppercase;}
     .foot{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:14px;font-size:11px;}
