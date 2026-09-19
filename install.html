@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-<title>Install Quick Look</title>
+<title>Get Quick Look</title>
 <meta name="theme-color" content="#12304f"/>
+<meta name="description" content="Sign in, then add the MDH Stoma Care Quick Look patient lookup to your phone's home screen."/>
 <link rel="manifest" href="quicklook.webmanifest"/>
 <link rel="apple-touch-icon" href="apple-touch-quicklook.png"/>
 <link rel="icon" href="assets/ql-192.png"/>
@@ -12,26 +13,36 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="Quick Look"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  :root{--navy:#12304f;--indigo:#4338ca;--ink:#1f2937;--muted:#6b7280;--line:#e2e8f0;--bg:#eef1f8;--card:#fff;}
+  :root{--navy:#12304f;--teal:#0d5c66;--indigo:#4338ca;--ink:#1f2937;--muted:#6b7280;--line:#e2e8f0;--bg:#eef1f8;--card:#fff;--red:#b91c1c;}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
   body{font-family:'Segoe UI',Arial,Helvetica,sans-serif;color:var(--ink);
     background:radial-gradient(120% 80% at 50% 0,#e8ebff 0,var(--bg) 60%);min-height:100vh;
     display:flex;align-items:center;justify-content:center;
     padding:calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));}
-  .wrap{width:100%;max-width:420px;text-align:center;}
-  .app-icon{width:112px;height:112px;border-radius:26px;box-shadow:0 12px 30px rgba(30,30,80,.28);}
-  h1{margin:18px 0 2px;font-size:26px;font-weight:800;color:var(--navy);letter-spacing:.2px;}
-  .sub{margin:0 0 22px;color:var(--muted);font-size:14px;}
+  .wrap{width:100%;max-width:400px;text-align:center;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px 22px;box-shadow:0 6px 24px rgba(20,30,60,.08);}
+  .app-icon{width:104px;height:104px;border-radius:24px;box-shadow:0 12px 30px rgba(30,30,80,.28);}
+  h1{margin:16px 0 2px;font-size:25px;font-weight:800;color:var(--navy);letter-spacing:.2px;}
+  .sub{margin:0 0 20px;color:var(--muted);font-size:14px;}
+  form{display:flex;flex-direction:column;gap:10px;margin-top:4px;text-align:left;}
+  label{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:-4px;}
+  input{width:100%;min-height:50px;border:1px solid var(--line);border-radius:12px;padding:0 14px;font-size:16px;background:#fbfcfe;}
+  input:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px rgba(67,56,202,.15);}
   .btn{width:100%;min-height:56px;border:0;border-radius:16px;background:var(--indigo);color:#fff;
-    font-size:17px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px;
-    box-shadow:0 8px 22px rgba(67,56,202,.35);}
+    font-size:17px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    box-shadow:0 8px 22px rgba(67,56,202,.35);margin-top:6px;}
   .btn:active{transform:translateY(1px);}
-  .btn[disabled]{opacity:.6;}
+  .btn[disabled]{opacity:.55;box-shadow:none;}
+  .btn-logo{width:26px;height:26px;border-radius:7px;background:#fff;flex:0 0 auto;box-shadow:0 1px 3px rgba(0,0,0,.25);}
   .status{min-height:20px;margin-top:12px;font-size:13px;color:var(--muted);}
-  .open{display:inline-block;margin-top:20px;color:var(--indigo);font-weight:700;font-size:14px;text-decoration:none;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px 22px;box-shadow:0 6px 24px rgba(20,30,60,.08);}
+  .err{min-height:18px;margin-top:2px;font-size:13px;color:var(--red);font-weight:600;}
+  .open{display:inline-block;margin-top:18px;color:var(--indigo);font-weight:800;font-size:14px;text-decoration:none;}
+  .who{font-size:12px;color:var(--muted);margin-top:14px;}
+  .who a{color:var(--indigo);font-weight:700;text-decoration:none;cursor:pointer;}
+  .hide{display:none !important;}
   /* fallback instructions sheet */
   .sheet{position:fixed;inset:0;z-index:20;background:rgba(15,23,32,.55);display:none;align-items:flex-end;justify-content:center;}
   .sheet.show{display:flex;}
@@ -54,9 +65,24 @@
       <img class="app-icon" src="assets/ql-512.png" alt="Quick Look"/>
       <h1>Quick Look</h1>
       <div class="sub">MDH Stoma Care — fast patient lookup</div>
-      <button id="go" class="btn"><span>＋</span> Add to phone</button>
-      <div class="status" id="status">Getting ready…</div>
-      <a class="open" href="quicklook.html">Just open Quick Look instead →</a>
+
+      <!-- STEP 1 — sign in -->
+      <form id="login" onsubmit="return doLogin(event)">
+        <label for="email">Clinic email</label>
+        <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="name@clinic" required/>
+        <label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="current-password" placeholder="Password" required/>
+        <button class="btn" id="signin" type="submit">Sign in</button>
+        <div class="err" id="err"></div>
+      </form>
+
+      <!-- STEP 2 — download to phone (shown after sign in) -->
+      <div id="install" class="hide">
+        <button id="go" class="btn"><img class="btn-logo" src="assets/ql-192.png" alt=""/> Download to phone</button>
+        <div class="status" id="status">Getting ready…</div>
+        <a class="open" href="quicklook.html">Just open Quick Look instead →</a>
+        <div class="who">Signed in as <span id="whoami">…</span> · <a onclick="signOut()">Not you?</a></div>
+      </div>
     </div>
   </div>
 
@@ -66,32 +92,90 @@
       <div class="plat android"><div class="ph">On Android — Chrome</div>
         <ol><li>Tap the menu <span class="ic">⋮</span> at the top-right.</li>
         <li>Tap <b>Add to Home screen</b> (or <b>Install app</b>).</li>
-        <li>Tap <b>Add</b> / <b>Install</b>.</li></ol></div>
+        <li>Tap <b>Add</b> / <b>Install</b> — a Quick Look button appears on your home screen.</li></ol></div>
       <div class="plat ios"><div class="ph">On iPhone / iPad — Safari</div>
         <ol><li>Tap the <b>Share</b> button <span class="ic">↑</span> at the bottom.</li>
         <li>Scroll and tap <b>Add to Home Screen</b>.</li>
-        <li>Tap <b>Add</b>.</li></ol></div>
+        <li>Tap <b>Add</b> — a Quick Look button appears on your home screen.</li></ol></div>
       <div class="plat other"><div class="ph">On this device</div>
         <ol><li>Open your browser's menu.</li>
         <li>Choose <b>Install</b> or <b>Add to Home screen</b>.</li></ol></div>
       <button class="sheet-close" type="button" onclick="closeSheet()">Got it</button>
     </div>
   </div>
+
 <script>
-  var deferred=null, btn=document.getElementById('go'), statusEl=document.getElementById('status');
+  // Same Supabase project and publishable key as the clinic app. The auth
+  // session lives in this origin's storage, so signing in here means the
+  // Quick Look icon opens straight in with no second login.
+  var safeAuthStorage=(function(){
+    var mem={},memStore={getItem:function(k){return k in mem?mem[k]:null;},setItem:function(k,v){mem[k]=String(v);},removeItem:function(k){delete mem[k];}};
+    try{var p='__sb_probe__';localStorage.setItem(p,'1');localStorage.removeItem(p);
+      return {getItem:function(k){try{return localStorage.getItem(k);}catch(e){return memStore.getItem(k);}},
+        setItem:function(k,v){try{localStorage.setItem(k,v);}catch(e){memStore.setItem(k,v);}},
+        removeItem:function(k){try{localStorage.removeItem(k);}catch(e){memStore.removeItem(k);}}};
+    }catch(e){return memStore;}
+  })();
+  var SB=supabase.createClient(
+    'https://gkixdimdmechujeqzfkl.supabase.co',
+    'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS',
+    {auth:{storage:safeAuthStorage,persistSession:true,autoRefreshToken:true}}
+  );
+
+  var loginEl=document.getElementById('login'), installEl=document.getElementById('install'),
+      errEl=document.getElementById('err'), statusEl=document.getElementById('status'),
+      btn=document.getElementById('go'), deferred=null;
+
   function isIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
   function platform(){return isIOS()?'ios':(/android/i.test(navigator.userAgent)?'android':'other');}
   function isStandalone(){try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}}
   function setStatus(t){statusEl.textContent=t||'';}
 
-  window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;setStatus('Ready — tap to install.');});
-  window.addEventListener('appinstalled',function(){deferred=null;btn.textContent='✓ Added to your home screen';btn.disabled=true;setStatus('Open Quick Look from your home screen.');});
+  // The browser offers the automatic install here — capture it for the button.
+  window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferred=e;if(!installEl.classList.contains('hide'))setStatus('Ready — tap to add it to your phone.');});
+  window.addEventListener('appinstalled',function(){deferred=null;btn.innerHTML='✓ Added to your home screen';btn.disabled=true;setStatus('Open Quick Look from your home screen.');});
+
+  // ── Step 1: sign in ────────────────────────────────────────────────
+  async function doLogin(ev){
+    if(ev)ev.preventDefault();
+    errEl.textContent='';
+    var email=document.getElementById('email').value.trim();
+    var pass=document.getElementById('pass').value;
+    var sb=document.getElementById('signin');
+    sb.disabled=true; sb.textContent='Signing in…';
+    try{
+      var r=await SB.auth.signInWithPassword({email:email,password:pass});
+      if(r.error){errEl.textContent='Invalid email or password.';sb.disabled=false;sb.textContent='Sign in';return false;}
+      showInstall(r.data&&r.data.user);
+    }catch(e){errEl.textContent='Could not sign in. Check your connection and try again.';sb.disabled=false;sb.textContent='Sign in';}
+    return false;
+  }
+  window.doLogin=doLogin;
+
+  async function signOut(){try{await SB.auth.signOut();}catch(e){}location.reload();}
+  window.signOut=signOut;
+
+  // ── Step 2: the download / add-to-phone button ─────────────────────
+  function showInstall(user){
+    loginEl.classList.add('hide');
+    installEl.classList.remove('hide');
+    var who=document.getElementById('whoami');
+    if(who)who.textContent=(user&&user.email)||'this device';
+    if(isStandalone()){
+      btn.innerHTML='✓ Already installed'; btn.disabled=true;
+      setStatus('You are already using the installed Quick Look app.');
+    }else if(deferred){
+      setStatus('Ready — tap to add it to your phone.');
+    }else{
+      setStatus(isIOS()?'Tap the button for the steps to add it.':'Tap the button to add it to your phone.');
+    }
+  }
 
   function fire(){
     var e=deferred; deferred=null;
     e.prompt();
     e.userChoice.then(function(c){
-      setStatus(c&&c.outcome==='accepted' ? 'Installing…' : 'Not added — tap Add to phone to try again.');
+      setStatus(c&&c.outcome==='accepted' ? 'Adding to your phone…' : 'Not added — tap Download to phone to try again.');
     }).catch(function(){});
   }
   function openSheet(){var s=document.getElementById('sheet');s.setAttribute('data-plat',platform());s.classList.add('show');}
@@ -100,22 +184,22 @@
   btn.addEventListener('click',function(){
     if(deferred){fire();return;}
     // Give a just-loaded page a moment for the browser to offer its prompt,
-    // then fire it automatically; otherwise fall back to the steps.
-    setStatus('Preparing the install…');
+    // then fire it automatically; otherwise fall back to the per-phone steps.
+    setStatus('Preparing…');
     var waited=0, iv=setInterval(function(){
       if(deferred){clearInterval(iv);fire();}
       else if((waited+=200)>=1800){clearInterval(iv);setStatus('');openSheet();}
     },200);
   });
 
-  if(isStandalone()){
-    btn.textContent='✓ Already installed'; btn.disabled=true;
-    setStatus('You are already using the installed app.');
-  } else {
-    // No beforeinstallprompt on iOS; guide the tap. On Android it usually arrives
-    // within a moment and flips the status to "Ready".
-    setStatus(isIOS() ? 'Tap the button for the steps to add it.' : 'Tap the button to install.');
-  }
+  // On load: if already signed in (e.g. from the app on this phone), skip
+  // straight to the download button.
+  (async function(){
+    try{
+      var s=await SB.auth.getSession();
+      if(s&&s.data&&s.data.session){showInstall(s.data.session.user);}
+    }catch(e){}
+  })();
 </script>
 </body>
 </html>
