@@ -19324,14 +19324,29 @@ function exitPhoneLookup(){
    home-screen icon opens straight to Quick Look. */
 var qlDeferred=null;
 window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();qlDeferred=e;});
+// Register a minimal, network-only service worker so the browser treats the app
+// as installable and offers its native "Install app" prompt for Quick Look. It
+// caches nothing, so it can never keep a stale page on screen.
+if('serviceWorker' in navigator){
+  try{navigator.serviceWorker.register('quicklook-sw.js').catch(function(){});}catch(e){}
+}
 function qlIsIOS(){return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
 function qlPlatform(){return qlIsIOS()?'ios':(/android/i.test(navigator.userAgent)?'android':'other');}
 function qlIsStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}catch(e){return false;}}
+function qlFireInstall(){var e=qlDeferred;qlDeferred=null;e.prompt();if(e.userChoice&&e.userChoice.catch)e.userChoice.catch(function(){});}
+function qlShowSteps(){var s=document.getElementById('ql-sheet');if(s){s.setAttribute('data-plat',qlPlatform());s.classList.add('show');}}
 function qlInstall(){
-  if(qlDeferred){var e=qlDeferred;qlDeferred=null;e.prompt();if(e.userChoice&&e.userChoice.catch)e.userChoice.catch(function(){});return;}
-  // No native prompt ready here — show the per-phone Add-to-Home-Screen steps.
-  var s=document.getElementById('ql-sheet');
-  if(s){s.setAttribute('data-plat',qlPlatform());s.classList.add('show');}
+  if(qlDeferred){qlFireInstall();return;}
+  // The native prompt may not be ready the instant the button is tapped — give
+  // the browser a moment to offer it, fire it automatically when it arrives, and
+  // only fall back to the per-phone steps if it never does.
+  var btn=document.getElementById('ql-install-btn');
+  var label=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Preparing…';}
+  var waited=0, iv=setInterval(function(){
+    if(qlDeferred){clearInterval(iv);if(btn){btn.disabled=false;btn.textContent=label;}qlFireInstall();}
+    else if((waited+=200)>=2200){clearInterval(iv);if(btn){btn.disabled=false;btn.textContent=label;}qlShowSteps();}
+  },200);
 }
 function qlCloseSheet(){var s=document.getElementById('ql-sheet');if(s)s.classList.remove('show');}
 // Back button (or any hash change away from Quick Look) leaves the locked view.
