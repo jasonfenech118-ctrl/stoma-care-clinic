@@ -3087,7 +3087,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.04-242';
+const APP_BUILD='2026.09.19-243';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3104,10 +3104,16 @@ async function doLogout(){await SB.auth.signOut();document.getElementById('app')
 async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
 
 async function startApp(){
+  const initialHash=location.hash||'';
+  const quickLookStart=/^#(lookup|phone)$/.test(initialHash);
+  const deepPatient=/^#patient=(.+)$/.exec(initialHash);
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
-  // Build both nav rows and the drawer before anything else paints.
-  renderPrimaryTabs('roster');renderSubTabs('roster');renderMobileNav('roster');
+  // Honour a direct route before any awaited startup work, so Quick Look is the
+  // first app page painted instead of briefly showing the roster.
+  const initialTab=quickLookStart?'phone':'roster';
+  renderPrimaryTabs(initialTab);renderSubTabs(initialTab);renderMobileNav(initialTab);
+  if(quickLookStart)switchTab('phone');
   document.getElementById('ot-date').value=TODAY;
   document.getElementById('til-date').value=TODAY;
   document.getElementById('jump-date').value=TODAY;
@@ -3127,15 +3133,13 @@ async function startApp(){
   await refreshReminders();
   // The 4pm handover snapshot runs quietly in the background from here on.
   startHandoverSnapshotScheduler();
-  // Pinned to a phone's home screen as .../#lookup, the app opens straight
-  // into the read-only patient search instead of the roster.
-  const deepPatient=/^#patient=(.+)$/.exec(location.hash||'');
-  if(/^#(lookup|phone)$/.test(location.hash||'')){switchTab('phone');}
-  else if(/^#handover$/.test(location.hash||'')){openHandoverStandalone();}
+  // Quick Look was already activated before the awaited startup work above.
+  // Handle the other direct routes now that their supporting data is ready.
+  if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
   // Opened from a worklist in its own tab: go straight to that record, and no
   // reminder popup over the top of it.
   else if(deepPatient){openPatientRecord(decodeURIComponent(deepPatient[1]));}
-  else openDailyReminderModal(false);
+  else if(!quickLookStart)openDailyReminderModal(false);
   startDateRolloverWatch();
 }
 let dateRolloverTimer=null;
