@@ -1,40 +1,20 @@
-/* Service worker for the MDH Directory home-screen app only.
-   Registered with scope "directory.html", so it never controls the clinic app.
-   Network-first: always try the live file, fall back to the cached copy offline. */
-var CACHE = 'medilink-v3';
-var ASSETS = [
-  'directory.html',
-  'assets/directory.csv',
-  'directory.webmanifest',
-  'assets/icon-192.png',
-  'assets/icon-512.png',
-  'apple-touch-icon.png'
-];
-
-self.addEventListener('install', function (e) {
-  self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(function (c) {
-    return c.addAll(ASSETS).catch(function () {}); // a missing asset must not fail install
-  }));
-});
+/* Kill-switch service worker.
+   An earlier version registered a caching worker for the MediLink page. This
+   replacement takes over, deletes every cache, unregisters itself, and reloads
+   any open page — so no stale worker can keep an old or broken page on screen.
+   It has NO fetch handler, so it never intercepts a request. */
+self.addEventListener('install', function () { self.skipWaiting(); });
 
 self.addEventListener('activate', function (e) {
-  e.waitUntil(
-    caches.keys().then(function (keys) {
-      return Promise.all(keys.map(function (k) { return k === CACHE ? null : caches.delete(k); }));
-    }).then(function () { return self.clients.claim(); })
-  );
-});
-
-self.addEventListener('fetch', function (e) {
-  if (e.request.method !== 'GET') return;
-  e.respondWith(
-    fetch(e.request).then(function (res) {
-      var copy = res.clone();
-      caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
-      return res;
-    }).catch(function () {
-      return caches.match(e.request).then(function (m) { return m || caches.match('directory.html'); });
-    })
-  );
+  e.waitUntil((async function () {
+    try {
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+    } catch (err) {}
+    try { await self.registration.unregister(); } catch (err) {}
+    try {
+      var clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach(function (c) { if (c.navigate) { try { c.navigate(c.url); } catch (err) {} } });
+    } catch (err) {}
+  })());
 });

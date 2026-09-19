@@ -317,13 +317,20 @@
   // Offer the button whenever the app is not already installed.
   if(!isStandalone()) showInstall();
 
-  // A tiny service worker (scoped to this page only, never the clinic app) makes
-  // the browser reliably offer the native install prompt, and lets the page open
-  // even with no signal once added.
+  // No service worker: the page always loads straight from the network. Any copy
+  // registered by an earlier version is removed here, and its caches cleared, so
+  // a stale worker can never keep an old or broken page on screen.
   if('serviceWorker' in navigator){
-    window.addEventListener('load',function(){
-      navigator.serviceWorker.register('sw.js',{scope:'directory.html'}).catch(function(){});
-    });
+    try{
+      navigator.serviceWorker.getRegistrations().then(function(regs){
+        regs.forEach(function(r){ r.unregister(); });
+      }).catch(function(){});
+    }catch(e){}
+    try{
+      if(window.caches && caches.keys){
+        caches.keys().then(function(keys){ keys.forEach(function(k){ if(/medilink/.test(k)) caches.delete(k); }); }).catch(function(){});
+      }
+    }catch(e){}
   }
 
   fetch('assets/directory.csv',{cache:'no-cache'})
