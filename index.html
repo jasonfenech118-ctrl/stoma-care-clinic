@@ -1459,6 +1459,9 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 .hs-ward:hover{background:#ffeaa7;}
 .hs-done{background:#dcf5e8;color:#136c42;border-color:#a8e3c6;}
 .hs-done:hover{background:#c9eeda;}
+/* The final "Collected" state — the document is fully dealt with and filed. */
+.hs-black{background:#14181d;color:#fff;border-color:#000;}
+.hs-black:hover{background:#000;}
 /* The button and its dated line stack together in the cell. */
 .hs-wrap{display:flex;flex-direction:column;align-items:stretch;gap:2px;}
 .hs-date-line:empty{display:none;}
@@ -15049,11 +15052,13 @@ function duplicateIdReason(a,b){
 const HANDOVER_DOCS={
   discharge_letter:{icon:'📨',label:'Discharge letter',
     states:[{v:'',label:'Not done',cls:'hs-none'},
-            {v:'done',label:'Done',cls:'hs-done'}]},
+            {v:'done',label:'Done',cls:'hs-done'},
+            {v:'collected',label:'Collected',cls:'hs-black'}]},
   schedule_five_permit:{icon:'📋',label:'Schedule 5 permit',
     states:[{v:'',label:'Not done',cls:'hs-none'},
             {v:'in_ward',label:'Left in ward',cls:'hs-ward'},
-            {v:'signed',label:'Signed',cls:'hs-done'}]}
+            {v:'signed',label:'Signed',cls:'hs-done'},
+            {v:'collected',label:'Collected',cls:'hs-black'}]}
 };
 function handoverDocState(kind,value){
   const doc=HANDOVER_DOCS[kind];
@@ -15072,11 +15077,16 @@ function handoverDocNext(kind,value){
    sql/add-handover-status-dates.sql; until it is run these columns are simply
    dropped from the save and no date shows. */
 function docDateUpdates(kind,newValue){
-  if(kind==='discharge_letter') return {discharge_letter_done_date:newValue==='done'?TODAY:null};
+  if(kind==='discharge_letter'){
+    if(newValue==='done') return {discharge_letter_done_date:TODAY};
+    if(newValue==='')     return {discharge_letter_done_date:null}; // Not done — clear it
+    return {};                                                      // Collected — keep the done date
+  }
   if(kind==='schedule_five_permit'){
     if(newValue==='in_ward') return {schedule_five_left_date:TODAY};
     if(newValue==='signed')  return {schedule_five_signed_date:TODAY};
-    return {schedule_five_left_date:null,schedule_five_signed_date:null}; // Not done — reset both
+    if(newValue==='')        return {schedule_five_left_date:null,schedule_five_signed_date:null}; // Not done — reset both
+    return {};                                                      // Collected — keep both dates
   }
   return {};
 }
@@ -17202,7 +17212,7 @@ function printHandover(){
   // Discharge letter and Schedule 5 permit print as marks that stay distinct on a
   // black-and-white printout: a tick for done/signed, a filled square for a permit
   // left in the ward, an empty box for not done.
-  const box={'':'☐','done':'✔','signed':'✔','in_ward':'■'};
+  const box={'':'☐','done':'✔','signed':'✔','in_ward':'■','collected':'▉'};
   // Bold the "flange due …" and "rod due/out …" notes the way the ward sheet does.
   const notes=t=>htmlSafe(t)
     .replace(/(flange due[^,;·]*)/ig,'<b>$1</b>')
