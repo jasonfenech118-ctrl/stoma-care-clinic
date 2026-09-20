@@ -5771,25 +5771,11 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         <div class="edit-seen-section">Follow-up — what happens next?</div>
         <div id="of-existing-appt"></div>
         <div class="es-review-choice" id="of-next">
-          <label><input type="radio" name="of-next" value="review-month" ${(appt.followup_action||'review-month')==='review-month'?'checked':''} onchange="esNextChange()"> Review due in a selected month</label>
-          <label><input type="radio" name="of-next" value="book-exact" ${appt.followup_action==='book-exact'?'checked':''} onchange="esNextChange()"> Book an exact appointment now</label>
+          <label><input type="radio" name="of-next" value="review-month" ${(appt.followup_action||'review-month')!=='none'?'checked':''} onchange="esNextChange()"> Review due in a selected month</label>
           <label><input type="radio" name="of-next" value="none" ${appt.followup_action==='none'?'checked':''} onchange="esNextChange()"> No further appointment required</label>
-          <label><input type="radio" name="of-next" value="urgent" ${appt.followup_action==='urgent'?'checked':''} onchange="esNextChange()"> Urgent review required</label>
-          <label><input type="radio" name="of-next" value="status-review" ${appt.followup_action==='status-review'?'checked':''} onchange="esNextChange()"> Patient follow-up status needs review</label>
         </div>
         <div id="of-next-note" class="dntu-note" style="margin:6px 0;"></div>
         <div id="of-duemonth-wrap">${followupBlock}</div>
-        <div id="of-exact-wrap" hidden>
-          <div class="edit-seen-section">Book an exact appointment</div>
-          <div class="edit-seen-grid">
-            <div class="fg"><label>Date</label><input type="date" id="of-exact-date" onchange="esExactAvailability()"/></div>
-            <div class="fg"><label>Time</label><input type="time" id="of-exact-slot" onchange="esExactAvailability()"/></div>
-            <div class="fg" style="grid-column:1 / -1;"><label>Nurse / Column</label><select id="of-exact-nurse" onchange="esExactAvailability()">${nurseOptions}</select></div>
-            <div class="fg" style="grid-column:1 / -1;"><div id="of-exact-avail" class="dntu-note" style="margin:2px 0 6px;"></div></div>
-            <div class="fg" style="grid-column:1 / -1;"><button type="button" class="btn-save" style="width:auto;" onclick="esBookExact('${jsSafe(String(appt.patient_id||''))}')">Book this appointment</button></div>
-          </div>
-          <div id="of-exact-note" class="dntu-note" style="margin-top:6px;">An exact appointment is separate from the due-month plan above — it books a real slot in the daily clinic straight away.</div>
-        </div>
       </div>
       <div class="es-pane" id="es-pane-4"></div>
       <div class="mact" id="es-footer"></div>`;
@@ -5993,48 +5979,13 @@ function esMaybeAutoAdvance(){
 function esNextChange(){
   const v=document.querySelector('input[name="of-next"]:checked')?.value||'review-month';
   const monthFg=document.getElementById('of-month-fg');
-  const exact=document.getElementById('of-exact-wrap');
   const note=document.getElementById('of-next-note');
   if(monthFg)monthFg.style.display=(v==='none')?'none':'';
-  if(exact)exact.hidden=(v!=='book-exact');
   const notes={
     'review-month':'A due-month plan: the patient is reviewed around the chosen month, without an exact date yet.',
-    'book-exact':'Book a specific date and time below — an exact appointment, not just a due month.',
-    'none':'No further appointment: the due month is cleared. The patient follow-up status is not changed automatically.',
-    'urgent':'Urgent review — choose the soonest appropriate due month above (or book an exact slot).',
-    'status-review':'The follow-up status needs a clinical decision — set it under Follow-up status above.'
+    'none':'No further appointment: the due month is cleared. The patient follow-up status is not changed automatically.'
   };
   if(note)note.textContent=notes[v]||'';
-  if(v==='book-exact')esExactAvailability();
-}
-/* Live capacity hint for the exact booking: how full the chosen day's whole
-   clinic is, and whether the exact time + column is already taken. Reuses the
-   day-availability the rebooking picker uses, so the figures match the diary. */
-async function esExactAvailability(){
-  const host=document.getElementById('of-exact-avail');
-  if(!host)return;
-  const date=document.getElementById('of-exact-date')?.value||'';
-  const slot=String(document.getElementById('of-exact-slot')?.value||'').slice(0,5);
-  const nurse=document.getElementById('of-exact-nurse')?.value||'common';
-  if(!date){host.textContent='';return;}
-  host.textContent='Checking clinic availability…';
-  try{
-    const day=(await getClinicDayAvailability([date],'Common'))[date]||{booked:0,capacity:0};
-    const free=Math.max(0,day.capacity-day.booked);
-    let msg=day.capacity>0
-      ?`${free} of ${day.capacity} slots free on ${fmtShortDate(date)} · ${day.booked} booked.`
-      :`No clinic runs on ${fmtShortDate(date)} — choose a clinic day.`;
-    if(slot&&day.capacity>0){
-      const{data}=await SB.from('appointments').select('assigned_to,bank_staff_id,status')
-        .eq('appt_date',date).eq('appt_slot',slot).neq('status','cancelled');
-      const rows=data||[];
-      const clash=nurse.startsWith('core:')?rows.some(r=>String(r.assigned_to||'')===nurse.replace('core:',''))
-        :nurse.startsWith('bank:')?rows.some(r=>String(r.bank_staff_id||'')===nurse.replace('bank:',''))
-        :rows.some(r=>!r.assigned_to&&!r.bank_staff_id);
-      msg+=clash?`  ⚠ ${slot} in that column is already taken.`:`  ${slot} in that column is free.`;
-    }
-    host.textContent=msg;
-  }catch(e){host.textContent='';}
 }
 /* Shows any future appointment the patient already has, so a second one is not
    booked by accident. Read-only, with a Change action onto that appointment. */
@@ -6049,33 +6000,6 @@ async function esLoadExistingAppointments(patientId,excludeApptId){
     if(!rows.length){host.innerHTML='';return;}
     host.innerHTML=`<div class="es-info" style="background:#fff7ed;border-color:#f0c47a;color:#9a3412;">${rows.map(a=>`Already booked: <strong>${htmlSafe(fmtShortDate(a.appt_date))} at ${htmlSafe(String(a.appt_slot||'').slice(0,5))}</strong> with ${htmlSafe(appointmentNurseLabel(a))}. <button type="button" class="clr-mini" style="margin-left:6px;" onclick="closeModal();editAppointment('${jsSafe(String(a.id))}')">Change</button>`).join('<br/>')}</div>`;
   }catch(e){host.innerHTML='';}
-}
-/* Books an exact appointment straight away — separate from completing the visit,
-   so the visit save is never entangled with a slot clash. Reuses the daily-clinic
-   insert and its unique-slot handling. */
-async function esBookExact(patientId){
-  const date=document.getElementById('of-exact-date')?.value||'';
-  const slot=document.getElementById('of-exact-slot')?.value||'';
-  const nurse=document.getElementById('of-exact-nurse')?.value||'common';
-  const note=document.getElementById('of-exact-note');
-  const setNote=(t,err)=>{if(note){note.className='registry-lookup-note '+(err?'error':'found');note.style.margin='6px 0';note.textContent=t;}};
-  if(!patientId){setNote('No patient is linked to this appointment.',true);return;}
-  if(!date||!slot){setNote('Choose a date and a time to book.',true);return;}
-  const row={patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),status:'booked',assigned_to:null,bank_staff_id:null};
-  if(nurse.startsWith('core:'))row.assigned_to=nurse.replace('core:','');
-  if(nurse.startsWith('bank:'))row.bank_staff_id=nurse.replace('bank:','');
-  const{error}=await SB.from('appointments').insert(row);
-  if(error){
-    const msg=String(error.message||'');
-    if(/duplicate|unique/i.test(msg))setNote('That slot is already taken. Choose another time or nurse.',true);
-    else setNote('Booking error: '+msg,true);
-    return;
-  }
-  setNote(`Booked ${fmtShortDate(date)} at ${String(slot).slice(0,5)}.`,false);
-  invalidateAvailabilityCaches();
-  esLoadExistingAppointments(patientId,esState?esState.apptId:'');
-  esExactAvailability();
-  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 /* ---- what was used, stoma by stoma ------------------------------------------
    Marking a visit as Seen walks through one card per stoma: its appliances,
