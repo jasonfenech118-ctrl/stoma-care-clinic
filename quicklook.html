@@ -8,13 +8,14 @@
 <meta name="description" content="Quick Look — fast read-only patient lookup for the MDH Stoma Care register."/>
 <!-- Its own Quick Look identity, so this page can be pinned to a phone's home
      screen and shared as a link separate from the full clinic app. -->
-<link rel="manifest" href="quicklook.webmanifest"/>
+<link rel="manifest" href="quicklook.webmanifest?v=2"/>
 <link rel="apple-touch-icon" href="apple-touch-quicklook.png"/>
 <link rel="icon" href="assets/ql-192.png"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="Quick Look"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- If JavaScript is off or the redirect below is slow, still go straight in. -->
 <noscript><meta http-equiv="refresh" content="0;url=index.html#lookup"/></noscript>
 <style>
@@ -36,8 +37,23 @@
   @keyframes sp{to{transform:rotate(360deg);}}
   @media (prefers-reduced-motion:reduce){.spin{animation:none;}}
   .status{min-height:18px;font-size:13px;color:var(--muted);}
-  .open{display:inline-block;margin-top:18px;color:var(--indigo);font-weight:800;font-size:15px;text-decoration:none;}
-  .open:active{opacity:.7;}
+  .auth[hidden],.codebox[hidden],.loading[hidden]{display:none;}
+  .intro{margin:0 0 17px;color:var(--muted);font-size:13.5px;line-height:1.48;}
+  label{display:block;text-align:left;margin:0 0 7px;color:var(--navy);font-size:12px;font-weight:800;}
+  input{width:100%;min-height:47px;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;
+    color:var(--ink);background:#fff;font:15px 'Segoe UI',Arial,sans-serif;outline:none;}
+  input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(67,56,202,.10);}
+  button{width:100%;min-height:47px;margin-top:10px;border:0;border-radius:10px;background:var(--navy);
+    color:#fff;font:800 14px 'Segoe UI',Arial,sans-serif;cursor:pointer;}
+  button:active{transform:translateY(1px);}
+  button:disabled{opacity:.56;cursor:wait;}
+  .codebox{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);}
+  .codebox input{text-align:center;font-size:21px;font-weight:800;letter-spacing:6px;font-variant-numeric:tabular-nums;}
+  .message{min-height:18px;margin-top:11px;font-size:12.5px;line-height:1.45;color:#b42318;}
+  .message.ok{color:#147a45;}
+  .password-link{display:inline-block;margin-top:17px;color:var(--indigo);font-weight:750;font-size:13px;text-decoration:none;}
+  .password-link:active{opacity:.7;}
+  @media(max-width:380px){.card{padding:24px 18px}.app-icon{width:88px;height:88px}}
 </style>
 </head>
 <body>
@@ -46,30 +62,159 @@
       <img class="app-icon" src="assets/ql-512.png" alt="Quick Look"/>
       <h1>Quick Look</h1>
       <div class="sub">MDH Stoma Care — fast patient lookup</div>
-      <div class="spin" aria-hidden="true"></div>
-      <div class="status" id="status">Opening the patient lookup…</div>
-      <a class="open" id="open" href="index.html#lookup">Open Quick Look now →</a>
+      <div class="loading" id="loading">
+        <div class="spin" aria-hidden="true"></div>
+        <div class="status">Checking your secure session…</div>
+      </div>
+      <div class="auth" id="auth" hidden>
+        <p class="intro">Enter your authorised clinic email. We will send a secure one-time sign-in email—no password is needed.</p>
+        <label for="ql-email">Clinic email</label>
+        <input type="email" id="ql-email" autocomplete="email" inputmode="email" placeholder="name@hospital.mt"/>
+        <button type="button" id="ql-send" onclick="sendQuickLookEmail()">Send secure sign-in email</button>
+        <div class="codebox" id="ql-codebox" hidden>
+          <label for="ql-code">If the email contains a code, enter it here</label>
+          <input type="text" id="ql-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000"/>
+          <button type="button" id="ql-verify" onclick="verifyQuickLookCode()">Verify code</button>
+        </div>
+        <div class="message" id="ql-message" role="status" aria-live="polite"></div>
+        <a class="password-link" href="index.html#lookup">Use email and password instead</a>
+      </div>
     </div>
   </div>
 <script>
-  // A dedicated, separate entry point for Quick Look. It forwards straight into
-  // the clinic app's locked, read-only patient lookup (#lookup) so the search
-  // and the record layout always match the live register — there is no second
-  // copy of the logic to drift. replace() keeps this splash out of history, so
-  // the phone's Back button leaves the site rather than the full clinic app.
-  var TARGET = 'index.html#lookup';
-  try {
-    window.location.replace(TARGET);
-  } catch (e) {
-    // Fall back to a normal navigation if replace is blocked for any reason.
-    window.location.href = TARGET;
+  /* Quick Look is still protected by Supabase Auth, but staff can now use a
+     one-time email instead of knowing or sharing the roster password. The
+     existing account must already be authorised: shouldCreateUser:false below
+     deliberately prevents this public page from registering new users. */
+  const safeAuthStorage=(()=>{
+    const mem={};
+    const fallback={
+      getItem:key=>(key in mem?mem[key]:null),
+      setItem:(key,value)=>{mem[key]=String(value);},
+      removeItem:key=>{delete mem[key];}
+    };
+    try{
+      const probe='__ql_storage_probe__';
+      localStorage.setItem(probe,'1');localStorage.removeItem(probe);
+      return{
+        getItem:key=>{try{return localStorage.getItem(key);}catch(e){return fallback.getItem(key);}},
+        setItem:(key,value)=>{try{localStorage.setItem(key,value);}catch(e){fallback.setItem(key,value);}},
+        removeItem:key=>{try{localStorage.removeItem(key);}catch(e){fallback.removeItem(key);}}
+      };
+    }catch(e){return fallback;}
+  })();
+  const SB=supabase.createClient(
+    'https://gkixdimdmechujeqzfkl.supabase.co',
+    'sb_publishable_o3y-iFcJ80dKRfrHA3mHuw_XI2qqjvS',
+    {auth:{storage:safeAuthStorage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}
+  );
+  const TARGET='index.html#lookup';
+  let leaving=false;
+
+  function storedQuickLookEmail(){
+    try{return sessionStorage.getItem('quicklook_otp_email')||'';}catch(e){return '';}
   }
-  // If we are still here a moment later (e.g. the app is slow to load), leave
-  // the tap-through link visible and reassure the reader.
-  setTimeout(function () {
-    var s = document.getElementById('status');
-    if (s) s.textContent = 'Taking longer than usual — tap below to open.';
-  }, 2500);
+  function rememberQuickLookEmail(email){
+    try{sessionStorage.setItem('quicklook_otp_email',email);}catch(e){}
+  }
+  function forgetQuickLookEmail(){
+    try{sessionStorage.removeItem('quicklook_otp_email');}catch(e){}
+  }
+  function showMessage(text,ok){
+    const el=document.getElementById('ql-message');
+    if(!el)return;
+    el.textContent=text||'';
+    el.classList.toggle('ok',!!ok);
+  }
+  function showAuth(){
+    const loading=document.getElementById('loading');
+    const auth=document.getElementById('auth');
+    if(loading)loading.hidden=true;
+    if(auth)auth.hidden=false;
+    const email=document.getElementById('ql-email');
+    if(email&&!email.value)email.value=storedQuickLookEmail();
+    if(email)setTimeout(()=>email.focus(),0);
+  }
+  function openQuickLook(){
+    if(leaving)return;
+    leaving=true;
+    const loading=document.getElementById('loading');
+    const auth=document.getElementById('auth');
+    if(auth)auth.hidden=true;
+    if(loading){loading.hidden=false;const s=loading.querySelector('.status');if(s)s.textContent='Opening Quick Look…';}
+    location.replace(TARGET);
+  }
+  async function sendQuickLookEmail(){
+    const emailEl=document.getElementById('ql-email');
+    const email=(emailEl?emailEl.value:'').trim().toLowerCase();
+    const btn=document.getElementById('ql-send');
+    showMessage('',false);
+    if(!emailEl||!email||!emailEl.checkValidity()){
+      showMessage('Enter a valid clinic email address.',false);
+      if(emailEl)emailEl.focus();
+      return;
+    }
+    rememberQuickLookEmail(email);
+    if(btn){btn.disabled=true;btn.textContent='Sending…';}
+    try{
+      const redirectTo=new URL('quicklook.html?quicklook_auth=1',location.href).href;
+      const{error}=await SB.auth.signInWithOtp({
+        email,
+        options:{shouldCreateUser:false,emailRedirectTo:redirectTo}
+      });
+      if(error&&error.status===429){
+        showMessage('A sign-in email was requested recently. Wait one minute, then try again.',false);
+        return;
+      }
+      if(error&&Number(error.status)>=500){
+        showMessage('The sign-in service is temporarily unavailable. Please try again.',false);
+        return;
+      }
+      const codebox=document.getElementById('ql-codebox');
+      if(codebox)codebox.hidden=false;
+      showMessage('If this email is authorised, a secure sign-in email has been sent. Enter its code here or tap the link in the email.',true);
+      const code=document.getElementById('ql-code');
+      if(code)setTimeout(()=>code.focus(),0);
+    }catch(e){
+      showMessage('Could not contact the sign-in service. Check the connection and try again.',false);
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='Send secure sign-in email';}
+    }
+  }
+  async function verifyQuickLookCode(){
+    const email=((document.getElementById('ql-email')||{}).value||storedQuickLookEmail()).trim().toLowerCase();
+    const codeEl=document.getElementById('ql-code');
+    const token=(codeEl?codeEl.value:'').replace(/\s+/g,'');
+    const btn=document.getElementById('ql-verify');
+    showMessage('',false);
+    if(!email){showMessage('Enter the clinic email used to request the code.',false);return;}
+    if(token.length<6){showMessage('Enter the complete one-time code from the email.',false);if(codeEl)codeEl.focus();return;}
+    if(btn){btn.disabled=true;btn.textContent='Checking…';}
+    try{
+      const{error}=await SB.auth.verifyOtp({email,token,type:'email'});
+      if(error){showMessage('That code is invalid or has expired. Request a new sign-in email and try again.',false);return;}
+      forgetQuickLookEmail();
+      openQuickLook();
+    }catch(e){
+      showMessage('Could not verify the code. Check the connection and try again.',false);
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='Verify code';}
+    }
+  }
+  async function bootQuickLook(){
+    try{
+      const{data}=await SB.auth.getSession();
+      if(data&&data.session){openQuickLook();return;}
+    }catch(e){}
+    showAuth();
+  }
+
+  document.getElementById('ql-email').addEventListener('keydown',event=>{if(event.key==='Enter')sendQuickLookEmail();});
+  document.getElementById('ql-code').addEventListener('input',event=>{event.target.value=event.target.value.replace(/\D/g,'').slice(0,8);});
+  document.getElementById('ql-code').addEventListener('keydown',event=>{if(event.key==='Enter')verifyQuickLookCode();});
+  SB.auth.onAuthStateChange((event,session)=>{if(session)setTimeout(openQuickLook,0);});
+  if('serviceWorker' in navigator){try{navigator.serviceWorker.register('quicklook-sw.js').catch(()=>{});}catch(e){}}
+  bootQuickLook();
 </script>
 </body>
 </html>
