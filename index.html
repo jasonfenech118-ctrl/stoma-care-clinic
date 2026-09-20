@@ -5938,17 +5938,31 @@ function esCmpReviewChange(){
   const ex=document.getElementById('of-cmp-existing'); if(ex)ex.hidden=(v!=='existing-reviewed');
   const add=document.getElementById('of-cmp-add'); if(add)add.hidden=(v!=='new-added');
   const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
+  esMaybeAutoAdvance();
 }
 function esAppReviewChange(){
   const v=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
   const note=document.getElementById('of-app-note');
   const hints={
-    first:'The appliance picker opens when you complete the visit, to record the first appliance / accessories.',
+    first:'The appliance picker opens next, to record the first appliance / accessories.',
     unchanged:'The current appliance / accessories are kept and marked reviewed for this visit — the picker will not reopen.',
-    changed:'The appliance picker opens when you complete the visit, so you can change what is used.'
+    changed:'The appliance picker opens next, so you can change what is used.'
   };
   if(note)note.textContent=hints[v]||'';
   const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
+  esMaybeAutoAdvance();
+}
+/* Auto-advance off the Clinical review page once both choices are made and
+   nothing more needs typing. "Add a new complication" / "Review an existing
+   complication" keep the manual Next (the nurse is still entering details). Back
+   is always available on the following page. */
+function esMaybeAutoAdvance(){
+  if(!esState||esState.step!==2||!esOutcomeAttended())return;
+  const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
+  const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
+  if(cmp==='none'&&app){
+    setTimeout(()=>{if(esState&&esState.step===2)esFollowupNext();},140);
+  }
 }
 /* Step 3 (Follow-up) begins with "what happens next?". Each choice reveals the
    controls it needs: a due-month plan, an exact booking, or neither. It never
