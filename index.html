@@ -10288,7 +10288,17 @@ async function loadLocalities(){
     const{data,error}=await SB.from('localities').select('name').order('name');
     if(error||!Array.isArray(data)){localitiesAvailable=false;localitiesError=error?.message||'';return;}
     localitiesAvailable=true;localitiesError='';
-    if(data.length)localityList=data.map(r=>r.name).filter(Boolean);
+    // Merge the saved localities with the standard Maltese list rather than
+    // replacing it, so adding one custom locality can never make the rest
+    // "vanish" from the dropdown. Patient locality values live on the patient
+    // records and are never touched by this list.
+    const names=(data||[]).map(r=>r.name).filter(Boolean);
+    const merged=[],seen=new Set();
+    LOCALITIES_DEFAULT.concat(names).forEach(n=>{
+      const k=String(n).trim().toLowerCase();
+      if(n&&!seen.has(k)){seen.add(k);merged.push(n);}
+    });
+    localityList=merged.sort((a,b)=>a.localeCompare(b));
   }catch(e){localitiesAvailable=false;localitiesError=String(e&&e.message||e);}
 }
 /* Legacy / variant locality spellings that should resolve to a canonical list
