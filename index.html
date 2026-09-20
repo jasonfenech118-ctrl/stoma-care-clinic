@@ -5593,7 +5593,6 @@ async function updateAppointmentTolerant(apptId,payload,protectedCols){
   return{error:{message:'Too many missing columns to save.'},dropped,protectedMissing:null};
 }
 async function openOutcomeFollowupModal(apptId,status,options={}){
-  esResume=null;   // fresh open clears any stale appliance-first state; the wizard re-sets it after this returns
   if(status==='cancelled')return openCancellationForm(apptId);
   if(options.dntuEditMode)return openDntuNurseModal(apptId);
   const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).single();
@@ -5657,6 +5656,9 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <div class="fg"><label>Appointment Time *</label><input type="time" id="of-slot" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5))}"/></div>
       <div class="fg"><label>Nurse / Column</label><select id="of-nurse">${nurseOptions}</select></div>
       ${outcomeControl}
+      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
+        ${followupOwnerOptions(ownerDefault)}
+      </select></div>
     </div>`;
   const correctApplianceBtn=`<div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">
       <button type="button" class="btn-cancel" style="width:auto;background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="correctApptAppliance('${htmlSafe(apptId||'')}','${htmlSafe(appt.patient_id||p.id||'')}')">✎ Edit / correct appliance</button>
@@ -5664,9 +5666,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     </div></div>`;
   const followupBlock=`<div id="of-followup-planning-wrap">
     <div class="edit-seen-grid">
-      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
-        ${followupOwnerOptions(ownerDefault)}
-      </select></div>
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${outcomeYearOptions(defaultYear)}
       </select></div>
@@ -5793,7 +5792,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
    keeps its id and stays in the DOM, so saveOutcomeFollowup reads them exactly
    as before. Clinical review is only offered for an attended visit. */
 let esState=null;
-let esResume=null;   // appliance rows recorded before Follow-up, carried into the final save
 function esOutcomeAttended(){return (document.getElementById('of-status')?.value||'')==='attended';}
 function esStepsOrder(){return esOutcomeAttended()?[1,2,3]:[1,3];}
 function esGoStep(n){
@@ -5821,43 +5819,6 @@ function esRenderStepper(){
 }
 function esNextStep(){const o=esStepsOrder(),i=o.indexOf(esState.step);if(i<o.length-1)esGoStep(o[i+1]);}
 function esPrevStep(){const o=esStepsOrder(),i=o.indexOf(esState.step);if(i>0)esGoStep(o[i-1]);}
-/* Leaving Clinical review (step 2): when the nurse is adding or changing an
-   appliance, open the appliance picker HERE so recording it comes before the
-   Follow-up step — the visit then lands on Follow-up as the final step instead
-   of finishing on the appliance wizard. */
-async function esFollowupNext(){
-  if(!esState)return;
-  if(!esOutcomeAttended()){esGoStep(3);return;}
-  const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
-  const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
-  const isDntu=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
-  if(!isNewCase&&!isDntu&&(!cmp||!app)){
-    const err=document.getElementById('of-review-error');
-    if(err){err.hidden=false;err.textContent='Before moving on, confirm how complications were reviewed and how appliances were reviewed.';}
-    return;
-  }
-  const needsPicker=(app==='changed'||app==='first');
-  const alreadyDone=!!(esResume&&esResume.apptId===String(esState.apptId)&&esResume.rows);
-  if(!isNewCase&&!isDntu&&needsPicker&&esState.patientId&&!alreadyDone){
-    const date=document.getElementById('of-date')?.value||'';
-    let pat=null;try{const r=await SB.from('patients').select(patientSelectCols()).eq('id',esState.patientId).maybeSingle();pat=r.data;}catch(e){}
-    if(pat&&stomasPresentOn(pat,date).length){
-      esResume={apptId:String(esState.apptId),rows:null,cmp,app};
-      await openVisitApplianceWizard({apptId:esState.apptId,patientId:esState.patientId,date,status:'attended',returnToStep3:true},pat);
-      return;
-    }
-  }
-  esGoStep(3);
-}
-// Re-apply the two clinical-review choices after the modal is rebuilt on return
-// from the appliance picker, so the final save still has them.
-function esApplyResumeReview(){
-  if(!esResume)return;
-  const set=(name,val)=>{const el=document.querySelector('input[name="'+name+'"][value="'+val+'"]');if(el)el.checked=true;};
-  if(esResume.cmp){set('of-cmp-review',esResume.cmp);esCmpReviewChange();}
-  if(esResume.app){set('of-app-review',esResume.app);esAppReviewChange();}
-}
 function esOnOutcomeChange(){
   if(!esState)return;
   // If the visit is no longer attended and we were on Clinical review, step past it.
@@ -5878,8 +5839,7 @@ function esRenderFooter(){
     right=`<button type="button" class="btn-save" onclick="saveOutcomeFollowup('${jsSafe(esState.apptId)}','${jsSafe(esState.patientId)}')">${saveLabel}</button>`;
   }else{
     const nextLabel=(esState.step===1&&attended)?'Next: Clinical review ›':'Next: Follow-up ›';
-    const nextFn=(esState.step===2&&attended)?'esFollowupNext()':'esNextStep()';
-    right=`<button type="button" class="btn-save" onclick="${nextFn}">${nextLabel}</button>`;
+    right=`<button type="button" class="btn-save" onclick="esNextStep()">${nextLabel}</button>`;
   }
   foot.innerHTML=`${left}${right}`;
 }
@@ -6281,16 +6241,6 @@ async function commitVisitFromWizard(){
   const pending=w.pending;
   visitWizard=null;
   if(pending&&pending.mode==='episode'){await commitEpisodeAppliances(pending,rows);return;}
-  // Appliance recorded from Clinical review: keep the rows and land on the
-  // Follow-up step instead of saving, so Follow-up is the final step.
-  if(pending&&pending.returnToStep3){
-    const saved={apptId:String(pending.apptId),rows,cmp:(esResume&&esResume.cmp)||'',app:(esResume&&esResume.app)||''};
-    await openOutcomeFollowupModal(pending.apptId,'attended');
-    esResume=saved;
-    esApplyResumeReview();
-    esGoStep(3);
-    return;
-  }
   await commitOutcomeFollowup(pending,rows);
 }
 /* Every admission gets a clinic-wide reference of its own, EP-<year>-<seq>,
@@ -6571,12 +6521,6 @@ async function saveOutcomeFollowup(apptId,patientId){
      when the appliances were actually changed or a first one is being added.
      "Unchanged" or "none" keeps the existing appliance record and skips the
      picker, so nothing is re-typed and nothing is wiped. */
-  // Appliance already recorded on the way to Follow-up (esFollowupNext): commit
-  // with those rows instead of re-opening the picker.
-  if(esResume&&esResume.apptId===String(apptId)&&esResume.rows){
-    const rows=esResume.rows;esResume=null;
-    return commitOutcomeFollowup(pending,rows);
-  }
   const needsPicker=(applianceReview==='changed'||applianceReview==='first');
   if(status==='attended'&&patientId&&needsPicker){
     const{data:pat}=await SB.from('patients').select(patientSelectCols()).eq('id',patientId).maybeSingle();
