@@ -3596,9 +3596,28 @@ async function downloadDailyAttendancePdf(){
   await downloadHtmlAsPdf(`Daily Attendance ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
 // Nurse HR mailbox the "Send to Nurse HR" button addresses. Leave it '' to open
-// the draft with an empty To (pick the Nurse HR contact in Outlook); set the
-// address here to pre-address every email.
+// the draft with an empty To (pick the Nurse HR contact); set the address here
+// to pre-address every email.
 const HR_EMAIL='';
+// Jason works in Outlook on the web (webmail.gov.mt/owa), so his emails open a
+// webmail compose tab instead of the desktop Outlook client.
+function attIsJason(who,signer){
+  const email=String((who&&who.email)||'').toLowerCase();
+  return attNameKey(signer||'')==='jason fenech'||/jason\.?fenech/.test(email);
+}
+function attOwaComposeUrl(to,subject,body){
+  return 'https://webmail.gov.mt/owa/?path=/mail/action/compose'+
+    '&to='+encodeURIComponent(to||'')+
+    '&subject='+encodeURIComponent(subject||'')+
+    '&body='+encodeURIComponent(body||'');
+}
+function attDownloadFile(file){
+  try{
+    const url=URL.createObjectURL(file);
+    const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),8000);
+  }catch(e){}
+}
 async function emailDailyAttendanceToHR(){
   const date=document.getElementById('da-date')?.value||'';
   if(!DailyAttendance.validDate(date)){alert('Choose a valid date first.');return;}
@@ -3611,25 +3630,35 @@ async function emailDailyAttendanceToHR(){
   const subject=`Daily Staff Attendance — Stoma Care Unit — ${dmy}`;
   const signOff=(signer?signer+(grade?', '+grade:''):'MDH Stoma Care Clinic')+(signer?'\nMDH Stoma Care Clinic':'');
   const body=`Good morning,\n\nAttached to this email is today's ${dmy} attendance sheet for Stoma Care Clinic.\n\nRegards,\n${signOff}`;
+  const jason=attIsJason(who,signer);
+  // Open Jason's webmail compose now — before the slower PDF render — so the
+  // browser still counts it as his click and does not block the new tab.
+  let owaWin=null;
+  if(jason){try{owaWin=window.open(attOwaComposeUrl(HR_EMAIL,subject,body),'_blank');}catch(e){}}
+
   // Build the sheet as a PDF file so it can be attached where the device allows.
   let file=null;
   try{file=await htmlToPdfFile(`Daily Attendance ${dmy}`,attendanceSheetPrintHTML(date,rows,who));}catch(e){file=null;}
+
+  if(jason){
+    // Webmail cannot be handed the attachment, so download the PDF to attach by
+    // hand and copy the message text in case OWA ignored the prefill.
+    if(file)attDownloadFile(file);
+    try{await navigator.clipboard.writeText(body);}catch(e){}
+    setTimeout(()=>alert((owaWin?'Webmail (OWA) is opening in a new tab. ':'Allow pop-ups, then click the button again to open webmail. ')+
+      'Attach the downloaded PDF “Daily Attendance '+dmy+'”. The message text has also been copied, so you can paste it if the webmail did not fill it in.'),500);
+    return;
+  }
+
   // Phones / tablets: share the PDF straight into Outlook — it attaches itself.
   const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
   if(file&&touch&&navigator.canShare&&navigator.canShare({files:[file]})){
     try{await navigator.share({files:[file],title:subject,text:body});return;}
     catch(e){if(e&&e.name==='AbortError')return;}
   }
-  // Ward PC (and anywhere share is unavailable): download the PDF, then open an
-  // Outlook draft addressed to HR with the subject and signature; the PDF is a
-  // single drag from the Downloads folder.
-  if(file){
-    try{
-      const url=URL.createObjectURL(file);
-      const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),8000);
-    }catch(e){}
-  }
+  // Ward PC: download the PDF, then open an Outlook draft addressed to HR with the
+  // subject and signature; the PDF is a single drag from the Downloads folder.
+  if(file)attDownloadFile(file);
   const mailto='mailto:'+encodeURIComponent(HR_EMAIL)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
   const ml=document.createElement('a');ml.href=mailto;document.body.appendChild(ml);ml.click();ml.remove();
   setTimeout(()=>alert(file
