@@ -2028,6 +2028,7 @@ body.pl-only .install-fab,body.ho-only .install-fab{display:none !important;}
         <button class="da-button" onclick="DailyAttendance.today()">Today</button>
         <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
         <button class="da-button" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="downloadDailyAttendancePdf()">⤓ Download daily attendance (PDF)</button>
+        <button class="da-button" style="background:#0d5c66;color:#fff;border-color:#0d5c66;" onclick="emailDailyAttendanceToHR()">✉ Send to Nurse HR</button>
       </div>
       <h3 id="da-date-label"></h3>
       <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
@@ -3593,6 +3594,47 @@ async function downloadDailyAttendancePdf(){
   if(!rows.length){alert('No attendance is saved for this day yet — open the sheet (it saves automatically), then download.');return;}
   let who={};try{who=await getCurrentUserForAudit();}catch(e){}
   await downloadHtmlAsPdf(`Daily Attendance ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
+}
+// Nurse HR mailbox the "Send to Nurse HR" button addresses. Leave it '' to open
+// the draft with an empty To (pick the Nurse HR contact in Outlook); set the
+// address here to pre-address every email.
+const HR_EMAIL='';
+async function emailDailyAttendanceToHR(){
+  const date=document.getElementById('da-date')?.value||'';
+  if(!DailyAttendance.validDate(date)){alert('Choose a valid date first.');return;}
+  let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load the sheet: '+(e.message||e));return;}
+  if(!rows.length){alert('No attendance is saved for this day yet — open the sheet (it saves automatically), then send.');return;}
+  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
+  const signer=attDisplayName(who)||'';
+  const grade=signer?attGrade(signer,who&&who.role):'';
+  const dmy=attDMY(date);
+  const subject=`Daily Staff Attendance — Stoma Care Unit — ${dmy}`;
+  const signOff=(signer?signer+(grade?', '+grade:''):'MDH Stoma Care Clinic')+(signer?'\nMDH Stoma Care Clinic':'');
+  const body=`Good morning,\n\nAttached to this email is today's ${dmy} attendance sheet for Stoma Care Clinic.\n\nRegards,\n${signOff}`;
+  // Build the sheet as a PDF file so it can be attached where the device allows.
+  let file=null;
+  try{file=await htmlToPdfFile(`Daily Attendance ${dmy}`,attendanceSheetPrintHTML(date,rows,who));}catch(e){file=null;}
+  // Phones / tablets: share the PDF straight into Outlook — it attaches itself.
+  const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
+  if(file&&touch&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:subject,text:body});return;}
+    catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  // Ward PC (and anywhere share is unavailable): download the PDF, then open an
+  // Outlook draft addressed to HR with the subject and signature; the PDF is a
+  // single drag from the Downloads folder.
+  if(file){
+    try{
+      const url=URL.createObjectURL(file);
+      const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),8000);
+    }catch(e){}
+  }
+  const mailto='mailto:'+encodeURIComponent(HR_EMAIL)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  const ml=document.createElement('a');ml.href=mailto;document.body.appendChild(ml);ml.click();ml.remove();
+  setTimeout(()=>alert(file
+    ? 'The attendance PDF was downloaded — attach it to the Outlook email that just opened (it is in your Downloads).'
+    : 'Outlook has opened with the email ready. Download the attendance PDF and attach it.'),500);
 }
 async function downloadAttendanceRecordPdf(date){
   if(!DailyAttendance.validDate(date)){alert('Invalid date.');return;}
@@ -7548,6 +7590,37 @@ async function downloadHtmlAsPdf(filename,inner){
     pdf.save(String(filename||'download').replace(/[\/\\:*?"<>|]+/g,'-')+'.pdf');
   }catch(e){bcPrintWindow(filename,inner);}
   finally{iframe.remove();}
+}
+// Same rendering as downloadHtmlAsPdf, but returns the PDF as a File (so it can
+// be attached to an email) instead of saving it. Throws if the libraries or the
+// render fail, so callers can fall back.
+async function htmlToPdfFile(filename,inner){
+  const H=await ensureHtml2Canvas(), JS=await ensureJsPDF();
+  const iframe=document.createElement('iframe');
+  iframe.setAttribute('aria-hidden','true');
+  iframe.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  try{
+    const doc=iframe.contentDocument||iframe.contentWindow.document;
+    doc.open();
+    doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body>'+inner+'</body></html>');
+    doc.close();
+    await new Promise(r=>setTimeout(r,300));
+    const canvas=await H(doc.body,{backgroundColor:'#ffffff',scale:2,useCORS:true,windowWidth:794});
+    const img=canvas.toDataURL('image/jpeg',0.95);
+    const pdf=new JS.jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),M=16;
+    const iw=pw-M*2,ih=canvas.height*(iw/canvas.width);
+    if(ih<=ph-M*2){pdf.addImage(img,'JPEG',M,M,iw,ih);}
+    else{
+      const fih=canvas.height*(pw/canvas.width);
+      pdf.addImage(img,'JPEG',0,0,pw,fih);
+      let yy=ph;
+      while(yy<fih){pdf.addPage();pdf.addImage(img,'JPEG',0,-yy,pw,fih);yy+=ph;}
+    }
+    const safe=String(filename||'download').replace(/[\/\\:*?"<>|]+/g,'-')+'.pdf';
+    return new File([pdf.output('blob')],safe,{type:'application/pdf'});
+  } finally { iframe.remove(); }
 }
 function bcPrintWindow(title,inner){
   const w=window.open('','_blank');
