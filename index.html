@@ -9929,17 +9929,17 @@ function patientFormationRows(p){
 async function loadNewPatients(){
   const body=document.getElementById('np-body');
   if(body)body.innerHTML='<div class="report-note">Loading the register…</div>';
-  // The Registry may already have the rows; otherwise fetch them the same way.
-  let rows=patientDirectoryRows;
-  if(!rows||!rows.length){
-    const{rows:pats,error}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
-    if(error){
-      if(body)body.innerHTML=`<div class="report-note">Could not load the register: ${htmlSafe(error.message||'')}</div>`;
-      return;
-    }
-    rows=pats||[];
+  /* Always read the full table again. patientDirectoryRows is a screen cache,
+     not a reliable source for the register: after a patient or an old surgery
+     was added it could still contain the snapshot taken when Registry was last
+     opened. Reusing it meant even this page's Refresh button kept omitting the
+     new record until the whole app was reloaded. */
+  const{rows,error}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
+  if(error){
+    if(body)body.innerHTML=`<div class="report-note">Could not load the register: ${htmlSafe(error.message||'')}</div>`;
+    return;
   }
-  newPatientRows=dedupeFormationRows(rows.flatMap(patientFormationRows))
+  newPatientRows=dedupeFormationRows((rows||[]).flatMap(patientFormationRows))
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const sel=document.getElementById('np-year');
   if(sel){
