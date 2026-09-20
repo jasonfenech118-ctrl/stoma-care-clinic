@@ -3503,7 +3503,16 @@ function attMarksFor(r){
     if(pc==='overtime'&&!m.OT)m.OT=attTimeRange(r)||'X';
     else if(pc==='til_in'&&!m.OT)m.OT='TIL-In'+(attTimeRange(r)?' '+attTimeRange(r):'');
   }
-  if(cod)m.COD='X';
+  if(cod){
+    // State the change of duty instead of a bare "X": "COD-Off" on the day the
+    // nurse now rests, "COD-In" on the day they work instead, with the swapped
+    // date when it is known (mirrors the TIL-Off / TIL-In labels).
+    const vice=getCODViceInfo(String(r.roster_notes||''),r.attendance_date);
+    const dir=vice?(vice.label==='COD-in'?'COD-In':'COD-Off'):(m.duty==='O'?'COD-Off':(m.duty==='B'?'COD-In':'COD'));
+    const swap=vice?new Date((vice.date||'')+'T12:00:00'):null;
+    const dm=swap&&!isNaN(swap)?String(swap.getDate()).padStart(2,'0')+'/'+String(swap.getMonth()+1).padStart(2,'0'):'';
+    m.COD=dm?dir+' '+dm:dir;
+  }
   return m;
 }
 function attFormRowHTML(r,idx){
@@ -3545,7 +3554,7 @@ function attendanceSheetPrintHTML(dateStr,dbRows,who){
     td.mk-p{background:#e6f7ec;color:#0a5e33;} td.mk-ab{background:#fdecea;color:#a3241a;}
     td.mk-sl{background:#fff4d6;color:#8a5a00;} td.mk-vl{background:#fff1c9;color:#7a4a00;}
     td.mk-cod{background:#ede9fe;color:#5b21b6;} td.mk-ot{background:#e0f2f1;color:#0b6b64;} td.mk-toil{background:#e0f2f1;color:#0b6b64;}
-    td.mk-ot,td.mk-toil{font-size:9px;line-height:1.15;letter-spacing:0;font-weight:700;word-break:keep-all;}
+    td.mk-cod,td.mk-ot,td.mk-toil{font-size:9px;line-height:1.15;letter-spacing:0;font-weight:700;word-break:keep-all;}
     tr.na-row td.na{height:82px;text-align:center;background:repeating-linear-gradient(45deg,#fbfcfe,#fbfcfe 12px,#f4f7fb 12px,#f4f7fb 24px);}
     .na-txt{font-size:34px;font-weight:900;letter-spacing:8px;color:#d5dde7;text-transform:uppercase;}
     .foot{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:14px;font-size:11px;}
