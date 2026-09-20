@@ -2028,7 +2028,7 @@ body.pl-only .install-fab,body.ho-only .install-fab{display:none !important;}
         <button class="da-button" onclick="DailyAttendance.today()">Today</button>
         <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
         <button class="da-button" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="downloadDailyAttendancePdf()">⤓ Download daily attendance (PDF)</button>
-        <button class="da-button" style="background:#0d5c66;color:#fff;border-color:#0d5c66;" onclick="emailDailyAttendanceToHR()">✉ Send to Nurse HR</button>
+        <button class="da-button" style="background:#0d5c66;color:#fff;border-color:#0d5c66;" onclick="emailDailyAttendanceToHR(this)">✉ Send to Nurse HR</button>
       </div>
       <h3 id="da-date-label"></h3>
       <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
@@ -3599,6 +3599,9 @@ async function downloadDailyAttendancePdf(){
 // the draft with an empty To (pick the Nurse HR contact); set the address here
 // to pre-address every email.
 const HR_EMAIL='';
+// Guards the email button so a slow PDF render can't be re-triggered by repeated
+// taps (which would queue several downloads).
+let attEmailBusy=false;
 // Jason works in Outlook on the web (webmail.gov.mt/owa), so his emails open a
 // webmail compose tab instead of the desktop Outlook client.
 function attIsJason(who,signer){
@@ -3618,9 +3621,14 @@ function attDownloadFile(file){
     setTimeout(()=>URL.revokeObjectURL(url),8000);
   }catch(e){}
 }
-async function emailDailyAttendanceToHR(){
+async function emailDailyAttendanceToHR(btn){
   const date=document.getElementById('da-date')?.value||'';
   if(!DailyAttendance.validDate(date)){alert('Choose a valid date first.');return;}
+  if(attEmailBusy)return;                 // already preparing — ignore extra taps
+  attEmailBusy=true;
+  const _lbl=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Preparing…';}
+  try{
   let rows;try{rows=await attFetchDayRows(date);}catch(e){alert('Could not load the sheet: '+(e.message||e));return;}
   if(!rows.length){alert('No attendance is saved for this day yet — open the sheet (it saves automatically), then send.');return;}
   let who={};try{who=await getCurrentUserForAudit();}catch(e){}
@@ -3664,6 +3672,7 @@ async function emailDailyAttendanceToHR(){
   setTimeout(()=>alert(file
     ? 'The attendance PDF was downloaded — attach it to the Outlook email that just opened (it is in your Downloads).'
     : 'Outlook has opened with the email ready. Download the attendance PDF and attach it.'),500);
+  }finally{attEmailBusy=false;if(btn){btn.disabled=false;btn.textContent=_lbl;}}
 }
 async function downloadAttendanceRecordPdf(date){
   if(!DailyAttendance.validDate(date)){alert('Invalid date.');return;}
