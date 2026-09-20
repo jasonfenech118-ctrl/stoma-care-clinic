@@ -5402,15 +5402,18 @@ function complicationReviewSectionHTML(patientId,complicationsNow,preset){
       <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationAddFormHTML('of',`onApptAddComplication('${patientId}')`,patientId,'Appointment')}</div>
     </div>`;
 }
-function applianceReviewSectionHTML(appt,patient,preset){
+function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
   const r=preset||'';
   const choice=(v,label)=>`<label><input type="radio" name="of-app-review" value="${v}" ${r===v?'checked':''} onchange="esAppReviewChange()"> ${label}</label>`;
+  // No appliance ever recorded → only "Add first". An appliance on record → keep
+  // or change; "Add first" is hidden because there is already one.
+  const choices=hasAppliance
+    ? choice('unchanged','Continue with current appliance / accessories')+choice('changed','Appliance / accessories modifications')
+    : choice('first','Add first appliance / accessories');
   return `${visitApplianceSummaryHTML(appt,patient)}
     <div class="edit-seen-section" style="margin-top:4px;">Appliances reviewed *</div>
     <div class="es-review-choice" id="of-app-review">
-      ${choice('first','Add first appliance / accessories')}
-      ${choice('unchanged','Continue with current appliance / accessories')}
-      ${choice('changed','Appliance / accessories modifications')}
+      ${choices}
     </div>
     <div class="dntu-note" id="of-app-note" style="margin-top:6px;"></div>`;
 }
@@ -5725,7 +5728,22 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <input type="hidden" id="of-phone" value="${htmlSafe(p.phone_number||'')}"/>
       <input type="hidden" id="of-fn" value="${htmlSafe(p.first_name||'')}"/>
       <input type="hidden" id="of-sn" value="${htmlSafe(p.surname||'')}"/>`;
-    const clinicalPane=`${complicationReviewSectionHTML(p.id,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'')}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
+    // Has this patient EVER had an appliance recorded (this or any past visit)?
+    // If not, only "Add first appliance" is offered — "Continue" / "modifications"
+    // make no sense with nothing on record.
+    let hasApplianceHistory=false;
+    if(p.id){
+      try{
+        const{data:appHist}=await SB.from('appointments').select('appliances,accessories,stoma_appliances').eq('patient_id',p.id).limit(60);
+        hasApplianceHistory=(appHist||[]).some(a=>{
+          const flat=parseNameList(a.appliances),acc=parseNameList(a.accessories);
+          let sa=a.stoma_appliances; if(typeof sa==='string'){try{sa=JSON.parse(sa);}catch(e){sa=null;}}
+          const saHas=Array.isArray(sa)&&sa.some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length));
+          return flat.length||acc.length||saHas;
+        });
+      }catch(e){}
+    }
+    const clinicalPane=`${complicationReviewSectionHTML(p.id,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
