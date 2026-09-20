@@ -9808,7 +9808,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,followup_status_effective_date,followup_status_reason';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,followup_status_effective_date,followup_status_reason';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -10733,7 +10733,8 @@ function stomaTimeline(p){
   const out=[];
   if(p&&(p.surgery_date||String(p.stoma_type||'').trim())){
     out.push({uid:'base',origin:'base',type:p.stoma_type||'',location:p.stoma_location||'',
-      formed:p.surgery_date||null,ended:p.reversal_date||null,findings:p.findings||''});
+      formed:p.surgery_date||null,ended:p.reversal_date||p.stoma_superseded_date||null,
+      endedBy:(!p.reversal_date&&p.stoma_superseded_date)?'replaced':undefined,findings:p.findings||''});
   }
   /* Stomas made at the same first operation — a mucus fistula alongside the
      ileostomy, say. They share the surgery date and the patient-level reversal,
@@ -10742,8 +10743,10 @@ function stomaTimeline(p){
     uid:st.uid||('init:'+String(st.type||'')+':'+String(st.location||'')+':'+i),origin:'initial',
     type:st.type||'',location:st.location||'',mf:!!st.mucus_fistula,
     // Its own reversal date if it has one; older records fall back to the
-    // patient-level reversal they shared.
-    formed:p.surgery_date||null,ended:st.reversal_date||p.reversal_date||null,findings:st.findings||''}));
+    // patient-level reversal they shared. A superseded date — a new stoma formed
+    // at this same site — closes it too, without counting as a reversal.
+    formed:p.surgery_date||null,ended:st.reversal_date||st.superseded_date||p.reversal_date||null,
+    endedBy:(!st.reversal_date&&st.superseded_date)?'replaced':undefined,findings:st.findings||''}));
   parseRefashionings(p).forEach((r,i)=>out.push({
     uid:r.uid||('ref:'+(r.formed_date||('#'+i))),origin:'refashion',type:r.type||'',location:r.location||'',
     target:r.target_uid||'',
@@ -10751,7 +10754,10 @@ function stomaTimeline(p){
   parseStomas(p).forEach((st,i)=>out.push({
     uid:st.uid||('new:'+(st.formed_date||('#'+i))),origin:'new',type:st.type||'',location:st.location||'',
     mf:!!st.mucus_fistula,
-    formed:st.formed_date||null,ended:st.reversal_date||null,findings:st.findings||''}));
+    // A superseded date closes this stoma (a new stoma was formed at its site);
+    // it ends but is not a reversal, so the reversal counts are unaffected.
+    formed:st.formed_date||null,ended:st.reversal_date||st.superseded_date||null,
+    endedBy:(!st.reversal_date&&st.superseded_date)?'replaced':undefined,findings:st.findings||''}));
   out.sort((a,b)=>String(a.formed||'9999-99-99').localeCompare(String(b.formed||'9999-99-99')));
   /* A refashioning replaces the stoma that was there: the old one ends the day
      the new one is formed, and from then on what is used belongs to the new
@@ -10910,6 +10916,9 @@ function newStomaRowHTML(d){
   return `<div class="stoma-row" data-uid="${htmlSafe(d.uid||'')}">
     <div class="stoma-row-head"><span class="stoma-row-title">Stoma</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this stoma</button></div>
+    <!-- Set on the stoma's own page ("a new stoma was formed at this site"); carried
+         here so editing the patient never wipes it. -->
+    <input type="hidden" class="st-superseded" value="${v('superseded_date')}"/>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>Date stoma formed</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
@@ -11138,7 +11147,9 @@ function initialStomaRowHTML(d){
   // it now reads as the "Mucus Fistula" type so the flag is never lost on save.
   const effType=d.mucus_fistula?'Mucus Fistula':(d.type||'');
   const v=x=>htmlSafe(d[x]||'');
-  return `<div class="stoma-row" data-uid="${htmlSafe(uid)}"><div class="edit-seen-grid">
+  return `<div class="stoma-row" data-uid="${htmlSafe(uid)}">
+    <input type="hidden" class="ist-superseded" value="${v('superseded_date')}"/>
+    <div class="edit-seen-grid">
       <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this)">${initialStomaTypeOptions(effType)}</select></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="ist-discharge" value="${v('discharge_date')}"/></div>
@@ -11794,8 +11805,9 @@ function readPatientForm(prefix){
       discharge_date:r.querySelector('.ist-discharge')?.value||null,
       reversal_date:r.querySelector('.ist-reversal')?.value||null,
       reversal_notes:(r.querySelector('.ist-revnotes')?.value||'').trim()||null,
+      superseded_date:r.querySelector('.ist-superseded')?.value||null,
       findings:(r.querySelector('.ist-findings')?.value||'').trim()||null
-    })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.findings||s.reversal_notes),
+    })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.superseded_date||s.findings||s.reversal_notes),
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
     refashion_formed_date:refRows[0]?.formed_date||null,
@@ -11808,8 +11820,9 @@ function readPatientForm(prefix){
         type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         reversal_notes:(g('.st-revnotes')?.value||'').trim()||null,
+        superseded_date:g('.st-superseded')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
-    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date||s.reversal_notes)
+    }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date||s.superseded_date||s.reversal_notes)
       .sort(byFormedDate),
     followup_status:normaliseFollowupStatus(val('status')),
     reversal_date:val('reversal')||null,
@@ -12034,12 +12047,13 @@ function patientStomaList(p){
       type:p.stoma_type||null,location:p.stoma_location||null,
       formed_date:p.surgery_date||null,discharge_date:p.discharge_date||null,
       reversal_date:p.reversal_date||null,reversal_notes:p.reversal_notes||null,
+      superseded_date:p.stoma_superseded_date||null,
       operation:p.procedure_performed||null,comments:p.findings||null});
   parseInitialStomas(p).forEach(s=>out.push({slot:'initial:'+(s.uid||''),kind:'initial',uid:s.uid,
     // Formed at the same operation, so it shares that operation's date.
     type:s.type||null,location:s.location||null,formed_date:p.surgery_date||null,
     discharge_date:s.discharge_date||null,reversal_date:s.reversal_date||null,
-    reversal_notes:s.reversal_notes||null,operation:s.operation||null,
+    reversal_notes:s.reversal_notes||null,superseded_date:s.superseded_date||null,operation:s.operation||null,
     comments:s.comments||s.findings||null,mucus_fistula:!!s.mucus_fistula}));
   parseRefashionings(p).forEach(r=>out.push({slot:'refashion:'+(r.uid||''),kind:'refashion',uid:r.uid,
     type:r.type||null,location:r.location||null,formed_date:r.formed_date||null,
@@ -12052,7 +12066,7 @@ function patientStomaList(p){
   parseStomas(p).forEach(s=>out.push({slot:'later:'+(s.uid||''),kind:'later',uid:s.uid,
     type:s.type||null,location:s.location||null,formed_date:s.formed_date||null,
     discharge_date:s.discharge_date||null,reversal_date:s.reversal_date||null,
-    reversal_notes:s.reversal_notes||null,operation:s.operation||s.row_operation||null,
+    reversal_notes:s.reversal_notes||null,superseded_date:s.superseded_date||null,operation:s.operation||s.row_operation||null,
     comments:s.comments||s.row_comments||s.findings||null,mucus_fistula:!!s.mucus_fistula}));
   out.sort((a,b)=>String(a.formed_date||far).localeCompare(String(b.formed_date||far)));
   let n=0;
@@ -12062,7 +12076,7 @@ function patientStomaList(p){
     if(x.kind==='refashion')x.number=n||1;
     else x.number=++n;
     x.code=initialStomaCode(x.uid==='base'?String(x.formed_date||'base'):x.uid);
-    x.present=!x.reversal_date;
+    x.present=!x.reversal_date&&!x.superseded_date;
   });
   // A refashioning replaces the stoma it remade, so that earlier stoma is
   // SUPERSEDED — kept on the record as history but no longer counted as present.
@@ -12074,6 +12088,10 @@ function patientStomaList(p){
     if(!from){for(let j=i-1;j>=0;j--){if(out[j].kind!=='refashion'&&out[j].present){from=out[j];break;}}}
     if(from){from.present=false;from.superseded=true;r.fromStoma=from;}
   });
+  // A stoma with its own superseded date was taken down when a NEW stoma was
+  // formed at the same site (not a refashioning, not a reversal): keep it as
+  // history but no longer present, so the patient does not read as having two.
+  out.forEach(x=>{if(x.superseded_date){x.present=false;x.superseded=true;x.supersededByNew=true;}});
   return out;
 }
 /* The two independent status dimensions for a stoma record, per the redesign:
@@ -12084,7 +12102,7 @@ function stomaOriginBadge(x){
     : {label:'New stoma',cls:'sb-origin-new'};
 }
 function stomaStateBadge(x){
-  if(x.superseded)return {label:'Superseded',cls:'sb-superseded'};
+  if(x.superseded)return {label:x.supersededByNew?'Replaced by new stoma':'Superseded',cls:'sb-superseded'};
   if(x.reversal_date)return {label:'Reversed'+(x.reversal_date?' '+fmtShortDate(x.reversal_date):''),cls:'sb-reversed'};
   return {label:'Present',cls:'sb-present'};
 }
@@ -12122,7 +12140,7 @@ async function openStomaModal(patientId,slot){
      explicit is the point: a nurse sees what the record currently claims and
      changes it if it is wrong. Leaving it unanswered would force the same
      answer again on every one of the imported stomas for no gain. */
-  const present=x.reversal_date?'no':'yes';
+  const presentVal=x.superseded_date?'superseded':(x.reversal_date?'reversed':'yes');
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide'+sexModalClass(pat);
   mb.innerHTML=`<h2>${htmlSafe(stomaTitle(x))}</h2>
@@ -12166,19 +12184,24 @@ async function openStomaModal(patientId,slot){
       <div class="edit-seen-grid">
         <div class="fg" style="grid-column:1 / -1;">
           <div class="sm-yn">
-            <label class="pf-xchk"><input type="radio" name="sm-present" value="yes" ${present==='yes'?'checked':''}
+            <label class="pf-xchk"><input type="radio" name="sm-present" value="yes" ${presentVal==='yes'?'checked':''}
               onchange="onStomaPresent()"/> Yes — the stoma is still present</label>
-            <label class="pf-xchk"><input type="radio" name="sm-present" value="no" ${present==='no'?'checked':''}
-              onchange="onStomaPresent()"/> No — it has been reversed</label>
+            <label class="pf-xchk"><input type="radio" name="sm-present" value="reversed" ${presentVal==='reversed'?'checked':''}
+              onchange="onStomaPresent()"/> No — it has been reversed <span style="font-weight:400;color:var(--muted);">(bowel continuity restored)</span></label>
+            ${isRef?'':`<label class="pf-xchk"><input type="radio" name="sm-present" value="superseded" ${presentVal==='superseded'?'checked':''}
+              onchange="onStomaPresent()"/> No — a new stoma was later formed at this site <span style="font-weight:400;color:var(--muted);">(this one was taken down)</span></label>`}
           </div>
-          <div class="ap-hint">Saying it is still present clears any reversal date, so the answer and the date can never disagree.</div>
+          <div class="ap-hint">A reversal restores continuity and counts as a reversal. "A new stoma at this site" means this one ended when the later stoma was formed — it is kept as history and is <strong>not</strong> counted as a reversal.</div>
         </div>
-        <div class="fg" id="sm-revwrap" ${present==='no'?'':'hidden'}>
+        <div class="fg" id="sm-revwrap" ${presentVal==='reversed'?'':'hidden'}>
           <label>Date it was reversed *</label>
           <input type="date" id="sm-reversal" value="${v('reversal_date')}" max="${htmlSafe(TODAY)}" onchange="onStomaModalPreview()"/></div>
-        <div class="fg" id="sm-revnoteswrap" ${present==='no'?'':'hidden'}>
+        <div class="fg" id="sm-revnoteswrap" ${presentVal==='reversed'?'':'hidden'}>
           <label>Reversal notes</label>
           <input type="text" id="sm-revnotes" value="${v('reversal_notes')}" placeholder="e.g. Reversal of Hartmann's"/></div>
+        ${isRef?'':`<div class="fg" id="sm-supwrap" ${presentVal==='superseded'?'':'hidden'}>
+          <label>Date the new stoma was formed at this site *</label>
+          <input type="date" id="sm-superseded" value="${v('superseded_date')}" max="${htmlSafe(TODAY)}" onchange="onStomaModalPreview()"/></div>`}
         <div class="fg" style="grid-column:1 / -1;"><label>This stoma reads as</label>
           <div class="pf-outcome" id="sm-preview"></div></div>
       </div>
@@ -12219,16 +12242,19 @@ function onStomaTypeChange(){
 }
 // Whether the stoma is still there decides whether a reversal is asked for.
 function onStomaPresent(){
-  const gone=document.querySelector('input[name="sm-present"]:checked')?.value==='no';
-  const rw=document.getElementById('sm-revwrap'),nw=document.getElementById('sm-revnoteswrap');
+  const val=document.querySelector('input[name="sm-present"]:checked')?.value;
+  const gone=val==='reversed', sup=val==='superseded';
+  const rw=document.getElementById('sm-revwrap'),nw=document.getElementById('sm-revnoteswrap'),sw=document.getElementById('sm-supwrap');
   if(rw)rw.hidden=!gone;
   if(nw)nw.hidden=!gone;
-  // Saying it is still present clears a reversal date left behind, so the
-  // answer and the date can never contradict each other.
+  if(sw)sw.hidden=!sup;
+  // Clear the boxes that no longer apply, so the answer and the dates can never
+  // contradict each other.
   if(!gone){
     const d=document.getElementById('sm-reversal'); if(d)d.value='';
     const n=document.getElementById('sm-revnotes'); if(n)n.value='';
   }
+  if(!sup){const s=document.getElementById('sm-superseded'); if(s)s.value='';}
   onStomaModalPreview();
 }
 function onStomaAdmission(){
@@ -12242,28 +12268,36 @@ function onStomaAdmission(){
 function onStomaModalPreview(){
   const note=document.getElementById('sm-preview');
   if(!note)return;
+  const state=document.querySelector('input[name="sm-present"]:checked')?.value;
   const rev=document.getElementById('sm-reversal')?.value||'';
-  note.innerHTML=rev
-    ? `<span class="cr-out cr-out-reversed">Reversed on ${htmlSafe(fmtShortDate(rev))}</span>`
-    : `<span class="cr-out cr-out-active">Still present</span>`;
+  const sup=document.getElementById('sm-superseded')?.value||'';
+  if(state==='superseded')
+    note.innerHTML=`<span class="cr-out cr-out-reversed">Replaced by a new stoma${sup?' on '+htmlSafe(fmtShortDate(sup)):''}</span>`;
+  else if(state==='reversed'||rev)
+    note.innerHTML=`<span class="cr-out cr-out-reversed">Reversed${rev?' on '+htmlSafe(fmtShortDate(rev)):''}</span>`;
+  else
+    note.innerHTML=`<span class="cr-out cr-out-active">Still present</span>`;
 }
 // Read the modal back into the shape the store it belongs to expects.
 function readStomaModal(){
   const val=id=>String(document.getElementById('sm-'+id)?.value||'').trim();
   const loc=v=>v&&v!=='__add__'?v:null;
   const same=document.querySelector('input[name="sm-adm"]:checked')?.value;
-  const present=document.querySelector('input[name="sm-present"]:checked')?.value;
+  const state=document.querySelector('input[name="sm-present"]:checked')?.value; // yes | reversed | superseded
   // "Other" is stored as the words that were typed, not as the word "Other".
   const type=val('type')==='Other'?(val('typeother')||null):(val('type')||null);
   return{type,location:loc(val('loc')),
     formed_date:val('formed')||null,
     discharge_date:same==='yes'?null:(val('discharge')||null),
-    // Still present means no reversal, whatever is left in the boxes.
-    reversal_date:present==='no'?(val('reversal')||null):null,
-    reversal_notes:present==='no'?(val('revnotes')||null):null,
+    // Each outcome keeps only its own date; the others are cleared so the answer
+    // and the dates can never disagree. Superseded is a close, not a reversal.
+    reversal_date:state==='reversed'?(val('reversal')||null):null,
+    reversal_notes:state==='reversed'?(val('revnotes')||null):null,
+    superseded_date:state==='superseded'?(val('superseded')||null):null,
     operation:val('operation')||null,comments:val('comments')||null,
     target_uid:val('target')||null,
-    present:present===undefined?null:present==='yes',
+    state:state||null,
+    present:state===undefined?null:state==='yes',
     same_admission:same===undefined?null:same==='yes'};
 }
 async function saveStomaModal(){
@@ -12285,10 +12319,18 @@ async function saveStomaModal(){
   if(x.kind==='refashion'&&f.same_admission===null){
     say('Please say whether this refashioning was done during the same inpatient visit.');return;}
   if(f.present===null){say('Please say whether this stoma is still present.');return;}
-  if(f.present===false&&!f.reversal_date){
+  if(f.state==='reversed'&&!f.reversal_date){
     say('A date of reversal is needed. If the date is not known, say the stoma is still present until it is.');return;}
+  if(f.state==='superseded'&&!f.superseded_date){
+    say('Please give the date the new stoma was formed at this site. If it is not known, leave this stoma as present until it is.');return;}
   if(f.reversal_date&&f.formed_date&&f.reversal_date<f.formed_date){
     say('A stoma cannot be reversed before it was formed.');return;}
+  if(f.superseded_date&&f.formed_date&&f.superseded_date<f.formed_date){
+    say('A stoma cannot be superseded before it was formed. Check the dates.');return;}
+  if(f.superseded_date&&f.superseded_date>TODAY){
+    say('That date is in the future. Check it and try again.');return;}
+  if(rip&&f.superseded_date&&f.superseded_date>rip){
+    say(`That date is after the patient died (${on(rip)}). Check the date.`);return;}
   if(f.discharge_date&&f.formed_date&&f.discharge_date<f.formed_date){
     say('The discharge is before the operation. Check the dates.');return;}
   if(rip&&f.formed_date&&f.formed_date>rip){
@@ -12313,6 +12355,17 @@ async function saveStomaModal(){
     lines.push(others===0
       ? 'This is the patient’s last present stoma, so the patient will then read as Reversed.'
       : `The patient still has ${others} other present stoma${others>1?'s':''}, so they stay in follow-up.`);
+    if(!confirm(lines.join('\n')))return;
+  }
+  // Superseding a stoma is a state change too — confirm it, and make clear it is
+  // a close (a new stoma at the same site), not a reversal.
+  if(x.present&&f.state==='superseded'&&f.superseded_date){
+    const others=patientStomaList(ctx.pat).filter(s=>s.slot!==ctx.slot&&s.present).length;
+    const lines=[`Record that ${stomaTitle(x)}${x.type?' · '+prettyStomaType(x.type):''} was superseded by a new stoma at the same site on ${fmtShortDate(f.superseded_date)}?`,
+      '','It is kept on the record as history but no longer counted as present. This is NOT a reversal.'];
+    lines.push(others===0
+      ? 'Make sure the newer stoma at this site is on the record, or the patient will read as having no stoma.'
+      : `The patient still has ${others} other present stoma${others>1?'s':''}.`);
     if(!confirm(lines.join('\n')))return;
   }
   const payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
@@ -12342,7 +12395,8 @@ function stomaPayloadFor(pat,slot,f){
   if(where==='base'){
     const out={stoma_type:f.type,stoma_location:f.location,surgery_date:f.formed_date,
       discharge_date:f.discharge_date,reversal_date:f.reversal_date,
-      reversal_notes:f.reversal_notes,procedure_performed:f.operation,findings:f.comments};
+      reversal_notes:f.reversal_notes,stoma_superseded_date:f.superseded_date||null,
+      procedure_performed:f.operation,findings:f.comments};
     out.followup_status=derivedFollowupStatus({...pat,...out});
     return out;
   }
@@ -12363,7 +12417,8 @@ function stomaPayloadFor(pat,slot,f){
     return{...item,type:f.type,location:f.location,
       ...(where==='later'?{formed_date:f.formed_date}:{}),
       discharge_date:f.discharge_date,reversal_date:f.reversal_date,
-      reversal_notes:f.reversal_notes,operation:f.operation,comments:f.comments,
+      reversal_notes:f.reversal_notes,superseded_date:f.superseded_date||null,
+      operation:f.operation,comments:f.comments,
       findings:f.comments||null,
       mucus_fistula:/mucus\s*fistula/i.test(f.type||'')||!!item.mucus_fistula};
   });
@@ -12401,7 +12456,7 @@ async function addStomaToPatient(patientId,kind){
     ?{uid,type:pat.stoma_type||null,formed_date:null,closure_date:null,discharge_date:null,
       findings:null,operation:null,comments:null,same_admission:null}
     :{uid,type:null,location:null,formed_date:null,discharge_date:null,reversal_date:null,
-      reversal_notes:null,findings:null,operation:null,comments:null};
+      reversal_notes:null,superseded_date:null,findings:null,operation:null,comments:null};
   const{error:e2}=await updatePatientTolerant(patientId,{[col]:parse(pat).concat([blank])});
   if(e2){alert(patientSaveError(e2));return;}
   await openStomaModal(patientId,`${kind}:${uid}`);
@@ -12441,7 +12496,7 @@ function patientStomaSummaryHTML(pat){
     present===0?'No stoma is present today.'
     :present===1?'One stoma is present today.'
     :`${present} stomas are present today.`}${
-    superseded?` \u00b7 ${superseded} superseded by a refashioning`:''}</div>`:'';
+    superseded?` \u00b7 ${superseded} superseded`:''}</div>`:'';
   return `<div>
     <div class="psm-sec-head"><h3>Stomas${list.length?` · ${list.length}`:''}</h3>
       <span class="psm-badge">Click a stoma to open it</span></div>
@@ -19703,6 +19758,7 @@ function plApplianceRecordHTML(record){
 function plStomaState(stoma){
   if(!stoma)return'';
   if(stoma.endedBy==='refashioned')return'Refashioned / superseded';
+  if(stoma.endedBy==='replaced')return`Replaced by a new stoma${stoma.ended?' '+fmtShortDate(stoma.ended):''}`;
   if(stoma.ended)return`Reversed ${fmtShortDate(stoma.ended)}`;
   return'Present';
 }
