@@ -10916,9 +10916,11 @@ function newStomaRowHTML(d){
   return `<div class="stoma-row" data-uid="${htmlSafe(d.uid||'')}">
     <div class="stoma-row-head"><span class="stoma-row-title">Stoma</span>
       <button type="button" class="clr-mini danger" onclick="removeStomaRow(this)">Remove this stoma</button></div>
-    <!-- Set on the stoma's own page ("a new stoma was formed at this site"); carried
-         here so editing the patient never wipes it. -->
+    <!-- Set on the stoma's own page ("a new stoma was formed at this site" /
+         "replaces an earlier stoma"); carried here so editing the patient never
+         wipes them. -->
     <input type="hidden" class="st-superseded" value="${v('superseded_date')}"/>
+    <input type="hidden" class="st-replaces" value="${v('replaces_uid')}"/>
     <div class="edit-seen-grid">
       <div class="fg"><label>Stoma type</label><input type="text" class="st-type" value="${v('type')}" placeholder="e.g. Loop ileostomy, End colostomy"/></div>
       <div class="fg"><label>Date stoma formed</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
@@ -11080,6 +11082,16 @@ function refashionTargetOptions(cur){
   cur=String(cur||'');
   const known=PF_STOMA_TARGETS.some(t=>t.uid===cur);
   return `<option value="">— the most recent stoma —</option>`
+    +PF_STOMA_TARGETS.map(t=>`<option value="${htmlSafe(t.uid)}"${t.uid===cur?' selected':''}>${htmlSafe(t.label)}</option>`).join('')
+    +(cur&&!known?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(initialStomaCode(cur))}</option>`:'');
+}
+/* Options for "does this new stoma replace an earlier one at the same site?".
+   The earlier stoma chosen here is closed (superseded) on this stoma's formation
+   date — not a reversal. PF_STOMA_TARGETS already excludes this stoma itself. */
+function stomaReplacesOptions(cur){
+  cur=String(cur||'');
+  const known=PF_STOMA_TARGETS.some(t=>t.uid===cur);
+  return `<option value="">— no, this is a new site —</option>`
     +PF_STOMA_TARGETS.map(t=>`<option value="${htmlSafe(t.uid)}"${t.uid===cur?' selected':''}>${htmlSafe(t.label)}</option>`).join('')
     +(cur&&!known?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(initialStomaCode(cur))}</option>`:'');
 }
@@ -11820,7 +11832,7 @@ function readPatientForm(prefix){
         type:(g('.st-type')?.value||'').trim()||null,formed_date:g('.st-formed')?.value||null,location:loc(g('.st-loc')?.value),
         discharge_date:g('.st-discharge')?.value||null,reversal_date:g('.st-reversal')?.value||null,
         reversal_notes:(g('.st-revnotes')?.value||'').trim()||null,
-        superseded_date:g('.st-superseded')?.value||null,
+        superseded_date:g('.st-superseded')?.value||null,replaces_uid:g('.st-replaces')?.value||null,
         findings:(g('.st-findings')?.value||'').trim()||null};
     }).filter(s=>s.type||s.formed_date||s.location||s.findings||s.discharge_date||s.reversal_date||s.superseded_date||s.reversal_notes)
       .sort(byFormedDate),
@@ -12066,7 +12078,7 @@ function patientStomaList(p){
   parseStomas(p).forEach(s=>out.push({slot:'later:'+(s.uid||''),kind:'later',uid:s.uid,
     type:s.type||null,location:s.location||null,formed_date:s.formed_date||null,
     discharge_date:s.discharge_date||null,reversal_date:s.reversal_date||null,
-    reversal_notes:s.reversal_notes||null,superseded_date:s.superseded_date||null,operation:s.operation||s.row_operation||null,
+    reversal_notes:s.reversal_notes||null,superseded_date:s.superseded_date||null,replaces_uid:s.replaces_uid||null,operation:s.operation||s.row_operation||null,
     comments:s.comments||s.row_comments||s.findings||null,mucus_fistula:!!s.mucus_fistula}));
   out.sort((a,b)=>String(a.formed_date||far).localeCompare(String(b.formed_date||far)));
   let n=0;
@@ -12178,6 +12190,10 @@ async function openStomaModal(patientId,slot){
           <input type="text" id="sm-operation" value="${v('operation')}" placeholder="e.g. Laparoscopic Hartmann's sigmoid resection for perforated diverticular disease"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Comments</label>
           <textarea id="sm-comments" rows="2" placeholder="Any extra notes">${v('comments')}</textarea></div>
+        ${x.kind==='later'?`<div class="fg" style="grid-column:1 / -1;">
+          <label>Does this stoma replace an earlier one at the same site? <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+          <select id="sm-replaces">${stomaReplacesOptions(x.replaces_uid)}</select>
+          <div class="ap-hint">If this new stoma was formed where an earlier one was taken down, choose it here. The earlier stoma is then closed on this stoma's formation date — kept as history, no longer counted as present, and <strong>not</strong> a reversal.</div></div>`:''}
       </div>
 
       <h3 class="pf-head">Is this stoma still there?</h3>
@@ -12296,6 +12312,7 @@ function readStomaModal(){
     superseded_date:state==='superseded'?(val('superseded')||null):null,
     operation:val('operation')||null,comments:val('comments')||null,
     target_uid:val('target')||null,
+    replaces_uid:val('replaces')||null,
     state:state||null,
     present:state===undefined?null:state==='yes',
     same_admission:same===undefined?null:same==='yes'};
@@ -12368,8 +12385,20 @@ async function saveStomaModal(){
       : `The patient still has ${others} other present stoma${others>1?'s':''}.`);
     if(!confirm(lines.join('\n')))return;
   }
-  const payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
+  // A new (later) stoma can declare it replaces an earlier one at the same site:
+  // that earlier stoma is then closed on this stoma's formation date.
+  if(x.kind==='later'&&f.replaces_uid){
+    const tgt=patientStomaList(ctx.pat).find(s=>s.uid===f.replaces_uid);
+    if(!f.formed_date){say('Enter the date this stoma was formed — it is the date the stoma it replaces was closed.');return;}
+    if(tgt&&tgt.formed_date&&f.formed_date<tgt.formed_date){
+      say('This stoma was formed before the stoma it replaces. Check the dates.');return;}
+    if(tgt&&tgt.present){
+      if(!confirm(`This stoma replaces ${stomaTitle(tgt)}${tgt.type?' · '+prettyStomaType(tgt.type):''} at the same site.\n\nThat earlier stoma will be closed on ${fmtShortDate(f.formed_date)} and no longer counted as present. This is NOT a reversal.`))return;
+    }
+  }
+  let payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
+  payload=applyStomaReplacement(ctx.pat,ctx.slot,f,x,payload);
   // Guard against a double click creating two writes: disable the save while it
   // is in flight and restore it if the write fails.
   const btn=document.querySelector('#mb .btn-save');
@@ -12415,7 +12444,7 @@ function stomaPayloadFor(pat,slot,f){
         findings:f.comments||null,
         same_admission:f.same_admission};
     return{...item,type:f.type,location:f.location,
-      ...(where==='later'?{formed_date:f.formed_date}:{}),
+      ...(where==='later'?{formed_date:f.formed_date,replaces_uid:f.replaces_uid||null}:{}),
       discharge_date:f.discharge_date,reversal_date:f.reversal_date,
       reversal_notes:f.reversal_notes,superseded_date:f.superseded_date||null,
       operation:f.operation,comments:f.comments,
@@ -12425,6 +12454,30 @@ function stomaPayloadFor(pat,slot,f){
   const out={[col]:list};
   out.followup_status=derivedFollowupStatus({...pat,...out});
   return out;
+}
+/* When a NEW (later) stoma says it replaces an earlier one at the same site,
+   close that earlier stoma on this stoma's formation date — across whichever
+   store it lives in — and undo the link if it changed. The earlier stoma is
+   superseded, not reversed, so the reversal counts are untouched. */
+function applyStomaReplacement(pat,slot,f,x,payload){
+  const[where]=slot.split(':');
+  if(where!=='later')return payload;
+  const newTgt=f.replaces_uid||null, oldTgt=x.replaces_uid||null;
+  if(!newTgt&&!oldTgt)return payload;
+  const supDate=f.formed_date||null;
+  const writes={};                          // uid -> date to set, or null to clear
+  if(oldTgt&&oldTgt!==newTgt)writes[oldTgt]=null;
+  if(newTgt)writes[newTgt]=supDate;
+  Object.entries(writes).forEach(([uid,date])=>{
+    if(uid==='base'){payload.stoma_superseded_date=date;return;}
+    const inInitial=parseInitialStomas(pat).some(s=>String(s.uid||'')===uid);
+    const col=inInitial?'initial_stomas':'extra_stomas';
+    const parse=inInitial?parseInitialStomas:parseStomas;
+    const baseList=payload[col]?payload[col]:parse(pat);
+    payload[col]=baseList.map(item=>String(item.uid||'')===uid?{...item,superseded_date:date}:item);
+  });
+  payload.followup_status=derivedFollowupStatus({...pat,...payload});
+  return payload;
 }
 async function confirmRemoveStoma(){
   const ctx=stomaModalCtx; if(!ctx)return;
@@ -12456,7 +12509,7 @@ async function addStomaToPatient(patientId,kind){
     ?{uid,type:pat.stoma_type||null,formed_date:null,closure_date:null,discharge_date:null,
       findings:null,operation:null,comments:null,same_admission:null}
     :{uid,type:null,location:null,formed_date:null,discharge_date:null,reversal_date:null,
-      reversal_notes:null,superseded_date:null,findings:null,operation:null,comments:null};
+      reversal_notes:null,superseded_date:null,replaces_uid:null,findings:null,operation:null,comments:null};
   const{error:e2}=await updatePatientTolerant(patientId,{[col]:parse(pat).concat([blank])});
   if(e2){alert(patientSaveError(e2));return;}
   await openStomaModal(patientId,`${kind}:${uid}`);
