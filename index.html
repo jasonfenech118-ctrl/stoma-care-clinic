@@ -15053,12 +15053,12 @@ const HANDOVER_DOCS={
   discharge_letter:{icon:'📨',label:'Discharge letter',
     states:[{v:'',label:'Not done',cls:'hs-none'},
             {v:'done',label:'Done',cls:'hs-done'},
-            {v:'collected',label:'Collected',cls:'hs-black'}]},
+            {v:'collected',label:'',cls:'hs-black',blank:true}]},
   schedule_five_permit:{icon:'📋',label:'Schedule 5 permit',
     states:[{v:'',label:'Not done',cls:'hs-none'},
             {v:'in_ward',label:'Left in ward',cls:'hs-ward'},
             {v:'signed',label:'Signed',cls:'hs-done'},
-            {v:'collected',label:'Collected',cls:'hs-black'}]}
+            {v:'collected',label:'',cls:'hs-black',blank:true}]}
 };
 function handoverDocState(kind,value){
   const doc=HANDOVER_DOCS[kind];
@@ -15116,12 +15116,19 @@ function handoverDocDatesLine(kind,p){
   }
   return '';
 }
+// The button's inner content. The final "Collected" state is a plain black cell
+// with no wording; a hidden icon keeps it the same height as the other states.
+function handoverDocBtnInner(doc,st){
+  return st.blank
+    ? `<span class="hs-ic" style="visibility:hidden">${doc.icon}</span>`
+    : `<span class="hs-ic">${doc.icon}</span>${htmlSafe(st.label)}`;
+}
 function handoverDocButtonHTML(patient,kind){
   const doc=HANDOVER_DOCS[kind],patientId=patient.id,st=handoverDocState(kind,patient[kind]);
   return `<div class="hs-wrap">
     <button type="button" class="hs-btn ${st.cls}" id="hs-${kind}-${patientId}" data-value="${htmlSafe(st.v)}"
       title="${htmlSafe(doc.label)} — click to change" onclick="cycleHandoverDoc('${patientId}','${kind}')">
-      <span class="hs-ic">${doc.icon}</span>${htmlSafe(st.label)}</button>
+      ${handoverDocBtnInner(doc,st)}</button>
     <div class="hs-date-line" id="hsd-${kind}-${patientId}">${handoverDocDatesLine(kind,patient)}</div>
   </div>`;
 }
@@ -15146,7 +15153,7 @@ async function cycleHandoverDoc(patientId,kind){
   // Move on screen first — a ward tap should never wait on the network.
   btn.dataset.value=st.v;
   btn.className=`hs-btn ${st.cls}`;
-  btn.innerHTML=`<span class="hs-ic">${HANDOVER_DOCS[kind].icon}</span>${htmlSafe(st.label)}`;
+  btn.innerHTML=handoverDocBtnInner(HANDOVER_DOCS[kind],st);
   // Save the status and its date(s) together; missing date columns are dropped
   // so the status still saves before the migration is run.
   const{error}=await updatePatientTolerant(patientId,{[kind]:st.v===''?null:st.v,...docDateUpdates(kind,st.v)});
