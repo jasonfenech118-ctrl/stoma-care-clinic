@@ -5341,7 +5341,8 @@ function visitApplianceSummaryHTML(appt,patient){
 /* Step 2 (Clinical review) requires the nurse to say, for every attended visit,
    how complications were reviewed and how appliances were reviewed — an explicit
    decision, not a silent skip. Both are stored on the appointment. */
-function complicationReviewSectionHTML(patientId,complicationsNow,preset){
+function complicationReviewSectionHTML(patient,complicationsNow,preset){
+  const patientId=(patient&&patient.id)||'';
   if(!patientId)return `<div class="edit-seen-section">Complications reviewed</div><div class="report-note">No patient record is linked to this appointment, so complications cannot be recorded here.</div>`;
   const list=complicationsNow||[];
   const r=preset||'';
@@ -5363,7 +5364,7 @@ function complicationReviewSectionHTML(patientId,complicationsNow,preset){
         <label><input type="radio" name="of-cmp-review" value="new-added" ${r==='new-added'?'checked':''} onchange="esCmpReviewChange()"> Add a new complication</label>
       </div>
       <div id="of-cmp-existing" hidden style="margin-top:8px;">${existingRows}</div>
-      <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationMultiAddHTML(patientId)}</div>
+      <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationMultiAddHTML(patient)}</div>
     </div>`;
 }
 function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
@@ -5712,7 +5713,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         });
       }catch(e){}
     }
-    const clinicalPane=`${complicationReviewSectionHTML(p.id,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
+    const clinicalPane=`${complicationReviewSectionHTML(p,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
@@ -12776,13 +12777,19 @@ async function saveAddComplicationTypeDialog(selId,patientId,source){
     sel.innerHTML=complicationOptions(name,stomaType);
     sel.value=name;
   }
-  // The follow-up modal's multi-select area has no single <select> to refresh —
-  // rebuild its tick list and pre-tick the type that was just added.
-  if(selId==='of-cmp-multi'&&patientId){
-    const host=document.getElementById('of-cmp-add');
-    if(host){
-      host.innerHTML=complicationMultiAddHTML(patientId);
-      const cb=[...host.querySelectorAll('.of-cmp-multi')].find(x=>x.value===name);
+  // The follow-up modal's multi-select area: add the new type to the tick list
+  // and tick it, without rebuilding (which would lose the stoma choice and ticks).
+  if(selId==='of-cmp-multi'){
+    const listEl=document.getElementById('of-cmp-multi-list');
+    if(listEl){
+      let cb=[...listEl.querySelectorAll('.of-cmp-multi')].find(x=>x.value===name);
+      if(!cb){
+        const lbl=document.createElement('label');
+        lbl.style.cssText='display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;';
+        lbl.innerHTML=`<input type="checkbox" class="of-cmp-multi" value="${htmlSafe(name)}"/> ${htmlSafe(name)}`;
+        listEl.appendChild(lbl);
+        cb=lbl.querySelector('.of-cmp-multi');
+      }
       if(cb)cb.checked=true;
     }
   }
@@ -12922,18 +12929,25 @@ function onComplicationSelect(sel,patientId,source){
 /* The follow-up modal's "Add a new complication" area: a tick list so several
    complications can be added in one visit, with no date to fill in. Scoped to
    the follow-up modal (class of-cmp-multi); other places keep the single form. */
-function complicationMultiAddHTML(patientId){
-  const pid=patientId||'';
+function complicationMultiAddHTML(patient){
+  const pid=(patient&&patient.id)||'';
+  const stomaList=(typeof patientStomaList==='function'&&patient)?patientStomaList(patient):[];
+  const present=stomaList.filter(s=>s.present);
+  const defStoma=present.length===1?String(present[0].number):'';
+  const hasStoma=stomaList.length>0;
+  const stomaSel=`<div style="margin-bottom:8px;">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Which stoma are these complications on?${hasStoma?' *':''}</div>
+      <select id="of-cmp-multi-stoma" style="width:100%;">${cmpStomaOptions(patient,defStoma)}</select></div>`;
   const cat=complicationCatalogue.slice().filter(r=>r.active)
     .sort((a,b)=>(a.display_order-b.display_order)||String(a.name).localeCompare(String(b.name)));
   const setup=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="margin:6px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
-  const boxes=cat.length
-    ? cat.map(r=>`<label style="display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;">
-        <input type="checkbox" class="of-cmp-multi" value="${htmlSafe(r.name)}"/> ${htmlSafe(r.name)}</label>`).join('')
-    : '<div class="clr-empty">No complications in the list yet.</div>';
+  const box=name=>`<label style="display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="of-cmp-multi" value="${htmlSafe(name)}"/> ${htmlSafe(name)}</label>`;
+  const boxes=cat.length?cat.map(r=>box(r.name)).join(''):'<div class="clr-empty">No complications in the list yet.</div>';
   return `<div class="cmp-multi">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Tick every complication identified today — you can choose more than one.</div>
-    <div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:9px;padding:2px 8px;">${boxes}</div>
+    ${stomaSel}
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Tick every complication identified today — you can choose more than one. They are saved to the patient record for future visits.</div>
+    <div id="of-cmp-multi-list" style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:9px;padding:2px 8px;">${boxes}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
       <button type="button" class="clr-mini" onclick="openAddComplicationTypeDialog('of-cmp-multi','${jsSafe(pid)}','Appointment')">＋ New type…</button>
       <button type="button" class="pf-add-btn cmp-add-btn" onclick="onApptAddComplicationsMulti('${jsSafe(pid)}')">＋ Add selected</button>
@@ -12945,9 +12959,14 @@ async function onApptAddComplicationsMulti(patientId){
   const boxes=[...document.querySelectorAll('.of-cmp-multi:checked')];
   const names=[...new Set(boxes.map(b=>b.value).filter(Boolean))];
   if(!names.length){alert('Tick at least one complication first.');return;}
+  const stomaEl=document.getElementById('of-cmp-multi-stoma');
+  const stoma=stomaEl?stomaEl.value:'';
+  // A complication is tied to a stoma: require one whenever the patient has a
+  // stoma to tie it to (the dropdown then has a real option beyond "not tied").
+  if(stomaEl&&stomaEl.options.length>1&&!stoma){alert('Choose which stoma these complications are on.');return;}
   let lastList=null;const failed=[];
   for(const text of names){
-    const res=await addComplicationToPatient(patientId,{text,stoma:'',date:TODAY,note:'',source:'Appointment'});
+    const res=await addComplicationToPatient(patientId,{text,stoma,date:TODAY,note:'',source:'Appointment'});
     if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return;}
     if(res.error){failed.push(text);continue;}
     lastList=res.list;
