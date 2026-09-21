@@ -5347,23 +5347,14 @@ function complicationReviewSectionHTML(patient,complicationsNow,preset){
   const list=complicationsNow||[];
   const r=preset||'';
   const listHTML=list.length?complicationListHTML(list,{removable:false}):'<div class="clr-empty">No complications on record yet.</div>';
-  const stateOpts=['Ongoing','Improving','Deteriorating','Resolved'];
-  const existingRows=list.length?list.map(e=>`
-      <div class="cmp-review-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0;">
-        <span class="cmp-title" style="min-width:130px;font-weight:700;">${htmlSafe(e.text)}</span>
-        <select class="of-cmp-state" data-id="${htmlSafe(e.id)}"><option value="">— review state —</option>${stateOpts.map(s=>`<option>${s}</option>`).join('')}</select>
-        <input type="text" class="of-cmp-state-note" placeholder="Note (optional)" style="flex:1;min-width:140px;"/>
-      </div>`).join(''):'<div class="clr-empty">No existing complications to review.</div>';
   return `<div class="edit-seen-section">Complications reviewed *</div>
     <div class="psm-card" style="margin-bottom:12px;">
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">On record:</div>
       <div id="of-cmp-list">${listHTML}</div>
       <div class="es-review-choice" id="of-cmp-review" style="margin-top:8px;">
-        <label><input type="radio" name="of-cmp-review" value="none" ${r==='none'?'checked':''} onchange="esCmpReviewChange()"> No complications identified today</label>
-        ${list.length?`<label><input type="radio" name="of-cmp-review" value="existing-reviewed" ${r==='existing-reviewed'?'checked':''} onchange="esCmpReviewChange()"> Review an existing complication</label>`:''}
-        <label><input type="radio" name="of-cmp-review" value="new-added" ${r==='new-added'?'checked':''} onchange="esCmpReviewChange()"> Add a new complication</label>
+        <label><input type="radio" name="of-cmp-review" value="none" ${r==='none'?'checked':''} onchange="esCmpReviewChange()"> No complications identified</label>
+        <label><input type="radio" name="of-cmp-review" value="new-added" ${(r==='new-added'||r==='existing-reviewed')?'checked':''} onchange="esCmpReviewChange()"> A complication is identified</label>
       </div>
-      <div id="of-cmp-existing" hidden style="margin-top:8px;">${existingRows}</div>
       <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationMultiAddHTML(patient)}</div>
     </div>`;
 }
@@ -5909,8 +5900,8 @@ function esRenderFooter(){
    when the visit is completed. */
 function esCmpReviewChange(){
   const v=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const ex=document.getElementById('of-cmp-existing'); if(ex)ex.hidden=(v!=='existing-reviewed');
   const add=document.getElementById('of-cmp-add'); if(add)add.hidden=(v!=='new-added');
+  if(esState)esState.cmpAdded=false;   // changing the answer clears "complications added"
   const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
   esMaybeAutoAdvance();
 }
@@ -5934,7 +5925,10 @@ function esMaybeAutoAdvance(){
   if(!esState||esState.step!==2||!esOutcomeAttended())return;
   const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
   const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
-  if(cmp==='none'&&app){
+  // Advance once the complications answer is settled — none, or identified and
+  // added — and the appliance review has been chosen.
+  const cmpDone=(cmp==='none')||(cmp==='new-added'&&esState.cmpAdded);
+  if(cmpDone&&app){
     setTimeout(()=>{if(esState&&esState.step===2)esFollowupNext();},140);
   }
 }
@@ -12978,6 +12972,9 @@ async function onApptAddComplicationsMulti(patientId){
   }
   boxes.forEach(b=>{b.checked=false;});
   if(failed.length)alert('Could not save: '+failed.join(', '));
+  // Complications recorded — mark the step's complications answer as settled and
+  // move the visit stepper on (once the appliance review is also answered).
+  if(lastList&&typeof esState!=='undefined'&&esState){esState.cmpAdded=true;esMaybeAutoAdvance();}
 }
 /* Save one complication and refresh every view that might be showing the list —
    the picker, the appointment card, the patient card and the handover row — so
