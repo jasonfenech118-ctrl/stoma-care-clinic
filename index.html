@@ -2150,6 +2150,20 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <select id="followup-status" hidden><option value="active" selected>Active Follow-ups</option></select>
       </div>
       <div class="srow" id="followup-stats"></div>
+      <!-- Administrator-only private worklist: hidden for everyone else and never
+           populated unless the admin is signed in. Adding a patient here does NOT
+           change their nurse owner. -->
+      <div class="card" id="admin-worklist-card" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="card-title" style="margin-bottom:0;">My patients — appliances &amp; complications
+            <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Administrator only · added by hand, nurse owner never changes · <span id="admin-worklist-count"></span></span></div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <input type="search" id="admin-wl-search" placeholder="Add a patient — type a name, ID card or phone" oninput="adminWorklistSearchInput()" style="width:100%;padding:10px 12px;border:1px solid var(--border,#cbd5e1);border-radius:9px;font-size:14px;box-sizing:border-box;"/>
+          <div id="admin-wl-results" class="patient-search-results" style="margin-top:8px;"><div class="patient-search-empty">Type at least 2 letters of a name, ID card or phone.</div></div>
+        </div>
+        <div id="admin-worklist-list"></div>
+      </div>
       <div class="card" id="recall-worklist-card">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">Booking workspace <span id="recall-worklist-count" style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;"></span></div>
@@ -2691,6 +2705,10 @@ let dntuOwner='all';
 let dntuRows=[];
 let selectedFollowupOwner='Common';
 let followupPatients=[];
+// True only when the administrator (Jason) is signed in. Resolved once at login
+// and used to show the admin-only private worklist in Follow-up Planning. It
+// only hides UI — it is not a security boundary.
+let IS_ADMIN=false;
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
 const FOLLOWUP_OWNER_FILTERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
 const AUTO_AVAILABILITY_VALUE='auto_availability';
@@ -3110,7 +3128,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.19-245';
+const APP_BUILD='2026.09.21-246';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3132,6 +3150,8 @@ async function startApp(){
   const deepPatient=/^#patient=(.+)$/.exec(initialHash);
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
+  // Who is signed in — decides whether the administrator-only tools appear.
+  try{const _who=await getCurrentUserForAudit();IS_ADMIN=attIsJason(_who,'');}catch(e){IS_ADMIN=false;}
   // Honour a direct route before any awaited startup work, so Quick Look is the
   // first app page painted instead of briefly showing the roster.
   const initialTab=quickLookStart?'phone':'roster';
@@ -6235,7 +6255,7 @@ async function visitBackToAppointment(){
   if(!visitWizard)return;
   const pending=visitWizard.pending;
   visitWizard=null;
-  if(pending&&pending.mode==='episode'){closeModal();return;}
+  if(pending&&(pending.mode==='episode'||pending.mode==='admin')){closeModal();return;}
   await openOutcomeFollowupModal(pending.apptId,pending.status);
   restoreOutcomeForm(pending);
 }
@@ -6254,6 +6274,7 @@ async function commitVisitFromWizard(){
   const pending=w.pending;
   visitWizard=null;
   if(pending&&pending.mode==='episode'){await commitEpisodeAppliances(pending,rows);return;}
+  if(pending&&pending.mode==='admin'){await commitAdminAppliances(pending,rows);return;}
   // Appliance recorded from Clinical review: keep the rows and land on Follow-up
   // (the final step) instead of saving now.
   if(pending&&pending.returnToStep3){
@@ -8739,6 +8760,7 @@ function printLabelForAppt(apptId){
 async function loadStaffAudit(){
   ensureFollowupDefaults();
   loadOvertimeAudit();
+  renderAdminWorklist();
   loadBookingCalendar();
   const year=document.getElementById('followup-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('followup-month')?.value||'';
@@ -8896,6 +8918,137 @@ async function openFollowupHistory(patientId){
     <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Seen By</th><th>Outcome</th><th>Appliance / accessories</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal();loadStaffAudit();">Close</button><button class="btn-save" onclick="openPatientRebookModal('${patientId}')">Rebook Patient</button></div>`;
   openMo();
+}
+
+/* ── ADMINISTRATOR PRIVATE WORKLIST (Jason only) ──────────────────────────
+   A list the administrator keeps by hand of patients to work through — record
+   their appliances and complications — WITHOUT booking them into any clinic or
+   changing their nurse owner. The list lives in this browser only, so no other
+   nurse sees it and nothing on the patient record is touched by adding to it.
+   The whole card is gated on IS_ADMIN, resolved at login. */
+const ADMIN_WORKLIST_KEY='admin_worklist_v1';
+let adminWlLastResults=[];        // the current search matches, added to the list by id
+let adminWlSearchTimer=null;
+function adminWorklistLoad(){
+  try{const v=JSON.parse(localStorage.getItem(ADMIN_WORKLIST_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}
+}
+function adminWorklistSave(list){
+  try{localStorage.setItem(ADMIN_WORKLIST_KEY,JSON.stringify(list||[]));}catch(e){}
+}
+function adminWorklistHas(id){return adminWorklistLoad().some(p=>String(p.id)===String(id));}
+function adminWorklistAdd(p){
+  const list=adminWorklistLoad();
+  if(list.some(x=>String(x.id)===String(p.id)))return list;
+  list.push({id:p.id,first_name:p.first_name||'',surname:p.surname||'',id_card:p.id_card||'',phone_number:p.phone_number||''});
+  adminWorklistSave(list);return list;
+}
+function adminWorklistRemove(id){
+  const list=adminWorklistLoad().filter(p=>String(p.id)!==String(id));
+  adminWorklistSave(list);return list;
+}
+function adminWorklistRemoveAndRender(id){adminWorklistRemove(id);renderAdminWorklist();adminWorklistSearch();}
+/* Show the card only for the administrator and paint the saved list. Called from
+   loadStaffAudit whenever Follow-up Planning renders. */
+function renderAdminWorklist(){
+  const card=document.getElementById('admin-worklist-card');
+  if(!card)return;
+  if(!IS_ADMIN){card.style.display='none';return;}
+  card.style.display='';
+  const list=adminWorklistLoad();
+  const count=document.getElementById('admin-worklist-count');
+  if(count)count.textContent=list.length?`${list.length} patient${list.length!==1?'s':''} on your list`:'no patients added yet';
+  const body=document.getElementById('admin-worklist-list');
+  if(!body)return;
+  if(!list.length){body.innerHTML='<div class="report-note">Search above and add a patient. They stay on your private list here — their nurse owner is not changed.</div>';return;}
+  body.innerHTML=list.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
+    const meta=[p.id_card?'ID '+p.id_card:'',p.phone_number||''].filter(Boolean).join(' · ');
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 4px;border-bottom:1px solid var(--border,#e2e8f0);">
+      <div style="min-width:0;"><div style="font-weight:700;">${htmlSafe(nm)}</div><div style="font-size:12px;color:var(--muted);">${htmlSafe(meta)}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="adminAddAppliance('${jsSafe(p.id)}')">Appliances</button>
+        <button class="ncb-btn" style="background:#fff3e0;color:#8a5a00;" onclick="openComplicationsManager('${jsSafe(p.id)}')">Complications</button>
+        <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${jsSafe(p.id)}')">History</button>
+        <button class="ncb-btn" style="background:#fdecec;color:#b91c1c;" onclick="adminWorklistRemoveAndRender('${jsSafe(p.id)}')">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function adminWorklistSearchInput(){clearTimeout(adminWlSearchTimer);adminWlSearchTimer=setTimeout(adminWorklistSearch,200);}
+async function adminWorklistSearch(){
+  const box=document.getElementById('admin-wl-results');
+  if(!box)return;
+  const q=(document.getElementById('admin-wl-search')?.value||'').trim().toLowerCase();
+  if(q.length<2){box.innerHTML='<div class="patient-search-empty">Type at least 2 letters of a name, ID card or phone.</div>';adminWlLastResults=[];return;}
+  box.innerHTML='<div class="patient-search-empty">Searching…</div>';
+  const terms=q.split(/\s+/).filter(Boolean).slice(0,6);
+  let query=SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner');
+  terms.forEach(t=>{const like='%'+t.replace(/[%,()]/g,'')+'%';query=query.or(`first_name.ilike.${like},surname.ilike.${like},id_card.ilike.${like},phone_number.ilike.${like}`);});
+  const{data,error}=await query.order('surname',{ascending:true}).limit(30);
+  if(error){box.innerHTML='<div class="patient-search-empty">Could not search patients.</div>';return;}
+  const matches=(data||[]).slice(0,15);
+  adminWlLastResults=matches;
+  if(!matches.length){box.innerHTML='<div class="patient-search-empty">No matching patients.</div>';return;}
+  box.innerHTML=matches.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+    const on=adminWorklistHas(p.id);
+    const meta=[p.id_card?'ID '+p.id_card:'',p.phone_number||'',`Owner: ${htmlSafe(normaliseFollowupOwner(p.followup_owner||'Common'))}`].filter(Boolean).join(' · ');
+    return `<div class="patient-search-result">
+      <div><div class="ps-name">${htmlSafe(nm)}</div><div class="ps-meta">${meta}</div></div>
+      <div class="ps-actions"><button class="ncb-btn" ${on?'disabled style="opacity:.5;"':'style="background:var(--teal);color:#fff;"'} onclick="adminWorklistAddFromSearch('${jsSafe(p.id)}')">${on?'✓ Added':'Add to my list'}</button></div>
+    </div>`;
+  }).join('');
+}
+function adminWorklistAddFromSearch(id){
+  const p=adminWlLastResults.find(x=>String(x.id)===String(id));
+  if(!p)return;
+  adminWorklistAdd(p);
+  renderAdminWorklist();
+  adminWorklistSearch();   // repaint so the button shows "✓ Added"
+}
+/* Record appliances for one listed patient. It reuses the visit appliance picker
+   but attaches to the patient's most recent real appointment, so the appliance
+   lands on their record without creating a new clinic visit others would see —
+   and it never writes to the patients table, so the nurse owner is untouched. */
+async function adminAddAppliance(patientId){
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat){alert('Could not open this patient.');return;}
+  const{data:appts}=await SB.from('appointments')
+    .select('id,appt_date,appt_slot,status,appliances,accessories,stoma_appliances')
+    .eq('patient_id',patientId).neq('status','cancelled')
+    .order('appt_date',{ascending:false}).order('appt_slot',{ascending:false}).limit(1);
+  const latest=(appts||[])[0]||null;
+  const pending={apptId:latest?latest.id:null,patientId,mode:'admin',
+    date:latest?latest.appt_date:TODAY,slot:latest?String(latest.appt_slot||'').slice(0,5):'09:00',status:'attended'};
+  await openVisitApplianceWizard(pending,pat);
+}
+/* Save the picked appliance for the admin worklist: only the appliance columns
+   are written, on the existing appointment when there is one, or a dated record
+   for today when the patient has none. The patients table is never touched. */
+async function commitAdminAppliances(pending,rows){
+  if(!rows||!rows.length){closeModal();return;}
+  const flat=list=>[...new Set(rows.flatMap(r=>r[list]||[]))];
+  const appliancePayload={appliances:flat('appliances'),accessories:flat('accessories'),stoma_appliances:rows};
+  const protectedCols=['appliances','accessories','stoma_appliances'];
+  if(pending.apptId){
+    const saved=await updateAppointmentTolerant(pending.apptId,appliancePayload,protectedCols);
+    if(saved.protectedMissing){alert('This was NOT saved.\n\nThe database does not have the appliance columns yet. Run sql/add-appliances.sql once in Supabase, then try again.');return;}
+    if(saved.error){alert('Could not save the appliance: '+saved.error.message);return;}
+  }else{
+    const currentUser=await getCurrentUserForAudit();
+    const row={patient_id:pending.patientId,appt_date:TODAY,appt_slot:pending.slot||'09:00',status:'attended',
+      assigned_to:null,bank_staff_id:null,...appliancePayload,
+      outcome_recorded_at:new Date().toISOString(),outcome_recorded_by_email:currentUser.email,outcome_recorded_by_name:currentUser.name};
+    const{error}=await SB.from('appointments').insert(row);
+    if(error){
+      const bad=missingColumnFromError(error);
+      if(bad&&protectedCols.includes(bad)){alert('This was NOT saved.\n\nThe database does not have the appliance columns yet. Run sql/add-appliances.sql once in Supabase, then try again.');return;}
+      alert('Could not save the appliance: '+error.message);return;
+    }
+  }
+  closeModal();
+  renderAdminWorklist();
+  refreshAppointmentViews();
 }
 
 
