@@ -2154,6 +2154,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">Booking workspace <span id="recall-worklist-count" style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;"></span></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-add fp-secondary" id="bc-flex-btn" onclick="bcToggleFlex()" style="padding:7px 12px;background:#7c3aed;">🕒 Flexible &amp; DNTU</button>
             <button class="btn-add fp-secondary" onclick="printBookingList()" style="padding:7px 12px;background:#475569;">Print patient list</button>
             <button class="btn-add fp-secondary" onclick="openBookedBirdsEye()" style="padding:7px 12px;background:#475569;">Bird’s-eye view</button>
             <button class="btn-add" onclick="loadBookingCalendar()" style="padding:7px 14px;">Refresh</button>
@@ -2778,12 +2779,13 @@ function followupBookingFields(prefix, defaults={}){
 function readFollowupBookingPayload(prefix){
   const monthSelect=document.getElementById(`${prefix}-fu-month`);
   const year=document.getElementById(`${prefix}-fu-year`)?.value;
-  const month=resolveMonthValueFromSelect(monthSelect,year);
+  const{month,flexible}=resolveMonthAndFlex(monthSelect,year);
   return {
     followup_type:document.getElementById(`${prefix}-followup-type`)?.value||'follow_up',
     followup_owner:document.getElementById(`${prefix}-followup-owner`)?.value||'Common',
     followup_due_month:month?Number(month):null,
     followup_year:year?Number(year):null,
+    followup_flexible:!!flexible,
     followup_status:document.getElementById(`${prefix}-followup-status`)?.value||'active'
   };
 }
@@ -4559,6 +4561,13 @@ function selectedAvailabilityMonth(select,year){
 }
 function resolveMonthValueFromSelect(select,year){
   return selectedAvailabilityMonth(select,year).month;
+}
+/* Like resolveMonthValueFromSelect, but also reports whether the nurse chose
+   "According to clinic availability" so it can be remembered on the patient
+   (followup_flexible) and the Follow-up Planning flexible list can find them. */
+function resolveMonthAndFlex(select,year){
+  const c=selectedAvailabilityMonth(select,year);
+  return {month:c.month,flexible:!!c.isAuto};
 }
 function availabilityAutoNoteHTML(month){
   return `<div class="registry-lookup-note found" style="margin-bottom:8px;">According to clinic availability selected. Recommended due month: <strong>${htmlSafe(followupMonthName(month))}</strong>.</div>`;
@@ -6458,8 +6467,9 @@ async function correctApptAppliance(apptId,patientId){
   if(pat.is_inpatient){await openHandoverAppliance(patientId);return;}
   const slot=document.getElementById('of-slot')?.value||'';
   const year=document.getElementById('of-year')?.value;
+  const {month:ofMonth,flexible:ofFlex}=resolveMonthAndFlex(document.getElementById('of-month'),year);
   const pending={apptId:apptId||null,patientId,status:'attended',
-    year,month:resolveMonthValueFromSelect(document.getElementById('of-month'),year),
+    year,month:ofMonth,followupFlexible:ofFlex,
     followupStatus:document.getElementById('of-followup-status')?.value||'active',
     owner:document.getElementById('of-owner')?.value||'Common',
     fn:document.getElementById('of-fn')?.value.trim()||pat.first_name||'',
@@ -6475,7 +6485,7 @@ async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
   if(status==='cancelled')return openCancellationForm(apptId);
   const year=document.getElementById('of-year')?.value;
-  const month=resolveMonthValueFromSelect(document.getElementById('of-month'),year);
+  const {month,flexible:followupFlexible}=resolveMonthAndFlex(document.getElementById('of-month'),year);
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
   const owner=document.getElementById('of-owner')?.value||'Common';
 
@@ -6524,7 +6534,7 @@ async function saveOutcomeFollowup(apptId,patientId){
     });
   }
 
-  const pending={apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,
+  const pending={apptId,patientId,status,year,month,followupFlexible,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
     complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
@@ -6551,7 +6561,7 @@ async function saveOutcomeFollowup(apptId,patientId){
 }
 async function commitOutcomeFollowup(v,stomaRows){
   if(v.status==='cancelled')return openCancellationForm(v.apptId);
-  const{apptId,patientId,status,year,month,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth}=v;
+  const{apptId,patientId,status,year,month,followupFlexible,followupStatus,owner,fn,sn,idcard,phone,date,slot,nurse,isDntuEditMode,dntuTarget,complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth}=v;
   const flat=list=>[...new Set((stomaRows||[]).flatMap(r=>r[list]||[]))];
   const currentUser=await getCurrentUserForAudit();
   const outcomeUpdate={
@@ -6611,11 +6621,14 @@ async function commitOutcomeFollowup(v,stomaRows){
       phone_number:phone||null,
       followup_due_month:noDueMonth?null:Number(month),
       followup_year:noDueMonth?null:Number(year),
+      followup_flexible:noDueMonth?false:!!followupFlexible,
       followup_owner:owner,
       followup_status:followupStatus
     };
     if(status==='attended')updatePayload.followup_type='follow_up';
-    const{error:pErr}=await SB.from('patients').update(updatePayload).eq('id',patientId);
+    // Tolerant: if followup_flexible (or another new column) is not in the
+    // database yet, it is dropped and the rest of the follow-up still saves.
+    const{error:pErr}=await updatePatientTolerant(patientId,updatePayload);
     if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
   }
   if(isDntuEditMode){
@@ -7316,7 +7329,8 @@ async function loadRecallWorklist(){
    it fills. Days the nurse is off are greyed. Reuses the roster/clinic-day model
    and the same appointment insert the daily clinic uses. */
 const BC_WINDOW=['09:00','09:30','10:00','10:30','11:00','11:30'];
-let bookCalState={year:null,month:null,listOwner:'Common',calOwner:'Common',patients:[],bookings:[],index:null,dayOpen:null,selId:null};
+let bookCalState={year:null,month:null,listOwner:'Common',calOwner:'Common',patients:[],bookings:[],index:null,dayOpen:null,selId:null,
+  mode:'due',allPatients:[],duePatients:[],flexPatients:null,flexLoading:false};
 function bcStomaLabel(p){
   try{const s=stomasPresentOn(p,TODAY);if(s&&s.length)return s.map(x=>x.typeLabel||x.label).filter(Boolean).join(', ');}catch(e){}
   if(p.stoma_type)return String(p.stoma_type);
@@ -7357,7 +7371,13 @@ async function loadBookingCalendar(){
     // Due patients for this month + owner, with no future appointment yet.
     // Page through every row — an unbounded select silently caps at 1000, which
     // was dropping patients past the cap from the month list.
-    const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,newstoma_findings,locality,surgery_date'));
+    const bcBaseCols='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,newstoma_findings,locality,surgery_date';
+    // Prefer selecting followup_flexible too; if that column is not in the
+    // database yet, fall back so the booking calendar still loads.
+    let patsRes=await fetchAllRows(()=>SB.from('patients').select(bcBaseCols+',followup_flexible'));
+    if(patsRes.error&&/followup_flexible/i.test(String(patsRes.error.message||'')))
+      patsRes=await fetchAllRows(()=>SB.from('patients').select(bcBaseCols));
+    const pats=patsRes.rows;
     const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date').gte('appt_date',TODAY).neq('status','cancelled'));
     // Earliest future appointment per patient. A patient counts as booked — and so
     // leaves the to-book list — only when that appointment actually covers this due
@@ -7369,13 +7389,21 @@ async function loadBookingCalendar(){
     const earliestFuture={};
     (future||[]).forEach(r=>{const k=String(r.patient_id);if(!earliestFuture[k]||r.appt_date<earliestFuture[k])earliestFuture[k]=r.appt_date;});
     const coversDue=monthKeyToEndDate(addMonthsToKey(year*100+month,LATE_BOOKING_GRACE_MONTHS));
-    bookCalState.patients=(pats||[]).filter(p=>{
+    const duePatients=(pats||[]).filter(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
       if(Number(p.followup_due_month)!==month||Number(p.followup_year)!==year)return false;
       if(owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
       const appt=earliestFuture[String(p.id)];
       return !(appt&&appt<=coversDue);
     }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
+    // Keep the full table for the flexible/DNTU list, and the earliest-future map
+    // so the flexible list can drop patients who already have a covering booking.
+    bookCalState.allPatients=pats||[];
+    bookCalState.earliestFuture=earliestFuture;
+    bookCalState.duePatients=duePatients;
+    bookCalState.flexPatients=null;   // built lazily when the flexible tab is opened
+    bookCalState.mode='due';
+    bookCalState.patients=duePatients;
     // Existing bookings in the month + the roster staffing index for greying.
     const{rows:appts}=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').gte('appt_date',first).lte('appt_date',last));
     bookCalState.bookings=appts||[];
@@ -7386,6 +7414,51 @@ async function loadBookingCalendar(){
     renderBookingCalendar();
   }catch(e){root.innerHTML='<div class="report-note">Could not load the booking calendar: '+htmlSafe(String(e&&e.message||e))+'</div>';}
 }
+/* The flexible / DNTU worklist: patients set to "according to clinic
+   availability" plus anyone who has missed 1 or 2 appointments (DNTU streak
+   1–2), for this nurse, who still need a booking. Built lazily the first time
+   the tab is opened, then bookable exactly like the due-this-month list. */
+async function bcLoadFlexList(){
+  const owner=bookCalState.listOwner;
+  const pats=bookCalState.allPatients||[];
+  const future=bookCalState.earliestFuture||{};
+  const byId={}; pats.forEach(p=>byId[String(p.id)]=p);
+  const eligible=p=>p&&normaliseFollowupStatus(p.followup_status)==='active'
+    &&(owner==='All Patients'||normaliseFollowupOwner(p.followup_owner||'Common')===owner)
+    &&!future[String(p.id)];
+  const map={};
+  // "According to clinic availability" patients.
+  pats.forEach(p=>{if(p.followup_flexible&&eligible(p))map[String(p.id)]={...p,_flex:true,_dntu:0};});
+  // DNTU streaks 1–2, computed from every appointment (lean read).
+  const{rows:allAppts}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,appt_slot,status'));
+  const groups={};
+  (allAppts||[]).forEach(a=>{const k=String(a.patient_id||'');if(!k)return;(groups[k]||(groups[k]=[])).push(a);});
+  Object.entries(groups).forEach(([pid,rows])=>{
+    const streak=calculateCurrentDntuStreak(rows);
+    if(streak!==1&&streak!==2)return;
+    const p=byId[pid];
+    if(!eligible(p))return;
+    if(map[pid])map[pid]._dntu=streak; else map[pid]={...p,_flex:false,_dntu:streak};
+  });
+  bookCalState.flexPatients=Object.values(map).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
+}
+async function bcSetMode(mode){
+  if(mode==='flex'){
+    if(!bookCalState.flexPatients){
+      bookCalState.flexLoading=true; renderBookingCalendar();
+      try{await bcLoadFlexList();}catch(e){bookCalState.flexPatients=[];}
+      bookCalState.flexLoading=false;
+    }
+    bookCalState.mode='flex';
+    bookCalState.patients=bookCalState.flexPatients||[];
+  }else{
+    bookCalState.mode='due';
+    bookCalState.patients=bookCalState.duePatients||[];
+  }
+  bookCalState.selId=null; bookCalState.dayOpen=null;
+  renderBookingCalendar();
+}
+function bcToggleFlex(){ bcSetMode(bookCalState.mode==='flex'?'due':'flex'); }
 const BC_WORK_CODES=['D','OT','TIL'];
 // Resolve the follow-up owner to the roster staff whose shift pattern is that
 // owner (prefer an exact first-name match so 'Jacqueline' finds the patterned
@@ -7423,8 +7496,13 @@ function renderBookingCalendar(){
   const root=document.getElementById('bookcal-root');
   if(!root)return;
   const {year,month}=bookCalState;
+  const flex=bookCalState.mode==='flex';
   const countEl=document.getElementById('recall-worklist-count');
-  if(countEl)countEl.textContent=`${bookCalState.patients.length} to book · ${followupMonthName(month)} ${year} · ${bookCalState.listOwner}`;
+  if(countEl)countEl.textContent=flex
+    ? `${bookCalState.flexLoading?'…':bookCalState.patients.length} flexible & DNTU to book · ${bookCalState.listOwner}`
+    : `${bookCalState.patients.length} to book · ${followupMonthName(month)} ${year} · ${bookCalState.listOwner}`;
+  const flexBtn=document.getElementById('bc-flex-btn');
+  if(flexBtn){flexBtn.innerHTML=flex?'← Due this month':'🕒 Flexible &amp; DNTU';flexBtn.style.background=flex?'#475569':'#7c3aed';}
   root.innerHTML=`<div class="bookcal">
     <div class="bc-panel" id="bc-left">${bookCalState.dayOpen?bcDayViewHTML():bcMonthHTML()}</div>
     <div class="bc-panel" id="bc-right">${bcListHTML()}</div>
@@ -7484,12 +7562,21 @@ function bcDayViewHTML(){
     ${slots}`;
 }
 function bcListHTML(){
+  const flex=bookCalState.mode==='flex';
+  if(flex&&bookCalState.flexLoading)
+    return `<div class="bc-head"><h4>Flexible &amp; DNTU</h4></div><div class="report-note">Loading flexible &amp; DNTU patients…</div>`;
   const list=bookCalState.patients;
-  if(!list.length)return `<div class="bc-head"><h4>Due this month</h4></div><div class="report-note">✅ No patients due to book for this nurse and month.</div>`;
-  return `<div class="bc-head"><h4>Due this month <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
+  const title=flex?'Flexible &amp; DNTU to book':'Due this month';
+  if(!list.length)
+    return `<div class="bc-head"><h4>${title}</h4></div><div class="report-note">${flex?'✅ No “according to availability” or 1–2 DNTU patients to book for this nurse.':'✅ No patients due to book for this nurse and month.'}</div>`;
+  return `<div class="bc-head"><h4>${title} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
+    ${flex?'<div class="bc-pickhint">Set to “according to clinic availability”, or missed 1–2 appointments. Tap one, then a free slot to book.</div>':''}
     ${list.map(p=>{
       const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-      const meta=[p.id_card?'ID '+p.id_card:'',bcStomaLabel(p),p.locality||'',p.surgery_date?'Surgery '+fmtShortDate(p.surgery_date):''].filter(Boolean).join(' · ');
+      const parts=[p.id_card?'ID '+p.id_card:'',bcStomaLabel(p),p.locality||'',p.surgery_date?'Surgery '+fmtShortDate(p.surgery_date):''];
+      if(flex&&p._flex)parts.push('according to availability');
+      if(flex&&p._dntu)parts.push('DNTU '+p._dntu+'×');
+      const meta=parts.filter(Boolean).join(' · ');
       return `<div class="bc-list-pat ${bookCalState.selId===String(p.id)?'sel':''}" data-id="${p.id}">
         <div class="bc-nm">${htmlSafe(nm)}</div><div class="bc-meta">${htmlSafe(meta)}</div></div>`;
     }).join('')}`;
@@ -7518,6 +7605,8 @@ async function bcBook(ds,slot,patientId){
   }
   bookCalState.bookings.push(data||row);
   bookCalState.patients=bookCalState.patients.filter(x=>String(x.id)!==String(patientId));
+  if(bookCalState.mode==='flex')bookCalState.flexPatients=bookCalState.patients;
+  else bookCalState.duePatients=bookCalState.patients;
   bookCalState.selId=null;
   invalidateAvailabilityCaches();
   renderBookingCalendar();
@@ -8780,11 +8869,11 @@ async function loadStaffAudit(){
 }
 async function savePatientFollowup(patientId){
   const year=document.getElementById('fu-year-'+patientId)?.value;
-  const month=resolveMonthValueFromSelect(document.getElementById('fu-month-'+patientId),year);
+  const{month,flexible}=resolveMonthAndFlex(document.getElementById('fu-month-'+patientId),year);
   const owner=document.getElementById('fu-owner-'+patientId)?.value||selectedFollowupOwner;
   const status=document.getElementById('fu-status-'+patientId)?.value||'active';
   if(!month||!year){alert('Please select Due Month and Follow-up Year.');return;}
-  const{error}=await SB.from('patients').update({followup_due_month:Number(month),followup_year:Number(year),followup_owner:owner,followup_status:status}).eq('id',patientId);
+  const{error}=await updatePatientTolerant(patientId,{followup_due_month:Number(month),followup_year:Number(year),followup_flexible:!!flexible,followup_owner:owner,followup_status:status});
   if(error){alert('Could not save follow-up details: '+error.message);return;}
   loadStaffAudit();
 }
@@ -9775,7 +9864,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_status_effective_date,followup_status_reason';
+const PATIENT_DATE_COLS='date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —

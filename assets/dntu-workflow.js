@@ -206,7 +206,7 @@ function dntuBuildSavePlan(s,today=TODAY){
   const streak=dntuSequence(projected).length;
   const pause=streak>=3&&!isClosedFollowupStatus(s.p.followup_status);
   if(record&&s.changeFollowup&&!pause&&(!s.month||!s.year))throw new Error('Choose a follow-up month and year, or untick “Change the follow-up plan”.');
-  const patientUpdate=pause?{followup_status:'paused'}:(record&&s.changeFollowup?{followup_due_month:Number(s.month),followup_year:Number(s.year),followup_owner:s.owner,followup_status:s.followupStatus}:null);
+  const patientUpdate=pause?{followup_status:'paused'}:(record&&s.changeFollowup?{followup_due_month:Number(s.month),followup_year:Number(s.year),followup_flexible:!!s.followupFlexible,followup_owner:s.owner,followup_status:s.followupStatus}:null);
   return {rows,current:record?{status:'did_not_attend',appt_date:s.date,appt_slot:s.slot,...dntuAllocation(s.nurse)}:null,patientUpdate,streak};
 }
 function dntuFormError(message){
@@ -218,6 +218,9 @@ async function saveDntuNurseForm(){
   dntuRememberFields();
   // Resolve availability before snapshotting; saving only history never enters
   // the appointment/follow-up path, even when the appointment is in the future.
+  // Remember whether the nurse chose "According to clinic availability" before it
+  // is resolved to a concrete month, so it is saved on the patient (flexible).
+  s.followupFlexible=(s.mode==='record'&&s.changeFollowup&&String(s.month)===AUTO_AVAILABILITY_VALUE);
   if(s.mode==='record'&&s.changeFollowup&&s.month===AUTO_AVAILABILITY_VALUE&&document.getElementById('of-month')){
     if(s.availabilityLoading){dntuFormError('Clinic availability is still loading. Please wait or choose a due month.');return;}
     s.month=String(resolveMonthValueFromSelect(document.getElementById('of-month'),s.year)||'');
@@ -257,8 +260,15 @@ async function saveDntuNurseForm(){
       s.history=s.history.map(a=>String(a.id)===String(s.appt.id)?{...a,...plan.current}:a);
     }
     if(plan.patientUpdate){
-      const{error}=await SB.from('patients').update(plan.patientUpdate).eq('id',s.appt.patient_id);
-      if(error){s.followupPending=true;throw new Error('The DNTU record was saved, but follow-up could not be updated: '+error.message);}
+      // Tolerant of followup_flexible not being in the database yet: retry once
+      // without it so the rest of the follow-up still saves. Self-contained
+      // (needs only SB) so the save path stays testable.
+      let up=await SB.from('patients').update(plan.patientUpdate).eq('id',s.appt.patient_id);
+      if(up.error&&/followup_flexible/i.test(String(up.error.message||''))){
+        const{followup_flexible,...rest}=plan.patientUpdate;
+        up=await SB.from('patients').update(rest).eq('id',s.appt.patient_id);
+      }
+      if(up.error){s.followupPending=true;throw new Error('The DNTU record was saved, but follow-up could not be updated: '+up.error.message);}
       s.followupPending=false;
     }
     closeModal();refreshAppointmentViews();
