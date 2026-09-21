@@ -5363,7 +5363,7 @@ function complicationReviewSectionHTML(patientId,complicationsNow,preset){
         <label><input type="radio" name="of-cmp-review" value="new-added" ${r==='new-added'?'checked':''} onchange="esCmpReviewChange()"> Add a new complication</label>
       </div>
       <div id="of-cmp-existing" hidden style="margin-top:8px;">${existingRows}</div>
-      <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationAddFormHTML('of',`onApptAddComplication('${patientId}')`,patientId,'Appointment')}</div>
+      <div id="of-cmp-add" hidden style="margin-top:8px;">${complicationMultiAddHTML(patientId)}</div>
     </div>`;
 }
 function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
@@ -12776,6 +12776,16 @@ async function saveAddComplicationTypeDialog(selId,patientId,source){
     sel.innerHTML=complicationOptions(name,stomaType);
     sel.value=name;
   }
+  // The follow-up modal's multi-select area has no single <select> to refresh —
+  // rebuild its tick list and pre-tick the type that was just added.
+  if(selId==='of-cmp-multi'&&patientId){
+    const host=document.getElementById('of-cmp-add');
+    if(host){
+      host.innerHTML=complicationMultiAddHTML(patientId);
+      const cb=[...host.querySelectorAll('.of-cmp-multi')].find(x=>x.value===name);
+      if(cb)cb.checked=true;
+    }
+  }
   closeMo2();
 }
 // The patient's complications, tolerant of the column being JSON text or absent.
@@ -12908,6 +12918,47 @@ function onComplicationSelect(sel,patientId,source){
     openSeparationDetail(patientId,source);
     return;
   }
+}
+/* The follow-up modal's "Add a new complication" area: a tick list so several
+   complications can be added in one visit, with no date to fill in. Scoped to
+   the follow-up modal (class of-cmp-multi); other places keep the single form. */
+function complicationMultiAddHTML(patientId){
+  const pid=patientId||'';
+  const cat=complicationCatalogue.slice().filter(r=>r.active)
+    .sort((a,b)=>(a.display_order-b.display_order)||String(a.name).localeCompare(String(b.name)));
+  const setup=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="margin:6px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
+  const boxes=cat.length
+    ? cat.map(r=>`<label style="display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="of-cmp-multi" value="${htmlSafe(r.name)}"/> ${htmlSafe(r.name)}</label>`).join('')
+    : '<div class="clr-empty">No complications in the list yet.</div>';
+  return `<div class="cmp-multi">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Tick every complication identified today — you can choose more than one.</div>
+    <div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:9px;padding:2px 8px;">${boxes}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+      <button type="button" class="clr-mini" onclick="openAddComplicationTypeDialog('of-cmp-multi','${jsSafe(pid)}','Appointment')">＋ New type…</button>
+      <button type="button" class="pf-add-btn cmp-add-btn" onclick="onApptAddComplicationsMulti('${jsSafe(pid)}')">＋ Add selected</button>
+    </div>
+    ${setup}
+  </div>`;
+}
+async function onApptAddComplicationsMulti(patientId){
+  const boxes=[...document.querySelectorAll('.of-cmp-multi:checked')];
+  const names=[...new Set(boxes.map(b=>b.value).filter(Boolean))];
+  if(!names.length){alert('Tick at least one complication first.');return;}
+  let lastList=null;const failed=[];
+  for(const text of names){
+    const res=await addComplicationToPatient(patientId,{text,stoma:'',date:TODAY,note:'',source:'Appointment'});
+    if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return;}
+    if(res.error){failed.push(text);continue;}
+    lastList=res.list;
+  }
+  if(lastList){
+    if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.complications=lastList;
+    const host=document.getElementById('of-cmp-list');
+    if(host)host.innerHTML=complicationListHTML(lastList,{removable:true,patientId});
+  }
+  boxes.forEach(b=>{b.checked=false;});
+  if(failed.length)alert('Could not save: '+failed.join(', '));
 }
 /* Save one complication and refresh every view that might be showing the list —
    the picker, the appointment card, the patient card and the handover row — so
