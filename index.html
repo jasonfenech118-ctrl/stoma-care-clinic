@@ -3126,7 +3126,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-248';
+const APP_BUILD='2026.09.22-249';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8995,17 +8995,24 @@ async function renderAdminAvailability(owner,year,month){
     const a=await followupSundayHolidayAvailability(owner,year,month);
     if(token!==renderAdminAvailability._t)return;   // a newer render superseded this one
     const cap=Number(a.capacity)||0, free=Math.max(0,Number(a.free)||0);
-    const ratio=cap>0?free/cap:0;
-    const deg=Math.round(ratio*360);
-    const color=free<=0?'#dc2626':(ratio<0.34?'#f59e0b':'#16a34a');
-    host.innerHTML=`<div class="availability-preview">
-      <div class="availability-donut" style="--free:${deg}deg;--avail-color:${color};" role="img" aria-label="${free} free slots">
-        <div class="donut-free"><b>${cap>0?free:'—'}</b><span>free</span></div>
+    // How many patients are on this nurse + month list — each one is a slot that
+    // will be taken, so the slots still not in use is the free slots minus them.
+    const onList=adminWorklistLoad().filter(x=>String(x.owner)===String(owner)&&Number(x.year)===Number(year)&&Number(x.month)===Number(month)).length;
+    const notInUse=Math.max(0,free-onList);
+    const colorFor=(v,c)=>{const r=c>0?v/c:0;return v<=0?'#dc2626':(r<0.34?'#f59e0b':'#16a34a');};
+    const donut=(centre,word,deg,color,title,sub)=>`<div class="availability-preview">
+      <div class="availability-donut" style="--free:${deg}deg;--avail-color:${color};" role="img" aria-label="${htmlSafe(String(title))}">
+        <div class="donut-free"><b>${cap>0?centre:'—'}</b><span>${word}</span></div>
       </div>
-      <div class="availability-text">
-        <strong>${htmlSafe(followupMonthName(month))} ${year} — ${htmlSafe(owner)}</strong>
-        <div class="availability-sub">${cap>0?`${free} of ${cap} slots free`:'No clinic day this month'} · Sundays &amp; public holidays</div>
-      </div>
+      <div class="availability-text"><strong>${title}</strong><div class="availability-sub">${sub}</div></div>
+    </div>`;
+    host.innerHTML=`<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+      ${donut(free,'free',Math.round((cap>0?free/cap:0)*360),colorFor(free,cap),
+        `${htmlSafe(followupMonthName(month))} ${year} — ${htmlSafe(owner)}`,
+        cap>0?`${free} of ${cap} slots free · Sundays &amp; public holidays`:'No clinic day this month')}
+      ${donut(notInUse,'not used',Math.round((cap>0?notInUse/cap:0)*360),colorFor(notInUse,cap),
+        'Free after your list',
+        cap>0?`${onList} on your list · ${notInUse} of ${cap} slots not in use`:'No clinic day this month')}
     </div>`;
   }catch(e){if(token===renderAdminAvailability._t)host.innerHTML='';}
 }
