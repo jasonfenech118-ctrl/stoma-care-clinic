@@ -2925,6 +2925,31 @@ function calcHourLabel(start,end){
 /* SAFE APPOINTMENT LOADER
    Do not use embedded Supabase relationship reads for appointments.
    Read appointment rows first, then join patients/staff/bank_staff in JavaScript. */
+/* Build 247 briefly created an attended 09:00 appointment when the admin
+   worklist saved an appliance for a patient who had no visit. Build 250 stopped
+   creating them. The rows made during that short release window are not clinic
+   visits: keep their appliance data intact, but never let them occupy a slot,
+   hide a postop patient, or inflate activity figures. */
+const LEGACY_ADMIN_APPT_START=Date.parse('2026-09-21T21:44:18Z');
+const LEGACY_ADMIN_APPT_END=Date.parse('2026-09-22T16:15:00Z');
+function appointmentJsonHasValues(v){
+  if(Array.isArray(v))return v.length>0;
+  if(v&&typeof v==='object')return Object.keys(v).length>0;
+  if(typeof v!=='string'||!v.trim())return false;
+  try{const p=JSON.parse(v);return Array.isArray(p)?p.length>0:!!(p&&typeof p==='object'&&Object.keys(p).length);}
+  catch(e){return v.trim()!=='[]'&&v.trim()!=='{}';}
+}
+function isLegacyAdminAppliancePlaceholder(a){
+  if(!a||String(a.status||'')!=='attended')return false;
+  if(String(a.appt_slot||'').slice(0,5)!=='09:00')return false;
+  if(a.assigned_to||a.bank_staff_id)return false;
+  const stamp=Date.parse(String(a.outcome_recorded_at||''));
+  if(!Number.isFinite(stamp)||stamp<LEGACY_ADMIN_APPT_START||stamp>=LEGACY_ADMIN_APPT_END)return false;
+  if(String(a.appt_date||'')!==String(a.outcome_recorded_at||'').slice(0,10))return false;
+  return appointmentJsonHasValues(a.stoma_appliances)
+    ||appointmentJsonHasValues(a.appliances)
+    ||appointmentJsonHasValues(a.accessories);
+}
 function uniqueNonEmpty(values){
   return [...new Set((values||[]).filter(v=>v!==null&&v!==undefined&&String(v).trim()!=='').map(v=>String(v)))];
 }
@@ -2934,7 +2959,7 @@ function mapById(rows){
   return m;
 }
 async function enrichAppointments(rows){
-  const base=rows||[];
+  const base=(rows||[]).filter(a=>!isLegacyAdminAppliancePlaceholder(a));
   const patientIds=uniqueNonEmpty(base.map(a=>a.patient_id));
   const staffIds=uniqueNonEmpty(base.map(a=>a.assigned_to));
   const bankIds=uniqueNonEmpty(base.map(a=>a.bank_staff_id));
@@ -3126,7 +3151,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-250';
+const APP_BUILD='2026.09.22-251';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7003,6 +7028,25 @@ async function requireRegisteredPatientForBooking(){
   return data;
 }
 function normaliseIdCard(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,'');}
+/* Match the ID card after normalising it, not only by the exact stored text.
+   Older rows can contain spaces or lower-case letters, and an exact query used
+   to miss those rows and allow the same patient to be created again. Returning
+   an array also handles an existing duplicate safely instead of maybeSingle()
+   failing and hiding the problem. */
+async function findRegistryPatientsByIdCard(idCard,omitId){
+  const key=normaliseIdCard(idCard);
+  if(!key)return {matches:[],error:null};
+  const cols='id,first_name,surname,id_card,followup_status';
+  let{data,error}=await SB.from('patients').select(cols).ilike('id_card',key).limit(10);
+  if(error)return {matches:[],error};
+  let matches=(data||[]).filter(p=>normaliseIdCard(p.id_card)===key&&String(p.id)!==String(omitId||''));
+  if(!matches.length){
+    const all=await fetchAllRows(()=>SB.from('patients').select(cols));
+    if(all.error)return {matches:[],error:all.error};
+    matches=(all.rows||[]).filter(p=>normaliseIdCard(p.id_card)===key&&String(p.id)!==String(omitId||''));
+  }
+  return {matches,error:null};
+}
 async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId,phoneInputId,noteId){
   const idEl=document.getElementById(idInputId);
   const note=document.getElementById(noteId);
@@ -12245,9 +12289,9 @@ async function openPatientDatesModal(patientId){
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')" hidden>Save Patient</button>
       </div>
     <div style="text-align:center;margin-top:14px;">
-      <button type="button" onclick="confirmDeletePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')"
-        style="background:none;border:none;color:#b91c1c;opacity:.6;font-size:11px;padding:4px 6px;text-decoration:underline;cursor:pointer;font-family:inherit;"
-        title="Delete this patient permanently">Delete patient</button>
+      <button type="button" onclick="confirmArchivePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')"
+        style="background:none;border:none;color:#8a5a14;opacity:.8;font-size:11px;padding:4px 6px;text-decoration:underline;cursor:pointer;font-family:inherit;"
+        title="Archive this patient while keeping the full record">Archive patient</button>
     </div>`;
   openMo();
   renumberStomaRows('pcd');
@@ -12297,9 +12341,14 @@ async function savePatientDates(patientId){
     if(err)err.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`;
     return;
   }
-  // A second patient must not end up on the same ID card.
-  const{data:clash}=await SB.from('patients').select('id').eq('id_card',payload.id_card).neq('id',patientId).maybeSingle();
-  if(clash){
+  // A second patient must not end up on the same ID card, including an older
+  // copy stored with spaces or different letter case.
+  const{matches:clashes,error:clashErr}=await findRegistryPatientsByIdCard(payload.id_card,patientId);
+  if(clashErr){
+    if(err)err.innerHTML='<div class="registry-lookup-note error">Could not check the registry for another copy of this ID card.</div>';
+    return;
+  }
+  if(clashes.length){
     if(err)err.innerHTML='<div class="registry-lookup-note error">Another patient already has that ID card.</div>';
     return;
   }
@@ -15447,12 +15496,13 @@ async function saveNewPatient(){
   if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
   say('<div class="registry-lookup-note">Checking the registry…</div>');
 
-  const{data:existing,error:lookErr}=await SB.from('patients')
-    .select('id,first_name,surname,id_card').eq('id_card',payload.id_card).maybeSingle();
+  const{matches,error:lookErr}=await findRegistryPatientsByIdCard(payload.id_card);
   if(lookErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(lookErr))}</div>`);return;}
+  const existing=matches[0]||null;
   if(existing){
     const nm=`${existing.first_name||''} ${existing.surname||''}`.trim()||'a patient';
-    say(`<div class="registry-lookup-note error">${htmlSafe(payload.id_card)} is already on file as <strong>${htmlSafe(nm)}</strong>.
+    const extra=matches.length>1?` <strong>${matches.length} records already use this ID card.</strong> Open Needs Checking and archive the extra record.`:'';
+    say(`<div class="registry-lookup-note error">${htmlSafe(payload.id_card)} is already on file as <strong>${htmlSafe(nm)}</strong>.${extra}
       <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${existing.id}')">Open that patient</button></div>`);
     return;
   }
@@ -16460,6 +16510,22 @@ function episodeApplianceSummaryLine(ep){
   }
   return String(ep&&ep.notes||'').trim();
 }
+/* Postop Discharges is a patient worklist, not an episode archive. If the same
+   person has more than one closed admission (or was accidentally entered twice
+   under the same ID card), only their latest discharge belongs on the booking
+   list. Every older episode remains available in the patient record. */
+function latestPostopEpisodes(rows,patientsById){
+  const latest={};
+  (rows||[]).forEach(ep=>{
+    const pt=(patientsById||{})[ep.patient_id]||{};
+    const card=normaliseIdCard(pt.id_card||'');
+    const key=card?('card:'+card):(ep.patient_id?('patient:'+ep.patient_id):('episode:'+ep.id));
+    const cur=latest[key];
+    const rank=r=>`${String(r.discharge_date||'')}|${String(r.record_date||'')}|${String(r.id||'')}`;
+    if(!cur||rank(ep)>rank(cur))latest[key]=ep;
+  });
+  return Object.values(latest);
+}
 /* ------------------------------------------------------------------------- *
  * Siting sessions — pre-operative stoma siting appointments.
  * A siting session is booked for someone who may not yet be a registry patient;
@@ -16795,8 +16861,8 @@ async function saveSitingSession(){
   else payload.updated_at=new Date().toISOString();
   // If this ID already belongs to a registry patient, stamp the link so the
   // patient's Siting view finds it even before any surgery/stoma outcome.
-  try{const{data:existing}=await SB.from('patients').select('id').eq('id_card',idcard).maybeSingle();
-    if(existing&&existing.id)payload.patient_id=existing.id;}catch(e){}
+  try{const{matches}=await findRegistryPatientsByIdCard(idcard);
+    if(matches.length===1)payload.patient_id=matches[0].id;}catch(e){}
   try{const u=await getCurrentUserForAudit();if(!sitingEditId)payload.created_by=u?.name||null;}catch(e){}
   const run=b=>sitingEditId
     ? SB.from('siting_sessions').update(b).eq('id',sitingEditId)
@@ -17289,9 +17355,13 @@ async function saveSitingStomaPatient(){
   const refErr=refashioningError(payload);
   if(refErr){say(`<div class="registry-lookup-note error">${htmlSafe(refErr)}</div>`);return;}
   say('<div class="registry-lookup-note">Checking the registry…</div>');
-  const{data:existing,error:lookErr}=await SB.from('patients')
-    .select('id,first_name,surname').eq('id_card',payload.id_card).maybeSingle();
+  const{matches,error:lookErr}=await findRegistryPatientsByIdCard(payload.id_card);
   if(lookErr){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(lookErr))}</div>`);return;}
+  if(matches.length>1){
+    say(`<div class="registry-lookup-note error"><strong>${htmlSafe(payload.id_card)} already has ${matches.length} registry records.</strong> Open <em>Needs Checking</em> and archive the extra record before saving this operation, so its history is attached to the correct patient.</div>`);
+    return;
+  }
+  const existing=matches[0]||null;
   const sd=payload.surgery_date||ctx.surgery_date||null;
   let pid=null;
   if(existing){
@@ -17445,54 +17515,65 @@ async function loadPostopDischarges(){
       : `<div class="report-note">Could not load the postop discharge list: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const discharged=(data||[]).filter(r=>r.discharge_date);
+  const allDischarged=(data||[]).filter(r=>r.discharge_date);
   // Names come from the patients table, fetched in one read.
-  const ids=[...new Set(discharged.map(e=>e.patient_id).filter(Boolean))];
+  const ids=[...new Set(allDischarged.map(e=>e.patient_id).filter(Boolean))];
   const byId={};
   if(ids.length){
-    const{data:pats}=await SB.from('patients').select('id,first_name,surname,id_card,consultant,is_inpatient,followup_status').in('id',ids);
-    (pats||[]).forEach(p=>{byId[p.id]=p;});
+    const pats=await fetchPatientsSelect(cols=>SB.from('patients').select(cols).in('id',ids));
+    (pats.data||[]).forEach(p=>{byId[p.id]=p;});
   }
+  const discharged=latestPostopEpisodes(allDischarged,byId);
   /* This is a worklist: everyone discharged after their operation who has not
      been given a follow-up appointment yet. An appointment booked on or after
      the discharge takes them off it, so the list empties itself as they are
      booked and nobody has to remember to strike a name out. */
-  const booked={};
+  const followups={};
   if(ids.length){
     try{
-      const{data:appts}=await SB.from('appointments').select('patient_id,appt_date,status').in('patient_id',ids);
+      const{data:appts}=await SB.from('appointments')
+        .select('patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances')
+        .in('patient_id',ids);
       (appts||[]).forEach(a=>{
         if(!a||!a.patient_id||!a.appt_date)return;
-        if(String(a.status||'')==='cancelled')return;
-        const cur=booked[a.patient_id];
-        if(!cur||String(a.appt_date)>String(cur))booked[a.patient_id]=String(a.appt_date);
+        if(isLegacyAdminAppliancePlaceholder(a))return;
+        // Cancelled and DNTU visits still need a new appointment. Only a real
+        // booking or a follow-up that genuinely happened closes this work item.
+        if(!['booked','attended'].includes(String(a.status||'')))return;
+        (followups[a.patient_id]=followups[a.patient_id]||[]).push(a);
       });
     }catch(e){}
   }
   // Patients who have left the local service are not waiting for a stoma-care
   // follow-up here, so they drop off this worklist even without an appointment.
   const POSTOP_LEFT_STATUSES=new Set(['relocated_overseas','discharged_gozo','deceased']);
-  const eps=discharged.filter(ep=>{
+  const stateFor=ep=>{
     const pt=byId[ep.patient_id]||{};
+    if(pt.archived===true)return 'archived';
     // A patient who has been re-admitted is on the ward again, so they belong
     // on the handover, not on this discharge worklist — drop them the moment
     // their inpatient visit is reopened, without waiting for a follow-up.
-    if(pt.is_inpatient===true)return false;
+    if(pt.is_inpatient===true)return 'inpatient';
     // Relocated overseas, discharged to Gozo or deceased — no follow-up to book.
-    if(POSTOP_LEFT_STATUSES.has(String(pt.followup_status||'').toLowerCase()))return false;
-    const seen=booked[ep.patient_id];
-    return !(seen&&seen>=String(ep.discharge_date));
-  });
+    if(POSTOP_LEFT_STATUSES.has(String(pt.followup_status||'').toLowerCase()))return 'left';
+    const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date));
+    if(after.some(a=>String(a.status)==='booked'))return 'booked';
+    if(after.some(a=>String(a.status)==='attended'))return 'completed';
+    return 'waiting';
+  };
+  const episodeStates=discharged.map(ep=>({ep,state:stateFor(ep)}));
+  const eps=episodeStates.filter(x=>x.state==='waiting').map(x=>x.ep);
+  const bookedCount=episodeStates.filter(x=>x.state==='booked').length;
+  const completedCount=episodeStates.filter(x=>x.state==='completed').length;
   // Oldest discharge first: the person who has waited longest for a follow-up
   // appointment sits at the top, so the worklist is worked from the top down.
   eps.sort((a,b)=>String(a.discharge_date).localeCompare(String(b.discharge_date)));
-  const waiting=discharged.length-eps.length;
   if(!eps.length){
     postopState.rows=[];
     body.innerHTML=emptyStateHTML('📤',
-      discharged.length?'Everyone discharged has an appointment':'No postop discharges yet',
+      discharged.length?'Nobody is awaiting a postop appointment':'No postop discharges yet',
       discharged.length
-        ? `All ${discharged.length} postop discharge${discharged.length===1?'':'s'} have a follow-up appointment booked, so there is nobody left to book.`
+        ? `${bookedCount} booked${completedCount?` · ${completedCount} follow-up${completedCount===1?'':'s'} completed`:''}.`
         : 'A patient joins this list when you press <strong>Postop discharge</strong> on their handover row. They come off it again as soon as a follow-up appointment is booked for them.');
     return;
   }
@@ -17519,7 +17600,7 @@ async function loadPostopDischarges(){
       <col style="width:120px"><col>
     </colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="5"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} awaiting an appointment${waiting?` · ${waiting} already booked`:''}</span></th></tr>
+      <tr class="hv-bannerrow"><th colspan="5"><span class="hv-date">Postop Discharges</span><span class="hv-count">${rows.length} awaiting · ${bookedCount} booked${completedCount?` · ${completedCount} completed`:''}</span></th></tr>
       <tr>
         <th>Date of discharge ↑</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
       </tr>
@@ -18052,7 +18133,7 @@ async function loadDuplicates(){
     body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry: '+htmlSafe(res.error.message)+'</div>';
     return;
   }
-  duplicateRows=res.rows||[];
+  duplicateRows=(res.rows||[]).filter(p=>p.archived!==true);
   renderDuplicates();
 }
 // Build the groups once, so render and print share the same work.
@@ -18062,7 +18143,15 @@ function computeDuplicateGroups(){
   const groups=[];
   Object.values(byName).forEach(members=>{
     const ids=[...new Set(members.map(m=>normaliseIdCard(m.id_card)).filter(Boolean))];
-    if(ids.length<2)return;   // one person, one card — nothing to check
+    if(members.length<2)return;
+    // Two separate registry rows with the exact same normalised ID are the
+    // strongest duplicate signal of all. The old scanner discarded them
+    // because the set contained only one distinct card — exactly backwards.
+    if(ids.length===1){
+      groups.push({members,reason:'same ID card entered twice',strong:true,
+        name:`${members[0].surname||''}, ${members[0].first_name||''}`.replace(/^, |, $/,'').trim()||'(no name)'});
+      return;
+    }
     // Strongest ID reason across any pair in the group.
     let reason='';
     for(let i=0;i<ids.length&&!reason;i++)for(let j=i+1;j<ids.length;j++){
@@ -18094,7 +18183,8 @@ function renderDuplicates(){
         <td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'<span class="pd-dash">—</span>'}</td>
         <td>${p.phone_number?htmlSafe(p.phone_number):'<span class="pd-dash">—</span>'}</td>
         <td><span class="cr-out ${cls}">${htmlSafe(text)}</span></td>
-        <td><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button></td>
+        <td><div class="followup-actions"><button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Review</button>
+          <button class="ncb-btn" style="background:#fff7e6;color:#8a5a14;" onclick="confirmArchivePatient('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Archive duplicate</button></div></td>
       </tr>`;
     }).join('');
     return `<div class="dup-group ${g.strong?'strong':''}">
@@ -18115,7 +18205,7 @@ function renderDuplicates(){
       ${annualKpi('Registry',duplicateRows.length,'patients scanned')}
     </div>
     <div class="registry-lookup-note" style="margin-bottom:12px;">
-      <strong>Likely duplicates</strong> are the ones to check first — the ID cards differ only by a leading zero, one digit, or the letter, so they are probably the same patient typed twice. Open the extra record, confirm it, and move any missing detail onto the one you keep. Nothing here is deleted for you.
+      <strong>Likely duplicates</strong> are the ones to check first — including two records carrying the same ID card. Review both, move any missing detail onto the record you are keeping, then archive the extra one. Archiving keeps its full history and can be reversed.
     </div>
     ${nameOnly.length?`<label class="dup-toggle"><input type="checkbox" ${dupShowNameOnly?'checked':''} onchange="toggleDupNameOnly(this)"/> Also show the ${nameOnly.length} same-name group${nameOnly.length!==1?'s':''} (many will just be different people with the same name)</label>`:''}
     ${shown.length?shown.map(groupHTML).join(''):'<div class="report-note" style="padding:20px;text-align:center;">🎉 No likely duplicates in the registry.</div>'}`;
