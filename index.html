@@ -3167,7 +3167,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-253';
+const APP_BUILD='2026.09.22-254';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5329,8 +5329,22 @@ const APPLIANCE_CATALOGUE=[
   {name:'Absorbent Dressing',system:'dressing',part:'dressing',group:'Dressings'}
 ];
 const APPLIANCES=APPLIANCE_CATALOGUE.map(a=>a.name);
-const ACCESSORIES=['Deodorant','Dilators','Filler Paste','Flange Extenders','Gelling Agents','Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes','Stoma Belt','Stoma Seals','None'];
-const APPLIANCE_ONEPIECE_GROUPS=['Salts','Hollister','Welland','Lentell','Other'];
+const ACCESSORIES=['Dilators','Filler Paste','Flange Extenders','Gelling Agents','Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes','Stoma Belt','Stoma Seals'];
+const RETIRED_ACCESSORIES=new Set(['Deodorant']);
+const APPLIANCE_ONEPIECE_GROUPS=['Hollister','Lentell','Other','Salts','Welland'];
+function applianceNameCompare(a,b){
+  const left=String(a&&a.name!==undefined?a.name:(a||''));
+  const right=String(b&&b.name!==undefined?b.name:(b||''));
+  return left.localeCompare(right,'en',{sensitivity:'base',numeric:true});
+}
+function sortedApplianceItems(items){return (items||[]).slice().sort(applianceNameCompare);}
+/* Standard choices plus any historical one-off accessory, alphabetically. None
+   stays last because it clears every real choice. Retired choices remain in old
+   visit records but are never offered or carried into a new selection. */
+function accessoryChoices(extra){
+  const real=[...new Set(ACCESSORIES.concat(extra||[]).filter(n=>n&&n!=='None'&&!RETIRED_ACCESSORIES.has(n)))].sort(applianceNameCompare);
+  return real.concat('None');
+}
 function applianceCouplings(){
   return [...new Set(APPLIANCE_CATALOGUE.filter(a=>a.part==='flange').map(a=>a.coupling))].sort((a,b)=>a-b);
 }
@@ -5368,7 +5382,7 @@ function applianceFamilies(part){
   const out=[];
   APPLIANCE_CATALOGUE.filter(a=>a.part===part).forEach(a=>{
     const f=applianceFamily(a.name); if(!out.includes(f))out.push(f);});
-  return out;
+  return out.sort(applianceNameCompare);
 }
 function applianceFamilyGroupsHTML(part,all,selected){
   return applianceFamilies(part).map(f=>applianceGroupHTML(f,
@@ -5377,7 +5391,7 @@ function applianceFamilyGroupsHTML(part,all,selected){
 }
 function applianceGroupHTML(title,items,selected){
   if(!items.length)return '';
-  return `<div class="ap-group"><div class="ap-group-h">${htmlSafe(title)}</div>${items.map(a=>applianceChkHTML(a.name,selected.includes(a.name),a.coupling)).join('')}</div>`;
+  return `<div class="ap-group"><div class="ap-group-h">${htmlSafe(title)}</div>${sortedApplianceItems(items).map(a=>applianceChkHTML(a.name,selected.includes(a.name),a.coupling)).join('')}</div>`;
 }
 /* On the appointment card this is a read-back, not an entry point: what was
    used is recorded stoma by stoma when the visit is saved as Seen. */
@@ -5467,7 +5481,7 @@ function applianceSectionHTML(appliances,accessories){
       <div class="fg" style="grid-column:1 / -1;">
         <label>Accessories</label>
         <div class="ap-panel ap-panel-short" id="of-accessories">
-          <div class="ap-group">${ACCESSORIES.concat(extraAcc).map(n=>applianceChkHTML(n,selAcc.includes(n))).join('')}</div>
+          <div class="ap-group">${accessoryChoices(extraAcc).map(n=>applianceChkHTML(n,selAcc.includes(n))).join('')}</div>
         </div>
       </div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
@@ -6200,7 +6214,7 @@ function renderVisitStep(){
     if(w.system==='one')body='';
     body=`${banner}${carry}<div class="edit-seen-grid">
       <div class="fg" style="grid-column:1 / -1;"><label>Accessories used on this stoma</label>
-        <div class="ap-panel" id="of-accessories"><div class="ap-group">${ACCESSORIES.concat(w.work.accessories.filter(n=>!ACCESSORIES.includes(n))).map(n=>applianceChkHTML(n,w.work.accessories.includes(n))).join('')}</div></div>
+        <div class="ap-panel" id="of-accessories"><div class="ap-group">${accessoryChoices(w.work.accessories).map(n=>applianceChkHTML(n,w.work.accessories.includes(n))).join('')}</div></div>
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
     foot=`<button class="btn-save" onclick="visitNext()">Save change</button>`;
@@ -14947,7 +14961,7 @@ function renderInpatientStep(){
   }else{
     body=`${ivStomaBanner()}<div class="edit-seen-grid">
       <div class="fg" style="grid-column:1 / -1;"><label>Accessories</label>
-        <div class="ap-panel ap-panel-short" id="of-accessories"><div class="ap-group">${ACCESSORIES.map(n=>applianceChkHTML(n,w.accessories.includes(n))).join('')}</div></div>
+        <div class="ap-panel ap-panel-short" id="of-accessories"><div class="ap-group">${accessoryChoices(w.accessories).map(n=>applianceChkHTML(n,w.accessories.includes(n))).join('')}</div></div>
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Extra notes for the handover</label>

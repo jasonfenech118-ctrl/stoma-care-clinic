@@ -113,3 +113,27 @@ test('Complete visit has aligned patient details and no redundant appliance copy
   assert.match(review,/if\(v==='changed'/);
   assert.match(review,/if\(cmpDone\)\{esFollowupNext\(\);return;\}/);
 });
+
+test('appliances and accessories are alphabetical and Deodorant is retired',()=>{
+  const source=sourceBetween('const APPLIANCE_CATALOGUE=','/* Stored as a JSON array');
+  const context=vm.createContext({Set,String});
+  vm.runInContext(source,context);
+
+  const accessories=Array.from(vm.runInContext('accessoryChoices([])',context));
+  assert.deepEqual(accessories,[
+    'Dilators','Filler Paste','Flange Extenders','Gelling Agents',
+    'Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes',
+    'Stoma Belt','Stoma Seals','None'
+  ]);
+  const withHistorical=Array.from(vm.runInContext("accessoryChoices(['Zinc barrier','Deodorant'])",context));
+  assert.equal(withHistorical.includes('Deodorant'),false);
+  assert.equal(withHistorical.at(-1),'None');
+  assert.deepEqual(
+    Array.from(vm.runInContext("sortedApplianceItems([{name:'Zulu 20'},{name:'Alpha'},{name:'Zulu 5'}]).map(x=>x.name)",context)),
+    ['Alpha','Zulu 5','Zulu 20']
+  );
+
+  assert.equal((html.match(/accessoryChoices\(/g)||[]).length>=4,true);
+  assert.doesNotMatch(html,/ACCESSORIES\.concat\([^\n]*\.map\(/);
+  assert.doesNotMatch(html,/ACCESSORIES\.map\(n=>applianceChkHTML/);
+});
