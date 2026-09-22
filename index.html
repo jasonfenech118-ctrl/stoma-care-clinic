@@ -3126,7 +3126,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-249';
+const APP_BUILD='2026.09.22-250';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9136,12 +9136,21 @@ async function admSavePatient(){
   }
   const appliances=selectedAppliances();
   const accessories=applianceValues('of-accessories').filter(v=>v!=='None');
+  let applianceSkipped=false;
   if((appliances.length||accessories.length)&&hasStoma&&!stomaNumber){alert('Choose which stoma the appliance is for.');return reset();}
   if(appliances.length||accessories.length){
-    const stObj=stomaList.find(s=>String(s.number)===String(stomaNumber));
-    const row={uid:stObj?.uid||'unassigned',code:stObj?.code||'S?',short:'',label:stObj?('Stoma '+stObj.number):'',stoma_type:stObj?prettyStomaType(stObj.type):'',appliances,accessories,flange_due:''};
-    const err=await adminWriteAppliances(pat.id,admFormApptId,[row]);
-    if(err){alert(err);return reset();}
+    if(!admFormApptId){
+      // Never invent a visit just to hold an appliance — a phantom appointment
+      // would count the patient as "booked" in Postop Discharges and inflate the
+      // attended figures. With no appointment to attach it to, the appliance is
+      // left for the real visit; the complications and nurse / month still save.
+      applianceSkipped=true;
+    }else{
+      const stObj=stomaList.find(s=>String(s.number)===String(stomaNumber));
+      const row={uid:stObj?.uid||'unassigned',code:stObj?.code||'S?',short:'',label:stObj?('Stoma '+stObj.number):'',stoma_type:stObj?prettyStomaType(stObj.type):'',appliances,accessories,flange_due:''};
+      const err=await adminWriteAppliances(pat.id,admFormApptId,[row]);
+      if(err){alert(err);return reset();}
+    }
   }
   const failed=[];
   if(cmpMode==='new'){
@@ -9165,24 +9174,19 @@ async function admSavePatient(){
   renderAdminWorklist();
   refreshAppointmentViews();
   if(failed.length)alert('Saved, but these complications could not be saved: '+failed.join(', '));
+  if(applianceSkipped)alert('Saved the nurse / month'+(cmpMode==='new'?' and complications':'')+'. The appliance was NOT recorded because this patient has no appointment yet to attach it to — set the appliance at their visit. (This avoids creating a booking they never had.)');
 }
-/* Write only the appliance columns — never the patients table — on the given
-   appointment, or a dated record for today when there is none. */
+/* Write only the appliance columns on an EXISTING appointment — never the
+   patients table, and never a new appointment (that would look like a booking).
+   Called only when the patient already has an appointment to attach it to. */
 async function adminWriteAppliances(patientId,apptId,rows){
+  if(!apptId)return null;
   const flat=list=>[...new Set(rows.flatMap(r=>r[list]||[]))];
   const payload={appliances:flat('appliances'),accessories:flat('accessories'),stoma_appliances:rows};
   const protectedCols=['appliances','accessories','stoma_appliances'];
-  if(apptId){
-    const saved=await updateAppointmentTolerant(apptId,payload,protectedCols);
-    if(saved.protectedMissing)return 'The appliance columns are not in the database yet. Run sql/add-appliances.sql once in Supabase, then try again.';
-    if(saved.error)return 'Could not save the appliance: '+saved.error.message;
-    return null;
-  }
-  const currentUser=await getCurrentUserForAudit();
-  const row={patient_id:patientId,appt_date:TODAY,appt_slot:'09:00',status:'attended',assigned_to:null,bank_staff_id:null,
-    ...payload,outcome_recorded_at:new Date().toISOString(),outcome_recorded_by_email:currentUser.email,outcome_recorded_by_name:currentUser.name};
-  const{error}=await SB.from('appointments').insert(row);
-  if(error){const bad=missingColumnFromError(error);if(bad&&protectedCols.includes(bad))return 'The appliance columns are not in the database yet. Run sql/add-appliances.sql once in Supabase, then try again.';return 'Could not save the appliance: '+error.message;}
+  const saved=await updateAppointmentTolerant(apptId,payload,protectedCols);
+  if(saved.protectedMissing)return 'The appliance columns are not in the database yet. Run sql/add-appliances.sql once in Supabase, then try again.';
+  if(saved.error)return 'Could not save the appliance: '+saved.error.message;
   return null;
 }
 
