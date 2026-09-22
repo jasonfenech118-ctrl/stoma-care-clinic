@@ -99,3 +99,17 @@ test('Complete visit hides nurse selection but retains the booked allocation',()
   assert.match(html,/\.followup-owner-plain,\.followup-owner-plain option\{background:#fff!important;color:#000!important/);
 });
 
+test('Complete visit has aligned patient details and no redundant appliance copy',()=>{
+  const modal=sourceBetween('async function openOutcomeFollowupModal(','/* ── The Edit-appointment stepper');
+  const appliance=sourceBetween('function visitApplianceSummaryHTML(','function applianceSectionHTML(');
+  const review=sourceBetween('function esAppReviewChange(','/* Auto-advance off the Clinical review page');
+  assert.match(modal,/class="es-summary-head"/);
+  assert.match(modal,/class="es-summary-details"/);
+  assert.match(modal,/class="es-summary-label">Appointment/);
+  assert.doesNotMatch(modal,/Clinical review — complications &amp; appliances/);
+  assert.doesNotMatch(modal,/Edit \/ correct appliance/);
+  assert.doesNotMatch(appliance,/Nothing recorded yet\. Saving this appointment/);
+  assert.doesNotMatch(appliance,/Appliances reviewed/);
+  assert.match(review,/if\(v==='changed'/);
+  assert.match(review,/if\(cmpDone\)\{esFollowupNext\(\);return;\}/);
+});

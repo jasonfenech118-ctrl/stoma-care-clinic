@@ -1622,11 +1622,17 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 @media(max-width:720px){.mb.mb-wide{width:95vw;}.edit-seen-grid{grid-template-columns:1fr;}}
 
 /* ── EDIT / SEEN 3-STEP STEPPER ─────────────────────────────────────────── */
-.es-summary{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin:0 0 14px;padding:16px 18px;border:2px solid #000;border-radius:12px;background:#fff;}
-.es-summary .es-nm{font-weight:900;color:#000;font-size:22px;letter-spacing:.2px;line-height:1.15;}
-.es-summary .es-chip{font-size:15px;font-weight:800;color:#000;background:#fff;border:1.5px solid #000;border-radius:999px;padding:4px 13px;}
-.es-summary .es-chip.warn{color:#000;background:#fff;border-color:#000;text-decoration:underline;text-decoration-thickness:2px;}
-@media(max-width:720px){.es-summary .es-nm{font-size:19px;}.es-summary .es-chip{font-size:14px;}}
+.es-summary{margin:0 0 14px;padding:14px 16px;border:2px solid #000;border-radius:12px;background:#fff;color:#000;}
+.es-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:10px;border-bottom:1px solid #cbd5e1;}
+.es-summary .es-nm{font-weight:900;color:#000;font-size:21px;letter-spacing:.1px;line-height:1.2;min-width:0;}
+.es-summary-id{flex:none;border:1.5px solid #000;border-radius:999px;padding:3px 10px;background:#fff;color:#000;font-size:12px;font-weight:900;white-space:nowrap;}
+.es-summary-details{display:grid;grid-template-columns:100px minmax(0,1fr);gap:0;margin-top:5px;}
+.es-summary-label,.es-summary-value{padding:7px 2px;border-bottom:1px solid #e2e8f0;line-height:1.25;}
+.es-summary-label{color:#475569;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;}
+.es-summary-value{color:#000;font-size:13px;font-weight:800;overflow-wrap:anywhere;}
+.es-summary-details>:nth-last-child(-n+2){border-bottom:0;}
+.es-summary-value.warn{text-decoration:underline;text-decoration-thickness:2px;}
+@media(max-width:720px){.es-summary{padding:13px 14px;}.es-summary-head{align-items:flex-start;}.es-summary .es-nm{font-size:18px;}.es-summary-id{font-size:11px;}.es-summary-details{grid-template-columns:88px minmax(0,1fr);}}
 .es-info{margin:0 0 12px;padding:8px 11px;border-radius:10px;background:#eef6f9;border:1px solid #c7e0ea;color:#1a4b63;font-size:11px;font-weight:700;line-height:1.35;}
 .es-stepper{display:flex;gap:8px;margin:0 0 14px;}
 .es-step{flex:1;display:flex;align-items:center;gap:8px;padding:9px 10px;border:1.5px solid var(--border);border-radius:11px;background:#fff;font-size:12px;font-weight:800;color:var(--muted);cursor:pointer;text-align:left;min-height:44px;}
@@ -3161,7 +3167,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-252';
+const APP_BUILD='2026.09.22-253';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5383,13 +5389,12 @@ function visitApplianceSummaryHTML(appt,patient){
     const flat=parseNameList(appt&&appt.appliances),acc=parseNameList(appt&&appt.accessories);
     if(flat.length||acc.length)rows=[{code:'',label:'Recorded for this visit',appliances:flat,accessories:acc}];
   }
-  const stomaCount=stomasPresentOn(patient,appt&&appt.appt_date).length;
   const body=rows.length?rows.map(r=>`<div class="vw-recap">
       <div class="vw-recap-h">${htmlSafe(r.label||'This visit')}</div>
       <div>${appliancePillsHTML(r.appliances,r.accessories)}</div></div>`).join('')
-    :`<div class="ap-hint" style="margin:0;">Nothing recorded yet. Saving this appointment as <strong>Seen</strong> asks for the appliances and accessories${stomaCount>1?`, one card for each of the ${stomaCount} stomas`:''}.</div>`;
+    :'';
   return `<div class="edit-seen-section" id="of-appliance-head">Appliance &amp; accessories</div>
-    <div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">${body}</div></div>`;
+    ${body?`<div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">${body}</div></div>`:''}`;
 }
 /* Step 2 (Clinical review) requires the nurse to say, for every attended visit,
    how complications were reviewed and how appliances were reviewed — an explicit
@@ -5419,13 +5424,11 @@ function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
   // (hidden) so the flow proceeds without a redundant tap.
   if(!hasAppliance){
     return `${visitApplianceSummaryHTML(appt,patient)}
-      <div class="edit-seen-section" style="margin-top:4px;">Appliance &amp; accessories</div>
       <input type="radio" name="of-app-review" value="first" checked hidden>
       <div class="dntu-note" id="of-app-note" style="margin-top:6px;">No appliance is on record — the one-piece / two-piece and accessory pages open next to record the first one.</div>`;
   }
   // An appliance is on record → keep it or change it ("Add first" is hidden).
   return `${visitApplianceSummaryHTML(appt,patient)}
-    <div class="edit-seen-section" style="margin-top:4px;">Appliances reviewed *</div>
     <div class="es-review-choice" id="of-app-review">
       ${choice('unchanged','Continue with current appliance / accessories')}${choice('changed','Appliance / accessories modifications')}
     </div>
@@ -5682,10 +5685,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         ${followupOwnerOptions(ownerDefault)}
       </select></div>
     </div>`;
-  const correctApplianceBtn=`<div class="edit-seen-grid"><div class="fg" style="grid-column:1 / -1;">
-      <button type="button" class="btn-cancel" style="width:auto;background:#e8f5f4;color:#0d7377;border-color:#b5e0dd;" onclick="correctApptAppliance('${htmlSafe(apptId||'')}','${htmlSafe(appt.patient_id||p.id||'')}')">✎ Edit / correct appliance</button>
-      <div class="ap-hint" style="margin-top:5px;">Fix an appliance entered by mistake — opens the appliance picker directly.</div>
-    </div></div>`;
   const followupBlock=`<div id="of-followup-planning-wrap">
     <div class="edit-seen-grid">
       <div class="fg"><label>Follow-up due year</label><select id="of-year" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
@@ -5732,12 +5731,17 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     let stomaSummary='';
     try{const s=stomasPresentOn(p,appt.appt_date);stomaSummary=s.length?s.map(x=>x.typeLabel||x.label).filter(Boolean).join(' · '):'No stoma recorded';}catch(e){stomaSummary='';}
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+    const apptWhen=[appt.appt_date?fmtShortDate(appt.appt_date):'Date not recorded',appt.appt_slot?String(appt.appt_slot).slice(0,5):''].filter(Boolean).join(' · ');
     const summary=`<div class="es-summary">
-        <span class="es-nm">${htmlSafe(nm)}</span>
-        ${p.id_card?`<span class="es-chip">ID ${htmlSafe(p.id_card)}</span>`:''}
-        <span class="es-chip">Appointment: ${htmlSafe(appt.appt_date||'')}${appt.appt_slot?' · '+htmlSafe(String(appt.appt_slot).slice(0,5)):''}</span>
-        ${stomaSummary?`<span class="es-chip">${htmlSafe(stomaSummary)}</span>`:''}
-        <span class="es-chip ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
+        <div class="es-summary-head">
+          <span class="es-nm">${htmlSafe(nm)}</span>
+          <span class="es-summary-id">ID ${htmlSafe(p.id_card||'Not recorded')}</span>
+        </div>
+        <div class="es-summary-details">
+          <span class="es-summary-label">Appointment</span><span class="es-summary-value">${htmlSafe(apptWhen)}</span>
+          <span class="es-summary-label">Stoma</span><span class="es-summary-value">${htmlSafe(stomaSummary||'Not recorded')}</span>
+          <span class="es-summary-label">Follow-up</span><span class="es-summary-value ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
+        </div>
       </div>`;
     // Demographics are shown read-only above and carried as hidden inputs — the
     // save path still reads them, but they are corrected under Edit patient only.
@@ -5761,7 +5765,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         });
       }catch(e){}
     }
-    const clinicalPane=`${complicationReviewSectionHTML(p,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}${correctApplianceBtn}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
+    const clinicalPane=`${complicationReviewSectionHTML(p,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
@@ -5777,7 +5781,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         ${attendanceGrid}
       </div>
       <div class="es-pane" id="es-pane-2">
-        <div class="edit-seen-section">Clinical review — complications &amp; appliances</div>
         ${clinicalPane}
       </div>
       <div class="es-pane" id="es-pane-3">
@@ -5975,10 +5978,17 @@ function esAppReviewChange(){
   const hints={
     first:'The appliance picker opens next, to record the first appliance / accessories.',
     unchanged:'The current appliance / accessories are kept and marked reviewed for this visit — the picker will not reopen.',
-    changed:'The appliance picker opens next, so you can change what is used.'
+    changed:''
   };
   if(note)note.textContent=hints[v]||'';
   const err=document.getElementById('of-review-error'); if(err&&v)err.hidden=true;
+  // Once the complications answer is complete, choosing "modifications" is the
+  // action that opens the appliance form. There is no second edit button.
+  if(v==='changed'&&esState&&esState.step===2&&esOutcomeAttended()){
+    const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
+    const cmpDone=(cmp==='none')||(cmp==='new-added'&&esState.cmpAdded);
+    if(cmpDone){esFollowupNext();return;}
+  }
   esMaybeAutoAdvance();
 }
 /* Auto-advance off the Clinical review page once both choices are made and
