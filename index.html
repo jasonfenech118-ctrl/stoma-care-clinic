@@ -1132,7 +1132,16 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .cmp-add-head{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:8px;}
 .cmp-add-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .cmp-add-grid select,.cmp-add-grid input{padding:8px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;min-width:0;max-width:100%;}
-.cmp-add-grid #cmpm-type,.cmp-add-grid button{grid-column:1/-1;}
+.cmp-add-grid #cmpm-note,.cmp-add-grid button,.cmp-stoma-control,.cmp-choice-help,.cmp-choice-list,.cmp-new-type-row{grid-column:1/-1;}
+.cmp-stoma-control select{width:100%;}
+.cmp-auto-stoma{grid-column:1/-1;padding:7px 9px;border:1px solid #cbd5e1;border-radius:9px;background:#f8fafc;color:#334155;font-size:11.5px;font-weight:700;}
+.cmp-choice-help{font-size:11px;color:var(--muted);line-height:1.35;}
+.cmp-choice-list{max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:2px 8px;background:#fff;}
+.cmp-choice{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer;color:var(--navy);}
+.cmp-choice:last-child{border-bottom:none;}
+.cmp-choice input[type="checkbox"]{flex:none;width:16px;height:16px;margin:0;padding:0;border:0;border-radius:3px;accent-color:var(--teal);}
+.cmp-new-type-row{display:flex;align-items:center;justify-content:flex-start;}
+.cmp-new-type-row button{grid-column:auto;}
 .cmp-card{border:1px solid var(--border);border-radius:12px;padding:11px 13px;margin:0 0 11px;background:#fff;}
 .cmp-card-resolved{opacity:.82;background:#faf9fc;}
 .cmp-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
@@ -1605,6 +1614,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
    is inside a cell laid out exactly as it was. */
 .edit-seen-grid{align-items:end;}
 .edit-seen-grid .fg{margin-bottom:0;}
+.followup-owner-plain,.followup-owner-plain option{background:#fff!important;color:#000!important;color-scheme:light;}
 .edit-seen-section{margin:14px 0 10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fafafa;color:var(--navy);font-size:12px;font-weight:900;}
 .episode-only-box{display:none;margin:10px 0 12px;padding:12px;border:1px solid #f2df9f;background:#fff8e1;border-radius:12px;}
 .episode-only-box .episode-note{font-size:11px;color:#856404;line-height:1.35;margin-bottom:8px;font-weight:700;}
@@ -3151,7 +3161,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.22-251';
+const APP_BUILD='2026.09.22-252';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5620,7 +5630,11 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const statusDefault=normaliseFollowupStatus(p.followup_status||'active');
   const currentType=appt.bank_staff_id?'ot':(appt.assigned_to?'core':'common');
   const currentId=appt.bank_staff_id||appt.assigned_to||'common';
-  const nurseOptions=await buildNurseAllocationOptions(currentType,currentId);
+  // The appointment was opened from the nurse column it is already booked in.
+  // Keep that allocation as hidden state instead of asking the nurse to choose
+  // the same column again in the Complete visit form.
+  const bookedNurseValue=currentType==='core'?`core:${currentId}`:(currentType==='ot'?`bank:${currentId}`:'common');
+  const bookedNurseLabel=appointmentNurseLabel(appt)||'Common';
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   mb.dataset.dntuEditMode=isDntuEditMode?'1':'0';
@@ -5634,7 +5648,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const modalTitle=isDntuEditMode?(currentDntuAlreadyRecorded?'Edit DNTU appointment':'Record DNTU appointment'):'Edit / Seen Appointment';
   const modalSub=isDntuEditMode
     ?(currentDntuAlreadyRecorded?'This appointment is already recorded as a DNTU event. Review its details and any previous consecutive DNTUs.':'This appointment will be recorded as the current DNTU event. Add any previous consecutive DNTUs below.')
-    :'Update patient details, clinic column, appointment outcome and follow-up planning in one card.';
+    :'Update the appointment outcome and follow-up planning in one card.';
   const outcomeControl=isDntuEditMode?
     `<div class="fg"><label>Appointment outcome</label><input type="text" value="DNTU — Did Not Turn Up" readonly style="background:#f8fafc;font-weight:800;color:#856404;"/><input type="hidden" id="of-status" value="did_not_attend"/></div>`:
     `<div class="fg"><label>Appointment outcome</label><select id="of-status" onchange="if(this.value==='cancelled'){openCancellationForm('${jsSafe(apptId)}')}else{updateApplianceVisibility();esOnOutcomeChange()}">
@@ -5655,16 +5669,16 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
       <div id="of-cmp-list">${complicationListHTML(complicationsNow,{removable:true,patientId:p.id})}</div>
-      ${complicationAddFormHTML('of',`onApptAddComplication('${p.id}')`,p.id,'Appointment','',cmpStomaOptions(p,''))}
+      ${complicationMultiAddHTML(p)}
     </div>`:'';
   // ── Shared field fragments (identical IDs whichever layout is used, so the
   //    save engine — saveOutcomeFollowup / commitOutcomeFollowup — is untouched).
   const attendanceGrid=`<div class="edit-seen-grid">
+      <input type="hidden" id="of-nurse" value="${htmlSafe(bookedNurseValue)}" data-label="${htmlSafe(bookedNurseLabel)}"/>
       <div class="fg"><label>Appointment Date *</label><input type="date" id="of-date" value="${htmlSafe(appt.appt_date||'')}"/></div>
       <div class="fg"><label>Appointment Time *</label><input type="time" id="of-slot" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5))}"/></div>
-      <div class="fg"><label>Nurse / Column</label><select id="of-nurse">${nurseOptions}</select></div>
       ${outcomeControl}
-      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
+      <div class="fg"><label>Follow-up allocation / owner</label><select id="of-owner" class="followup-owner-plain" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${followupOwnerOptions(ownerDefault)}
       </select></div>
     </div>`;
@@ -5887,7 +5901,7 @@ function esRenderReview(){
   const pane=document.getElementById('es-pane-4');
   if(!pane)return;
   const val=id=>document.getElementById(id)?.value||'';
-  const selText=id=>{const el=document.getElementById(id);return (el&&el.tagName==='SELECT'&&el.selectedIndex>=0)?el.options[el.selectedIndex].text:val(id);};
+  const selText=id=>{const el=document.getElementById(id);return el?.dataset?.label||((el&&el.tagName==='SELECT'&&el.selectedIndex>=0)?el.options[el.selectedIndex].text:val(id));};
   const radioLabel=name=>{const el=document.querySelector('input[name="'+name+'"]:checked');return el?String(el.closest('label')?.textContent||'').trim():'';};
   const cmp=radioLabel('of-cmp-review')||'Not answered';
   // Show the complications actually recorded, not just the radio label — read
@@ -13114,26 +13128,18 @@ async function saveAddComplicationTypeDialog(selId,patientId,source){
   await loadComplicationTypes();
   // Refresh and auto-select in the dropdown it was opened from.
   const sel=document.getElementById(selId);
-  if(sel){
+  if(sel&&sel.tagName==='SELECT'){
     const stomaType=sel.getAttribute('data-stoma-type')||'';
     sel.innerHTML=complicationOptions(name,stomaType);
     sel.value=name;
   }
-  // The follow-up modal's multi-select area: add the new type to the tick list
-  // and tick it, without rebuilding (which would lose the stoma choice and ticks).
+  // Multi-select areas rebuild from the refreshed catalogue, retaining their
+  // current ticks and selecting the newly-created type immediately.
   if(selId==='of-cmp-multi'){
-    const listEl=document.getElementById('of-cmp-multi-list');
-    if(listEl){
-      let cb=[...listEl.querySelectorAll('.of-cmp-multi')].find(x=>x.value===name);
-      if(!cb){
-        const lbl=document.createElement('label');
-        lbl.style.cssText='display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;';
-        lbl.innerHTML=`<input type="checkbox" class="of-cmp-multi" value="${htmlSafe(name)}"/> ${htmlSafe(name)}`;
-        listEl.appendChild(lbl);
-        cb=lbl.querySelector('.of-cmp-multi');
-      }
-      if(cb)cb.checked=true;
-    }
+    renderComplicationChoices('of-cmp-multi-list','of-cmp-multi','of-cmp-multi-stoma',name);
+  }
+  if(selId==='cmpm-types'){
+    renderComplicationChoices('cmpm-types','cmpm-type','cmpm-stoma',name);
   }
   closeMo2();
 }
@@ -13269,27 +13275,19 @@ function onComplicationSelect(sel,patientId,source){
   }
 }
 /* The follow-up modal's "Add a new complication" area: a tick list so several
-   complications can be added in one visit, with no date to fill in. Scoped to
-   the follow-up modal (class of-cmp-multi); other places keep the single form. */
+   complications can be added in one visit, with no date to fill in. */
 function complicationMultiAddHTML(patient){
   const pid=(patient&&patient.id)||'';
   const stomaList=(typeof patientStomaList==='function'&&patient)?patientStomaList(patient):[];
-  const present=stomaList.filter(s=>s.present);
-  const defStoma=present.length===1?String(present[0].number):'';
-  const hasStoma=stomaList.length>0;
-  const stomaSel=`<div style="margin-bottom:8px;">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Which stoma are these complications on?${hasStoma?' *':''}</div>
-      <select id="of-cmp-multi-stoma" style="width:100%;">${cmpStomaOptions(patient,defStoma)}</select></div>`;
-  const cat=complicationCatalogue.slice().filter(r=>r.active)
-    .sort((a,b)=>(a.display_order-b.display_order)||String(a.name).localeCompare(String(b.name)));
+  const onlyType=stomaList.length===1?stomaList[0].type:'';
+  const stomaControl=complicationStomaControlHTML(patient,'of-cmp-multi-stoma',
+    "renderComplicationChoices('of-cmp-multi-list','of-cmp-multi','of-cmp-multi-stoma')");
   const setup=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="margin:6px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
-  const box=name=>`<label style="display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;">
-        <input type="checkbox" class="of-cmp-multi" value="${htmlSafe(name)}"/> ${htmlSafe(name)}</label>`;
-  const boxes=cat.length?cat.map(r=>box(r.name)).join(''):'<div class="clr-empty">No complications in the list yet.</div>';
+  const boxes=complicationChoiceListHTML('of-cmp-multi',onlyType);
   return `<div class="cmp-multi">
-    ${stomaSel}
+    ${stomaControl}
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Tick every complication identified today — you can choose more than one. They are saved to the patient record for future visits.</div>
-    <div id="of-cmp-multi-list" style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:9px;padding:2px 8px;">${boxes}</div>
+    <div id="of-cmp-multi-list" class="cmp-choice-list">${boxes}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
       <button type="button" class="clr-mini" onclick="openAddComplicationTypeDialog('of-cmp-multi','${jsSafe(pid)}','Appointment')">＋ New type…</button>
       <button type="button" class="pf-add-btn cmp-add-btn" onclick="onApptAddComplicationsMulti('${jsSafe(pid)}')">＋ Add selected</button>
@@ -13303,9 +13301,7 @@ async function onApptAddComplicationsMulti(patientId){
   if(!names.length){alert('Tick at least one complication first.');return;}
   const stomaEl=document.getElementById('of-cmp-multi-stoma');
   const stoma=stomaEl?stomaEl.value:'';
-  // A complication is tied to a stoma: require one whenever the patient has a
-  // stoma to tie it to (the dropdown then has a real option beyond "not tied").
-  if(stomaEl&&stomaEl.options.length>1&&!stoma){alert('Choose which stoma these complications are on.');return;}
+  if(stomaEl?.dataset?.requiresChoice==='1'&&!stoma){alert('Choose which stoma these complications are on.');return;}
   let lastList=null;const failed=[];
   for(const text of names){
     const res=await addComplicationToPatient(patientId,{text,stoma,date:TODAY,note:'',source:'Appointment'});
@@ -13464,6 +13460,48 @@ function cmpStomaOptions(pat,selected){
   });
   return opts.join('');
 }
+/* A complication is automatically tied to the only stoma on a record. The
+   choice is shown only when there is a genuine choice to make. Each option also
+   carries its stoma type so the complication list can respect catalogue scope. */
+function complicationStomaControlHTML(pat,id,onchangeJs){
+  const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  if(list.length===1){
+    const s=list[0];
+    const lbl='Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'')+(s.present?'':' (reversed)');
+    return `<input type="hidden" id="${htmlSafe(id)}" value="${htmlSafe(String(s.number))}" data-stoma-type="${htmlSafe(String(s.type||''))}" data-requires-choice="0"/>
+      <div class="cmp-auto-stoma">${htmlSafe(lbl)} selected automatically</div>`;
+  }
+  if(list.length>1){
+    const options=['<option value="">— choose a stoma —</option>'].concat(list.map(s=>{
+      const lbl='Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'')+(s.present?'':' (reversed)');
+      return `<option value="${htmlSafe(String(s.number))}" data-stoma-type="${htmlSafe(String(s.type||''))}">${htmlSafe(lbl)}</option>`;
+    })).join('');
+    return `<div class="cmp-stoma-control"><div class="cmp-choice-help" style="margin-bottom:4px;">Which stoma are these complications on? *</div>
+      <select id="${htmlSafe(id)}" data-requires-choice="1" onchange="${onchangeJs||''}">${options}</select></div>`;
+  }
+  return `<input type="hidden" id="${htmlSafe(id)}" value="" data-stoma-type="" data-requires-choice="0"/>`;
+}
+function complicationChoiceListHTML(inputClass,stomaType){
+  const scope=complicationScopeForStoma(stomaType);
+  const cat=complicationCatalogue.slice().filter(r=>r.active)
+    .filter(r=>!scope||r.scope==='all'||r.scope===scope)
+    .sort((a,b)=>(a.display_order-b.display_order)||String(a.name).localeCompare(String(b.name)));
+  if(!cat.length)return '<div class="clr-empty">No complications in the list yet.</div>';
+  return cat.map(r=>`<label class="cmp-choice"><input type="checkbox" class="${htmlSafe(inputClass)}" value="${htmlSafe(r.name)}"/> <span>${htmlSafe(r.name)}</span></label>`).join('');
+}
+/* Re-scope a multi-select list after a stoma is picked, retaining every tick
+   that is still valid. checkedName is used when a brand-new catalogue item has
+   just been created and should be selected immediately. */
+function renderComplicationChoices(hostId,inputClass,stomaControlId,checkedName){
+  const host=document.getElementById(hostId);if(!host)return;
+  const checked=new Set([...host.querySelectorAll('input:checked')].map(x=>x.value));
+  if(checkedName)checked.add(checkedName);
+  const ctl=document.getElementById(stomaControlId);
+  const opt=(ctl&&ctl.tagName==='SELECT'&&ctl.selectedIndex>=0)?ctl.options[ctl.selectedIndex]:null;
+  const stomaType=(opt&&opt.dataset.stomaType)||(ctl&&ctl.dataset.stomaType)||'';
+  host.innerHTML=complicationChoiceListHTML(inputClass,stomaType);
+  host.querySelectorAll('input').forEach(x=>{x.checked=checked.has(x.value);});
+}
 /* The stoma a rod belongs to. Keyed by the stoma's own uid (stable across
    re-ordering), unlike the complication picker which uses the visible number. */
 function rodStomaOptions(pat,selectedUid){
@@ -13474,6 +13512,22 @@ function rodStomaOptions(pat,selectedUid){
     opts.push(`<option value="${htmlSafe(String(s.uid||''))}" ${String(selectedUid||'')===String(s.uid||'')?'selected':''}>${htmlSafe(lbl)}</option>`);
   });
   return opts.join('');
+}
+function rodStomaControlHTML(pat,selectedUid){
+  const list=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  if(list.length===1){
+    const s=list[0];
+    const lbl='Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'')+(s.present?'':' (reversed)');
+    return `<input type="hidden" id="rod-stoma" value="${htmlSafe(String(s.uid||''))}" data-requires-choice="0"/><span class="cmp-auto-stoma">${htmlSafe(lbl)} selected automatically</span>`;
+  }
+  if(list.length>1){
+    const options=['<option value="">— choose a stoma —</option>'].concat(list.map(s=>{
+      const lbl='Stoma '+s.number+(s.type?' · '+prettyStomaType(s.type):'')+(s.present?'':' (reversed)');
+      return `<option value="${htmlSafe(String(s.uid||''))}" ${String(selectedUid||'')===String(s.uid||'')?'selected':''}>${htmlSafe(lbl)}</option>`;
+    })).join('');
+    return `<select id="rod-stoma" data-requires-choice="1" title="Which stoma is this rod on?">${options}</select>`;
+  }
+  return '<input type="hidden" id="rod-stoma" value="" data-requires-choice="0"/>';
 }
 function rodStomaLabel(pat,uid){
   if(!uid)return '';
@@ -13524,14 +13578,19 @@ function complicationsManagerBodyHTML(pat){
   const list=parseComplications(pat);
   const open=list.filter(c=>c.status!=='resolved');
   const resolved=list.filter(c=>c.status==='resolved');
+  const stomas=(typeof patientStomaList==='function')?patientStomaList(pat):[];
+  const onlyType=stomas.length===1?stomas[0].type:'';
+  const stomaControl=complicationStomaControlHTML(pat,'cmpm-stoma',
+    "renderComplicationChoices('cmpm-types','cmpm-type','cmpm-stoma')");
   const addForm=`<div class="cmp-add-card">
-    <div class="cmp-add-head">＋ New complication</div>
+    <div class="cmp-add-head">＋ Baseline complications</div>
     <div class="cmp-add-grid">
-      <select id="cmpm-type" onchange="onComplicationSelect(this,'${pat.id}','Record')">${complicationOptions('','')}</select>
-      <select id="cmpm-stoma">${cmpStomaOptions(pat,'')}</select>
-      <input type="date" id="cmpm-date" value="${TODAY}"/>
-      <input type="text" id="cmpm-note" placeholder="First note (optional)"/>
-      <button type="button" class="pf-add-btn" onclick="mgrAddComplication('${pat.id}')">Add complication</button>
+      ${stomaControl}
+      <div class="cmp-choice-help">Tick every baseline complication that applies — you can select more than one.</div>
+      <div class="cmp-choice-list" id="cmpm-types">${complicationChoiceListHTML('cmpm-type',onlyType)}</div>
+      <div class="cmp-new-type-row"><button type="button" class="clr-mini" onclick="openAddComplicationTypeDialog('cmpm-types','${pat.id}','Record')">＋ New type…</button></div>
+      <input type="text" id="cmpm-note" placeholder="Baseline note (optional — applies to all selected)"/>
+      <button type="button" class="pf-add-btn" onclick="mgrAddComplication('${pat.id}')">Add selected complications</button>
     </div>
   </div>`;
   const cards=list.length
@@ -13600,14 +13659,21 @@ function cmpSaveAlert(res){
   return true;
 }
 async function mgrAddComplication(patientId){
-  const sel=document.getElementById('cmpm-type');
-  const type=String(sel&&sel.value||'').trim();
-  if(!type||type==='__add__'){alert('Choose a complication type first.');return;}
-  const stoma=document.getElementById('cmpm-stoma')?.value||'';
-  const date=document.getElementById('cmpm-date')?.value||TODAY;
+  const names=[...new Set([...document.querySelectorAll('.cmpm-type:checked')].map(x=>String(x.value||'').trim()).filter(Boolean))];
+  if(!names.length){alert('Tick at least one complication first.');return;}
+  const stomaEl=document.getElementById('cmpm-stoma');
+  const stoma=stomaEl?.value||'';
+  if(stomaEl?.dataset?.requiresChoice==='1'&&!stoma){alert('Choose which stoma these complications are on.');return;}
   const note=document.getElementById('cmpm-note')?.value||'';
-  const res=await addComplicationToPatient(patientId,{text:type,stoma,date,note,source:'Record'});
-  if(!cmpSaveAlert(res))return;
+  const failed=[];let saved=false;
+  for(const text of names){
+    const res=await addComplicationToPatient(patientId,{text,stoma,note,source:'Record'});
+    if(res&&res.missing){cmpSaveAlert(res);return;}
+    if(res&&res.error){failed.push(text);continue;}
+    saved=true;
+  }
+  if(failed.length)alert('Could not save: '+failed.join(', '));
+  if(!saved)return;
   await cmpMgrRefresh(patientId);
 }
 async function mgrAddUpdate(patientId,compId){
@@ -13677,7 +13743,7 @@ function rodSectionInnerHTML(pat,rod,rodRemoved,rodStoma){
        <div class="cmp-rod-hint">Recorded as removed, so it no longer appears in the reminders.</div>`
     : `<div class="cmp-rod-row" style="flex-wrap:wrap;gap:6px;">
         <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
-        <select id="rod-stoma" title="Which stoma is this rod on?">${rodStomaOptions(pat,rodStoma)}</select>
+        ${rodStomaControlHTML(pat,rodStoma)}
         <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
         ${rod?`<button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${patientId}')">✓ Rod removed</button>`:''}
         ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
@@ -13704,14 +13770,12 @@ async function refreshRodHost(patientId){
 async function openComplicationPicker(patientId,source){
   const{data:pat}=await fetchPatientById(patientId);
   const nm=pat?`${pat.first_name||''} ${pat.surname||''}`.trim()||'this patient':'this patient';
-  const list=parseComplications(pat);
   const{rod,rodRemoved,rodStoma}=await rodDatesFor(patientId);
-  const mb=document.getElementById('mb');mb.className='mb';
+  if(pat)cmpMgrPatient=pat;
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
-    <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — add one as you go; it is saved to the patient card.</div>
-    <div id="cmp-pick-list">${complicationListHTML(list,{removable:true,patientId})}</div>
-    <div style="margin:4px 0 2px;"><button type="button" class="ncb-btn" style="background:#ede9fe;color:#5b21b6;" onclick="closeModal();openComplicationsManager('${patientId}')">🗂 Open timeline · tie to a stoma · resolve</button></div>
-    ${complicationAddFormHTML('pick',`onPickAddComplication('${patientId}','${source||'Handover'}')`,patientId,source||'Handover','',cmpStomaOptions(pat,''))}
+    <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat&&pat.id_card?' · '+htmlSafe(pat.id_card):''} — record baseline complications and maintain their timelines.</div>
+    <div id="cmp-mgr-body">${pat?complicationsManagerBodyHTML(pat):'<div class="clr-empty">Could not load the patient record.</div>'}</div>
     ${rodSectionHTML(pat||{id:patientId},rod,rodRemoved,rodStoma)}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
@@ -13726,7 +13790,9 @@ async function onPickAddComplication(patientId,source){
    raises a reminder on that day; clearing it (once the rod is out) stops it. */
 async function saveRodRemovalDate(patientId){
   const v=document.getElementById('rod-date')?.value||'';
-  const stoma=document.getElementById('rod-stoma')?.value||'';
+  const stomaEl=document.getElementById('rod-stoma');
+  const stoma=stomaEl?.value||'';
+  if(v&&stomaEl?.dataset?.requiresChoice==='1'&&!stoma){alert('Choose which stoma the rod belongs to.');return;}
   const{error,dropped}=await updatePatientTolerant(patientId,{rod_removal_date:v||null,rod_stoma_uid:stoma||null});
   if(error){alert('Could not save the ROD removal date: '+(error.message||error));return;}
   if(dropped&&dropped.includes('rod_removal_date')){
