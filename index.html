@@ -2156,7 +2156,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       <div class="card" id="admin-worklist-card" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">My patients — appliances &amp; complications
-            <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Administrator only · nurse owner never changes · <span id="admin-worklist-count"></span></span></div>
+            <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Administrator only · assigns the patient to the selected nurse &amp; month · <span id="admin-worklist-count"></span></span></div>
           <button class="btn-add" onclick="openAdminPatientForm()" style="padding:7px 14px;">＋ Add patient</button>
         </div>
         <div id="admin-wl-avail" style="margin-bottom:10px;"></div>
@@ -3126,7 +3126,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.21-247';
+const APP_BUILD='2026.09.22-248';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9017,7 +9017,7 @@ function openAdminPatientForm(patientId){
   admFormPatient=null; admFormApptId=null;
   const mb=document.getElementById('mb'); mb.className='mb mb-wide';
   mb.innerHTML=`<h2>Add patient — ${htmlSafe(owner)} · ${followupMonthName(month)} ${year}</h2>
-    <div class="msub">Enter the ID card number to bring up the patient, then update their appliance and complications. This does not change the nurse owner and books no clinic.</div>
+    <div class="msub">Enter the ID card number to bring up the patient, then update their appliance and complications. Saving assigns them to <strong>${htmlSafe(owner)}</strong> for <strong>${followupMonthName(month)} ${year}</strong> and books no clinic.</div>
     <div class="fg" style="max-width:460px;">
       <label>ID card number</label>
       <div style="display:flex;gap:8px;">
@@ -9066,6 +9066,11 @@ async function admRenderPatientForm(pat){
   const flatAcc=latest?parseNameList(latest.accessories):[];
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const owner=normaliseFollowupOwner(pat.followup_owner||'Common');
+  const sel=adminCurrentSelection();
+  const newOwner=(sel.owner&&sel.owner!=='All Patients')?sel.owner:owner;
+  const ownerLine=String(newOwner)===String(owner)
+    ? `Follow-up owner: <strong>${htmlSafe(owner)}</strong>`
+    : `Follow-up owner: <strong>${htmlSafe(owner)}</strong> → will be set to <strong>${htmlSafe(newOwner)}</strong>`;
   const stomaList=patientStomaList(pat);
   const present=stomaList.filter(s=>s.present);
   const defStoma=present.length===1?String(present[0].number):'';
@@ -9078,7 +9083,7 @@ async function admRenderPatientForm(pat){
   body.innerHTML=`
     <div style="background:#f1f5f9;border-radius:10px;padding:10px 12px;margin:12px 0;">
       <div style="font-weight:800;font-size:16px;">${htmlSafe(nm)}</div>
-      <div style="font-size:12px;color:#52677b;">${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')} · Follow-up owner: <strong>${htmlSafe(owner)}</strong> <span style="color:#94a3b8;">(not changed)</span></div>
+      <div style="font-size:12px;color:#52677b;">${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')} · ${ownerLine}</div>
     </div>
     <div style="margin-bottom:10px;">
       <label style="font-size:12px;color:#52677b;display:block;margin-bottom:3px;">Which stoma is this update about?${hasStoma?' *':''}</label>
@@ -9140,6 +9145,14 @@ async function admSavePatient(){
     }
   }
   const {owner,year,month}=adminCurrentSelection();
+  // The administrator is assigning this patient to the chosen nurse for the
+  // chosen month, so the follow-up owner and due month change to match — this is
+  // what makes them appear under that nurse for that month everywhere. ("All
+  // Patients" is a filter, not a real nurse, so the owner is left as it is then.)
+  const alloc={followup_due_month:Number(month),followup_year:Number(year),followup_status:'active'};
+  if(owner&&owner!=='All Patients')alloc.followup_owner=owner;
+  const{error:allocErr}=await updatePatientTolerant(pat.id,alloc);
+  if(allocErr){alert('Appliance and complications saved, but the follow-up owner / month could not be updated: '+allocErr.message);}
   adminWorklistUpsert({id:pat.id,first_name:pat.first_name||'',surname:pat.surname||'',id_card:pat.id_card||'',phone_number:pat.phone_number||'',owner,year,month});
   closeModal();
   renderAdminWorklist();
