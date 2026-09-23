@@ -3168,7 +3168,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.23-256';
+const APP_BUILD='2026.09.23-257';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4001,6 +4001,28 @@ async function loadTodaySnapshot(){
   </div>`).join('');
 }
 
+/* A bank/OT nurse can have only one ACTIVE entry on a date. Saving TIL over an
+   active OT entry changes that same row; a cancelled row is history and must
+   never be overwritten. The database migration makes the unique rule follow
+   the same active-only rule. */
+function activeBankAssignmentForDay(rows){
+  return (rows||[]).find(r=>String(r.status||'active')!=='cancelled')||null;
+}
+async function saveBankStaffDayAssignment(bankId,date,values){
+  const{data,error:findError}=await SB.from('bank_staff_assignments')
+    .select('id,status,notes').eq('bank_staff_id',bankId).eq('work_date',date);
+  if(findError)return {error:findError};
+  const active=activeBankAssignmentForDay(data);
+  if(active)return await SB.from('bank_staff_assignments').update(values).eq('id',active.id);
+  return await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,...values});
+}
+function bankAssignmentSaveMessage(label,error){
+  const msg=String(error?.message||error||'Unknown error');
+  const duplicate=String(error?.code||'')==='23505'||/bank_staff_assignment_unique|duplicate key/i.test(msg);
+  if(duplicate)return `Could not save ${label}: a cancelled entry is being kept as history but the old database rule still blocks this date. Run sql/fix-bank-staff-assignment-constraint.sql once in Supabase, then save again.`;
+  return `Could not save ${label}: ${msg}`;
+}
+
 // ADD OT
 async function addOT(){
   const name=document.getElementById('ot-name').value.trim();
@@ -4029,7 +4051,8 @@ async function addOT(){
   let bankId=existing?.id;
   if(!bankId){const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();bankId=ns?.id;}
   if(!bankId){alert('Error adding nurse.');return;}
-  await SB.from('bank_staff_assignments').insert({bank_staff_id:bankId,work_date:date,shift_start:start,shift_end:end});
+  const{error:saveError}=await saveBankStaffDayAssignment(bankId,date,{shift_start:start,shift_end:end,notes:null});
+  if(saveError){alert(bankAssignmentSaveMessage('OT',saveError));return;}
   document.getElementById('ot-name').value='';document.getElementById('ot-end').value='';document.getElementById('ot-date').value=TODAY;
   renderRoster();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
@@ -4060,12 +4083,10 @@ async function addTIL(type){
     if(existingTil){const{error}=await SB.from('leave_records').update({notes:tilNote,end_date:date,total_days:1}).eq('id',existingTil.id);insErr=error;}
     else{const{error}=await SB.from('leave_records').insert({staff_id:staffId,leave_type:'overtime',start_date:date,end_date:date,total_days:1,notes:tilNote});insErr=error;}
   }else{
-    const{data:existing}=await SB.from('bank_staff_assignments').select('id,notes').eq('bank_staff_id',staffId).eq('work_date',date);
-    const existingTil=(existing||[]).find(r=>isTILNote(r.notes));
-    if(existingTil){const{error}=await SB.from('bank_staff_assignments').update({notes:tilNote,shift_start:start,shift_end:until}).eq('id',existingTil.id);insErr=error;}
-    else{const{error}=await SB.from('bank_staff_assignments').insert({bank_staff_id:staffId,work_date:date,shift_start:start,shift_end:until,notes:tilNote});insErr=error;}
+    const{error}=await saveBankStaffDayAssignment(staffId,date,{notes:tilNote,shift_start:start,shift_end:until});
+    insErr=error;
   }
-  if(insErr){alert(`Could not save ${typeLabel==='TIL-Off'?'TIL Off':'TIL In'}: ${insErr.message}`);return;}
+  if(insErr){alert(bankAssignmentSaveMessage(typeLabel==='TIL-Off'?'TIL Off':'TIL In',insErr));return;}
   document.getElementById('til-name').value='';document.getElementById('til-until').value='';
   renderRoster();loadStaffAudit();
 }
