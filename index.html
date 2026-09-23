@@ -423,6 +423,26 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rem-btn{border:none;border-radius:7px;padding:6px 11px;font-size:11px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
 .rem-btn.book{background:var(--teal);color:white;}
 .rem-btn.book:hover{background:var(--navy);}
+.pending-reminders{margin-bottom:13px;border:1px solid #e7cf83;border-radius:12px;background:#fffdf5;overflow:hidden;}
+.pending-reminders-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;background:#fff4c7;color:#5f4300;font-size:12px;font-weight:900;}
+.pending-reminders-count{padding:2px 8px;border-radius:20px;background:var(--gold);color:#000;font-size:10px;white-space:nowrap;}
+.pending-reminders-add{display:flex;gap:7px;padding:9px 10px;border-bottom:1px solid #f0e2b4;}
+.pending-reminders-add input{min-width:0;flex:1;padding:8px 10px;border:1.5px solid #d8bd68;border-radius:8px;background:#fff;color:var(--text);font:12px 'Inter',sans-serif;outline:none;}
+.pending-reminders-add input:focus{border-color:#9f7200;box-shadow:0 0 0 2px rgba(230,168,23,.16);}
+.pending-reminders-add button{padding:8px 12px;border:0;border-radius:8px;background:var(--navy);color:#fff;font:800 11px 'Inter',sans-serif;cursor:pointer;white-space:nowrap;}
+.pending-reminders-add button:disabled,.pending-reminders-add input:disabled{opacity:.55;cursor:not-allowed;}
+.pending-task-row{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-top:1px solid #f1e8ca;cursor:pointer;}
+.pending-task-row:first-child{border-top:0;}
+.pending-task-row input{width:17px;height:17px;margin-top:1px;flex:0 0 17px;accent-color:var(--teal);cursor:pointer;}
+.pending-task-copy{min-width:0;line-height:1.35;}
+.pending-task-text{font-size:12px;font-weight:750;color:var(--navy);overflow-wrap:anywhere;}
+.pending-task-meta{display:block;margin-top:2px;font-size:9.5px;color:var(--muted);}
+.pending-task-row.done{background:#f6f7f8;}
+.pending-task-row.done .pending-task-text{text-decoration:line-through;text-decoration-thickness:1.5px;color:#6b7280;}
+.pending-task-row.done .pending-task-meta{color:#8b96a3;}
+.pending-reminders-empty,.pending-reminders-error{padding:10px 11px;font-size:11px;color:var(--muted);}
+.pending-reminders-error{color:#9a3412;background:#fff7ed;}
+.clinic-reminders-title{margin:2px 2px 7px;color:var(--navy);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.55px;}
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
 .rem-btn.setdue{background:#7c3aed;color:white;}
 .rem-btn.setdue:hover{background:#5b21b6;}
@@ -3168,7 +3188,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.23-257';
+const APP_BUILD='2026.09.23-258';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3329,7 +3349,7 @@ function renderPrimaryTabs(activeTab){
       ${tabIconHTML(g)}${htmlSafe(g.label)}${alertDotHTML(g)}
       <span class="tab-sub-count">${g.pages.length}</span>
     </div>`).join('');
-  updateReminderBadges(sitingReminders?.total||0);
+  updateReminderBadges(clinicReminderBadgeTotal());
 }
 function renderSubTabs(activeTab){
   const host=document.getElementById('tabs-sub');
@@ -3338,7 +3358,7 @@ function renderSubTabs(activeTab){
   host.innerHTML=`<span class="subtabs-label">${htmlSafe(group.label)}</span>`+
     group.pages.map(p=>`<div class="subtab ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
       onclick="switchTab('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</div>`).join('');
-  updateReminderBadges(sitingReminders?.total||0);
+  updateReminderBadges(clinicReminderBadgeTotal());
 }
 function renderMobileNav(activeTab){
   const host=document.getElementById('mob-drawer-nav');
@@ -3347,7 +3367,7 @@ function renderMobileNav(activeTab){
     g.pages.map(p=>`<div class="mob-nav-sub ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
       onclick="switchTabMobile('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</div>`).join('')
   ).join('');
-  updateReminderBadges(sitingReminders?.total||0);
+  updateReminderBadges(clinicReminderBadgeTotal());
 }
 // Picking an area opens its first page, unless the area is already open.
 function switchGroup(key){
@@ -8173,6 +8193,96 @@ function showReminderLoadError(message){
   if(page)page.innerHTML=html;
 }
 let sitingReminders={items:[],total:0,today:0};
+let pendingReminderTasks={items:[],error:null};
+function pendingTaskVisibleOnDate(task,dateStr){
+  return !task?.is_completed||String(task.completed_on||'')===String(dateStr||'');
+}
+function pendingReminderOpenCount(){
+  return (pendingReminderTasks.items||[]).filter(t=>!t.is_completed).length;
+}
+function clinicReminderBadgeTotal(){
+  return Number(sitingReminders?.total||0)+pendingReminderOpenCount();
+}
+async function getPendingReminderTasks(){
+  try{
+    const{data,error}=await SB.from('clinic_pending_tasks')
+      .select('id,task_text,is_completed,created_at,created_by_name,completed_on,completed_at,completed_by_name')
+      .or(`is_completed.eq.false,completed_on.eq.${TODAY}`)
+      .order('is_completed',{ascending:true})
+      .order('created_at',{ascending:true});
+    if(error)return {items:[],error};
+    return {items:(data||[]).filter(t=>pendingTaskVisibleOnDate(t,TODAY)),error:null};
+  }catch(error){return {items:[],error};}
+}
+function pendingReminderTaskHTML(task){
+  const done=task.is_completed===true;
+  const who=done?(task.completed_by_name||'Completed'):(task.created_by_name?`Added by ${task.created_by_name}`:'Pending');
+  return `<label class="pending-task-row ${done?'done':''}">
+    <input type="checkbox" ${done?'checked':''} onchange="togglePendingReminderTask('${jsSafe(task.id)}',this.checked,this)" aria-label="Mark ${htmlSafe(task.task_text)} ${done?'pending':'completed'}"/>
+    <span class="pending-task-copy"><span class="pending-task-text">${htmlSafe(task.task_text)}</span><span class="pending-task-meta">${htmlSafe(who)}${done?' · remains here until tomorrow':''}</span></span>
+  </label>`;
+}
+function pendingReminderSectionHTML(state){
+  const items=state?.items||[];
+  const open=items.filter(t=>!t.is_completed).length;
+  const completed=items.length-open;
+  const unavailable=!!state?.error;
+  const list=unavailable
+    ?'<div class="pending-reminders-error">Pending tasks need the one-time database setup before they can be used.</div>'
+    :items.length
+      ?`<div class="pending-task-list">${items.map(pendingReminderTaskHTML).join('')}</div>`
+      :'<div class="pending-reminders-empty">Nothing pending.</div>';
+  return `<section class="pending-reminders" aria-label="Pending tasks">
+    <div class="pending-reminders-head"><span>☑ Pending tasks</span><span class="pending-reminders-count">${open} pending${completed?` · ${completed} done`:''}</span></div>
+    <div class="pending-reminders-add">
+      <input id="pending-reminder-input" type="text" maxlength="240" placeholder="Write something that is pending…" ${unavailable?'disabled':''} onkeydown="if(event.key==='Enter'){event.preventDefault();addPendingReminderTask();}"/>
+      <button id="pending-reminder-add" type="button" onclick="addPendingReminderTask()" ${unavailable?'disabled':''}>Add</button>
+    </div>${list}
+  </section>`;
+}
+function renderClinicReminderPanelHTML(){
+  return pendingReminderSectionHTML(pendingReminderTasks)+
+    `<div class="clinic-reminders-title">Clinical reminders</div>${renderSitingReminderList(sitingReminders.items)}`;
+}
+async function addPendingReminderTask(){
+  const input=document.getElementById('pending-reminder-input');
+  const button=document.getElementById('pending-reminder-add');
+  const taskText=String(input?.value||'').trim();
+  if(!taskText){input?.focus();return;}
+  if(button?.dataset.busy==='1')return;
+  if(button){button.dataset.busy='1';button.disabled=true;button.textContent='Adding…';}
+  let who={};
+  try{who=await getCurrentUserForAudit();}catch(e){}
+  const{error}=await SB.from('clinic_pending_tasks').insert({
+    task_text:taskText,
+    is_completed:false,
+    created_by_email:who.email||null,
+    created_by_name:who.name||null
+  });
+  if(error){
+    if(button){button.dataset.busy='';button.disabled=false;button.textContent='Add';}
+    alert('Could not add the pending task: '+error.message);
+    return;
+  }
+  if(input)input.value='';
+  await refreshReminders();
+  document.getElementById('pending-reminder-input')?.focus();
+}
+async function togglePendingReminderTask(taskId,done,box){
+  if(box)box.disabled=true;
+  let who={};
+  try{who=await getCurrentUserForAudit();}catch(e){}
+  const patch=done
+    ?{is_completed:true,completed_on:TODAY,completed_at:new Date().toISOString(),completed_by_email:who.email||null,completed_by_name:who.name||null}
+    :{is_completed:false,completed_on:null,completed_at:null,completed_by_email:null,completed_by_name:null};
+  const{error}=await SB.from('clinic_pending_tasks').update(patch).eq('id',taskId);
+  if(error){
+    if(box){box.checked=!done;box.disabled=false;}
+    alert('Could not update the pending task: '+error.message);
+    return;
+  }
+  await refreshReminders();
+}
 /* Every Saturday Jason is rostered on duty, remind the team to send the MML
    order. This uses the same complete staffing index as clinic capacity: a
    change of duty, overtime or TIL-in counts as working; leave, off and TIL-off
@@ -8307,13 +8417,21 @@ function renderSitingReminderList(items){
   }).join('');
 }
 async function refreshReminders(){
-  // Siting / post-op items plus the Saturday MML order when Jason is on duty.
-  sitingReminders=await getSitingReminders();
-  updateReminderBadges(sitingReminders.total);
+  // Shared pending tasks plus siting / post-op items and the roster-based MML order.
+  const[clinical,pending]=await Promise.all([getSitingReminders(),getPendingReminderTasks()]);
+  sitingReminders=clinical;
+  pendingReminderTasks=pending;
+  updateReminderBadges(clinicReminderBadgeTotal());
   const bbody=document.getElementById('bell-panel-body');
-  if(bbody)bbody.innerHTML=renderSitingReminderList(sitingReminders.items);
+  if(bbody)bbody.innerHTML=renderClinicReminderPanelHTML();
   const bsub=document.getElementById('bell-panel-sub');
-  if(bsub)bsub.textContent=sitingReminders.total?`${sitingReminders.total} reminder${sitingReminders.total!==1?'s':''}`:'No reminders';
+  if(bsub){
+    const parts=[];
+    const open=pendingReminderOpenCount();
+    if(open)parts.push(`${open} pending`);
+    if(sitingReminders.total)parts.push(`${sitingReminders.total} clinical reminder${sitingReminders.total!==1?'s':''}`);
+    bsub.textContent=parts.join(' · ')||'No reminders or pending tasks';
+  }
   return sitingReminders;
 }
 async function refreshRemindersOLD(){
