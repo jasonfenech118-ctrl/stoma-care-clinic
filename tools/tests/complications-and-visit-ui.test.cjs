@@ -96,7 +96,8 @@ test('Complete visit hides nurse selection but retains the booked allocation',()
   assert.match(source,/type="hidden" id="of-nurse"/);
   assert.doesNotMatch(source,/<label>Nurse \/ Column<\/label><select id="of-nurse"/);
   assert.match(source,/id="of-owner" class="followup-owner-plain"/);
-  assert.match(html,/\.followup-owner-plain,\.followup-owner-plain option\{background:#fff!important;color:#000!important/);
+  assert.match(html,/\.followup-owner-plain\{background:var\(--gold\)!important;color:#000!important/);
+  assert.match(html,/\.followup-owner-plain option\{background:#fff!important;color:#000!important/);
 });
 
 test('Complete visit has aligned patient details and no redundant appliance copy',()=>{
