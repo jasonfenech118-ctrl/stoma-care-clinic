@@ -3203,7 +3203,7 @@ async function doLogin(){
   else startApp();
 }
 document.getElementById('li-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-async function doLogout(){await SB.auth.signOut();document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
+async function doLogout(){stopClinicRealtime();await SB.auth.signOut();document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
 async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
 
 async function startApp(){
@@ -3236,6 +3236,7 @@ async function startApp(){
   const ry=document.getElementById('rep-year'); if(ry) ry.value=String(new Date().getFullYear());
   // Reminders load last so the roster is already on screen, then the daily prompt appears.
   await refreshReminders();
+  startClinicRealtime();
   // The 4pm handover snapshot runs quietly in the background from here on.
   startHandoverSnapshotScheduler();
   // Quick Look was already activated before the awaited startup work above.
@@ -3433,6 +3434,96 @@ function switchTabMobile(name){
   switchTab(name);
 }
 function refreshActivePage(){switchTab(currentTabName());}
+
+/* Database broadcasts carry only a table name, never patient details. The
+   existing loaders remain the source of truth. Coalesce bursts of edits and
+   leave an open form alone until its user has finished working in it. */
+const CLINIC_REALTIME_TABLES=new Set([
+  'roster','staff','bank_staff','bank_staff_assignments','leave_records','daily_attendance',
+  'appointments','patients','siting_sessions','siting_images','operations_no_stoma','clinical_records',
+  'handover_snapshots','public_holidays','localities','firms','complication_types',
+  'clinic_pending_tasks','clinic_dated_reminders'
+]);
+let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicRealtimeDirty=new Set();
+const CLINIC_ROSTER_TABLES=new Set(['roster','staff','bank_staff','bank_staff_assignments','leave_records','public_holidays']);
+const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders']);
+function clinicRealtimeBusy(){
+  return document.getElementById('mo')?.classList.contains('open')||
+    !!document.querySelector('input:focus,textarea:focus,select:focus,[contenteditable="true"]:focus');
+}
+function queueClinicRealtime(table){
+  if(table&&CLINIC_REALTIME_TABLES.has(table))clinicRealtimeDirty.add(table);
+  clearTimeout(clinicRealtimeTimer);
+  clinicRealtimeTimer=setTimeout(flushClinicRealtime,500);
+}
+function flushClinicRealtime(){
+  if(!clinicRealtimeDirty.size||document.getElementById('app')?.style.display==='none')return;
+  if(document.hidden||clinicRealtimeBusy())return;
+  const tables=new Set(clinicRealtimeDirty);clinicRealtimeDirty.clear();
+  if([...tables].some(t=>CLINIC_ROSTER_TABLES.has(t)))invalidateAvailabilityCaches();
+  if([...tables].some(t=>CLINIC_REMINDER_TABLES.has(t)))refreshReminders();
+  if(tables.has('patients'))plLoaded=false;
+  const tab=currentTabName();
+  if(tab==='add-patient')return; // Never reset an unfinished patient form.
+  if(tab==='patient-record'){
+    if([...tables].some(t=>['patients','appointments','clinical_records','siting_sessions','siting_images'].includes(t))&&clrState.patient?.id)
+      openPatientRecord(clrState.patient.id);
+    return;
+  }
+  // A data change elsewhere need not redraw the screen being used.
+  const relevant={
+    roster:CLINIC_ROSTER_TABLES,
+    'daily-attendance':new Set([...CLINIC_ROSTER_TABLES,'daily_attendance']),
+    'attendance-records':new Set(['daily_attendance','staff']),
+    cod:new Set([...CLINIC_ROSTER_TABLES,'daily_attendance']),
+    appointments:new Set([...CLINIC_ROSTER_TABLES,'appointments','patients','siting_sessions']),
+    'staff-audit':new Set(['appointments','patients','staff','roster','leave_records']),
+    siting:new Set(['siting_sessions','siting_images','patients']),
+    nostoma:new Set(['operations_no_stoma','siting_sessions']),
+    stomaperformed:new Set(['siting_sessions','patients']),
+    handover:new Set(['patients','clinical_records','siting_sessions','appointments']),
+    postop:new Set(['patients','siting_sessions']),
+    snapshots:new Set(['handover_snapshots']),
+    patients:new Set(['patients','clinical_records','appointments']),
+    'new-patients':new Set(['patients','clinical_records']),
+    phone:new Set(['patients','clinical_records']),
+    duplicates:new Set(['patients']),
+    reports:new Set(['patients','appointments','clinical_records']),
+    'data-analysis':new Set(['patients','appointments','clinical_records']),
+    'annual-report':new Set(['patients','appointments','clinical_records']),
+    'registry-map':new Set(['patients','localities']),
+    'clinic-audit':new Set(['appointments','patients']),
+    'ot-audit':new Set([...CLINIC_ROSTER_TABLES]),
+    'dntu-policy':new Set(['appointments','patients'])
+  }[tab];
+  if(relevant&&[...tables].some(t=>relevant.has(t)))switchTab(tab);
+}
+async function startClinicRealtime(){
+  if(clinicRealtimeChannel)return;
+  try{
+    await SB.realtime.setAuth();
+    clinicRealtimeChannel=SB.channel('clinic:changes',{config:{private:true}})
+      .on('broadcast',{event:'changed'},({payload})=>queueClinicRealtime(payload?.table))
+      .subscribe(status=>{
+        // Catch edits made while the device was disconnected.
+        if(status==='SUBSCRIBED'){
+          CLINIC_REALTIME_TABLES.forEach(t=>clinicRealtimeDirty.add(t));
+          queueClinicRealtime();
+        }
+      });
+  }catch(e){console.warn('Clinic realtime could not connect:',e);}
+}
+function stopClinicRealtime(){
+  clearTimeout(clinicRealtimeTimer);clinicRealtimeDirty.clear();
+  if(clinicRealtimeChannel){SB.removeChannel(clinicRealtimeChannel);clinicRealtimeChannel=null;}
+}
+document.addEventListener('focusout',()=>setTimeout(flushClinicRealtime,250));
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&clinicRealtimeChannel){
+    CLINIC_REALTIME_TABLES.forEach(t=>clinicRealtimeDirty.add(t));
+    queueClinicRealtime();
+  }
+});
 
 async function loadHolidays(){
   const{data,error}=await SB.from('public_holidays').select('*');
@@ -20014,7 +20105,7 @@ async function delTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('leave
 async function delBankTIL(id){if(!confirm('Delete TIL?'))return;await SB.from('bank_staff_assignments').delete().eq('id',id);renderRoster();if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}
 function openMo(){document.getElementById('mo').classList.add('open');}
 function closeMo(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
-function closeModal(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';}
+function closeModal(){document.getElementById('mo').classList.remove('open');document.getElementById('mb').className='mb';setTimeout(flushClinicRealtime,250);}
 // The second, stacked modal layer (e.g. the mucocutaneous-separation detail
 // opened from the complications picker). It sits on top of the first and closes
 // on its own without disturbing whatever opened it.
