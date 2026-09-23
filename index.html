@@ -384,9 +384,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .bell-panel-close{background:none;border:none;color:rgba(255,255,255,.75);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:5px;}
 .bell-panel-close:hover{background:rgba(255,255,255,.14);}
 .bell-panel-body{padding:10px 12px 14px;}
-.bell-panel-foot{padding:10px 14px;border-top:1px solid var(--border);background:#f8fafc;border-radius:0 0 14px 14px;}
-.bell-panel-foot button{width:100%;padding:9px;border:none;border-radius:8px;background:var(--teal);color:white;font-size:12px;font-weight:800;cursor:pointer;font-family:'Inter',sans-serif;}
-.bell-panel-foot button:hover{background:var(--navy);}
 
 .rem-bucket{margin-bottom:14px;}
 .rem-bucket:last-child{margin-bottom:0;}
@@ -442,6 +439,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .pending-task-row.done .pending-task-meta{color:#8b96a3;}
 .pending-reminders-empty,.pending-reminders-error{padding:10px 11px;font-size:11px;color:var(--muted);}
 .pending-reminders-error{color:#9a3412;background:#fff7ed;}
+.dated-reminders{border-color:#b9d7d7;background:#f8fcfc;}
+.dated-reminders .pending-reminders-head{background:#ddf1f0;color:#155e63;}
+.dated-reminders .pending-reminders-add{flex-wrap:wrap;}
+.dated-reminders .pending-reminders-add input[type="date"]{flex:0 0 145px;}
+.dated-reminder-overdue{color:#b45309;font-weight:800;}
+@media(max-width:430px){.dated-reminders .pending-reminders-add input[type="date"]{flex:1 1 130px;}}
 .clinic-reminders-title{margin:2px 2px 7px;color:var(--navy);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.55px;}
 .rem-btn.hist{background:#edf1f5;color:var(--navy);}
 .rem-btn.setdue{background:#7c3aed;color:white;}
@@ -1907,7 +1910,6 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       <button class="bell-panel-close" onclick="closeReminderPanel()" aria-label="Close">✕</button>
     </div>
     <div class="bell-panel-body" id="bell-panel-body"><div class="rem-empty">Loading reminders…</div></div>
-    <div class="bell-panel-foot"><button onclick="closeReminderPanel();switchTab('siting')">Open the Siting page</button></div>
   </div>
   <!-- PRIMARY NAV (four areas) and the SUB-NAV for the open area.
        Both rows are rendered from TAB_GROUPS so there is one place to edit. -->
@@ -8194,6 +8196,7 @@ function showReminderLoadError(message){
 }
 let sitingReminders={items:[],total:0,today:0};
 let pendingReminderTasks={items:[],error:null};
+let datedClinicReminders={items:[],error:null};
 function pendingTaskVisibleOnDate(task,dateStr){
   return !task?.is_completed||String(task.completed_on||'')===String(dateStr||'');
 }
@@ -8201,7 +8204,17 @@ function pendingReminderOpenCount(){
   return (pendingReminderTasks.items||[]).filter(t=>!t.is_completed).length;
 }
 function clinicReminderBadgeTotal(){
-  return Number(sitingReminders?.total||0)+pendingReminderOpenCount();
+  return Number(sitingReminders?.total||0)+pendingReminderOpenCount()+
+    (datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
+}
+async function getDatedClinicReminders(){
+  try{
+    const{data,error}=await SB.from('clinic_dated_reminders')
+      .select('id,reminder_text,reminder_date,is_completed,completed_on,created_by_name')
+      .or(`is_completed.eq.false,completed_on.eq.${TODAY}`)
+      .order('reminder_date',{ascending:true});
+    return {items:(data||[]).filter(r=>pendingTaskVisibleOnDate(r,TODAY)),error};
+  }catch(error){return {items:[],error};}
 }
 async function getPendingReminderTasks(){
   try{
@@ -8240,9 +8253,61 @@ function pendingReminderSectionHTML(state){
     </div>${list}
   </section>`;
 }
+function datedReminderSectionHTML(state){
+  const items=state?.items||[];
+  const due=items.filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
+  const unavailable=!!state?.error;
+  const rows=unavailable
+    ?'<div class="pending-reminders-error">Dated reminders need the one-time database setup.</div>'
+    :items.length?`<div class="pending-task-list">${items.map(r=>{
+      const done=r.is_completed===true;
+      const overdue=!done&&r.reminder_date<TODAY;
+      return `<label class="pending-task-row ${done?'done':''}">
+        <input type="checkbox" ${done?'checked':''} onchange="toggleDatedClinicReminder('${jsSafe(r.id)}',this.checked,this)" aria-label="Mark ${htmlSafe(r.reminder_text)} ${done?'pending':'completed'}"/>
+        <span class="pending-task-copy"><span class="pending-task-text">${htmlSafe(r.reminder_text)}</span>
+        <span class="pending-task-meta ${overdue?'dated-reminder-overdue':''}">${overdue?'Overdue · ':''}${htmlSafe(r.reminder_date)}${done?' · completed today':''}</span></span>
+      </label>`;
+    }).join('')}</div>`
+    :'<div class="pending-reminders-empty">No dated reminders.</div>';
+  return `<section class="pending-reminders dated-reminders" aria-label="Dated reminders">
+    <div class="pending-reminders-head"><span>📅 Reminders with a date</span><span class="pending-reminders-count">${due} due</span></div>
+    <div class="pending-reminders-add">
+      <input id="dated-reminder-input" type="text" maxlength="240" placeholder="Write a reminder…" ${unavailable?'disabled':''} onkeydown="if(event.key==='Enter'){event.preventDefault();addDatedClinicReminder();}"/>
+      <input id="dated-reminder-date" type="date" aria-label="Reminder date" min="${TODAY}" ${unavailable?'disabled':''}/>
+      <button id="dated-reminder-add" type="button" onclick="addDatedClinicReminder()" ${unavailable?'disabled':''}>Add</button>
+    </div>${rows}</section>`;
+}
 function renderClinicReminderPanelHTML(){
-  return pendingReminderSectionHTML(pendingReminderTasks)+
+  return pendingReminderSectionHTML(pendingReminderTasks)+datedReminderSectionHTML(datedClinicReminders)+
     `<div class="clinic-reminders-title">Clinical reminders</div>${renderSitingReminderList(sitingReminders.items)}`;
+}
+async function addDatedClinicReminder(){
+  const input=document.getElementById('dated-reminder-input');
+  const date=document.getElementById('dated-reminder-date');
+  const button=document.getElementById('dated-reminder-add');
+  const reminderText=String(input?.value||'').trim();
+  if(!reminderText){input?.focus();return;}
+  if(!date?.value||date.value<TODAY){date?.focus();return;}
+  if(button?.disabled)return;
+  button.disabled=true;
+  let who={};
+  try{who=await getCurrentUserForAudit();}catch(e){}
+  const{error}=await SB.from('clinic_dated_reminders').insert({
+    reminder_text:reminderText,reminder_date:date.value,created_by_email:who.email||null,created_by_name:who.name||null
+  });
+  if(error){button.disabled=false;alert('Could not add the reminder: '+error.message);return;}
+  await refreshReminders();
+}
+async function toggleDatedClinicReminder(id,done,box){
+  if(box)box.disabled=true;
+  let who={};
+  try{who=await getCurrentUserForAudit();}catch(e){}
+  const patch=done
+    ?{is_completed:true,completed_on:TODAY,completed_at:new Date().toISOString(),completed_by_email:who.email||null,completed_by_name:who.name||null}
+    :{is_completed:false,completed_on:null,completed_at:null,completed_by_email:null,completed_by_name:null};
+  const{error}=await SB.from('clinic_dated_reminders').update(patch).eq('id',id);
+  if(error){if(box){box.checked=!done;box.disabled=false;}alert('Could not update the reminder: '+error.message);return;}
+  await refreshReminders();
 }
 async function addPendingReminderTask(){
   const input=document.getElementById('pending-reminder-input');
@@ -8418,9 +8483,10 @@ function renderSitingReminderList(items){
 }
 async function refreshReminders(){
   // Shared pending tasks plus siting / post-op items and the roster-based MML order.
-  const[clinical,pending]=await Promise.all([getSitingReminders(),getPendingReminderTasks()]);
+  const[clinical,pending,dated]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders()]);
   sitingReminders=clinical;
   pendingReminderTasks=pending;
+  datedClinicReminders=dated;
   updateReminderBadges(clinicReminderBadgeTotal());
   const bbody=document.getElementById('bell-panel-body');
   if(bbody)bbody.innerHTML=renderClinicReminderPanelHTML();
@@ -8429,6 +8495,8 @@ async function refreshReminders(){
     const parts=[];
     const open=pendingReminderOpenCount();
     if(open)parts.push(`${open} pending`);
+    const datedDue=(datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
+    if(datedDue)parts.push(`${datedDue} dated due`);
     if(sitingReminders.total)parts.push(`${sitingReminders.total} clinical reminder${sitingReminders.total!==1?'s':''}`);
     bsub.textContent=parts.join(' · ')||'No reminders or pending tasks';
   }
