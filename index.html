@@ -2036,6 +2036,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <button class="da-button" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="downloadDailyAttendancePdf()">⤓ Download daily attendance (PDF)</button>
         <button class="da-button" style="background:#0d5c66;color:#fff;border-color:#0d5c66;" onclick="emailDailyAttendanceToHR(this)">✉ Send to Nurse HR</button>
       </div>
+      <p class="da-help">On a phone, choose Outlook from the share sheet and check To and Cc before sending. On a computer, attach the downloaded PDF to the Outlook draft.</p>
       <h3 id="da-date-label"></h3>
       <p class="da-help" id="da-help">Use Attendance to confirm who actually attended. The planned duty stays visible as the reference.</p>
       <div id="da-holiday" hidden></div>
@@ -3737,10 +3738,8 @@ async function downloadDailyAttendancePdf(){
   let who={};try{who=await getCurrentUserForAudit();}catch(e){}
   await downloadHtmlAsPdf(`Daily Attendance ${attDMY(date)}`, attendanceSheetPrintHTML(date,rows,who));
 }
-// Nurse HR mailbox the "Send to Nurse HR" button addresses. Leave it '' to open
-// the draft with an empty To (pick the Nurse HR contact); set the address here
-// to pre-address every email.
-const HR_EMAIL='';
+const HR_EMAIL='nursehr.mdh@gov.mt';
+const STOMA_CARE_EMAIL='stomacare.mdh@gov.mt';
 // Guards the email button so a slow PDF render can't be re-triggered by repeated
 // taps (which would queue several downloads).
 let attEmailBusy=false;
@@ -3750,9 +3749,10 @@ function attIsJason(who,signer){
   const email=String((who&&who.email)||'').toLowerCase();
   return attNameKey(signer||'')==='jason fenech'||/jason\.?fenech/.test(email);
 }
-function attOwaComposeUrl(to,subject,body){
+function attOwaComposeUrl(to,cc,subject,body){
   return 'https://webmail.gov.mt/owa/?path=/mail/action/compose'+
     '&to='+encodeURIComponent(to||'')+
+    '&cc='+encodeURIComponent(cc||'')+
     '&subject='+encodeURIComponent(subject||'')+
     '&body='+encodeURIComponent(body||'');
 }
@@ -3777,14 +3777,15 @@ async function emailDailyAttendanceToHR(btn){
   const signer=attDisplayName(who)||'';
   const grade=signer?attGrade(signer,who&&who.role):'';
   const dmy=attDMY(date);
-  const subject=`Daily Staff Attendance — Stoma Care Unit — ${dmy}`;
-  const signOff=(signer?signer+(grade?', '+grade:''):'MDH Stoma Care Clinic')+(signer?'\nMDH Stoma Care Clinic':'');
-  const body=`Good morning,\n\nAttached to this email is today's ${dmy} attendance sheet for Stoma Care Clinic.\n\nRegards,\n${signOff}`;
+  const subject=`Stoma Care attendance record (${attDMY(TODAY)})`;
+  const signature=attNameKey(signer).includes('jacqueline')?'Jacqueline':(signer||'MDH Stoma Care Clinic');
+  const signOff=signature==='Jacqueline'?'Jacqueline':signature+(grade?', '+grade:'')+(signature!=='MDH Stoma Care Clinic'?'\nMDH Stoma Care Clinic':'');
+  const body=`Good morning,\n\nPlease find attached the Stoma Care attendance record for ${dmy}.\n\nRegards,\n${signOff}`;
   const jason=attIsJason(who,signer);
   // Open Jason's webmail compose now — before the slower PDF render — so the
   // browser still counts it as his click and does not block the new tab.
   let owaWin=null;
-  if(jason){try{owaWin=window.open(attOwaComposeUrl(HR_EMAIL,subject,body),'_blank');}catch(e){}}
+  if(jason){try{owaWin=window.open(attOwaComposeUrl(HR_EMAIL,STOMA_CARE_EMAIL,subject,body),'_blank');}catch(e){}}
 
   // Build the sheet as a PDF file so it can be attached where the device allows.
   let file=null;
@@ -3796,24 +3797,27 @@ async function emailDailyAttendanceToHR(btn){
     if(file)attDownloadFile(file);
     try{await navigator.clipboard.writeText(body);}catch(e){}
     setTimeout(()=>alert((owaWin?'Webmail (OWA) is opening in a new tab. ':'Allow pop-ups, then click the button again to open webmail. ')+
-      'Attach the downloaded PDF “Daily Attendance '+dmy+'”. The message text has also been copied, so you can paste it if the webmail did not fill it in.'),500);
+      'Attach the downloaded PDF “Daily Attendance '+dmy+'”. Check To: '+HR_EMAIL+' and Cc: '+STOMA_CARE_EMAIL+' before sending. The message text has also been copied.'),500);
     return;
   }
 
   // Phones / tablets: share the PDF straight into Outlook — it attaches itself.
   const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
   if(file&&touch&&navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],title:subject,text:body});return;}
+    // The phone share sheet passes the PDF into Outlook. Browser file sharing
+    // has no To/Cc fields, so place the addresses at the top for review.
+    const shareBody=`To: ${HR_EMAIL}\nCc: ${STOMA_CARE_EMAIL}\nSubject: ${subject}\n\n${body}`;
+    try{await navigator.share({files:[file],title:subject,text:shareBody});return;}
     catch(e){if(e&&e.name==='AbortError')return;}
   }
   // Ward PC: download the PDF, then open an Outlook draft addressed to HR with the
   // subject and signature; the PDF is a single drag from the Downloads folder.
   if(file)attDownloadFile(file);
-  const mailto='mailto:'+encodeURIComponent(HR_EMAIL)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  const mailto='mailto:'+HR_EMAIL+'?cc='+encodeURIComponent(STOMA_CARE_EMAIL)+'&subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
   const ml=document.createElement('a');ml.href=mailto;document.body.appendChild(ml);ml.click();ml.remove();
   setTimeout(()=>alert(file
-    ? 'The attendance PDF was downloaded — attach it to the Outlook email that just opened (it is in your Downloads).'
-    : 'Outlook has opened with the email ready. Download the attendance PDF and attach it.'),500);
+    ? 'The attendance PDF was downloaded — attach it to the Outlook draft (it is in your Downloads). Check To and Cc before sending.'
+    : 'Outlook has opened. Download the attendance PDF and attach it. Check To and Cc before sending.'),500);
   }finally{attEmailBusy=false;if(btn){btn.disabled=false;btn.textContent=_lbl;}}
 }
 async function downloadAttendanceRecordPdf(date){
