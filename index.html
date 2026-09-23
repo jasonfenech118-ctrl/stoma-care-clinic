@@ -366,7 +366,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 #of-same-month-wrap.disabled .same-month-toggle{opacity:.55;cursor:not-allowed;background:#f6f8fa;}
 #of-same-month-wrap.disabled .same-month-toggle input{cursor:not-allowed;}
 
-/* ── BOOKING REMINDERS: BELL, PANEL AND PER-NURSE CARDS ── */
+/* ── CLINIC REMINDERS: BELL, PANEL AND PER-NURSE CARDS ── */
 .tab-count-badge{display:none;margin-left:6px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--red);color:white;font-size:10px;font-weight:900;align-items:center;justify-content:center;}
 .tab-count-badge.show{display:inline-flex;}
 .bell-wrap{position:relative;margin-left:auto;margin-right:12px;}
@@ -1875,7 +1875,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
     </div>
     <div class="bell-wrap">
-      <button class="bell-btn" id="bell-btn" onclick="event.stopPropagation();toggleReminderPanel()" title="Siting reminders" aria-label="Siting reminders">🔔<span class="bell-badge" id="bell-badge">0</span></button>
+      <button class="bell-btn" id="bell-btn" onclick="event.stopPropagation();toggleReminderPanel()" title="Clinic reminders" aria-label="Clinic reminders">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     </div>
     <button class="btn-so" onclick="doLogout()">Sign Out</button>
   </div>
@@ -1883,7 +1883,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
   <!-- REMINDER BELL PANEL -->
   <div class="bell-panel" id="bell-panel" onclick="event.stopPropagation();">
     <div class="bell-panel-head">
-      <div><strong>🔔 Siting Reminders</strong><span class="bell-panel-sub" id="bell-panel-sub">Siting post-op reminders</span></div>
+      <div><strong>🔔 Clinic Reminders</strong><span class="bell-panel-sub" id="bell-panel-sub">Siting and clinic reminders</span></div>
       <button class="bell-panel-close" onclick="closeReminderPanel()" aria-label="Close">✕</button>
     </div>
     <div class="bell-panel-body" id="bell-panel-body"><div class="rem-empty">Loading reminders…</div></div>
@@ -3168,7 +3168,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.23-255';
+const APP_BUILD='2026.09.23-256';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8131,7 +8131,7 @@ function updateReminderBadges(total){
   const bell=document.getElementById('bell-btn');
   const text=total>99?'99+':String(total);
   if(badge){badge.textContent=text;badge.classList.toggle('show',total>0);}
-  if(bell){bell.classList.toggle('has-alerts',total>0);bell.title=total?`${total} siting post-op reminder${total!==1?'s':''}`:'No siting reminders';}
+  if(bell){bell.classList.toggle('has-alerts',total>0);bell.title=total?`${total} clinic reminder${total!==1?'s':''}`:'No clinic reminders';}
   // The nav rows are re-rendered on every tab change, so their badges are
   // found by marker rather than by a single fixed id.
   document.querySelectorAll('[data-badge="reminders"]').forEach(el=>{
@@ -8152,19 +8152,35 @@ function showReminderLoadError(message){
   if(page)page.innerHTML=html;
 }
 let sitingReminders={items:[],total:0,today:0};
-/* The one reminder that is kept: siting sessions whose surgery day has come
-   (or passed) and whose post-op outcome has not been recorded yet. Follow-up
-   reminders no longer drive the bell or the pop-up. */
+/* Every Saturday Jason is rostered on duty, remind the team to send the MML
+   order. This uses the same complete staffing index as clinic capacity: a
+   change of duty, overtime or TIL-in counts as working; leave, off and TIL-off
+   do not. On every other day it returns no reminder. */
+async function getMmlOrderReminder(){
+  const day=new Date(TODAY+'T12:00:00');
+  if(Number.isNaN(day.getTime())||day.getDay()!==6)return [];
+  try{
+    const jason=ownerStaffForCapacity('Jason')||findCoreStaffByName('Jason');
+    if(!jason)return [];
+    const index=await loadClinicStaffingIndex(TODAY,TODAY);
+    if(!isNurseWorkingClinicDay(jason,TODAY,index))return [];
+    return [{kind:'mml-order',eff:TODAY}];
+  }catch(e){return [];}
+}
+/* Siting sessions whose surgery day has come (or passed) and whose post-op
+   outcome has not been recorded remain in the bell alongside the roster-based
+   MML order reminder. Follow-up-booking reminders stay excluded. */
 async function getSitingReminders(){
+  const mmlItems=await getMmlOrderReminder();
   try{
     const{data,error}=await SB.from('siting_sessions').select('*').in('status',['booked','seen','did_not_attend']);
-    if(error)return {items:[],total:0,today:0};
+    if(error)return {items:mmlItems,total:mmlItems.length,today:mmlItems.length};
     // A siting whose patient is already an inpatient has already had the stoma
     // performed and been admitted, so it must not keep nagging "record post-op".
     let onWard=new Set();
     try{const{data:inp}=await SB.from('patients').select('id_card').eq('is_inpatient',true);
       onWard=new Set((inp||[]).map(p=>normaliseIdCard(p.id_card||'')).filter(Boolean));}catch(e){}
-    const items=[];
+    const items=[...mmlItems];
     (data||[]).forEach(r=>{
       if(onWard.has(normaliseIdCard(r.id_card||'')))return;   // already admitted → done
       const sd=String(r.session_date||''), surg=String(r.surgery_date||'');
@@ -8182,7 +8198,7 @@ async function getSitingReminders(){
     items.push(...await getRodDueReminders());
     items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
     return {items,total:items.length,today:items.filter(r=>r.eff===TODAY).length};
-  }catch(e){return {items:[],total:0,today:0};}
+  }catch(e){return {items:mmlItems,total:mmlItems.length,today:mmlItems.length};}
 }
 /* Patients with a ROD (stoma rod / bridge) removal date that has come round.
    Chased until the date is cleared, which the nurse does once the rod is out. */
@@ -8225,6 +8241,11 @@ function renderSitingReminderList(items){
       ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
       : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
     const missed=r.status==='did_not_attend';
+    if(r.kind==='mml-order')
+      return `<div class="rem-row" style="display:block;padding:11px;border:1px solid #efc36a;border-radius:10px;background:#fff8e1;margin-bottom:8px;">
+        <div style="font-weight:900;color:#5f4300;">📦 Send MML order${tag}<span style="font-size:9px;font-weight:900;background:#e6a817;color:#000;padding:2px 7px;border-radius:5px;margin-left:6px;">MML ORDER</span></div>
+        <div style="font-size:11px;color:#715600;margin-top:4px;">Jason is rostered on duty this Saturday.</div>
+      </div>`;
     if(r.kind==='reversal')
       return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
         <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}<span style="font-size:9px;font-weight:800;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:5px;margin-left:6px;">REVERSAL</span></div>
@@ -8265,7 +8286,7 @@ function renderSitingReminderList(items){
   }).join('');
 }
 async function refreshReminders(){
-  // Siting post-op reminders are the only reminders kept.
+  // Siting / post-op items plus the Saturday MML order when Jason is on duty.
   sitingReminders=await getSitingReminders();
   updateReminderBadges(sitingReminders.total);
   const bbody=document.getElementById('bell-panel-body');
@@ -8473,12 +8494,15 @@ async function openDailyReminderModal(force){
   const nNo=todayItems.filter(r=>r.kind==='nodate').length;
   const nRev=todayItems.filter(r=>r.kind==='reversal').length;
   const nRod=todayItems.filter(r=>r.kind==='rod').length;
+  const nMml=todayItems.filter(r=>r.kind==='mml-order').length;
   if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
   if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
   if(nNo)bits.push(`${nNo} without a surgery date`);
   if(nRev)bits.push(`${nRev} reversal${nRev!==1?'s':''}`);
   if(nRod)bits.push(`${nRod} ROD removal${nRod!==1?'s':''}`);
+  if(nMml)bits.push('the MML order');
   if(!bits.length)bits.push(`${todayItems.length} reminder${todayItems.length!==1?'s':''}`);
+  const onlyMml=todayItems.every(r=>r.kind==='mml-order');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🔔 Reminders today</h2>
     <div class="msub"><strong>${htmlSafe(fmtLabel(TODAY))}</strong><br/>
@@ -8486,7 +8510,7 @@ async function openDailyReminderModal(force){
     <div class="rem-popup-scroll">${renderSitingReminderList(todayItems)}</div>
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Remind me again later today</button>
-      <button class="btn-save" onclick="markReminderSeenToday();closeModal();switchTab('appointments')">Open appointments</button>
+      <button class="btn-save" onclick="markReminderSeenToday();closeModal();${onlyMml?'':'switchTab(\'appointments\')'}">${onlyMml?'Dismiss for today':'Open appointments'}</button>
     </div>`;
   openMo();
 }
