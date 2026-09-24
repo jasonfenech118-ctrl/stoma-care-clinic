@@ -7275,7 +7275,7 @@ async function lookupPatientByIdForBooking(idInputId,firstInputId,surnameInputId
         note.textContent=`Saved patient found but marked Deceased: ${(data.first_name||'')} ${(data.surname||'')}. Booking is blocked unless status is changed first.`;
       }else{
         note.className='registry-lookup-note found';
-        note.textContent=`Registered patient: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to their existing history. Follow-up owner and due month can be updated from Edit / Seen.`;
+        note.textContent=`Registered patient: ${(data.first_name||'')} ${(data.surname||'')}. This booking will be added to their existing history. ${document.getElementById('p-followup-owner')?'The nurse owner below will be saved for future follow-ups.':'Follow-up owner and due month can be updated from Edit / Seen.'}`;
       }
     }
     setBookingReady(normaliseFollowupStatus(data.followup_status)!=='deceased');
@@ -7310,27 +7310,34 @@ async function buildNurseAllocationOptions(selectedType,selectedId,selectedName=
 
 async function bookSlot(slot,date,nid,nname,ntype){
   const targetLabel=ntype==='common'?'Common column':`${nname}${ntype==='ot'?' (OT)':ntype==='til'?' (TIL In)':''}`;
-  const nurseOptions=await buildNurseAllocationOptions(ntype,nid,nname);
   const mb=document.getElementById('mb');
   mb.className='mb';
   mb.innerHTML=`<h2>Book Patient</h2>
-    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · default column: ${htmlSafe(targetLabel)}<br/>This card only schedules the appointment, for a patient who is already in the Registry.</div>
+    <div class="msub">${htmlSafe(date)} - ${htmlSafe(slot)} · Appointment column: ${htmlSafe(targetLabel)}<br/>This card only schedules the appointment, for a patient who is already in the Registry.</div>
     ${bookingPatientPickerHTML('p-ph')}
-    <div class="fg"><label>Nurse / Column *</label><select id="p-nurse">${nurseOptions}</select></div>
-    <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after the appointment is scheduled by clicking Edit or Seen.</div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}')">Book Patient</button></div>`;
+    <div class="fg"><label for="p-followup-owner">Nurse owner *</label><select id="p-followup-owner" class="followup-owner-plain">${followupOwnerOptions()}</select></div>
+    <div class="booking-guidance-note">The nurse owner is saved on the patient’s record for future follow-ups. The appointment stays in the calendar column you selected.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="p-book-save" onclick="doBook('${jsSafe(slot)}','${jsSafe(date)}','${jsSafe(nid||'')}','${jsSafe(ntype||'')}')">Book Patient</button></div>`;
   openMo();
   setBookingReady(false);
 }
 async function doBook(slot,date,nurseIdParam,nurseType){
+  const button=document.getElementById('p-book-save');
+  if(button?.dataset.busy==='1')return;
+  if(button){button.dataset.busy='1';button.disabled=true;}
+  try{
   const pat=await requireRegisteredPatientForBooking();
   if(!pat)return;
 
-  const manualNurse=document.getElementById('p-nurse')?.value||'';
-  if(manualNurse!=='common'&&!(staffList||[]).some(s=>s.is_active!==false&&manualNurse===`core:${s.id}`)){alert('Choose a core nurse or Common before booking.');return;}
+  const owner=document.getElementById('p-followup-owner')?.value;
+  if(!FOLLOWUP_OWNERS.includes(owner)){alert('Choose a nurse owner before booking.');return;}
   const payload={patient_id:pat.id,appt_date:date,appt_slot:String(slot).slice(0,5),assigned_to:null,bank_staff_id:null,status:'booked'};
-  if(manualNurse.startsWith('core:')) payload.assigned_to=manualNurse.replace('core:','');
-  if(manualNurse.startsWith('bank:')) payload.bank_staff_id=manualNurse.replace('bank:','');
+  if(nurseType!=='common'){
+    if(!nurseIdParam||nurseIdParam==='undefined'){alert('Please reopen the booking from a calendar column.');return;}
+    const core=(staffList||[]).some(s=>String(s.id)===String(nurseIdParam));
+    if(nurseType==='ot'||nurseType==='ot-booked'||(nurseType==='til'&&!core))payload.bank_staff_id=nurseIdParam;
+    else payload.assigned_to=nurseIdParam;
+  }
 
   const{error}=await SB.from('appointments').insert(payload);
   if(error){
@@ -7345,8 +7352,17 @@ async function doBook(slot,date,nurseIdParam,nurseType){
     }
     return;
   }
+  // Save the ongoing owner separately from the nurse providing this appointment.
+  // A failed owner save must never encourage retrying an already saved booking.
+  let ownerError=null;
+  try{
+    const result=await SB.from('patients').update({followup_owner:owner}).eq('id',pat.id).select('id').single();
+    ownerError=result.error;
+  }catch(e){ownerError=e;}
   closeModal();
   refreshAppointmentViews();
+  if(ownerError)alert('The appointment was booked successfully, but the nurse owner could not be saved. Do not book again. Update the owner from the patient record.\n\n'+(ownerError.message||ownerError));
+  }finally{if(button){button.dataset.busy='';button.disabled=false;}}
 }
 
 // COD
