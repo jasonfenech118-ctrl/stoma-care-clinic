@@ -4365,12 +4365,25 @@ async function getNursesWithBookings(date, workingNurses){
 
 
 
+function calendarNurseBankIds(n){
+  const ids=[...(n.bankIds||[]),n.bankId];
+  if(n.assignmentSource==='bank'||n.type==='ot'||n.type==='ot-booked')ids.push(n.id);
+  return [...new Set(ids.filter(Boolean).map(String))];
+}
+function addCalendarNurse(nurses,n){
+  const existing=nurses.find(x=>String(x.id)===String(n.id) && x.type!=='common' && n.type!=='common');
+  if(existing){
+    // A working core nurse may also have bank/TIL assignments. Keep every ID
+    // when combining their roster entries so older bookings remain visible.
+    existing.bankIds=[...new Set([...calendarNurseBankIds(existing),...calendarNurseBankIds(n)])];
+  }else nurses.push(n);
+}
 function appointmentMatchesNurseColumn(a,n){
   if(!a||!n)return false;
-  if(n.type==='common') return !a.assigned_to && !a.bank_staff_id;
-  if(n.type==='core-ot') return String(a.assigned_to||'')===String(n.id||'') || (n.bankId && String(a.bank_staff_id||'')===String(n.bankId));
-  if(n.type==='ot'||n.type==='ot-booked') return String(a.bank_staff_id||'')===String(n.id||'') || String(a.assigned_to||'')===String(n.id||'');
-  return String(a.assigned_to||'')===String(n.id||'');
+  if(n.type==='common')return !a.assigned_to && !a.bank_staff_id;
+  const coreMatch=!!a.assigned_to && String(a.assigned_to)===String(n.id);
+  const bankMatch=!!a.bank_staff_id && calendarNurseBankIds(n).includes(String(a.bank_staff_id));
+  return coreMatch||bankMatch;
 }
 function appointmentsForSlotAndColumn(appts,slot,n){
   return (appts||[]).filter(a=>String(a.appt_slot||'').slice(0,5)===slot && appointmentMatchesNurseColumn(a,n));
@@ -4451,10 +4464,7 @@ async function loadAppts(){
   sitingToday.forEach(ss=>{const k=String(ss.session_slot||'').slice(0,5);if(k)sitingByStart[k]=ss;});
 
   const nurses=[];
-  const addNurse=(n)=>{
-    const sameId=nurses.some(x=>String(x.id)===String(n.id) && x.type!=='common' && n.type!=='common');
-    if(!sameId)nurses.push(n);
-  };
+  const addNurse=(n)=>addCalendarNurse(nurses,n);
 
   for(const st of staffList){
     if(offIds.has(String(st.id)))continue;
@@ -4474,7 +4484,7 @@ async function loadAppts(){
     if(b.bank_staff?.full_name){
       const core=findCoreStaffByName(b.bank_staff.full_name);
       if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'til'});
-      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'til'});
+      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'til',assignmentSource:'bank'});
     }
   }
 
@@ -4497,7 +4507,7 @@ async function loadAppts(){
       const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
       addNurse({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent'});
     }
-    if(a.bank_staff_id && !nurses.some(n=>String(n.id)===String(a.bank_staff_id))){
+    if(a.bank_staff_id && !nurses.some(n=>appointmentMatchesNurseColumn({bank_staff_id:a.bank_staff_id},n))){
       addNurse({id:a.bank_staff_id,name:a.bank_staff?.full_name||'Booked OT/Bank Staff',type:'ot-booked'});
     }
   }
