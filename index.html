@@ -3191,7 +3191,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.23-258';
+const APP_BUILD='2026.09.25-259';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16373,14 +16373,42 @@ async function loadHandover(){
       : `<div class="report-note">Could not load the handover list: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  const rowsAll=(data||[]).slice().sort(handoverByWard);
+  // An OPEN inpatient episode is the real proof a patient is on the ward, so it
+  // is the source of truth here — not only the is_inpatient flag. This pulls back
+  // anyone whose flag drifted off while their episode is still open (e.g. a stoma
+  // date that reads as "no stoma today", from a mistyped or future date, wrongly
+  // tripped the self-heal below and cleared their flag), and it stops such a
+  // patient being auto-removed at all. Degrades quietly where the table is absent.
+  let openEpIds=new Set();
+  try{
+    const{data:openEps}=await SB.from('clinical_records')
+      .select('patient_id,discharge_date').eq('kind','episode').eq('is_current',true);
+    (openEps||[]).forEach(e=>{if(e&&e.patient_id&&!e.discharge_date)openEpIds.add(String(e.patient_id));});
+  }catch(e){}
+  let baseRows=(data||[]).slice();
+  if(openEpIds.size){
+    const haveIds=new Set(baseRows.map(p=>String(p.id)));
+    const missingIds=[...openEpIds].filter(id=>!haveIds.has(id));
+    for(let i=0;i<missingIds.length;i+=100){
+      try{
+        const{data:extra}=await SB.from('patients').select(cols).in('id',missingIds.slice(i,i+100));
+        // A deceased patient with a still-open episode is not pulled back onto the ward.
+        const keep=(extra||[]).filter(p=>!handoverDeceased(p));
+        if(keep.length){
+          baseRows=baseRows.concat(keep);
+          try{await Promise.all(keep.map(p=>SB.from('patients').update({is_inpatient:true}).eq('id',p.id)));}catch(e){}
+        }
+      }catch(e){}
+    }
+  }
+  const rowsAll=baseRows.sort(handoverByWard);
   // Self-heal: a patient who no longer belongs on the ward comes off the sheet on
   // their own and the ward flag is cleared so it stays that way — no separate
-  // discharge step needed. That covers a patient whose stoma has been reversed
-  // (recorded from the reversal reminder or the record) and a patient marked
-  // deceased. Patients who still have a stoma, or a later new/refashioned one,
-  // are left exactly as they are.
-  const autoGone=rowsAll.filter(handoverShouldAutoLeave);
+  // discharge step needed. That covers a patient marked deceased, and one whose
+  // stoma has been reversed with none left. But someone with an OPEN episode is
+  // genuinely admitted, so the reversed-gone heuristic never removes them — only a
+  // real discharge (which closes the episode) or a death takes them off.
+  const autoGone=rowsAll.filter(p=>handoverDeceased(p)||(handoverReversedGone(p)&&!openEpIds.has(String(p.id))));
   let rows=rowsAll;
   if(autoGone.length){
     const goneIds=new Set(autoGone.map(p=>p.id));
