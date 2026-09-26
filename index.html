@@ -1564,10 +1564,24 @@ details.annual-collapse>summary::before{content:'▸';color:var(--teal);font-siz
 details.annual-collapse[open]>summary::before{transform:rotate(90deg);}
 details.annual-collapse>summary:hover{background:#f5f8fa;}
 .annual-collapse-body{padding:0 14px 12px;}
-/* Metric-comparison modal — multi-select year chips. */
-.mc-years{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px;}
-.mc-yearchip{padding:5px 13px;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--navy);font-weight:700;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif;transition:box-shadow .12s;}
-.mc-yearchip:hover{box-shadow:0 2px 8px rgba(0,0,0,.12);}
+/* Annual Report — activity totals grouped into tidy four-across rows. */
+.annual-totals{margin-bottom:6px;}
+.totals-group{margin-bottom:12px;}
+.totals-group-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--teal);margin:0 0 7px;}
+.totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.annual-rate-kpis{grid-template-columns:repeat(3,1fr);}
+@media(max-width:860px){.totals-grid{grid-template-columns:repeat(2,1fr);}.annual-rate-kpis{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:460px){.totals-grid{grid-template-columns:repeat(2,1fr);}.annual-rate-kpis{grid-template-columns:repeat(1,1fr);}}
+/* Metric-comparison modal — selected-period chips and the add-period controls. */
+.mc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 8px;align-items:center;}
+.mc-chip{display:inline-flex;align-items:center;gap:6px;color:#fff;border:1.5px solid;border-radius:20px;padding:4px 6px 4px 12px;font-size:13px;font-weight:700;}
+.mc-chip button{background:rgba(255,255,255,.28);color:#fff;border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+.mc-chip button:hover{background:rgba(255,255,255,.5);}
+.mc-add{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 14px;}
+.mc-add label{font-size:12px;font-weight:700;color:var(--navy);}
+.mc-add select{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+.mc-addbtn{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px;font-family:'Inter',sans-serif;}
+.mc-addbtn:hover{filter:brightness(1.05);}
 .report-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
 .report-filters label{font-size:12px;font-weight:700;color:var(--navy);}
 .report-filters select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
@@ -3164,7 +3178,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-275';
+const APP_BUILD='2026.09.26-276';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10393,25 +10407,36 @@ async function renderPeriodTotals(elId,year,month){
   }catch(e){console.warn('No-stoma total failed',e);}
 
   // Each tile is clickable — it opens the multi-year comparison for that metric.
+  // Tiles are arranged in four themed groups of four so every row is full and
+  // related figures sit together, rather than one ragged wall of boxes.
   const box=(key,label,value,sub)=>`<div class="kpi kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="openMetricCompare('${key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMetricCompare('${key}');}"><div class="k-label">${htmlSafe(label)}</div><div class="k-value">${value}</div><div class="k-sub">${sub}</div></div>`;
-  el.innerHTML=[
-    box('appointments','Appointments Made',total,htmlSafe(periodLabel)),
-    box('followups','Follow-ups',fuCases,'follow-up appointments'),
-    box('sitings','Sitings',sitingsInPeriod,`new cases sited · ${htmlSafe(periodLabel)}`),
-    box('stoma_performed','Stoma Performed',stomaFormedInPeriod,'stoma formed from a siting'),
-    box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
-    box('attended','Attended',attended,`${pct(attended,total)}% of appointments`),
-    box('dntu','Did Not Turn Up',dna,`${pct(dna,total)}% · target &lt;15%`),
-    box('cancellations','Cancellations',cancelled,`${pct(cancelled,total)}%`),
-    box('inpatients','Inpatients',inpatientsInPeriod,'admissions (handover)'),
-    box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`),
-    box('deaths','Deaths',deathsInPeriod,`died in ${htmlSafe(periodLabel)}`),
-    box('deaths_new','Deaths (new stomas)',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
-    box('gozo','Discharged to Gozo',gozoInPeriod,`in ${htmlSafe(periodLabel)}`),
-    box('overseas','Relocated Overseas',relocatedInPeriod,`in ${htmlSafe(periodLabel)}`),
-    box('unique_patients','Unique Patients',uniquePatients,htmlSafe(periodLabel)),
-    box('total_patients','Total Patients',totalRegisteredPatients,'registered in system')
-  ].join('');
+  const groups=[
+    {title:'Appointments',tiles:[
+      box('appointments','Appointments Made',total,htmlSafe(periodLabel)),
+      box('attended','Attended',attended,`${pct(attended,total)}% of appointments`),
+      box('dntu','Did Not Turn Up',dna,`${pct(dna,total)}% · target &lt;15%`),
+      box('cancellations','Cancellations',cancelled,`${pct(cancelled,total)}%`)
+    ]},
+    {title:'Patients & caseload',tiles:[
+      box('followups','Follow-ups',fuCases,'follow-up appointments'),
+      box('unique_patients','Unique Patients',uniquePatients,htmlSafe(periodLabel)),
+      box('inpatients','Inpatients',inpatientsInPeriod,'admissions (handover)'),
+      box('total_patients','Total Patients',totalRegisteredPatients,'registered in system')
+    ]},
+    {title:'Sitings & surgery',tiles:[
+      box('sitings','Sitings',sitingsInPeriod,`new cases sited · ${htmlSafe(periodLabel)}`),
+      box('stoma_performed','Stoma Performed',stomaFormedInPeriod,'stoma formed from a siting'),
+      box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
+      box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`)
+    ]},
+    {title:'Outcomes',tiles:[
+      box('deaths','Deaths',deathsInPeriod,`died in ${htmlSafe(periodLabel)}`),
+      box('deaths_new','Deaths (new stomas)',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
+      box('gozo','Discharged to Gozo',gozoInPeriod,`in ${htmlSafe(periodLabel)}`),
+      box('overseas','Relocated Overseas',relocatedInPeriod,`in ${htmlSafe(periodLabel)}`)
+    ]}
+  ];
+  el.innerHTML=groups.map(g=>`<div class="totals-group"><div class="totals-group-h">${htmlSafe(g.title)}</div><div class="totals-grid">${g.tiles.join('')}</div></div>`).join('');
 }
 
 /* ── METRIC COMPARISON ─────────────────────────────────────────────────────
@@ -10428,11 +10453,17 @@ const METRIC_LABELS={
   overseas:'Relocated Overseas', unique_patients:'Unique Patients',
   total_patients:'Total Patients'
 };
-const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff'];
-function metricYearCandidates(){const now=new Date().getFullYear();const ys=[];for(let y=now+1;y>=now-7;y--)ys.push(y);return ys;}
-function metricYearColor(year){const ys=metricYearCandidates();const i=ys.indexOf(Number(year));return YEAR_COMPARE_COLORS[(i<0?Math.abs(Number(year)):i)%YEAR_COMPARE_COLORS.length];}
+const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff','#c026d3'];
+const MC_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// A selection is a "period": a whole year (month:'') or a single month within a
+// year, so e.g. Jan 2007 can be lined up against the whole of 2005. Each period
+// takes the next colour in the palette by its position in the list.
+function metricPeriodColor(i){return YEAR_COMPARE_COLORS[i%YEAR_COMPARE_COLORS.length];}
+function metricPeriodLabel(p){return p.month?`${MC_MON[Number(p.month)-1]} ${p.year}`:`${p.year}`;}
+function metricPeriodKey(p){return `${p.year}|${p.month||''}`;}
+function metricAddYearOptions(){const now=new Date().getFullYear();let o='';for(let y=now+1;y>=now-30;y--)o+=`<option value="${y}"${y===now?' selected':''}>${y}</option>`;return o;}
 
-let metricCompareState={metric:null,years:[],data:null};
+let metricCompareState={metric:null,periods:[],data:null};
 
 async function metricCompareEnsureData(years){
   // The patient, siting, episode and no-stoma tables are clinic-sized and their
@@ -10490,38 +10521,51 @@ function metricMonthly(key,year,d){
 function openMetricCompare(metricKey){
   if(!METRIC_LABELS[metricKey])return;
   metricCompareState.metric=metricKey;
-  if(!metricCompareState.years||!metricCompareState.years.length){
+  if(!metricCompareState.periods||!metricCompareState.periods.length){
     const y=Number(document.getElementById('annual-year')?.value)||new Date().getFullYear();
-    metricCompareState.years=[y];
+    metricCompareState.periods=[{year:y,month:''}];
   }
   renderMetricCompare();
 }
-function metricToggleYear(y){
-  y=Number(y);
-  const arr=metricCompareState.years;
-  const i=arr.indexOf(y);
-  if(i>=0){if(arr.length>1)arr.splice(i,1);}
-  else arr.push(y);
-  arr.sort((a,b)=>a-b);
+function metricAddPeriod(){
+  const y=Number(document.getElementById('mc-add-year')?.value)||new Date().getFullYear();
+  const m=document.getElementById('mc-add-month')?.value||'';
+  const p={year:y,month:m};
+  if(!metricCompareState.periods.some(x=>metricPeriodKey(x)===metricPeriodKey(p)))
+    metricCompareState.periods.push(p);
+  metricCompareState.periods.sort((a,b)=>a.year-b.year||String(a.month).localeCompare(String(b.month)));
+  renderMetricCompare();
+}
+function metricRemovePeriod(i){
+  metricCompareState.periods.splice(i,1);
   renderMetricCompare();
 }
 async function renderMetricCompare(){
   const mb=document.getElementById('mb'); if(!mb)return;
   const key=metricCompareState.metric;
   const label=METRIC_LABELS[key]||'Metric';
-  const chips=metricYearCandidates().map(y=>{
-    const on=metricCompareState.years.includes(y);const c=metricYearColor(y);
-    return `<button type="button" class="mc-yearchip${on?' on':''}" onclick="metricToggleYear(${y})"${on?` style="background:${c};border-color:${c};color:#fff;"`:''}>${y}</button>`;
-  }).join('');
+  const periods=metricCompareState.periods;
+  const chips=periods.length?periods.map((p,i)=>{const c=metricPeriodColor(i);
+    return `<span class="mc-chip" style="background:${c};border-color:${c};"><span>${htmlSafe(metricPeriodLabel(p))}</span><button type="button" title="Remove" onclick="metricRemovePeriod(${i})">✕</button></span>`;}).join('')
+    :'<span class="report-note">No periods selected yet — add one below.</span>';
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📊 ${htmlSafe(label)}</h2>
-    <div class="msub">Compare across years — tap a year to add or remove it. Each year keeps its own colour.</div>
-    <div class="mc-years">${chips}</div>
+    <div class="msub">Compare any mix of whole years and single months — e.g. Jan 2007 against the whole of 2005. Each selection keeps its own colour.</div>
+    <div class="mc-chips">${chips}</div>
+    <div class="mc-add">
+      <label>Add:</label>
+      <select id="mc-add-year">${metricAddYearOptions()}</select>
+      <select id="mc-add-month"><option value="">Whole year</option>${MC_MON.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}</select>
+      <button type="button" class="mc-addbtn" onclick="metricAddPeriod()">＋ Add</button>
+    </div>
     <div id="mc-body"><div class="report-note">Loading…</div></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
 
-  const d=await metricCompareEnsureData(metricCompareState.years);
+  if(!periods.length){document.getElementById('mc-body').innerHTML='<div class="report-note">Add a whole year or a single month above to see the comparison.</div>';return;}
+
+  const years=[...new Set(periods.map(p=>p.year))];
+  const d=await metricCompareEnsureData(years);
   if(metricCompareState.metric!==key)return; // selection changed while loading
   const bodyEl=document.getElementById('mc-body');
   if(!bodyEl)return;
@@ -10531,27 +10575,33 @@ async function renderMetricCompare(){
     return;
   }
 
-  const years=[...metricCompareState.years].sort((a,b)=>a-b);
-  const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const series=years.map(y=>({year:y,color:metricYearColor(y),data:metricMonthly(key,y,d)}));
+  // Each period becomes one coloured series. A whole year is the full 12-month
+  // line; a single month is one point at that month (and one bar).
+  const series=periods.map((p,i)=>{
+    const monthly=metricMonthly(key,p.year,d);
+    const color=metricPeriodColor(i);
+    if(p.month){const mi=Number(p.month)-1;const line=new Array(12).fill(null);line[mi]=monthly[mi];
+      return {label:metricPeriodLabel(p),color,isMonth:true,mi,line,total:monthly[mi],monthly};}
+    return {label:metricPeriodLabel(p),color,isMonth:false,mi:-1,line:monthly,total:monthly.reduce((a,b)=>a+b,0),monthly};
+  });
 
   bodyEl.innerHTML=`
     <div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Month by month</h3><div style="position:relative;height:260px;"><canvas id="mc-line"></canvas></div></div>
-    <div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Year totals</h3><div style="position:relative;height:220px;"><canvas id="mc-bar"></canvas></div></div>
-    <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Year</th>${monthLabels.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
-      ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${s.year}</strong></td>${s.data.map(v=>`<td>${v}</td>`).join('')}<td><strong>${s.data.reduce((a,b)=>a+b,0)}</strong></td></tr>`).join('')}
+    <div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Totals</h3><div style="position:relative;height:220px;"><canvas id="mc-bar"></canvas></div></div>
+    <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Period</th>${MC_MON.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+      ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${htmlSafe(s.label)}</strong></td>${s.monthly.map((v,idx)=>(s.isMonth&&idx!==s.mi)?'<td style="color:#c8d0da;">·</td>':`<td>${v}</td>`).join('')}<td><strong>${s.total}</strong></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; an event with no date on file is not shown on the monthly trend.</div>`;
+    <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; an event with no date on file is not shown on the monthly trend. A single-month selection shows as one point.</div>`;
 
   destroyChart('mc-line');destroyChart('mc-bar');
   if(typeof Chart==='undefined')return;
   const lc=document.getElementById('mc-line');
   if(lc)reportCharts['mc-line']=new Chart(lc,{type:'line',
-    data:{labels:monthLabels,datasets:series.map(s=>({label:String(s.year),data:s.data,borderColor:s.color,backgroundColor:s.color,tension:.35,fill:false,borderWidth:2,pointRadius:2}))},
+    data:{labels:MC_MON,datasets:series.map(s=>({label:s.label,data:s.line,borderColor:s.color,backgroundColor:s.color,tension:.35,fill:false,borderWidth:2,pointRadius:s.isMonth?5:2,showLine:!s.isMonth,spanGaps:false}))},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
   const bc=document.getElementById('mc-bar');
   if(bc)reportCharts['mc-bar']=new Chart(bc,{type:'bar',
-    data:{labels:years.map(String),datasets:[{label,data:series.map(s=>s.data.reduce((a,b)=>a+b,0)),backgroundColor:series.map(s=>s.color),borderWidth:1}]},
+    data:{labels:series.map(s=>s.label),datasets:[{label,data:series.map(s=>s.total),backgroundColor:series.map(s=>s.color),borderWidth:1}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
 }
 
@@ -10683,12 +10733,10 @@ function renderAnnualReport(){
           <p>Generated ${htmlSafe(fmtLabel(TODAY))} · ${t.total} appointments across ${t.clinicDays} clinic day${t.clinicDays!==1?'s':''}</p></div>
       </div>
       <h3 class="annual-h3" style="margin-top:0;">Clinic activity totals — ${htmlSafe(totalsPeriodLabel)}</h3>
-      <div class="report-note" style="margin:-2px 0 8px;">Totals for the selected period. Use the Period selector for a single month; the month-by-month table below always covers the full year.</div>
-      <div class="kpi-row" id="annual-period-totals"><div class="report-note">Loading totals…</div></div>
-      <div class="annual-kpis">
-        ${annualKpi('Total Appointments',t.total,`${d.year}`)}
-        ${annualKpi('Unique Patients',t.patients,'seen this year')}
-        ${annualKpi('Registered Patients',d.registered,'in the system')}
+      <div class="report-note" style="margin:-2px 0 10px;">Totals for the selected period. Tap any box to compare it across years and months. Use the Period selector for a single month; the tables below always cover the full year.</div>
+      <div class="annual-totals" id="annual-period-totals"><div class="report-note">Loading totals…</div></div>
+      <h3 class="annual-h3">Rates &amp; workload — ${htmlSafe(d.year)}</h3>
+      <div class="annual-kpis annual-rate-kpis">
         ${annualKpi('Attended',`${attRate}%`,`${t.attended} seen`,ANNUAL_OUTCOME_COLORS.attended)}
         ${annualKpi('DNTU',`${dnaRate}%`,`${t.dna} did not turn up · target <15%`,ANNUAL_OUTCOME_COLORS.did_not_attend)}
         ${annualKpi('Cancelled',`${canRate}%`,`${t.cancelled} cancelled`,ANNUAL_OUTCOME_COLORS.cancelled)}
@@ -10716,7 +10764,8 @@ function printAnnualReport(){
     .annual-kpi{border:1px solid #dde3ea;border-radius:7px;padding:7px 9px;}
     .ak-label{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#7a8fa6;font-weight:bold;}
     .ak-value{font-size:19px;font-weight:900;color:#1a2e4a;line-height:1.1;} .ak-sub{font-size:8.5px;color:#7a8fa6;}
-    .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:10px;}
+    .totals-group{margin-bottom:6px;} .totals-group-h{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#0d7377;font-weight:bold;margin:8px 0 4px;}
+    .totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:4px;}
     .kpi{border:1px solid #dde3ea;border-radius:7px;padding:6px 8px;}
     .k-label{font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:#7a8fa6;font-weight:bold;}
     .k-value{font-size:17px;font-weight:900;color:#1a2e4a;line-height:1.1;} .k-sub{font-size:8px;color:#7a8fa6;}
@@ -10727,7 +10776,7 @@ function printAnnualReport(){
     .annual-legend{margin:6px 0 4px;font-size:9px;} .annual-leg{margin-right:12px;} .annual-foot{font-size:8.5px;color:#7a8fa6;margin-top:8px;}
     details.annual-collapse>summary{font-size:13px;color:#0d7377;font-weight:bold;margin:16px 0 6px;list-style:none;}
     details.annual-collapse>summary::-webkit-details-marker{display:none;}
-    .kpi-row .kpi{cursor:default;}
+    .kpi{cursor:default;}
     @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   </style></head><body>${el.innerHTML.replace(/<details/g,'<details open')}</body></html>`);
   w.document.close();
