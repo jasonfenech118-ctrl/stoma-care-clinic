@@ -3180,7 +3180,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-272';
+const APP_BUILD='2026.09.26-273';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10357,9 +10357,9 @@ async function loadReports(){
       if(st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozo++;
       if(isDead(p)&&inRange(p.deceased_date||eff))death++;
       if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
-      // Deaths among patients whose stoma was performed in this period, whenever
-      // the death itself occurred — the mortality of the period's new cohort.
-      if(inRange(p.surgery_date)&&isDead(p))deathNew++;
+      // Deaths where BOTH the stoma was performed and the death fell in this
+      // period — operated this year and died this year.
+      if(inRange(p.surgery_date)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
     });
     reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew;
   }catch(e){console.warn('Outcome KPIs failed',e);}
@@ -10377,8 +10377,14 @@ async function loadReports(){
     const sited=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&inRange(s.session_date));
     sitingsInPeriod=sited.length;
     stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
-    noStomaInPeriod=Math.max(0,sitingsInPeriod-stomaFormedInPeriod);
   }catch(e){console.warn('Siting KPIs failed',e);}
+  // "Stoma not performed" = operations where no stoma was formed — the same
+  // No Stomas Performed register, so the figures match.
+  try{
+    const{data:ns}=await SB.from('operations_no_stoma').select('surgery_date');
+    if(request!==reportLoadRequest)return;
+    noStomaInPeriod=(ns||[]).filter(r=>inRange(r.surgery_date)).length;
+  }catch(e){console.warn('No-stoma KPI failed',e);}
 
   const kpiEl=document.getElementById('report-kpis');
   if(kpiEl){
@@ -10387,14 +10393,14 @@ async function loadReports(){
       <div class="kpi"><div class="k-label">Follow-ups</div><div class="k-value">${fuCases}</div><div class="k-sub">follow-up appointments</div></div>
       <div class="kpi"><div class="k-label">Sitings</div><div class="k-value">${sitingsInPeriod}</div><div class="k-sub">new cases sited · ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Stoma Performed</div><div class="k-value">${stomaFormedInPeriod}</div><div class="k-sub">stoma formed from a siting</div></div>
-      <div class="kpi"><div class="k-label">Stoma Not Performed</div><div class="k-value">${noStomaInPeriod}</div><div class="k-sub">sited, no stoma (yet)</div></div>
+      <div class="kpi"><div class="k-label">Stoma Not Performed</div><div class="k-value">${noStomaInPeriod}</div><div class="k-sub">operation, no stoma formed · ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Attended</div><div class="k-value">${attended}</div><div class="k-sub">${pct(attended,total)}% of appointments</div></div>
       <div class="kpi"><div class="k-label">Did Not Turn Up</div><div class="k-value">${dna}</div><div class="k-sub">${pct(dna,total)}% · target &lt;15%</div></div>
       <div class="kpi"><div class="k-label">Cancellations</div><div class="k-value">${cancelled}</div><div class="k-sub">${pct(cancelled,total)}%</div></div>
       <div class="kpi"><div class="k-label">Inpatients</div><div class="k-value">${inpatientsInPeriod}</div><div class="k-sub">admissions (handover)</div></div>
       <div class="kpi"><div class="k-label">Reversals</div><div class="k-value">${reversalsInPeriod}</div><div class="k-sub">stomas reversed · ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Deaths</div><div class="k-value">${deathsInPeriod}</div><div class="k-sub">died in ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Deaths (new stomas)</div><div class="k-value">${deathsNewStomaInPeriod}</div><div class="k-sub">operated in ${htmlSafe(periodLabel)}, since died</div></div>
+      <div class="kpi"><div class="k-label">Deaths (new stomas)</div><div class="k-value">${deathsNewStomaInPeriod}</div><div class="k-sub">operated &amp; died in ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Discharged to Gozo</div><div class="k-value">${gozoInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Relocated Overseas</div><div class="k-value">${relocatedInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Unique Patients</div><div class="k-value">${uniquePatients}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
