@@ -195,5 +195,5 @@ function exportCancellations(){
 function cancellationAnnualHTML(appts){
   const months=Array.from({length:12},(_,i)=>({label:followupMonthName(i+1),...cancellationCounts(appts.filter(a=>Number(String(a.appt_date).slice(5,7))===i+1))}));
   const total=cancellationCounts(appts);
-  return `<h3 class="annual-h3">Cancellations by source</h3><p class="report-note">Cancelled appointments, by original appointment month. Separate from DNTU.</p><table class="dt annual-table"><thead><tr><th>Month</th><th>By patient</th><th>By clinic</th><th>Source not recorded</th><th>Total</th></tr></thead><tbody>${[...months,{label:'Year',...total}].map(m=>`<tr><td>${htmlSafe(m.label)}</td><td>${m.patient}</td><td>${m.clinic}</td><td>${m.unknown}</td><td>${m.total}</td></tr>`).join('')}</tbody></table>`;
+  return `<h3 class="annual-h3">Cancellations by source</h3><p class="report-note">Cancelled appointments, by original appointment month. Separate from DNTU.</p><table class="dt annual-table"><thead><tr><th>Month</th><th>By patient</th><th>Source not recorded</th><th>Total</th></tr></thead><tbody>${[...months,{label:'Year',...total}].map(m=>`<tr><td>${htmlSafe(m.label)}</td><td>${m.patient}</td><td>${m.unknown}</td><td>${m.total}</td></tr>`).join('')}</tbody></table>`;
 }
