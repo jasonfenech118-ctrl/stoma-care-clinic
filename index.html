@@ -2386,44 +2386,6 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         </div>
       </div>
 
-      <div class="kpi-row" id="report-kpis"></div>
-
-      <div class="report-card wide" style="min-height:auto;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-          <h3 style="margin:0;">👥 Patients Booked for Selected Month / Period</h3>
-          <button class="btn-add" onclick="printReportPatientList()" style="padding:7px 14px;">Print List</button>
-        </div>
-        <div class="report-note">Filter by allocated nurse, nurse/column, event type and patient details. OT nurses remain support-only and are not used as patient allocation owners.</div>
-        <div class="filter-row" style="margin-bottom:10px;">
-          <label>Allocated nurse:</label>
-          <select id="rep-patient-owner" onchange="renderReportPatientList()">
-            <option value="all">All owners</option>
-            <option value="Common">Common</option>
-            <option value="Jason">Jason</option>
-            <option value="Jacqueline">Jacqueline</option>
-            <option value="Lorraine">Lorraine</option>
-          </select>
-          <label>Nurse / column:</label>
-          <select id="rep-patient-column" onchange="renderReportPatientList()"><option value="all">All columns</option></select>
-          <label>Event type:</label>
-          <select id="rep-patient-event" onchange="renderReportPatientList()">
-            <option value="all">All events</option>
-            <option value="booked">Booked</option>
-            <option value="attended">Seen / Attended</option>
-            <option value="did_not_attend">DNTU</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <label>Search:</label>
-          <input type="text" id="rep-patient-search" placeholder="Search patient, ID card, phone..." oninput="renderReportPatientList()" style="min-width:240px;"/>
-        </div>
-        <div id="rep-patient-summary" class="report-note"></div>
-        <div style="overflow-x:auto;"><table class="dt" id="rep-patient-table">
-          <thead><tr><th>Date</th><th>Slot</th><th>Patient</th><th>ID Card</th><th>Phone</th><th>Allocated Nurse</th><th>Nurse / Column</th><th>Event Type</th><th>Follow-up Due</th><th>Follow-up Status</th></tr></thead>
-          <tbody id="rep-patient-tbody"><tr><td colspan="10" class="empty">Select a period to load patients.</td></tr></tbody>
-        </table></div>
-      </div>
-
-
     </div>
 
     <!-- ANNUAL REPORT -->
@@ -2433,6 +2395,14 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
         <div style="display:flex;gap:8px;align-items:center;">
           <label style="font-size:12px;font-weight:700;color:var(--navy);">Year:</label>
           <select id="annual-year" onchange="loadAnnualReport()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;"></select>
+          <label style="font-size:12px;font-weight:700;color:var(--navy);">Period:</label>
+          <select id="annual-month" onchange="loadAnnualReport()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:700;">
+            <option value="">Full Year</option>
+            <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+            <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+            <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+          </select>
           <button class="btn-add" onclick="loadAnnualReport()">Refresh</button>
           <button class="btn-add" onclick="printAnnualReport()" style="background:var(--navy);">🖨 Print / PDF</button>
         </div>
@@ -3180,7 +3150,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-273';
+const APP_BUILD='2026.09.26-274';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10316,96 +10286,6 @@ async function loadReports(){
   const cancelled=appts.filter(a=>a.status==='cancelled').length;
   const dna=appts.filter(a=>a.status==='did_not_attend').length;
   const booked=appts.filter(a=>a.status==='booked').length;
-  const activeTotal=appts.filter(a=>a.status!=='cancelled').length;
-  const uniquePatients=[...new Set(appts.map(a=>a.patient_id).filter(Boolean))].length;
-
-  let totalRegisteredPatients='—';
-  try{
-    const{count,error:pCountErr}=await SB.from('patients').select('id',{count:'exact',head:true});
-    if(!pCountErr)totalRegisteredPatients=count??0;
-  }catch(e){console.warn('Patient total count not available',e);}
-
-  const newCases=appts.filter(a=>a.status!=='cancelled'&&a.patients?.followup_type==='new_case').length;
-  const fuCases=Math.max(0,activeTotal-newCases);
-  const periodLabel=month?`${followupMonthName(month)} ${year}`:String(year);
-
-  // Registry-wide outcome events that fall in the selected period (the whole year
-  // when no month is picked, that one month when it is), read once. Reversals are
-  // counted per stoma reversal date; the rest by their own dated field.
-  let inpatientsInPeriod='—', reversalsInPeriod='—', gozoInPeriod='—', deathsInPeriod='—', relocatedInPeriod='—', deathsNewStomaInPeriod='—';
-  const inRange=d=>{const s=String(d||'').slice(0,10);return !!s&&s>=start&&s<=end;};
-  // Gozo / overseas are administrative statuses whose date is often left blank.
-  // When the selected period is the whole of the current year, an undated one is
-  // still surfaced there so it is not lost; a dated one is placed by its date.
-  const curYear=new Date().getFullYear();
-  const isCurFullYear=!month&&Number(year)===curYear;
-  const outcomeInPeriod=(dateVal,eff)=>{const d=dateVal||eff;return d?inRange(d):isCurFullYear;};
-  try{
-    const{rows:allPats}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
-    if(request!==reportLoadRequest)return;
-    const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
-    // These outcomes are counted by the patient's STATUS, not only by a dedicated
-    // date field (which is often left blank). The event is dated by its own date
-    // when present, else by the date the status was set (followup_status_effective_date).
-    let rev=0,gozo=0,death=0,relo=0,deathNew=0;
-    (allPats||[]).forEach(p=>{
-      const st=normaliseFollowupStatus(p.followup_status);
-      const eff=p.followup_status_effective_date;
-      // A urostomy is permanent — it is never reversed, so it is left out of the
-      // reversal count entirely.
-      try{if(daStomaGroup(p.stoma_type)!=='Urostomy')rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
-      if(st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozo++;
-      if(isDead(p)&&inRange(p.deceased_date||eff))death++;
-      if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
-      // Deaths where BOTH the stoma was performed and the death fell in this
-      // period — operated this year and died this year.
-      if(inRange(p.surgery_date)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
-    });
-    reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew;
-  }catch(e){console.warn('Outcome KPIs failed',e);}
-  try{
-    const{rows:eps}=await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode'));
-    if(request!==reportLoadRequest)return;
-    inpatientsInPeriod=(eps||[]).filter(e=>inRange(e.record_date)).length;
-  }catch(e){console.warn('Inpatient KPI failed',e);}
-  // Pre-operative stoma sitings — each is a new case being sited. Of those in the
-  // period, how many went on to have a stoma formed vs not (yet) performed.
-  let sitingsInPeriod='—', stomaFormedInPeriod='—', noStomaInPeriod='—';
-  try{
-    const{rows:ss}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,surgery_performed,status'));
-    if(request!==reportLoadRequest)return;
-    const sited=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&inRange(s.session_date));
-    sitingsInPeriod=sited.length;
-    stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
-  }catch(e){console.warn('Siting KPIs failed',e);}
-  // "Stoma not performed" = operations where no stoma was formed — the same
-  // No Stomas Performed register, so the figures match.
-  try{
-    const{data:ns}=await SB.from('operations_no_stoma').select('surgery_date');
-    if(request!==reportLoadRequest)return;
-    noStomaInPeriod=(ns||[]).filter(r=>inRange(r.surgery_date)).length;
-  }catch(e){console.warn('No-stoma KPI failed',e);}
-
-  const kpiEl=document.getElementById('report-kpis');
-  if(kpiEl){
-    kpiEl.innerHTML=`
-      <div class="kpi"><div class="k-label">Appointments Made</div><div class="k-value">${total}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Follow-ups</div><div class="k-value">${fuCases}</div><div class="k-sub">follow-up appointments</div></div>
-      <div class="kpi"><div class="k-label">Sitings</div><div class="k-value">${sitingsInPeriod}</div><div class="k-sub">new cases sited · ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Stoma Performed</div><div class="k-value">${stomaFormedInPeriod}</div><div class="k-sub">stoma formed from a siting</div></div>
-      <div class="kpi"><div class="k-label">Stoma Not Performed</div><div class="k-value">${noStomaInPeriod}</div><div class="k-sub">operation, no stoma formed · ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Attended</div><div class="k-value">${attended}</div><div class="k-sub">${pct(attended,total)}% of appointments</div></div>
-      <div class="kpi"><div class="k-label">Did Not Turn Up</div><div class="k-value">${dna}</div><div class="k-sub">${pct(dna,total)}% · target &lt;15%</div></div>
-      <div class="kpi"><div class="k-label">Cancellations</div><div class="k-value">${cancelled}</div><div class="k-sub">${pct(cancelled,total)}%</div></div>
-      <div class="kpi"><div class="k-label">Inpatients</div><div class="k-value">${inpatientsInPeriod}</div><div class="k-sub">admissions (handover)</div></div>
-      <div class="kpi"><div class="k-label">Reversals</div><div class="k-value">${reversalsInPeriod}</div><div class="k-sub">stomas reversed · ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Deaths</div><div class="k-value">${deathsInPeriod}</div><div class="k-sub">died in ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Deaths (new stomas)</div><div class="k-value">${deathsNewStomaInPeriod}</div><div class="k-sub">operated &amp; died in ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Discharged to Gozo</div><div class="k-value">${gozoInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Relocated Overseas</div><div class="k-value">${relocatedInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Unique Patients</div><div class="k-value">${uniquePatients}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
-      <div class="kpi"><div class="k-label">Total Patients</div><div class="k-value">${totalRegisteredPatients}</div><div class="k-sub">registered in system</div></div>`;
-  }
 
   const monthLabels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthNums=['01','02','03','04','05','06','07','08','09','10','11','12'];
@@ -10425,10 +10305,96 @@ async function loadReports(){
     {label:'DNTU',data:monthDntu,borderWidth:2},
     {label:'Cancelled',data:monthCancelled,borderWidth:2}
   ],{scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}});
+}
 
-  reportPatientRows=appts;
-  syncReportPatientColumnFilter(reportPatientRows);
-  renderReportPatientList();
+/* Period totals — the headline activity counts for a selected year (or a single
+   month within it). Reads its own data so it can be dropped into any tab; it is
+   shown in the Annual Report. Reversals exclude urostomy (permanent); the Gozo
+   and overseas outcomes are counted by status, dated by their own field, the
+   status-change date, or — when the whole current year is selected and no date
+   was recorded — surfaced there so an undated one is not lost. */
+async function renderPeriodTotals(elId,year,month){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  const start=month?`${year}-${month}-01`:`${year}-01-01`;
+  const end=month?monthEndDate(year,month):`${year}-12-31`;
+  const periodLabel=month?`${followupMonthName(month)} ${year}`:String(year);
+  el.innerHTML='<div class="report-note">Loading totals…</div>';
+
+  const{rows:rawAppts}=await fetchAllRows(()=>SB.from('appointments')
+    .select('*').gte('appt_date',start).lte('appt_date',end)
+    .order('appt_date',{ascending:true}).order('appt_slot',{ascending:true}).order('id'));
+  const appts=await enrichAppointments(rawAppts||[]);
+  const total=appts.length;
+  const attended=appts.filter(a=>a.status==='attended').length;
+  const cancelled=appts.filter(a=>a.status==='cancelled').length;
+  const dna=appts.filter(a=>a.status==='did_not_attend').length;
+  const activeTotal=appts.filter(a=>a.status!=='cancelled').length;
+  const uniquePatients=[...new Set(appts.map(a=>a.patient_id).filter(Boolean))].length;
+  const newCases=appts.filter(a=>a.status!=='cancelled'&&a.patients?.followup_type==='new_case').length;
+  const fuCases=Math.max(0,activeTotal-newCases);
+
+  let totalRegisteredPatients='—';
+  try{
+    const{count,error:pCountErr}=await SB.from('patients').select('id',{count:'exact',head:true});
+    if(!pCountErr)totalRegisteredPatients=count??0;
+  }catch(e){console.warn('Patient total count not available',e);}
+
+  let inpatientsInPeriod='—', reversalsInPeriod='—', gozoInPeriod='—', deathsInPeriod='—', relocatedInPeriod='—', deathsNewStomaInPeriod='—';
+  const inRange=d=>{const s=String(d||'').slice(0,10);return !!s&&s>=start&&s<=end;};
+  const curYear=new Date().getFullYear();
+  const isCurFullYear=!month&&Number(year)===curYear;
+  const outcomeInPeriod=(dateVal,eff)=>{const d=dateVal||eff;return d?inRange(d):isCurFullYear;};
+  try{
+    const{rows:allPats}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
+    const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
+    let rev=0,gozo=0,death=0,relo=0,deathNew=0;
+    (allPats||[]).forEach(p=>{
+      const st=normaliseFollowupStatus(p.followup_status);
+      const eff=p.followup_status_effective_date;
+      // A urostomy is permanent — never reversed, so left out of the reversal count.
+      try{if(daStomaGroup(p.stoma_type)!=='Urostomy')rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
+      if(st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozo++;
+      if(isDead(p)&&inRange(p.deceased_date||eff))death++;
+      if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
+      // Deaths where BOTH the stoma was performed and the death fell in this period.
+      if(inRange(p.surgery_date)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
+    });
+    reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew;
+  }catch(e){console.warn('Outcome totals failed',e);}
+  try{
+    const{rows:eps}=await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode'));
+    inpatientsInPeriod=(eps||[]).filter(e=>inRange(e.record_date)).length;
+  }catch(e){console.warn('Inpatient total failed',e);}
+  let sitingsInPeriod='—', stomaFormedInPeriod='—', noStomaInPeriod='—';
+  try{
+    const{rows:ss}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,surgery_performed,status'));
+    const sited=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&inRange(s.session_date));
+    sitingsInPeriod=sited.length;
+    stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
+  }catch(e){console.warn('Siting totals failed',e);}
+  try{
+    const{data:ns}=await SB.from('operations_no_stoma').select('surgery_date');
+    noStomaInPeriod=(ns||[]).filter(r=>inRange(r.surgery_date)).length;
+  }catch(e){console.warn('No-stoma total failed',e);}
+
+  el.innerHTML=`
+    <div class="kpi"><div class="k-label">Appointments Made</div><div class="k-value">${total}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Follow-ups</div><div class="k-value">${fuCases}</div><div class="k-sub">follow-up appointments</div></div>
+    <div class="kpi"><div class="k-label">Sitings</div><div class="k-value">${sitingsInPeriod}</div><div class="k-sub">new cases sited · ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Stoma Performed</div><div class="k-value">${stomaFormedInPeriod}</div><div class="k-sub">stoma formed from a siting</div></div>
+    <div class="kpi"><div class="k-label">Stoma Not Performed</div><div class="k-value">${noStomaInPeriod}</div><div class="k-sub">operation, no stoma formed · ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Attended</div><div class="k-value">${attended}</div><div class="k-sub">${pct(attended,total)}% of appointments</div></div>
+    <div class="kpi"><div class="k-label">Did Not Turn Up</div><div class="k-value">${dna}</div><div class="k-sub">${pct(dna,total)}% · target &lt;15%</div></div>
+    <div class="kpi"><div class="k-label">Cancellations</div><div class="k-value">${cancelled}</div><div class="k-sub">${pct(cancelled,total)}%</div></div>
+    <div class="kpi"><div class="k-label">Inpatients</div><div class="k-value">${inpatientsInPeriod}</div><div class="k-sub">admissions (handover)</div></div>
+    <div class="kpi"><div class="k-label">Reversals</div><div class="k-value">${reversalsInPeriod}</div><div class="k-sub">stomas reversed · ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Deaths</div><div class="k-value">${deathsInPeriod}</div><div class="k-sub">died in ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Deaths (new stomas)</div><div class="k-value">${deathsNewStomaInPeriod}</div><div class="k-sub">operated &amp; died in ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Discharged to Gozo</div><div class="k-value">${gozoInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Relocated Overseas</div><div class="k-value">${relocatedInPeriod}</div><div class="k-sub">in ${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Unique Patients</div><div class="k-value">${uniquePatients}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
+    <div class="kpi"><div class="k-label">Total Patients</div><div class="k-value">${totalRegisteredPatients}</div><div class="k-sub">registered in system</div></div>`;
 }
 
 /* ── ANNUAL REPORT ────────────────────────────────────────────────────────
@@ -10449,6 +10415,7 @@ function ensureAnnualYearOptions(){
 async function loadAnnualReport(){
   ensureAnnualYearOptions();
   const year=document.getElementById('annual-year')?.value||String(new Date().getFullYear());
+  const month=document.getElementById('annual-month')?.value||'';
   const body=document.getElementById('annual-body');
   if(body)body.innerHTML='<div class="report-note">Loading annual report…</div>';
   const{rows:raw,error}=await fetchAllRows(()=>SB.from('appointments')
@@ -10504,8 +10471,9 @@ async function loadAnnualReport(){
   try{const{rows}=await getRecallWorklistRows();recallCount=rows.length;}catch(e){}
   try{const{count}=await SB.from('patients').select('id',{count:'exact',head:true});registered=count??'—';}catch(e){}
 
-  annualReportData={year,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
+  annualReportData={year,month,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
   renderAnnualReport();
+  renderPeriodTotals('annual-period-totals',year,month);
 }
 function annualKpi(label,value,sub,accent){
   return `<div class="annual-kpi"${accent?` style="border-top:3px solid ${accent};"`:''}>
@@ -10523,6 +10491,7 @@ function renderAnnualReport(){
   const body=document.getElementById('annual-body');
   if(!body||!annualReportData)return;
   const d=annualReportData,t=d.totals;
+  const totalsPeriodLabel=d.month?`${followupMonthName(d.month)} ${d.year}`:String(d.year);
   const attRate=pct(t.attended,t.total),dnaRate=pct(t.dna,t.total),canRate=pct(t.cancelled,t.total);
   const ratio=t.newCases?`1 : ${(t.followups/t.newCases).toFixed(1)}`:(t.followups?`0 : ${t.followups}`:'—');
   const avgDay=t.clinicDays?(t.active/t.clinicDays).toFixed(1):'0';
@@ -10555,6 +10524,9 @@ function renderAnnualReport(){
         <div><h1>MDH Stoma Care Clinic — Annual Report ${htmlSafe(d.year)}</h1>
           <p>Generated ${htmlSafe(fmtLabel(TODAY))} · ${t.total} appointments across ${t.clinicDays} clinic day${t.clinicDays!==1?'s':''}</p></div>
       </div>
+      <h3 class="annual-h3" style="margin-top:0;">Clinic activity totals — ${htmlSafe(totalsPeriodLabel)}</h3>
+      <div class="report-note" style="margin:-2px 0 8px;">Totals for the selected period. Use the Period selector for a single month; the month-by-month table below always covers the full year.</div>
+      <div class="kpi-row" id="annual-period-totals"><div class="report-note">Loading totals…</div></div>
       <div class="annual-kpis">
         ${annualKpi('Total Appointments',t.total,`${d.year}`)}
         ${annualKpi('Unique Patients',t.patients,'seen this year')}
@@ -10588,6 +10560,10 @@ function printAnnualReport(){
     .annual-kpi{border:1px solid #dde3ea;border-radius:7px;padding:7px 9px;}
     .ak-label{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#7a8fa6;font-weight:bold;}
     .ak-value{font-size:19px;font-weight:900;color:#1a2e4a;line-height:1.1;} .ak-sub{font-size:8.5px;color:#7a8fa6;}
+    .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:10px;}
+    .kpi{border:1px solid #dde3ea;border-radius:7px;padding:6px 8px;}
+    .k-label{font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:#7a8fa6;font-weight:bold;}
+    .k-value{font-size:17px;font-weight:900;color:#1a2e4a;line-height:1.1;} .k-sub{font-size:8px;color:#7a8fa6;}
     table{width:100%;border-collapse:collapse;margin-bottom:8px;} th,td{border:1px solid #cfd8e3;padding:4px 6px;text-align:left;} th{background:#eef2f7;color:#1a2e4a;font-size:8.5px;text-transform:uppercase;}
     .annual-total-row td{background:#f5f7f9;font-weight:bold;}
     .annual-barwrap{display:inline-flex;width:120px;height:10px;border-radius:3px;overflow:hidden;border:1px solid #dde3ea;} .annual-seg{display:inline-block;height:100%;}
