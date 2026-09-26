@@ -3180,7 +3180,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-271';
+const APP_BUILD='2026.09.26-272';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10334,18 +10334,29 @@ async function loadReports(){
   // counted per stoma reversal date; the rest by their own dated field.
   let inpatientsInPeriod='—', reversalsInPeriod='—', gozoInPeriod='—', deathsInPeriod='—', relocatedInPeriod='—', deathsNewStomaInPeriod='—';
   const inRange=d=>{const s=String(d||'').slice(0,10);return !!s&&s>=start&&s<=end;};
+  // Gozo / overseas are administrative statuses whose date is often left blank.
+  // When the selected period is the whole of the current year, an undated one is
+  // still surfaced there so it is not lost; a dated one is placed by its date.
+  const curYear=new Date().getFullYear();
+  const isCurFullYear=!month&&Number(year)===curYear;
+  const outcomeInPeriod=(dateVal,eff)=>{const d=dateVal||eff;return d?inRange(d):isCurFullYear;};
   try{
     const{rows:allPats}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
     if(request!==reportLoadRequest)return;
     const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
+    // These outcomes are counted by the patient's STATUS, not only by a dedicated
+    // date field (which is often left blank). The event is dated by its own date
+    // when present, else by the date the status was set (followup_status_effective_date).
     let rev=0,gozo=0,death=0,relo=0,deathNew=0;
     (allPats||[]).forEach(p=>{
+      const st=normaliseFollowupStatus(p.followup_status);
+      const eff=p.followup_status_effective_date;
       // A urostomy is permanent — it is never reversed, so it is left out of the
       // reversal count entirely.
       try{if(daStomaGroup(p.stoma_type)!=='Urostomy')rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
-      if(inRange(p.discharged_gozo_date))gozo++;
-      if(inRange(p.deceased_date))death++;
-      if(inRange(p.relocated_overseas_date))relo++;
+      if(st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozo++;
+      if(isDead(p)&&inRange(p.deceased_date||eff))death++;
+      if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
       // Deaths among patients whose stoma was performed in this period, whenever
       // the death itself occurred — the mortality of the period's new cohort.
       if(inRange(p.surgery_date)&&isDead(p))deathNew++;
