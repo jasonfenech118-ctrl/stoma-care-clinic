@@ -3180,7 +3180,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-267';
+const APP_BUILD='2026.09.26-268';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20705,33 +20705,49 @@ function renderRegistryMap(){
       </tbody></table></div></div>`:''}`;
 }
 // One locality, every measure — the same summary whichever map is on screen.
-function openMapLocalityModal(name){
-  const rows=mapByArea[name]||[];
+let mapLocalityState={name:null,filter:null};
+// Toggle the stat filter (click the active one again to clear it) and repaint.
+function setMapLocalityFilter(key){
+  mapLocalityState.filter=(mapLocalityState.filter===key)?null:key;
+  openMapLocalityModal(mapLocalityState.name,mapLocalityState.filter);
+}
+function openMapLocalityModal(name,filter){
+  mapLocalityState={name,filter:filter||null};
+  const allRows=mapByArea[name]||[];
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  const cnt=k=>{const m=MAP_METRICS.find(x=>x.key===k);return rows.filter(m.hit).length;};
+  const cnt=k=>{const m=MAP_METRICS.find(x=>x.key===k);return allRows.filter(m.hit).length;};
   const avg=k=>{const m=MAP_METRICS.find(x=>x.key===k);
-    const v=rows.map(m.val).filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x));
+    const v=allRows.map(m.val).filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x));
     return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length)+' '+m.unit+' (n='+v.length+')':'—';};
-  const active=rows.filter(p=>p.st==='active').length;
-  const line=(l,v)=>`<div class="psm-ditem"><dt>${htmlSafe(l)}</dt><dd>${v}</dd></div>`;
+  const active=allRows.filter(p=>p.st==='active').length;
+  // The count tiles are clickable filters; the average tiles are read-only.
+  const tile=(key,label)=>{const on=mapLocalityState.filter===key;
+    return `<div class="psm-ditem" role="button" tabindex="0" title="Show only ${htmlSafe(label)} patients" onclick="setMapLocalityFilter('${key}')" style="cursor:pointer;border-radius:8px;padding:4px 6px;${on?'background:#e8f5f4;box-shadow:inset 0 0 0 1px #0d9488;':''}"><dt>${htmlSafe(label)}</dt><dd>${cnt(key)}</dd></div>`;};
+  const avgLine=(l,v)=>`<div class="psm-ditem"><dt>${htmlSafe(l)}</dt><dd>${v}</dd></div>`;
+  const fMetric=mapLocalityState.filter?MAP_METRICS.find(x=>x.key===mapLocalityState.filter):null;
+  const rows=fMetric?allRows.filter(fMetric.hit):allRows;
   mb.innerHTML=`<h2>🗺 ${htmlSafe(name)}</h2>
-    <div class="msub"><strong>${rows.length}</strong> patient${rows.length!==1?'s':''} on the register from this locality · ${active} still in follow-up</div>
-    ${rows.length?`<dl class="psm-dgrid" style="margin:0 0 12px;">
-      ${line('Colostomy',cnt('colostomy'))}
-      ${line('Ileostomy',cnt('ileostomy'))}
-      ${line('Urostomy',cnt('urostomy'))}
-      ${line('Deaths',cnt('deaths'))}
-      ${line('Reversals',cnt('reversals'))}
-      ${line('Age at death',avg('agedeath'))}
-      ${line('Age at reversal',avg('agerev'))}
-      ${line('Hospital days',avg('hospdays'))}
+    <div class="msub"><strong>${allRows.length}</strong> patient${allRows.length!==1?'s':''} on the register from this locality · ${active} still in follow-up</div>
+    ${allRows.length?`<dl class="psm-dgrid" style="margin:0 0 10px;">
+      ${tile('colostomy','Colostomy')}
+      ${tile('ileostomy','Ileostomy')}
+      ${tile('urostomy','Urostomy')}
+      ${tile('deaths','Deaths')}
+      ${tile('reversals','Reversals')}
+      ${avgLine('Age at death',avg('agedeath'))}
+      ${avgLine('Age at reversal',avg('agerev'))}
+      ${avgLine('Hospital days',avg('hospdays'))}
     </dl>
-    <div class="da-tw"><table class="dt"><thead><tr><th>Patient</th><th>Stoma</th><th>Surgery</th><th>Status</th></tr></thead><tbody>
-      ${rows.slice(0,40).map(p=>`<tr><td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim()||'—')}</td>
+    <div class="report-note" style="margin:0 0 8px;">${fMetric
+      ?`Showing <strong>${rows.length}</strong> ${htmlSafe(fMetric.label)} patient${rows.length!==1?'s':''} · <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="setMapLocalityFilter('${mapLocalityState.filter}')">Show all</button>`
+      :'Tap a stat above to filter the list. Tap <strong>View</strong> to open a patient read-only, or <strong>Edit</strong> to change their record.'}</div>
+    <div class="da-tw"><table class="dt"><thead><tr><th>Patient</th><th>Stoma</th><th>Surgery</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.slice(0,60).map(p=>`<tr><td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim()||'—')}</td>
         <td>${htmlSafe(p.stoma_type||'—')}</td><td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'—'}</td>
-        <td>${htmlSafe(followupStatusText(p.st))}</td></tr>`).join('')}
-    </tbody></table></div>${rows.length>40?`<div class="report-note">Showing the first 40 of ${rows.length}.</div>`:''}`
+        <td>${htmlSafe(followupStatusText(p.st))}</td>
+        <td style="white-space:nowrap;">${p.id?`<button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="closeModal();openPatientRecord('${p.id}')">View</button> <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'—'}</td></tr>`).join('')}
+    </tbody></table></div>${rows.length>60?`<div class="report-note">Showing the first 60 of ${rows.length}.</div>`:''}`
     :'<div class="report-note">No patients recorded in this locality yet.</div>'}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
