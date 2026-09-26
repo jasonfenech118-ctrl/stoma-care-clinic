@@ -3180,7 +3180,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-270';
+const APP_BUILD='2026.09.26-271';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11754,7 +11754,7 @@ function newStomaRowHTML(d){
          carried here so editing the patient never wipes it. -->
     <input type="hidden" class="st-replaces" value="${v('replaces_uid')}"/>
     <div class="edit-seen-grid">
-      <div class="fg"><label>Stoma type</label><select class="st-type">${stomaTypeOptions(d.type)}</select></div>
+      <div class="fg"><label>Stoma type</label><select class="st-type" onchange="onStomaRowTypeChange(this)">${stomaTypeOptions(d.type)}</select></div>
       <div class="fg"><label>Date stoma formed</label><input type="date" class="st-formed" value="${v('formed_date')}" onchange="onStomaDateChange(this)"/></div>
       <div class="fg"><label>Stoma location</label><select class="st-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="st-discharge" value="${v('discharge_date')}"/></div>
@@ -11832,11 +11832,15 @@ function renumberStomaRows(prefix){
    a refashioning with no date yet closes the newest stoma. */
 function refreshReversalFields(prefix){
   const stomas=[{d:document.getElementById(`${prefix}-surgery`)?.value||'',
+                 type:document.getElementById(`${prefix}-stoma`)?.value||'',
                  wrap:document.getElementById(`${prefix}-reversalwrap`),
-                 input:document.getElementById(`${prefix}-reversal`)}]
+                 input:document.getElementById(`${prefix}-reversal`),
+                 notes:document.getElementById(`${prefix}-revnotes`)}]
     .concat([...document.querySelectorAll(`#${prefix}-stomalist .stoma-row`)].map(r=>({
       d:r.querySelector('.st-formed')?.value||'',
-      wrap:r.querySelector('.st-reversalwrap'),input:r.querySelector('.st-reversal')})));
+      type:r.querySelector('.st-type')?.value||'',
+      wrap:r.querySelector('.st-reversalwrap'),input:r.querySelector('.st-reversal'),
+      notes:r.querySelector('.st-revnotes')})));
   stomas.forEach(s=>{s.key=s.d||'9999-99-99';s.refashioned=false;});
   stomas.sort((a,b)=>String(a.key).localeCompare(String(b.key)));
   [...document.querySelectorAll(`#${prefix}-reflist .rf-formed`)].forEach(inp=>{
@@ -11846,17 +11850,39 @@ function refreshReversalFields(prefix){
     if(idx>=0)stomas[idx].refashioned=true;
   });
   stomas.forEach(s=>{
+    // A urostomy is permanent (never reversed), and a stoma remade by a later
+    // refashioning carries its end date on the refashioning — either way the
+    // reversal date does not belong on this stoma, so it is hidden.
+    const uro=daStomaGroup(s.type)==='Urostomy';
+    const hide=s.refashioned||uro;
+    if(s.notes){const nfg=s.notes.closest('.fg');if(nfg)nfg.hidden=uro;}
     if(!s.wrap)return;
-    s.wrap.hidden=s.refashioned;
+    s.wrap.hidden=hide;
     if(!s.input)return;
     // The date is kept aside rather than discarded, so removing the
-    // refashioning brings it straight back.
-    if(s.refashioned){
+    // refashioning (or changing the type back) brings it straight back.
+    if(hide){
       if(s.input.value){s.input.dataset.kept=s.input.value;s.input.value='';}
     }else if(!s.input.value&&s.input.dataset.kept){
       s.input.value=s.input.dataset.kept;delete s.input.dataset.kept;
     }
   });
+  // "Also formed at this same operation" rows: a urostomy there hides its
+  // reversal date and notes too (they sit outside the refashioning logic above).
+  document.querySelectorAll(`#${prefix}-iststomalist .stoma-row`).forEach(r=>{
+    const uro=daStomaGroup(r.querySelector('.ist-type')?.value)==='Urostomy';
+    const d=r.querySelector('.ist-reversal'),dfg=d&&d.closest('.fg');if(dfg)dfg.hidden=uro;
+    const n=r.querySelector('.ist-revnotes'),nfg=n&&n.closest('.fg');if(nfg)nfg.hidden=uro;
+    if(uro){if(d&&d.value){d.dataset.kept=d.value;d.value='';}}
+    else if(d&&!d.value&&d.dataset.kept){d.value=d.dataset.kept;delete d.dataset.kept;}
+  });
+}
+// A stoma-type dropdown changed on a later/also-formed row — re-sync the reversal
+// fields for that whole form (hides them on a urostomy).
+function onStomaRowTypeChange(el){
+  const list=el.closest('[id$="stomalist"]');
+  const prefix=list?list.id.replace(/-(ist)?stomalist$/,''):null;
+  if(prefix)refreshReversalFields(prefix);
 }
 // A date change can move a stoma in the sequence, so re-order and renumber.
 function onStomaDateChange(el){
@@ -11995,7 +12021,7 @@ function initialStomaRowHTML(d){
   const v=x=>htmlSafe(d[x]||'');
   return `<div class="stoma-row" data-uid="${htmlSafe(uid)}">
     <div class="edit-seen-grid">
-      <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this)">${initialStomaTypeOptions(effType)}</select></div>
+      <div class="fg"><label>Type</label><select class="ist-type" onchange="onInitialStomaType(this);onStomaRowTypeChange(this)">${initialStomaTypeOptions(effType)}</select></div>
       <div class="fg"><label>Stoma location</label><select class="ist-loc" onchange="stomaLocAdd(this)">${stomaLocOptions(d.location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" class="ist-discharge" value="${v('discharge_date')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label><input type="text" class="ist-findings" value="${v('findings')}" placeholder="e.g. mucus fistula formed alongside the ileostomy"/></div>
@@ -12488,6 +12514,7 @@ function onPfStomaType(prefix){
   if(!sel||!wrap)return;
   wrap.hidden=sel.value!=='Other';
   if(sel.value==='Other')document.getElementById(`${prefix}-stomaother`)?.focus();
+  refreshReversalFields(prefix);   // hide the reversal date/notes on a urostomy
 }
 // Reveal a collapsible patient-form section (refashioning / new stoma) on demand.
 function showPfSection(prefix,key){
