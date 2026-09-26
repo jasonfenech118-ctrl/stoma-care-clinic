@@ -3180,7 +3180,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-268';
+const APP_BUILD='2026.09.26-269';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10339,7 +10339,9 @@ async function loadReports(){
     if(request!==reportLoadRequest)return;
     let rev=0,gozo=0,death=0,relo=0;
     (allPats||[]).forEach(p=>{
-      try{rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
+      // A urostomy is permanent — it is never reversed, so it is left out of the
+      // reversal count entirely.
+      try{if(daStomaGroup(p.stoma_type)!=='Urostomy')rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
       if(inRange(p.discharged_gozo_date))gozo++;
       if(inRange(p.deceased_date))death++;
       if(inRange(p.relocated_overseas_date))relo++;
@@ -10351,12 +10353,26 @@ async function loadReports(){
     if(request!==reportLoadRequest)return;
     inpatientsInPeriod=(eps||[]).filter(e=>inRange(e.record_date)).length;
   }catch(e){console.warn('Inpatient KPI failed',e);}
+  // Pre-operative stoma sitings — each is a new case being sited. Of those in the
+  // period, how many went on to have a stoma formed vs not (yet) performed.
+  let sitingsInPeriod='—', stomaFormedInPeriod='—', noStomaInPeriod='—';
+  try{
+    const{rows:ss}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,surgery_performed,status'));
+    if(request!==reportLoadRequest)return;
+    const sited=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&inRange(s.session_date));
+    sitingsInPeriod=sited.length;
+    stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
+    noStomaInPeriod=Math.max(0,sitingsInPeriod-stomaFormedInPeriod);
+  }catch(e){console.warn('Siting KPIs failed',e);}
 
   const kpiEl=document.getElementById('report-kpis');
   if(kpiEl){
     kpiEl.innerHTML=`
       <div class="kpi"><div class="k-label">Appointments Made</div><div class="k-value">${total}</div><div class="k-sub">${htmlSafe(periodLabel)}</div></div>
       <div class="kpi"><div class="k-label">Follow-ups</div><div class="k-value">${fuCases}</div><div class="k-sub">follow-up appointments</div></div>
+      <div class="kpi"><div class="k-label">Sitings</div><div class="k-value">${sitingsInPeriod}</div><div class="k-sub">new cases sited · ${htmlSafe(periodLabel)}</div></div>
+      <div class="kpi"><div class="k-label">Stoma Performed</div><div class="k-value">${stomaFormedInPeriod}</div><div class="k-sub">stoma formed from a siting</div></div>
+      <div class="kpi"><div class="k-label">Stoma Not Performed</div><div class="k-value">${noStomaInPeriod}</div><div class="k-sub">sited, no stoma (yet)</div></div>
       <div class="kpi"><div class="k-label">Attended</div><div class="k-value">${attended}</div><div class="k-sub">${pct(attended,total)}% of appointments</div></div>
       <div class="kpi"><div class="k-label">Did Not Turn Up</div><div class="k-value">${dna}</div><div class="k-sub">${pct(dna,total)}% · target &lt;15%</div></div>
       <div class="kpi"><div class="k-label">Cancellations</div><div class="k-value">${cancelled}</div><div class="k-sub">${pct(cancelled,total)}%</div></div>
@@ -20507,7 +20523,7 @@ const MAP_METRICS=[
   {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Ileostomy'},
   {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Urostomy'},
   {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased'},
-  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date},
+  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy'},
   {key:'agedeath', label:'Age at death',color:'#9d174d',kind:'avg',  unit:'years',   val:p=>p.deceased_date?mapAgeAt(p.date_of_birth,p.deceased_date):null},
   {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null},
   {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date)}
@@ -20727,6 +20743,9 @@ function openMapLocalityModal(name,filter){
   const avgLine=(l,v)=>`<div class="psm-ditem"><dt>${htmlSafe(l)}</dt><dd>${v}</dd></div>`;
   const fMetric=mapLocalityState.filter?MAP_METRICS.find(x=>x.key===mapLocalityState.filter):null;
   const rows=fMetric?allRows.filter(fMetric.hit):allRows;
+  // A urostomy is permanent — while viewing urostomy patients the reversal figures
+  // do not apply, so they are hidden.
+  const uro=mapLocalityState.filter==='urostomy';
   mb.innerHTML=`<h2>🗺 ${htmlSafe(name)}</h2>
     <div class="msub"><strong>${allRows.length}</strong> patient${allRows.length!==1?'s':''} on the register from this locality · ${active} still in follow-up</div>
     ${allRows.length?`<dl class="psm-dgrid" style="margin:0 0 10px;">
@@ -20734,9 +20753,9 @@ function openMapLocalityModal(name,filter){
       ${tile('ileostomy','Ileostomy')}
       ${tile('urostomy','Urostomy')}
       ${tile('deaths','Deaths')}
-      ${tile('reversals','Reversals')}
+      ${uro?'':tile('reversals','Reversals')}
       ${avgLine('Age at death',avg('agedeath'))}
-      ${avgLine('Age at reversal',avg('agerev'))}
+      ${uro?'':avgLine('Age at reversal',avg('agerev'))}
       ${avgLine('Hospital days',avg('hospdays'))}
     </dl>
     <div class="report-note" style="margin:0 0 8px;">${fMetric
