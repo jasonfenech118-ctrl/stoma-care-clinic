@@ -3191,7 +3191,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.25-263';
+const APP_BUILD='2026.09.26-264';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16386,10 +16386,11 @@ async function loadHandover(){
   }
   // An OPEN inpatient episode is the real proof a patient is on the ward, so it
   // is the source of truth here — not only the is_inpatient flag. This pulls back
-  // anyone whose flag drifted off while their episode is still open (e.g. a stoma
-  // date that reads as "no stoma today", from a mistyped or future date, wrongly
-  // tripped the self-heal below and cleared their flag), and it stops such a
-  // patient being auto-removed at all. Degrades quietly where the table is absent.
+  // anyone still genuinely admitted whose flag drifted off while their episode is
+  // still open (e.g. a stoma date that reads oddly, wrongly tripping the self-heal
+  // below and clearing the flag). A patient who SHOULD auto-leave (fully reversed
+  // or deceased) is not pulled back — the self-heal below still clears them and
+  // closes their episode. Degrades quietly where the clinical_records table is absent.
   let openEpIds=new Set();
   try{
     const{data:openEps}=await SB.from('clinical_records')
@@ -16403,8 +16404,10 @@ async function loadHandover(){
     for(let i=0;i<missingIds.length;i+=100){
       try{
         const{data:extra}=await SB.from('patients').select(cols).in('id',missingIds.slice(i,i+100));
-        // A deceased patient with a still-open episode is not pulled back onto the ward.
-        const keep=(extra||[]).filter(p=>!handoverDeceased(p));
+        // Pull back only patients who genuinely still belong on the ward. Someone
+        // who should auto-leave (fully reversed, or deceased) is NOT pulled back —
+        // they are cleared below and their episode is closed, so they stay gone.
+        const keep=(extra||[]).filter(p=>!handoverShouldAutoLeave(p));
         if(keep.length){
           baseRows=baseRows.concat(keep);
           try{await Promise.all(keep.map(p=>SB.from('patients').update({is_inpatient:true}).eq('id',p.id)));}catch(e){}
@@ -16416,15 +16419,19 @@ async function loadHandover(){
   // Self-heal: a patient who no longer belongs on the ward comes off the sheet on
   // their own and the ward flag is cleared so it stays that way — no separate
   // discharge step needed. That covers a patient marked deceased, and one whose
-  // stoma has been reversed with none left. But someone with an OPEN episode is
-  // genuinely admitted, so the reversed-gone heuristic never removes them — only a
-  // real discharge (which closes the episode) or a death takes them off.
-  const autoGone=rowsAll.filter(p=>handoverDeceased(p)||(handoverReversedGone(p)&&!openEpIds.has(String(p.id))));
+  // stoma has been reversed with none left (a patient who still carries a stoma —
+  // even a just-formed one — is left exactly as they are). When they leave, any
+  // open inpatient episode is closed too, so the record does not still read as
+  // "on the ward" and they are never pulled back on.
+  const autoGone=rowsAll.filter(handoverShouldAutoLeave);
   let rows=rowsAll;
   if(autoGone.length){
     const goneIds=new Set(autoGone.map(p=>p.id));
     rows=rowsAll.filter(p=>!goneIds.has(p.id));
     try{await Promise.all(autoGone.map(p=>SB.from('patients').update({is_inpatient:false}).eq('id',p.id)));}catch(e){}
+    const closeIds=autoGone.map(p=>String(p.id)).filter(id=>openEpIds.has(id));
+    if(closeIds.length){try{await Promise.all(closeIds.map(id=>
+      SB.from('clinical_records').update({is_current:false}).eq('patient_id',id).eq('kind','episode').eq('is_current',true)));}catch(e){}}
   }
   await attachHandoverApplianceLines(rows);
   // Siting patients whose surgery day has arrived show at the top as "awaiting
