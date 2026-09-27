@@ -767,6 +767,8 @@ body.qli-standalone #ql-install-btn{display:none;}
 .annual-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
 .annual-table td,.annual-table th{font-size:12px;}
 .annual-table .annual-total-row td{background:#f5f7f9;font-weight:800;border-top:2px solid var(--border);}
+.sf-cell{cursor:pointer;transition:background .12s,box-shadow .12s;}
+.sf-cell:hover,.sf-cell:focus{background:#eef5ff;outline:none;box-shadow:inset 0 0 0 2px var(--teal);}
 .annual-barwrap{display:inline-flex;width:120px;height:11px;border-radius:4px;overflow:hidden;border:1px solid var(--border);vertical-align:middle;gap:1px;background:#eef2f6;}
 .annual-seg{display:inline-block;height:100%;}
 .annual-seg.empty{width:100%;background:#eef2f6;}
@@ -3207,7 +3209,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-307';
+const APP_BUILD='2026.09.27-308';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10703,6 +10705,7 @@ const METRIC_LABELS={
   total_patients:'Total Patients',
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
   ileostomies:'Ileostomies', urostomies:'Urostomies',
+  stomas_other:'Other stomas',
   reversals_new:'Reversals', gozo_new:'Discharged to Gozo',
   overseas_new:'Relocated Overseas'
 };
@@ -10774,6 +10777,9 @@ function metricMonthly(key,year,d){
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='ileostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Ileostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
+  // "Other" = a stoma formed whose recorded type reads as none of the three named
+  // groups (or is blank). Matches the "Other" column in the formation table.
+  else if(key==='stomas_other'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&['Colostomy','Ileostomy','Urostomy'].indexOf(daStomaGroup(s.type))<0)addByDate(s.formed_date);});}catch(e){}});}
   // Formed this year and reversed this year, placed on the month of the reversal.
   else if(key==='reversals_new'){(d.patients||[]).forEach(p=>{
     metricNewReversalDates(p,(f,r)=>String(f||'').slice(0,4)===Y&&!!r).forEach((f,r)=>addByDate(r));});}
@@ -10891,12 +10897,14 @@ function metricPeriodRecords(key,period,d){
     [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
   if(key==='reversals_new'){pats.forEach(p=>{
     metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
-  if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'){
+  if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'||key==='stomas_other'){
     const want={colostomies:'Colostomy',ileostomies:'Ileostomy',urostomies:'Urostomy'}[key];
     pats.forEach(p=>{try{patientStomaList(p).forEach(x=>{
       if(x.kind==='refashion'||!inRange(x.formed_date))return;
       const g=daStomaGroup(x.type);
       if(want&&g!==want)return;
+      // "Other" is every group that is not one of the three named ones (or blank).
+      if(key==='stomas_other'&&['Colostomy','Ileostomy','Urostomy'].indexOf(g)>=0)return;
       push(p,x.formed_date,x.type||g||'stoma formed');});}catch(e){}});
     return out;
   }
@@ -10954,6 +10962,18 @@ function openMetricCompare(metricKey){
     const y=Number(document.getElementById('annual-year')?.value)||new Date().getFullYear();
     metricCompareState.periods=[{year:y,month:''}];
   }
+  renderMetricCompare();
+}
+// Click a cell in the "Stoma formation by month" table: open the metric modal
+// straight on its Patients tab, scoped to that month (or the whole year) and
+// that stoma type, so the exact patients behind the number can be opened and
+// edited. monthNum is 'MM' for a month row, '' for the Year row.
+function openStomaCell(metricKey,monthNum){
+  if(!METRIC_LABELS[metricKey])return;
+  const y=Number(document.getElementById('annual-year')?.value)||new Date().getFullYear();
+  metricCompareState.metric=metricKey;
+  metricCompareState.periods=[{year:y,month:monthNum||''}];
+  metricCompareState.tab='patients';
   renderMetricCompare();
 }
 function metricAddPeriod(){
@@ -11306,17 +11326,28 @@ async function renderStomaFormationTable(elId,year,pats){
   };
   const legend=`<div class="annual-legend">${GROUPS.map(g=>
     `<span class="annual-leg"><span class="annual-dot" style="background:${colourOf(g)};"></span>${htmlSafe(g)}</span>`).join('')}</div>`;
+  // Each count opens the patients behind it. A group maps to its metric; the
+  // Total column opens every stoma formed. A zero has nobody to list, so it is
+  // left plain. monthNum is 'MM' for a month row, '' for the Year row.
+  const keyOf={Colostomy:'colostomies',Ileostomy:'ileostomies',Urostomy:'urostomies',Other:'stomas_other'};
+  const cell=(val,metricKey,monthNum,strong)=>{
+    const inner=strong?`<strong>${val}</strong>`:`${val}`;
+    if(!(val>0))return `<td>${inner}</td>`;
+    const call=`openStomaCell('${metricKey}','${monthNum}')`;
+    return `<td class="sf-cell" role="button" tabindex="0" title="Show the patients" onclick="${call}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${call}}">${inner}</td>`;
+  };
+  const mm=i=>String(i+1).padStart(2,'0');
   el.innerHTML=`${legend}
     <table class="dt annual-table"><thead><tr>
       <th>Month</th>${GROUPS.map(g=>`<th>${htmlSafe(g)}</th>`).join('')}<th>Total</th><th style="min-width:130px;">Type mix</th></tr></thead><tbody>
       ${grid.map((m,i)=>`<tr><td><strong>${htmlSafe(names[i])}</strong></td>
-        ${GROUPS.map(g=>`<td>${m[g]}</td>`).join('')}<td>${m.total}</td><td>${mixBar(m)}</td></tr>`).join('')}
+        ${GROUPS.map(g=>cell(m[g],keyOf[g],mm(i),false)).join('')}${cell(m.total,'stomas_formed',mm(i),false)}<td>${mixBar(m)}</td></tr>`).join('')}
       <tr class="annual-total-row"><td><strong>Year</strong></td>
-        ${GROUPS.map(g=>`<td><strong>${colTotal(g)}</strong></td>`).join('')}
-        <td><strong>${yearTotal}</strong></td>
+        ${GROUPS.map(g=>cell(colTotal(g),keyOf[g],'',true)).join('')}
+        ${cell(yearTotal,'stomas_formed','',true)}
         <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),Other:colTotal('Other'),total:yearTotal})}</td></tr>
     </tbody></table>
-    <div class="report-note">Each stoma is counted in the month it was formed. A refashioning remakes an existing stoma, so it is not counted again here. “Other” covers a stoma whose recorded type does not read as colostomy, ileostomy or urostomy.</div>`;
+    <div class="report-note">Each stoma is counted in the month it was formed. A refashioning remakes an existing stoma, so it is not counted again here. “Other” covers a stoma whose recorded type does not read as colostomy, ileostomy or urostomy. <strong>Click any number to see and edit those patients.</strong></div>`;
 }
 function printAnnualReport(){
   if(!annualReportData){alert('The annual report is still loading.');return;}
@@ -11351,11 +11382,13 @@ function printAnnualReport(){
   </style></head><body>${el.innerHTML
       .replace(/<details/g,'<details open')
       // The printed report is a static snapshot with none of the app's scripts,
-      // so the "click to compare" boxes cannot open anything here. Strip the
-      // click affordance so the PDF does not invite a click that does nothing.
+      // so the clickable boxes and table cells cannot open anything here. Strip
+      // the click affordance so the PDF does not invite a click that does nothing.
       .replace(/ title="Click to compare[^"]*"/g,'')
-      .replace(/ onclick="openMetricCompare[^"]*"/g,'')
-      .replace(/ onkeydown="[^"]*openMetricCompare[^"]*"/g,'')
+      .replace(/ title="Show the patients"/g,'')
+      .replace(/ onclick="open(?:MetricCompare|StomaCell)[^"]*"/g,'')
+      .replace(/ onkeydown="[^"]*open(?:MetricCompare|StomaCell)[^"]*"/g,'')
+      .replace(/ class="sf-cell"/g,'')
       .replace(/ role="button" tabindex="0"/g,'')}</body></html>`);
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
