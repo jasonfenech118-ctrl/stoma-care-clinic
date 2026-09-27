@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-323';
+const APP_BUILD='2026.09.27-324';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6256,6 +6256,9 @@ function esRenderReview(){
   const val=id=>document.getElementById(id)?.value||'';
   const selText=id=>{const el=document.getElementById(id);return el?.dataset?.label||((el&&el.tagName==='SELECT'&&el.selectedIndex>=0)?el.options[el.selectedIndex].text:val(id));};
   const radioLabel=name=>{const el=document.querySelector('input[name="'+name+'"]:checked');return el?String(el.closest('label')?.textContent||'').trim():'';};
+  // A review line: a soft label with its value in bold, so the eye reads the data
+  // and not the labels. An empty label makes the whole line the bold value.
+  const boldVal=(label,value)=>({html:`<div style="font-size:13px;color:#64707e;line-height:1.7;margin:1px 0;">${label?htmlSafe(label)+' ':''}<strong style="color:#111827;font-weight:750;">${htmlSafe(value==null||value===''?'—':value)}</strong></div>`});
   const cmpValue=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
   // Name the complications actually identified — gathered from every live source
   // so the review always spells them out: those saved to the on-record list, any
@@ -6268,8 +6271,10 @@ function esRenderReview(){
     ...[...document.querySelectorAll('#of-cmp-existing .cmp-review-row .cmp-title')].map(cmpText)
   ].filter(Boolean))];
   const cmpLines=cmpValue==='none'
-    ? ['No complications identified']
-    : (cmpNames.length ? cmpNames.map(t=>'• '+t) : ['A complication is identified — tap to record which']);
+    ? [boldVal('','No complications identified')]
+    : (cmpNames.length
+        ? cmpNames.map(t=>({html:`<div style="font-size:13px;color:#374151;line-height:1.7;margin:1px 0;">• <strong style="color:#991b1b;font-weight:750;">${htmlSafe(t)}</strong></div>`}))
+        : ['A complication is identified — tap to record which']);
   // Appliance & accessories: show what was recorded, never "Not answered". The
   // accessory step of the picker already makes an explicit answer compulsory
   // (None must be ticked if none were used), so there is always a value here.
@@ -6282,9 +6287,9 @@ function esRenderReview(){
   const accShown=accNames.filter(n=>n&&n!=='None');
   const appLines=[];
   const choiceLabel={unchanged:'Continued with current appliance & accessories',changed:'Appliance / accessories updated',first:'Appliance & accessories recorded'}[appChoice];
-  if(choiceLabel)appLines.push(choiceLabel);
-  appLines.push('Appliance: '+(appNames.length?appNames.join(', '):(appChoice==='unchanged'?'unchanged':'None recorded')));
-  appLines.push('Accessories: '+(accShown.length?accShown.join(', '):'None'));
+  if(choiceLabel)appLines.push({html:`<div style="font-size:11.5px;color:#92600c;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">${htmlSafe(choiceLabel)}</div>`});
+  appLines.push(boldVal('Appliance:',appNames.length?appNames.join(', '):(appChoice==='unchanged'?'unchanged':'None recorded')));
+  appLines.push(boldVal('Accessories:',accShown.length?accShown.join(', '):'None'));
   const nextTxt=radioLabel('of-next');
   const monthVisible=document.getElementById('of-month-fg')?.style.display!=='none';
   const dueTxt=monthVisible?('Due: '+selText('of-month')):'';
@@ -6302,12 +6307,17 @@ function esRenderReview(){
   const TONE_CMP={bg:'#fdecec',bd:'#f2bcbc',tx:'#b91c1c'};   // red — complications
   const TONE_APP={bg:'#fff3e6',bd:'#f6cfa0',tx:'#b45309'};   // orange — appliances
   const TONE_FU ={bg:'#f4eefc',bd:'#d9c6f2',tx:'#6d28d9'};   // purple — follow-up
+  const dtLine={html:`<div style="font-size:13px;color:#64707e;line-height:1.7;">Date <strong style="color:#111827;font-weight:750;">${htmlSafe(attDMY(val('of-date')))}</strong> &nbsp;·&nbsp; Time <strong style="color:#111827;font-weight:750;">${htmlSafe(String(val('of-slot')).slice(0,5))}</strong></div>`};
+  // Bold just the month in the due line; the availability detail after it stays light.
+  const dueFull=String(selText('of-month')||'');
+  const dueMonth=dueFull.split(' — ')[0];
+  const dueLine=dueTxt?{html:`<div style="font-size:13px;color:#64707e;line-height:1.7;">Due <strong style="color:#111827;font-weight:750;">${htmlSafe(dueMonth)}</strong>${htmlSafe(dueFull.slice(dueMonth.length))}</div>`}:'';
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
-    ${card(1,'Attendance',['Date: '+attDMY(val('of-date'))+'   Time: '+String(val('of-slot')).slice(0,5),ownerBadge,'Outcome: '+selText('of-status')],TONE_ATT)}
+    ${card(1,'Attendance',[dtLine,ownerBadge,boldVal('Outcome',selText('of-status'))],TONE_ATT)}
     ${card(2,'Complications',cmpLines,TONE_CMP)}
     ${card(3,'Appliance & accessories',appLines,TONE_APP)}
-    ${card(4,'Follow-up',[nextTxt,dueTxt,'Status: '+selText('of-followup-status')],TONE_FU)}`;
+    ${card(4,'Follow-up',[boldVal('',nextTxt),dueLine,boldVal('Status',selText('of-followup-status'))],TONE_FU)}`;
 }
 function esOnOutcomeChange(){
   if(!esState)return;
