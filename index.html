@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-301';
+const APP_BUILD='2026.09.27-302';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5828,8 +5828,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   const applianceSection=visitApplianceSummaryHTML(appt,p);
   // The running complications, read fresh so the section opens with what is on
   // the card (the appointment join may not carry the column).
-  let complicationsNow=[];
-  if(p.id){try{complicationsNow=parseComplications((await fetchPatientById(p.id)).data||p);}catch(e){complicationsNow=parseComplications(p);}}
+  let complicationsNow=[]; let fullPat=p;
+  if(p.id){try{const _r=await fetchPatientById(p.id); if(_r&&_r.data)fullPat=_r.data; complicationsNow=parseComplications(fullPat);}catch(e){complicationsNow=parseComplications(p);}}
   const complicationsSection=p.id?`
     <div class="edit-seen-section">Complications</div>
     <div class="psm-card" style="margin-bottom:12px;">
@@ -5894,8 +5894,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     // patient with more than one present stoma gets a column for each.
     let stomaCell='No stoma recorded';
     try{
-      let sl=patientStomaList(p).filter(x=>x.present);
-      if(!sl.length)sl=patientStomaList(p).filter(x=>String(x.type||'').trim());
+      let sl=patientStomaList(fullPat).filter(x=>x.present);
+      if(!sl.length)sl=patientStomaList(fullPat).filter(x=>String(x.type||'').trim());
       if(sl.length>1){
         stomaCell='<div style="display:flex;flex-wrap:wrap;gap:16px;">'+sl.map(x=>
           `<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);">Stoma ${x.number||''}${x.code?' · '+htmlSafe(x.code):''}</div><div style="font-weight:600;">${htmlSafe(x.type||'—')}${x.location?' · '+htmlSafe(x.location):''}</div></div>`).join('')+'</div>';
