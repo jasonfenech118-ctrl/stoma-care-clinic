@@ -1583,6 +1583,14 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .mc-add select{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
 .mc-addbtn{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px;font-family:'Inter',sans-serif;}
 .mc-addbtn:hover{filter:brightness(1.05);}
+.mc-statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:4px 0 14px;}
+.mc-stat{background:#fbfdff;border:1px solid var(--border);border-radius:10px;padding:9px 11px;}
+.mc-stat-h{font-size:12px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:6px;}
+.mc-stat-big{font-size:24px;font-weight:900;color:var(--navy);line-height:1.1;margin-top:2px;}
+.mc-stat-sub{font-size:10.5px;color:var(--muted);margin-top:2px;}
+.mc-chartrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px;}
+.annual-kpi-click{cursor:pointer;transition:box-shadow .15s,transform .15s;}
+.annual-kpi-click:hover,.annual-kpi-click:focus{box-shadow:0 6px 18px rgba(0,0,0,.12);transform:translateY(-2px);outline:none;}
 .report-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;background:white;border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
 .report-filters label{font-size:12px;font-weight:700;color:var(--navy);}
 .report-filters select{padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:'Inter',sans-serif;outline:none;}
@@ -3179,7 +3187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-277';
+const APP_BUILD='2026.09.27-278';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10609,24 +10617,59 @@ async function renderMetricCompare(){
     return {label:metricPeriodLabel(p),color,isMonth:false,mi:-1,line:monthly,total:monthly.reduce((a,b)=>a+b,0),monthly};
   });
 
+  // Headline stats per period, for the little summary cards at the top.
+  const withStats=series.map(s=>{
+    if(s.isMonth)return {...s,avg:null,peakM:null,peakV:s.total,lowM:null,lowV:s.total};
+    let peakI=0,lowI=0;
+    s.monthly.forEach((v,i)=>{if(v>s.monthly[peakI])peakI=i;if(v<s.monthly[lowI])lowI=i;});
+    return {...s,avg:s.total/12,peakM:MC_MON[peakI],peakV:s.monthly[peakI],lowM:MC_MON[lowI],lowV:s.monthly[lowI]};
+  });
+  const statCards=withStats.map(s=>`<div class="mc-stat" style="border-top:3px solid ${s.color};">
+      <div class="mc-stat-h"><span class="annual-dot" style="background:${s.color};"></span>${htmlSafe(s.label)}</div>
+      <div class="mc-stat-big">${s.total}</div>
+      ${s.isMonth?'<div class="mc-stat-sub">single month</div>'
+        :`<div class="mc-stat-sub">avg ${s.avg.toFixed(1)}/mo · peak ${htmlSafe(s.peakM)} (${s.peakV}) · low ${htmlSafe(s.lowM)} (${s.lowV})</div>`}
+    </div>`).join('');
+  const anyYear=series.some(s=>!s.isMonth);           // cumulative only makes sense for whole years
+  const multi=series.length>1;                        // a share doughnut needs at least two periods
+  const combined=series.reduce((n,s)=>n+(s.total||0),0);
+
   bodyEl.innerHTML=`
+    <div class="mc-statgrid">${statCards}</div>
     <div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Month by month</h3><div style="position:relative;height:260px;"><canvas id="mc-line"></canvas></div></div>
-    <div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Totals</h3><div style="position:relative;height:220px;"><canvas id="mc-bar"></canvas></div></div>
+    ${anyYear?`<div class="report-card" style="min-height:auto;margin-bottom:12px;"><h3 style="margin:0 0 8px;">Cumulative through the year</h3><div class="report-note" style="margin:-4px 0 8px;">Running total from January — how each year builds up and where it pulls ahead.</div><div style="position:relative;height:240px;"><canvas id="mc-cumulative"></canvas></div></div>`:''}
+    <div class="mc-chartrow">
+      <div class="report-card" style="min-height:auto;"><h3 style="margin:0 0 8px;">Totals</h3><div style="position:relative;height:220px;"><canvas id="mc-bar"></canvas></div></div>
+      ${multi&&combined>0?`<div class="report-card" style="min-height:auto;"><h3 style="margin:0 0 8px;">Share of combined total</h3><div style="position:relative;height:220px;"><canvas id="mc-share"></canvas></div></div>`:''}
+    </div>
     <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Period</th>${MC_MON.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${htmlSafe(s.label)}</strong></td>${s.monthly.map((v,idx)=>(s.isMonth&&idx!==s.mi)?'<td style="color:#c8d0da;">·</td>':`<td>${v}</td>`).join('')}<td><strong>${s.total}</strong></td></tr>`).join('')}
     </tbody></table></div>
     <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; an event with no date on file is not shown on the monthly trend. A single-month selection shows as one point.</div>`;
 
-  destroyChart('mc-line');destroyChart('mc-bar');
+  destroyChart('mc-line');destroyChart('mc-bar');destroyChart('mc-cumulative');destroyChart('mc-share');
   if(typeof Chart==='undefined')return;
   const lc=document.getElementById('mc-line');
   if(lc)reportCharts['mc-line']=new Chart(lc,{type:'line',
     data:{labels:MC_MON,datasets:series.map(s=>({label:s.label,data:s.line,borderColor:s.color,backgroundColor:s.color,tension:.35,fill:false,borderWidth:2,pointRadius:s.isMonth?5:2,showLine:!s.isMonth,spanGaps:false}))},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  if(anyYear){
+    const cc=document.getElementById('mc-cumulative');
+    if(cc)reportCharts['mc-cumulative']=new Chart(cc,{type:'line',
+      data:{labels:MC_MON,datasets:series.filter(s=>!s.isMonth).map(s=>{let run=0;const cum=s.monthly.map(v=>run+=v);
+        return {label:s.label,data:cum,borderColor:s.color,backgroundColor:s.color,tension:.3,fill:false,borderWidth:2,pointRadius:1};})},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  }
   const bc=document.getElementById('mc-bar');
   if(bc)reportCharts['mc-bar']=new Chart(bc,{type:'bar',
     data:{labels:series.map(s=>s.label),datasets:[{label,data:series.map(s=>s.total),backgroundColor:series.map(s=>s.color),borderWidth:1}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+  if(multi&&combined>0){
+    const pc=document.getElementById('mc-share');
+    if(pc)reportCharts['mc-share']=new Chart(pc,{type:'doughnut',
+      data:{labels:series.map(s=>s.label),datasets:[{data:series.map(s=>s.total),backgroundColor:series.map(s=>s.color),borderWidth:1,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:true,position:'bottom'}}}});
+  }
 }
 
 /* ── ANNUAL REPORT ────────────────────────────────────────────────────────
@@ -10707,8 +10750,11 @@ async function loadAnnualReport(){
   renderAnnualReport();
   renderPeriodTotals('annual-period-totals',year,month);
 }
-function annualKpi(label,value,sub,accent){
-  return `<div class="annual-kpi"${accent?` style="border-top:3px solid ${accent};"`:''}>
+function annualKpi(label,value,sub,accent,metricKey){
+  // When a metric key is passed the tile becomes clickable and opens the same
+  // multi-year / multi-month comparison as the activity totals.
+  const clk=metricKey?` annual-kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="openMetricCompare('${metricKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMetricCompare('${metricKey}');}`:'';
+  return `<div class="annual-kpi${clk}"${accent?` style="border-top:3px solid ${accent};"`:''}>
     <div class="ak-label">${htmlSafe(label)}</div><div class="ak-value">${htmlSafe(String(value))}</div>
     <div class="ak-sub">${htmlSafe(sub||'')}</div></div>`;
 }
@@ -10761,11 +10807,11 @@ function renderAnnualReport(){
       <div class="annual-totals" id="annual-period-totals"><div class="report-note">Loading totals…</div></div>
       <h3 class="annual-h3">Rates &amp; workload — ${htmlSafe(d.year)}</h3>
       <div class="annual-kpis annual-rate-kpis">
-        ${annualKpi('Attended',`${attRate}%`,`${t.attended} seen`,ANNUAL_OUTCOME_COLORS.attended)}
-        ${annualKpi('DNTU',`${dnaRate}%`,`${t.dna} did not turn up · target <15%`,ANNUAL_OUTCOME_COLORS.did_not_attend)}
-        ${annualKpi('Cancelled',`${canRate}%`,`${t.cancelled} cancelled`,ANNUAL_OUTCOME_COLORS.cancelled)}
-        ${annualKpi('New : Follow-up',ratio,`${t.newCases} new case${t.newCases!==1?'s':''}`)}
-        ${annualKpi('Avg / Clinic Day',avgDay,`${t.active} active bookings`)}
+        ${annualKpi('Attended',`${attRate}%`,`${t.attended} seen`,ANNUAL_OUTCOME_COLORS.attended,'attended')}
+        ${annualKpi('DNTU',`${dnaRate}%`,`${t.dna} did not turn up · target <15%`,ANNUAL_OUTCOME_COLORS.did_not_attend,'dntu')}
+        ${annualKpi('Cancelled',`${canRate}%`,`${t.cancelled} cancelled`,ANNUAL_OUTCOME_COLORS.cancelled,'cancellations')}
+        ${annualKpi('New : Follow-up',ratio,`${t.newCases} new case${t.newCases!==1?'s':''}`,null,'followups')}
+        ${annualKpi('Avg / Clinic Day',avgDay,`${t.active} active bookings`,null,'appointments')}
         ${annualKpi('Awaiting Booking',d.recallCount,'due / overdue, no appointment')}
       </div>
       ${legend}
