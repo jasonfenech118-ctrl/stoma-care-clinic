@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-315';
+const APP_BUILD='2026.09.27-316';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19754,7 +19754,7 @@ async function loadDuplicates(){
 // Build the groups once, so render and print share the same work.
 function computeDuplicateGroups(){
   const byName={};
-  duplicateRows.forEach(p=>{const k=importNameKey(p);if(k)(byName[k]=byName[k]||[]).push(p);});
+  duplicateRows.forEach(p=>{const k=dupNameKey(p);if(k)(byName[k]=byName[k]||[]).push(p);});
   const groups=[];
   Object.values(byName).forEach(members=>{
     const ids=[...new Set(members.map(m=>normaliseIdCard(m.id_card)).filter(Boolean))];
@@ -19771,6 +19771,13 @@ function computeDuplicateGroups(){
     let reason='';
     for(let i=0;i<ids.length&&!reason;i++)for(let j=i+1;j<ids.length;j++){
       const r=duplicateIdReason(ids[i],ids[j]); if(r){reason=r;break;}
+    }
+    // The same set of name words AND the same surgery date is a strong signal on
+    // its own — one operation cannot belong to two different people — so it is
+    // caught even when the ID cards look unrelated (e.g. a name-order swap).
+    if(!reason){
+      const dates=members.map(m=>String(m.surgery_date||'').slice(0,10)).filter(Boolean);
+      if(new Set(dates).size<dates.length)reason='same name & surgery date';
     }
     groups.push({members,reason,strong:!!reason,
       name:`${members[0].surname||''}, ${members[0].first_name||''}`.replace(/^, |, $/,'').trim()||'(no name)'});
@@ -20595,6 +20602,14 @@ function importUsableIdCard(v){
 function importNameKey(p){
   return `${p?.surname||''} ${p?.first_name||''}`.toLowerCase()
     .replace(/[^a-z\u00c0-\u024f ]/g,'').replace(/\s+/g,' ').trim();
+}
+// Order-independent name key for the duplicate scan: the same person entered as
+// "Mary Corfield" on one record and "Corfield Mary" (surname and first name
+// swapped) on another has the same set of name words, so sorting the words makes
+// the two keys match and the pair is caught as a possible duplicate.
+function dupNameKey(p){
+  return `${p?.first_name||''} ${p?.surname||''}`.toLowerCase()
+    .replace(/[^a-z\u00c0-\u024f ]/g,' ').split(/\s+/).filter(Boolean).sort().join(' ');
 }
 // Split one "Busuttil Carmelo" cell into surname and first names. Maltese lists
 // are written surname first, but the order is a control on the card either way.
