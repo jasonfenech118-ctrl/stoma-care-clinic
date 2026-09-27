@@ -1588,6 +1588,10 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .mc-add select{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
 .mc-addbtn{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px;font-family:'Inter',sans-serif;}
 .mc-addbtn:hover{filter:brightness(1.05);}
+.mc-tabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin:2px 0 14px;}
+.mc-tab{appearance:none;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;padding:9px 16px;font-size:13.5px;font-weight:800;color:var(--muted);cursor:pointer;font-family:'Inter',sans-serif;border-radius:8px 8px 0 0;}
+.mc-tab:hover{color:var(--navy);background:#f2f6fb;}
+.mc-tab.active{color:var(--teal);border-bottom-color:var(--teal);}
 .mc-listbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 4px;}
 .mc-statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:4px 0 14px;}
 .mc-stat{background:#fbfdff;border:1px solid var(--border);border-radius:10px;padding:9px 11px;}
@@ -3203,7 +3207,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-306';
+const APP_BUILD='2026.09.27-307';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10712,7 +10716,7 @@ function metricPeriodLabel(p){return p.month?`${MC_MON[Number(p.month)-1]} ${p.y
 function metricPeriodKey(p){return `${p.year}|${p.month||''}`;}
 function metricAddYearOptions(){const now=new Date().getFullYear();let o='';for(let y=now+1;y>=now-30;y--)o+=`<option value="${y}"${y===now?' selected':''}>${y}</option>`;return o;}
 
-let metricCompareState={metric:null,periods:[],data:null,showList:false};
+let metricCompareState={metric:null,periods:[],data:null,tab:'compare'};
 
 async function metricCompareEnsureData(years){
   // The patient, siting, episode and no-stoma tables are clinic-sized and their
@@ -10902,9 +10906,18 @@ function metricPeriodRecords(key,period,d){
   if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>{if(inRange(r.surgery_date))push(of(r.patient_id),r.surgery_date,'no stoma formed');});return out;}
   return out;
 }
-function metricToggleList(){
-  metricCompareState.showList=!metricCompareState.showList;
-  renderMetricCompare();
+// Switch between the "Comparison" (charts) and "Patients" (record list) tabs.
+// Both panes are already built, so this just shows one and hides the other —
+// and nudges the charts to re-measure after being un-hidden, since Chart.js
+// reads a canvas's box size and a hidden one reports zero.
+function metricSetTab(tab){
+  metricCompareState.tab=tab;
+  const body=document.getElementById('mc-body');
+  const pats=document.getElementById('mc-patients');
+  document.querySelectorAll('#mb .mc-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  if(body)body.style.display=(tab==='patients')?'none':'';
+  if(pats)pats.style.display=(tab==='patients')?'':'none';
+  if(tab!=='patients')['mc-line','mc-cumulative','mc-bar','mc-share'].forEach(id=>{try{reportCharts[id]&&reportCharts[id].resize();}catch(e){}});
 }
 function metricRecordsHTML(key,d){
   const periods=metricCompareState.periods||[];
@@ -10936,6 +10949,7 @@ function metricRecordsHTML(key,d){
 function openMetricCompare(metricKey){
   if(!METRIC_LABELS[metricKey])return;
   metricCompareState.metric=metricKey;
+  metricCompareState.tab='compare';   // always open on the comparison view
   if(!metricCompareState.periods||!metricCompareState.periods.length){
     const y=Number(document.getElementById('annual-year')?.value)||new Date().getFullYear();
     metricCompareState.periods=[{year:y,month:''}];
@@ -10963,6 +10977,7 @@ async function renderMetricCompare(){
   const chips=periods.length?periods.map((p,i)=>{const c=metricPeriodColor(i);
     return `<span class="mc-chip" style="background:${c};border-color:${c};"><span>${htmlSafe(metricPeriodLabel(p))}</span><button type="button" title="Remove" onclick="metricRemovePeriod(${i})">✕</button></span>`;}).join('')
     :'<span class="report-note">No periods selected yet — add one below.</span>';
+  const tab=metricCompareState.tab||'compare';
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📊 ${htmlSafe(label)}</h2>
     <div class="msub">Compare any mix of whole years and single months — e.g. Jan 2007 against the whole of 2005. Each selection keeps its own colour.</div>
@@ -10973,11 +10988,20 @@ async function renderMetricCompare(){
       <select id="mc-add-month"><option value="">Whole year</option>${MC_MON.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}</select>
       <button type="button" class="mc-addbtn" onclick="metricAddPeriod()">＋ Add</button>
     </div>
-    <div id="mc-body"><div class="report-note">Loading…</div></div>
+    <div class="mc-tabs">
+      <button type="button" class="mc-tab${tab!=='patients'?' active':''}" data-tab="compare" onclick="metricSetTab('compare')">📊 Comparison</button>
+      <button type="button" class="mc-tab${tab==='patients'?' active':''}" data-tab="patients" onclick="metricSetTab('patients')">👥 Patients</button>
+    </div>
+    <div id="mc-body" style="${tab==='patients'?'display:none;':''}"><div class="report-note">Loading…</div></div>
+    <div id="mc-patients" style="${tab==='patients'?'':'display:none;'}"><div class="report-note">Loading…</div></div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
   openMo();
 
-  if(!periods.length){document.getElementById('mc-body').innerHTML='<div class="report-note">Add a whole year or a single month above to see the comparison.</div>';return;}
+  if(!periods.length){
+    document.getElementById('mc-body').innerHTML='<div class="report-note">Add a whole year or a single month above to see the comparison.</div>';
+    document.getElementById('mc-patients').innerHTML='<div class="report-note">Add a whole year or a single month above to list the patients.</div>';
+    return;
+  }
 
   const years=[...new Set(periods.map(p=>p.year))];
   const d=await metricCompareEnsureData(years);
@@ -10985,8 +11009,10 @@ async function renderMetricCompare(){
   const bodyEl=document.getElementById('mc-body');
   if(!bodyEl)return;
 
+  const patEl=document.getElementById('mc-patients');
   if(key==='total_patients'){
     bodyEl.innerHTML=`<div class="report-note">Total Patients is a point-in-time figure — <strong>${(d.patients||[]).length}</strong> patients are on the register right now. It is not a dated event, so it has no month-by-month or year-on-year breakdown.</div>`;
+    if(patEl)patEl.innerHTML='<div class="report-note">Total Patients is the whole register, not a dated event, so there is no per-period patient list to show here. Use the Registry to browse every patient.</div>';
     return;
   }
 
@@ -11037,15 +11063,15 @@ async function renderMetricCompare(){
     <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Period</th>${MC_MON.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${htmlSafe(s.label)}</strong></td>${s.monthly.map((v,idx)=>(s.isMonth&&idx!==s.mi)?'<td style="color:#c8d0da;">·</td>':`<td>${v}</td>`).join('')}<td><strong>${s.total}</strong></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="mc-listbar">
-      <button type="button" class="mc-addbtn" onclick="metricToggleList()">${metricCompareState.showList?'Hide the patients':'👥 Show the patients'}</button>
-      <span class="report-note" style="margin:0;">Open a record to read it, or edit it to correct a missing date.</span>
-    </div>
-    <div id="mc-records">${metricCompareState.showList?metricRecordsHTML(key,d):''}</div>
     <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; a single-month selection shows as one point.${
       distinctNote?' <strong>Unique Patients is a distinct count</strong> — a patient seen in several months is counted once in the total, so the months do not add up to it.'
       :unplaced?' The total also includes events with no date on file, which cannot be placed on a month — so the months add up to less than the total.'
-      :''}</div>`;
+      :''} Switch to the <strong>Patients</strong> tab to see and edit everyone behind these figures.</div>`;
+
+  // The Patients tab: everyone counted for each selected period, with a button
+  // to open or edit each record. Same rules as the totals, so the list length
+  // matches the number on the box.
+  if(patEl)patEl.innerHTML=`<div class="report-note" style="margin:0 0 6px;">Everyone counted in <strong>${htmlSafe(label)}</strong> for the selected period${periods.length>1?'s':''}. Open a record to read it, or edit it to correct a missing date or detail.</div>${metricRecordsHTML(key,d)}`;
 
   destroyChart('mc-line');destroyChart('mc-bar');destroyChart('mc-cumulative');destroyChart('mc-share');
   if(typeof Chart==='undefined')return;
@@ -11322,7 +11348,15 @@ function printAnnualReport(){
     details.annual-collapse>summary::-webkit-details-marker{display:none;}
     .kpi{cursor:default;}
     @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  </style></head><body>${el.innerHTML.replace(/<details/g,'<details open')}</body></html>`);
+  </style></head><body>${el.innerHTML
+      .replace(/<details/g,'<details open')
+      // The printed report is a static snapshot with none of the app's scripts,
+      // so the "click to compare" boxes cannot open anything here. Strip the
+      // click affordance so the PDF does not invite a click that does nothing.
+      .replace(/ title="Click to compare[^"]*"/g,'')
+      .replace(/ onclick="openMetricCompare[^"]*"/g,'')
+      .replace(/ onkeydown="[^"]*openMetricCompare[^"]*"/g,'')
+      .replace(/ role="button" tabindex="0"/g,'')}</body></html>`);
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
 }
