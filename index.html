@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-314';
+const APP_BUILD='2026.09.27-315';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10707,6 +10707,7 @@ const METRIC_LABELS={
   total_patients:'Total Patients',
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
   ileostomies:'Ileostomies', urostomies:'Urostomies',
+  reversals_colostomy:'Reversal of colostomy', reversals_ileostomy:'Reversal of ileostomy',
   reversals_new:'Reversals', gozo_new:'Discharged to Gozo',
   overseas_new:'Relocated Overseas'
 };
@@ -10781,6 +10782,9 @@ function metricMonthly(key,year,d){
   // Formed this year and reversed this year, placed on the month of the reversal.
   else if(key==='reversals_new'){(d.patients||[]).forEach(p=>{
     metricNewReversalDates(p,(f,r)=>String(f||'').slice(0,4)===Y&&!!r).forEach((f,r)=>addByDate(r));});}
+  // Colostomies / ileostomies reversed, placed on the month of the reversal.
+  else if(key==='reversals_colostomy'){(d.patients||[]).forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group==='Colostomy')addByDate(e.date);});});}
+  else if(key==='reversals_ileostomy'){(d.patients||[]).forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group==='Ileostomy')addByDate(e.date);});});}
   return arr;
 }
 /* A single closure can be recorded on more than one stoma entry — the stoma on
@@ -10796,6 +10800,25 @@ function metricNewReversalDates(p,keep){
     if(!keep(x.formed_date,x.reversal_date))return;
     const k=String(x.reversal_date||'').slice(0,10);
     if(k&&!out.has(k))out.set(k,x.formed_date||null);
+  });}catch(e){}
+  return out;
+}
+/* Every colostomy or ileostomy CLOSED on this patient, by the type of the stoma
+   that was reversed. Deduped per patient per (type, date) so a single closure
+   recorded on more than one stoma entry is counted once. Urostomy is permanent
+   and never reversed, so it is left out. Refashionings remake a stoma rather
+   than close it, so they are not counted, matching the formation side. */
+function stomaReversalEntries(p){
+  const out=[], seen=new Set();
+  try{patientStomaList(p).forEach(x=>{
+    if(x.kind==='refashion')return;
+    const g=daStomaGroup(x.type);
+    if(g!=='Colostomy'&&g!=='Ileostomy')return;
+    const rd=String(x.reversal_date||'').slice(0,10);
+    if(!rd)return;
+    const k=g+'|'+rd;
+    if(seen.has(k))return; seen.add(k);
+    out.push({group:g,date:rd});
   });}catch(e){}
   return out;
 }
@@ -10895,6 +10918,10 @@ function metricPeriodRecords(key,period,d){
     [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
   if(key==='reversals_new'){pats.forEach(p=>{
     metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
+  if(key==='reversals_colostomy'||key==='reversals_ileostomy'){
+    const want=key==='reversals_colostomy'?'Colostomy':'Ileostomy';
+    pats.forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group===want&&inRange(e.date))push(p,e.date,want.toLowerCase()+' reversed');});});
+    return out;}
   if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'){
     const want={colostomies:'Colostomy',ileostomies:'Ileostomy',urostomies:'Urostomy'}[key];
     pats.forEach(p=>{try{patientStomaList(p).forEach(x=>{
@@ -11255,7 +11282,7 @@ function renderAnnualReport(){
       </div>
       ${legend}
       <details class="annual-collapse"><summary>Month by month</summary><div class="annual-collapse-body">${monthTable}</div></details>
-      <details class="annual-collapse"><summary>Stoma formation by month</summary><div class="annual-collapse-body" id="annual-stoma-months"><div class="report-note">Loading stoma formations…</div></div></details>
+      <details class="annual-collapse"><summary>Stoma formation and reversals by month</summary><div class="annual-collapse-body" id="annual-stoma-months"><div class="report-note">Loading stoma formations…</div></div></details>
       <div class="annual-foot">DNTU = did not turn up. Attended rate is of all appointments that month, cancelled included.</div>
     </div>`;
 }
@@ -11277,7 +11304,7 @@ async function renderStomaFormationTable(elId,year,pats){
   const Y=String(year);
   const GROUPS=['Colostomy','Ileostomy','Urostomy'];
   const colourOf=g=>((typeof DA_STOMA_GROUPS!=='undefined'&&DA_STOMA_GROUPS.find(x=>x.label===g))||{}).color||'#64748b';
-  const grid=Array.from({length:12},()=>({Colostomy:0,Ileostomy:0,Urostomy:0,total:0}));
+  const grid=Array.from({length:12},()=>({Colostomy:0,Ileostomy:0,Urostomy:0,total:0,revColo:0,revIleo:0}));
   (rows||[]).forEach(p=>{
     try{patientStomaList(p).forEach(st=>{
       if(st.kind==='refashion')return;
@@ -11288,6 +11315,13 @@ async function renderStomaFormationTable(elId,year,pats){
       const g=daStomaGroup(st.type);
       if(GROUPS.indexOf(g)<0)return;   // only the three stoma types are counted
       grid[mi][g]++; grid[mi].total++;
+    });}catch(e){}
+    // Reversals, placed on the month the stoma was closed, by the type reversed.
+    try{stomaReversalEntries(p).forEach(e=>{
+      if(String(e.date).slice(0,4)!==Y)return;
+      const mi=Number(String(e.date).slice(5,7))-1;
+      if(!(mi>=0&&mi<12))return;
+      if(e.group==='Colostomy')grid[mi].revColo++; else if(e.group==='Ileostomy')grid[mi].revIleo++;
     });}catch(e){}
   });
   const names=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -11313,16 +11347,20 @@ async function renderStomaFormationTable(elId,year,pats){
   };
   const mm=i=>String(i+1).padStart(2,'0');
   el.innerHTML=`${legend}
-    <table class="dt annual-table"><thead><tr>
-      <th>Month</th>${GROUPS.map(g=>`<th>${htmlSafe(g)}</th>`).join('')}<th>Total</th><th style="min-width:130px;">Type mix</th></tr></thead><tbody>
+    <table class="dt annual-table"><thead>
+      <tr><th rowspan="2">Month</th><th colspan="4" style="text-align:center;border-bottom:1px solid var(--border);">Stomas formed</th><th colspan="2" style="text-align:center;border-bottom:1px solid var(--border);">Reversals</th><th rowspan="2" style="min-width:130px;">Type mix</th></tr>
+      <tr>${GROUPS.map(g=>`<th>${htmlSafe(g)}</th>`).join('')}<th>Total</th><th>Colostomy</th><th>Ileostomy</th></tr>
+      </thead><tbody>
       ${grid.map((m,i)=>`<tr><td><strong>${htmlSafe(names[i])}</strong></td>
-        ${GROUPS.map(g=>cell(m[g],keyOf[g],mm(i),false)).join('')}${cell(m.total,'stomas_formed',mm(i),false)}<td>${mixBar(m)}</td></tr>`).join('')}
+        ${GROUPS.map(g=>cell(m[g],keyOf[g],mm(i),false)).join('')}${cell(m.total,'stomas_formed',mm(i),false)}${cell(m.revColo,'reversals_colostomy',mm(i),false)}${cell(m.revIleo,'reversals_ileostomy',mm(i),false)}<td>${mixBar(m)}</td></tr>`).join('')}
       <tr class="annual-total-row"><td><strong>Year</strong></td>
         ${GROUPS.map(g=>cell(colTotal(g),keyOf[g],'',true)).join('')}
         ${cell(yearTotal,'stomas_formed','',true)}
+        ${cell(colTotal('revColo'),'reversals_colostomy','',true)}
+        ${cell(colTotal('revIleo'),'reversals_ileostomy','',true)}
         <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),total:yearTotal})}</td></tr>
     </tbody></table>
-    <div class="report-note">Each stoma is counted in the month it was formed, under its type — colostomy, ileostomy or urostomy. A refashioning remakes an existing stoma, so it is not counted again here. <strong>Click any number to see and edit those patients.</strong></div>`;
+    <div class="report-note">Stomas are counted in the month they were formed, under their type — colostomy, ileostomy or urostomy. Reversals are counted in the month the stoma was closed, under the type reversed; a urostomy is permanent and never reversed. A refashioning remakes an existing stoma, so it is not counted here. <strong>Click any number to see and edit those patients.</strong></div>`;
 }
 function printAnnualReport(){
   if(!annualReportData){alert('The annual report is still loading.');return;}
