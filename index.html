@@ -3209,7 +3209,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-309';
+const APP_BUILD='2026.09.27-310';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17996,11 +17996,49 @@ async function openHandoverAppliance(patientId){
   await openVisitApplianceWizard({patientId,apptId:null,date:TODAY,slot:'',mode:'episode',
     ward:data.inpatient_ward||'',bed:data.inpatient_bed||''},data);
 }
+/* A post-op discharge from the handover is the official date the patient went
+   home after their operation, so it is written straight onto the patient form's
+   "Date of discharge" — the nurse no longer has to open the record and fill it
+   in by hand. It lands on the operation the patient is going home from: the most
+   recently formed stoma that has no discharge date yet (the first operation, or
+   a later stoma). A stoma that already carries a discharge date is left alone,
+   so a re-admission never overwrites an earlier discharge. */
+/* Decide which stoma a post-op discharge date belongs to, and return the patient
+   patch that writes it — or null if there is nothing to fill. Pure, so it can be
+   tested on its own. It lands on the most recently formed stoma that has no
+   discharge date yet; a stoma that already carries one is never overwritten. */
+function pickPostopDischargePatch(p,dateStr){
+  if(!p)return null;
+  const cands=[];
+  if(p.stoma_type||p.surgery_date)cands.push({where:'primary',formed:p.surgery_date||'',cur:p.discharge_date||''});
+  let extras=[];try{extras=Array.isArray(p.extra_stomas)?p.extra_stomas:(p.extra_stomas?JSON.parse(p.extra_stomas):[]);}catch(e){extras=[];}
+  extras.forEach((s,i)=>cands.push({where:'extra',i,formed:s.formed_date||'',cur:s.discharge_date||''}));
+  // Open = no discharge date yet, and today is not before the stoma was formed
+  // (so we never write a discharge that predates its own operation).
+  const open=cands.filter(c=>!c.cur&&(!c.formed||String(c.formed).slice(0,10)<=dateStr));
+  if(!open.length)return null;
+  open.sort((a,b)=>String(b.formed).localeCompare(String(a.formed)));   // latest operation first
+  const pick=open[0];
+  return pick.where==='primary'
+    ? {discharge_date:dateStr}
+    : {extra_stomas:extras.map((s,i)=>i===pick.i?{...s,discharge_date:dateStr}:s)};
+}
+async function stampPostopDischargeDate(pid,dateStr){
+  try{
+    const{data,error}=await SB.from('patients').select('*').eq('id',pid).maybeSingle();
+    if(error||!data)return{set:false};
+    const patch=pickPostopDischargePatch(data,dateStr);
+    if(!patch)return{set:false};
+    const{error:uerr}=await updatePatientTolerant(pid,patch);
+    return{set:!uerr};
+  }catch(e){return{set:false};}
+}
 async function dischargeFromHandover(patientId,name){
-  if(!confirm(`Postop discharge for ${name||'this patient'}?\n\nThey come off the handover list and their inpatient episode is closed with today's date. They keep everything on their record and appear in the Postop Discharges list.`))return;
+  if(!confirm(`Postop discharge for ${name||'this patient'}?\n\nThey come off the handover list and their inpatient episode is closed with today's date, which is also recorded as their post-op discharge date on the patient form. They keep everything on their record and appear in the Postop Discharges list.`))return;
   const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(error){alert('Could not discharge: '+error.message);return;}
   await closeOpenInpatientEpisode(patientId,{postop:true});
+  await stampPostopDischargeDate(patientId,TODAY);
   loadHandover();
 }
 /* An old case: taken off the handover without being counted as a postop
