@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-296';
+const APP_BUILD='2026.09.27-297';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13401,6 +13401,7 @@ async function openPatientDatesModal(patientId,returnCtx){
   mb.innerHTML=`<h2>Patient Details</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong> · ${htmlSafe(pat.id_card||'No ID')} — every field can be changed, including the date of birth. Leave anything that does not apply blank.</div>
     ${patientFormHTML(pat,'pcd')}
+    <div id="pcd-extras"></div>
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:flex-end;gap:8px;">
         <button class="btn-cancel" onclick="pcdCancelOrReturn()">${fromVisit?'Back to appointment':'Cancel'}</button>
@@ -13415,6 +13416,45 @@ async function openPatientDatesModal(patientId,returnCtx){
   renumberStomaRows('pcd');
   onPatientFormOutcome('pcd');
   pfShowStep('pcd',1);
+  patientDetailsExtrasHTML(pat).then(html=>{const el=document.getElementById('pcd-extras');if(el)el.innerHTML=html;}).catch(()=>{});
+}
+/* Read-only context shown under the details form: the complications on record
+   and the appliance & accessories most recently recorded for this patient, so
+   the nurse sees them without leaving to the record page. */
+async function patientDetailsExtrasHTML(pat){
+  if(!pat||!pat.id)return '';
+  let out='';
+  // Complications, from the patient record.
+  try{
+    const comps=parseComplications(pat);
+    out+=`<div class="edit-seen-section" style="margin-top:14px;">Complications</div>
+      <div class="psm-card" style="margin-bottom:12px;">
+        ${comps.length?complicationListHTML(comps,{removable:false}):'<div class="clr-empty">No complications on record.</div>'}
+      </div>`;
+  }catch(e){}
+  // Current appliance & accessories: the most recent record that has any.
+  try{
+    const{data:appts}=await SB.from('appointments')
+      .select('appt_date,appliances,accessories,stoma_appliances')
+      .eq('patient_id',pat.id).order('appt_date',{ascending:false}).limit(40);
+    let chosen=null;
+    for(const a of (appts||[])){
+      let rows=a.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+      const hasSA=Array.isArray(rows)&&rows.some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length));
+      const flat=parseNameList(a.appliances),acc=parseNameList(a.accessories);
+      if(hasSA||flat.length||acc.length){
+        chosen={date:a.appt_date,rows:hasSA?rows:[{label:'',appliances:flat,accessories:acc}]};break;
+      }
+    }
+    const when=chosen&&chosen.date?fmtShortDate(chosen.date):'';
+    const body=chosen?chosen.rows.map(r=>`<div class="vw-recap"><div class="vw-recap-h">${htmlSafe(r.label||'Recorded'+(when?' · '+when:''))}</div><div>${appliancePillsHTML(r.appliances,r.accessories)}</div></div>`).join(''):'';
+    out+=`<div class="edit-seen-section">Current appliance &amp; accessories</div>
+      <div class="psm-card" style="margin-bottom:12px;">
+        ${chosen?body+`<div class="report-note" style="margin-top:6px;">Last recorded${when?' on '+htmlSafe(when):''}. Appliances are set from a seen appointment or an inpatient visit.</div>`
+          :'<div class="clr-empty">No appliance recorded yet — they are saved from a seen appointment or an inpatient visit.</div>'}
+      </div>`;
+  }catch(e){}
+  return out;
 }
 /* A patient save has to survive an install that has not run the newest SQL yet.
    One missing column must cost that column, never the whole record: the write
