@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-288';
+const APP_BUILD='2026.09.27-289';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10422,7 +10422,7 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       if(inRange(p.surgery_date)&&st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozoNew++;
       // Same anchor for relocations: the stoma has to have been performed in
       // this period too, not in some earlier year.
-      if(inRange(p.surgery_date)&&st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))reloNew++;
+      if(inRange(p.surgery_date)&&st==='relocated_overseas')reloNew++;
       // Stomas actually formed in the period, split by type. Refashionings remake
       // an existing stoma (they keep its number) so they are not counted as new.
       try{patientStomaList(p).forEach(s=>{
@@ -10471,12 +10471,11 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       box('inpatients','Inpatients',inpatientsInPeriod,'admissions (handover)'),
       box('total_patients','Total Patients',totalRegisteredPatients,'registered in system')
     ]},
-    {title:'Sitings & surgery',cols:5,tiles:[
+    {title:'Sitings & surgery',cols:4,tiles:[
       box('sitings','Sitings',sitingsInPeriod,`new cases sited · ${htmlSafe(periodLabel)}`),
       box('stoma_performed','Stoma Performed',stomaFormedInPeriod,'stoma formed from a siting'),
       box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
-      box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`),
-      box('reversals_new','Reversals (new stomas)',reversalsNewInPeriod,`formed &amp; reversed in ${htmlSafe(periodLabel)}`)
+      box('reversals_new','Reversals',reversalsNewInPeriod,`formed &amp; reversed in ${htmlSafe(periodLabel)}`)
     ]},
     {title:'Stomas formed by type',cols:4,tiles:[
       box('stomas_formed','Stomas Formed',stomasFormedInPeriod,`new stomas · ${htmlSafe(periodLabel)}`),
@@ -10484,11 +10483,10 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       box('ileostomies','Ileostomies',ileostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`),
       box('urostomies','Urostomies',urostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`)
     ]},
-    {title:'Outcomes',cols:4,tiles:[
-      box('deaths','Deaths',deathsInPeriod,`died in ${htmlSafe(periodLabel)}`),
-      box('deaths_new','Deaths (new stomas)',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
+    {title:'Outcomes',cols:3,tiles:[
+      box('deaths_new','Deaths',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
       box('gozo_new','Discharged to Gozo',gozoNewStomaInPeriod,`operated &amp; to Gozo in ${htmlSafe(periodLabel)}`),
-      box('overseas_new','Relocated Overseas',relocatedNewInPeriod,`operated &amp; overseas in ${htmlSafe(periodLabel)}`)
+      box('overseas_new','Relocated Overseas',relocatedNewInPeriod,`operated in ${htmlSafe(periodLabel)} · now overseas`)
     ]}
   ];
   if(request!==periodTotalsRequest)return;   // a newer period is already loading
@@ -10505,12 +10503,12 @@ const METRIC_LABELS={
   stoma_performed:'Stoma Performed', stoma_not_performed:'Stoma Not Performed',
   attended:'Attended', dntu:'Did Not Turn Up', cancellations:'Cancellations',
   inpatients:'Inpatients', reversals:'Reversals', deaths:'Deaths',
-  deaths_new:'Deaths (new stomas)', gozo:'Discharged to Gozo',
+  deaths_new:'Deaths', gozo:'Discharged to Gozo (any year)',
   overseas:'Relocated Overseas', unique_patients:'Unique Patients',
   total_patients:'Total Patients',
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
   ileostomies:'Ileostomies', urostomies:'Urostomies',
-  reversals_new:'Reversals (new stomas)', gozo_new:'Discharged to Gozo',
+  reversals_new:'Reversals', gozo_new:'Discharged to Gozo',
   overseas_new:'Relocated Overseas'
 };
 const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff','#c026d3'];
@@ -10575,7 +10573,7 @@ function metricMonthly(key,year,d){
   else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{if(metricIsDead(p)&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.deceased_date||p.followup_status_effective_date);});}
   else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
   else if(key==='gozo_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
-  else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
+  else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.surgery_date);});}
   else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
   else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
@@ -10623,7 +10621,7 @@ function metricPeriodTotal(key,period,d,monthly){
   if(key==='gozo_new')
     return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='overseas_new')
-    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date)).length;
+    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='relocated_overseas').length;
   if(key==='overseas')
     return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date)).length;
   return month?(monthly[Number(month)-1]||0):monthly.reduce((a,b)=>a+b,0);
@@ -10681,8 +10679,8 @@ function metricPeriodRecords(key,period,d){
     push(p,p.discharged_gozo_date||p.followup_status_effective_date,p.discharged_gozo_date?'':'⚠ no discharge date on file');});return out;}
   if(key==='gozo_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
     push(p,p.discharged_gozo_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
-  if(key==='overseas_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date))
-    push(p,p.relocated_overseas_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
+  if(key==='overseas_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='relocated_overseas')
+    push(p,p.surgery_date,'operated · now overseas');});return out;}
   if(key==='overseas'){pats.forEach(p=>{if(st(p)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date))
     push(p,p.relocated_overseas_date||p.followup_status_effective_date,p.relocated_overseas_date?'':'⚠ no date on file');});return out;}
   if(key==='reversals'){pats.forEach(p=>{try{
