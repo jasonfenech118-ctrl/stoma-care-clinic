@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-290';
+const APP_BUILD='2026.09.27-291';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5897,7 +5897,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     const summary=`<div class="es-summary">
         <div class="es-summary-head">
           <span class="es-nm">${htmlSafe(nm)}</span>
-          <span class="es-summary-id">ID ${htmlSafe(p.id_card||'Not recorded')}</span>
+          <span style="display:inline-flex;align-items:center;gap:8px;">
+            <span class="es-summary-id">ID ${htmlSafe(p.id_card||'Not recorded')}</span>
+            ${p.id?`<button type="button" class="ncb-btn es-edit-patient" style="background:#e8f5f4;color:var(--teal);white-space:nowrap;" onclick="openPatientDatesModal('${jsSafe(String(p.id))}')" title="Edit this patient's details">✎ Edit patient</button>`:''}
+          </span>
         </div>
         <div class="es-summary-details">
           <span class="es-summary-label">Appointment</span><span class="es-summary-value">${htmlSafe(apptWhen)}</span>
@@ -6068,19 +6071,34 @@ function esRenderReview(){
   const val=id=>document.getElementById(id)?.value||'';
   const selText=id=>{const el=document.getElementById(id);return el?.dataset?.label||((el&&el.tagName==='SELECT'&&el.selectedIndex>=0)?el.options[el.selectedIndex].text:val(id));};
   const radioLabel=name=>{const el=document.querySelector('input[name="'+name+'"]:checked');return el?String(el.closest('label')?.textContent||'').trim():'';};
-  const cmp=radioLabel('of-cmp-review')||'Not answered';
-  // Show the complications actually recorded, not just the radio label — read
-  // them from the on-record list the step keeps live.
   const cmpValue=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const cmpNow=[...document.querySelectorAll('#of-cmp-list .cmp-title')].map(el=>String(el.textContent||'').trim()).filter(Boolean);
+  // Name the complications actually identified — gathered from every live source
+  // so the review always spells them out: those saved to the on-record list, any
+  // ticked in the add panel, and any existing ones being reviewed.
+  const cmpText=el=>String(el.textContent||'').replace(/\s+/g,' ').trim();
+  const cmpNames=[...new Set([
+    ...[...document.querySelectorAll('#of-cmp-list .cmp-title')].map(cmpText),
+    ...[...document.querySelectorAll('.of-cmp-multi:checked')].map(b=>String(b.value||'').trim()),
+    ...[...document.querySelectorAll('#of-cmp-existing .cmp-review-row .cmp-title')].map(cmpText)
+  ].filter(Boolean))];
   const cmpLines=cmpValue==='none'
     ? ['No complications identified']
-    : (cmpNow.length ? cmpNow.map(t=>'• '+t) : [cmp]);
-  const app=radioLabel('of-app-review')||'Not answered';
-  let appliancesTxt='';
+    : (cmpNames.length ? cmpNames.map(t=>'• '+t) : ['A complication is identified — tap to record which']);
+  // Appliance & accessories: show what was recorded, never "Not answered". The
+  // accessory step of the picker already makes an explicit answer compulsory
+  // (None must be ticked if none were used), so there is always a value here.
+  const appChoice=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
+  let appNames=[],accNames=[];
   if(esResume&&esResume.rows&&esResume.rows.length){
-    appliancesTxt=[...new Set(esResume.rows.flatMap(r=>[...(r.appliances||[]),...(r.accessories||[])]))].filter(Boolean).join(', ');
+    appNames=[...new Set(esResume.rows.flatMap(r=>r.appliances||[]))].filter(Boolean);
+    accNames=[...new Set(esResume.rows.flatMap(r=>r.accessories||[]))].filter(Boolean);
   }
+  const accShown=accNames.filter(n=>n&&n!=='None');
+  const appLines=[];
+  const choiceLabel={unchanged:'Continued with current appliance & accessories',changed:'Appliance / accessories updated',first:'Appliance & accessories recorded'}[appChoice];
+  if(choiceLabel)appLines.push(choiceLabel);
+  appLines.push('Appliance: '+(appNames.length?appNames.join(', '):(appChoice==='unchanged'?'unchanged':'None recorded')));
+  appLines.push('Accessories: '+(accShown.length?accShown.join(', '):'None'));
   const nextTxt=radioLabel('of-next');
   const monthVisible=document.getElementById('of-month-fg')?.style.display!=='none';
   const dueTxt=monthVisible?('Due: '+selText('of-month')):'';
@@ -6092,7 +6110,7 @@ function esRenderReview(){
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
     ${card(1,'Attendance',['Date: '+attDMY(val('of-date'))+'   Time: '+String(val('of-slot')).slice(0,5),'Nurse: '+selText('of-nurse'),'Follow-up owner: '+selText('of-owner'),'Outcome: '+selText('of-status')])}
     ${card(2,'Complications',cmpLines)}
-    ${card(2,'Appliance & accessories',[app,appliancesTxt])}
+    ${card(2,'Appliance & accessories',appLines)}
     ${card(3,'Follow-up',[nextTxt,dueTxt,'Status: '+selText('of-followup-status')])}`;
 }
 function esOnOutcomeChange(){
