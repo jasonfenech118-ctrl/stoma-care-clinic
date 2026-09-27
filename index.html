@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-292';
+const APP_BUILD='2026.09.27-293';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6102,16 +6102,23 @@ function esRenderReview(){
   const nextTxt=radioLabel('of-next');
   const monthVisible=document.getElementById('of-month-fg')?.style.display!=='none';
   const dueTxt=monthVisible?('Due: '+selText('of-month')):'';
-  const card=(step,title,lines)=>`<button type="button" class="es-rev-card" onclick="esGoStep(${step})" style="display:block;width:100%;text-align:left;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:12px 14px;margin:0 0 10px;background:#fff;cursor:pointer;">
-      <div style="display:flex;justify-content:space-between;align-items:center;font-weight:800;color:var(--navy,#12304f);margin-bottom:4px;">${htmlSafe(title)}<span style="font-size:12px;font-weight:700;color:var(--teal,#0d7377);">✎ change</span></div>
+  // Each review card gets its own pastel tone so the sections read apart at a
+  // glance — complications in red because they matter most.
+  const card=(step,title,lines,tone)=>{const t=tone||{bg:'#ffffff',bd:'#e2e8f0',tx:'#12304f'};
+    return `<button type="button" class="es-rev-card" onclick="esGoStep(${step})" style="display:block;width:100%;text-align:left;border:1px solid ${t.bd};border-radius:12px;padding:12px 14px;margin:0 0 10px;background:${t.bg};cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-weight:800;color:${t.tx};margin-bottom:4px;">${htmlSafe(title)}<span style="font-size:12px;font-weight:700;color:${t.tx};opacity:.85;">✎ change</span></div>
       ${lines.filter(Boolean).map(l=>`<div style="font-size:13px;color:#374151;line-height:1.5;">${htmlSafe(l)}</div>`).join('')}
-    </button>`;
+    </button>`;};
+  const TONE_ATT={bg:'#eef5ff',bd:'#bcd4f5',tx:'#1e40af'};   // light blue — attendance
+  const TONE_CMP={bg:'#fdecec',bd:'#f2bcbc',tx:'#b91c1c'};   // red — complications
+  const TONE_APP={bg:'#fff3e6',bd:'#f6cfa0',tx:'#b45309'};   // orange — appliances
+  const TONE_FU ={bg:'#f4eefc',bd:'#d9c6f2',tx:'#6d28d9'};   // purple — follow-up
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
-    ${card(1,'Attendance',['Date: '+attDMY(val('of-date'))+'   Time: '+String(val('of-slot')).slice(0,5),'Nurse: '+selText('of-nurse'),'Follow-up owner: '+selText('of-owner'),'Outcome: '+selText('of-status')])}
-    ${card(2,'Complications',cmpLines)}
-    ${card(2,'Appliance & accessories',appLines)}
-    ${card(3,'Follow-up',[nextTxt,dueTxt,'Status: '+selText('of-followup-status')])}`;
+    ${card(1,'Attendance',['Date: '+attDMY(val('of-date'))+'   Time: '+String(val('of-slot')).slice(0,5),'Nurse: '+selText('of-nurse'),'Follow-up owner: '+selText('of-owner'),'Outcome: '+selText('of-status')],TONE_ATT)}
+    ${card(2,'Complications',cmpLines,TONE_CMP)}
+    ${card(2,'Appliance & accessories',appLines,TONE_APP)}
+    ${card(3,'Follow-up',[nextTxt,dueTxt,'Status: '+selText('of-followup-status')],TONE_FU)}`;
 }
 function esOnOutcomeChange(){
   if(!esState)return;
