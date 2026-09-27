@@ -1562,7 +1562,7 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 @keyframes kpiSkel{0%,100%{opacity:.28;}50%{opacity:.5;}}
 .kpi-click{cursor:pointer;transition:box-shadow .15s,transform .15s,border-color .15s;}
 .kpi-click:hover,.kpi-click:focus{box-shadow:0 6px 18px rgba(0,0,0,.12);transform:translateY(-2px);border-color:var(--teal);outline:none;}
-/* Annual Report — collapsible section headers (Month by month / By nurse). */
+/* Annual Report — collapsible section headers (Month by month / Stoma formation). */
 details.annual-collapse{border:1px solid var(--border);border-radius:10px;margin:10px 0;background:#fff;overflow:hidden;}
 details.annual-collapse>summary{cursor:pointer;list-style:none;padding:12px 14px;font-size:14px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:8px;user-select:none;}
 details.annual-collapse>summary::-webkit-details-marker{display:none;}
@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-313';
+const APP_BUILD='2026.09.27-314';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11121,7 +11121,6 @@ async function renderMetricCompare(){
    by outcome and by nurse, and the follow-up backlog. Built to print cleanly
    to a single A4 sheet. Colours are the validated status/categorical set. */
 const ANNUAL_OUTCOME_COLORS={booked:'#2a78d6',attended:'#1baf7a',did_not_attend:'#eda100',cancelled:'#d1442f'};
-const ANNUAL_OWNER_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4'];
 let annualReportData=null;
 let annualReportRequest=0;
 function ensureAnnualYearOptions(){
@@ -11183,24 +11182,12 @@ async function loadAnnualReport(){
       patients:new Set(mAppts.map(a=>a.patient_id).filter(Boolean)).size};
   });
 
-  // Split by the nurse column each appointment actually sat in.
-  const ownerMap={};
-  appts.forEach(a=>{
-    const o=appointmentNurseLabel(a);
-    (ownerMap[o]||(ownerMap[o]={name:o,total:0,attended:0,dna:0,cancelled:0}));
-    ownerMap[o].total++;
-    if(a.status==='attended')ownerMap[o].attended++;
-    if(a.status==='did_not_attend')ownerMap[o].dna++;
-    if(a.status==='cancelled')ownerMap[o].cancelled++;
-  });
-  const ownerRows=Object.values(ownerMap).sort((a,b)=>b.total-a.total);
-
   let recallCount=0,registered='—';
   try{const{rows}=await getRecallWorklistRows();recallCount=rows.length;}catch(e){}
   try{const{count}=await SB.from('patients').select('id',{count:'exact',head:true});registered=count??'—';}catch(e){}
 
   if(request!==annualReportRequest)return;
-  annualReportData={year,month,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
+  annualReportData={year,month,totals,monthRows,recallCount,registered,statuses,monthLabels};
   renderAnnualReport();
   // One registry read serves both the activity totals and the stoma-formation
   // table, rather than each fetching the whole register for itself.
@@ -11245,14 +11232,6 @@ function renderAnnualReport(){
         <td>${annualBar({booked:t.booked,attended:t.attended,dna:t.dna,cancelled:t.cancelled})}</td></tr>
       </tbody></table>`;
 
-  const ownerTable=d.ownerRows.length?`<table class="dt annual-table"><thead><tr>
-      <th>Nurse / Column</th><th>Total</th><th>Attended</th><th>DNTU</th><th>Cancelled</th><th>Attended rate</th></tr></thead><tbody>
-      ${d.ownerRows.map((o,i)=>`<tr>
-        <td><span class="annual-dot" style="background:${ANNUAL_OWNER_COLORS[i%ANNUAL_OWNER_COLORS.length]};"></span><strong>${htmlSafe(o.name)}</strong></td>
-        <td>${o.total}</td><td>${o.attended}</td><td>${o.dna}</td><td>${o.cancelled}</td>
-        <td>${pct(o.attended,o.total)}%</td></tr>`).join('')}
-      </tbody></table>`:'<div class="report-note">No appointments recorded for this year.</div>';
-
   const legend=`<div class="annual-legend">${Object.entries(ANNUAL_OUTCOME_COLORS)
     .map(([k,c])=>`<span class="annual-leg"><span class="annual-dot" style="background:${c};"></span>${htmlSafe(statusLabel(k))}</span>`).join('')}</div>`;
 
@@ -11276,9 +11255,8 @@ function renderAnnualReport(){
       </div>
       ${legend}
       <details class="annual-collapse"><summary>Month by month</summary><div class="annual-collapse-body">${monthTable}</div></details>
-      <details class="annual-collapse"><summary>By nurse / column</summary><div class="annual-collapse-body">${ownerTable}</div></details>
       <details class="annual-collapse"><summary>Stoma formation by month</summary><div class="annual-collapse-body" id="annual-stoma-months"><div class="report-note">Loading stoma formations…</div></div></details>
-      <div class="annual-foot">Follow-up split counts the column each appointment was booked into. DNTU = did not turn up. Attended rate is of all appointments that month, cancelled included.</div>
+      <div class="annual-foot">DNTU = did not turn up. Attended rate is of all appointments that month, cancelled included.</div>
     </div>`;
 }
 /* Every stoma FORMED in the year, month by month and split by type. Each stoma
