@@ -3209,7 +3209,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-308';
+const APP_BUILD='2026.09.27-309';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10623,11 +10623,12 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       if(inRange(p.surgery_date)&&st==='relocated_overseas')reloNew++;
       // Stomas actually formed in the period, split by type. Refashionings remake
       // an existing stoma (they keep its number) so they are not counted as new.
+      // Only the three recognised types are counted — an unrecognised or blank
+      // type is left out, so "Stomas Formed" always equals its three columns.
       try{patientStomaList(p).forEach(s=>{
         if(s.kind==='refashion'||!inRange(s.formed_date))return;
-        stFormed++;
         const g=daStomaGroup(s.type);
-        if(g==='Colostomy')stColo++; else if(g==='Ileostomy')stIleo++; else if(g==='Urostomy')stUro++;
+        if(g==='Colostomy'){stColo++;stFormed++;} else if(g==='Ileostomy'){stIleo++;stFormed++;} else if(g==='Urostomy'){stUro++;stFormed++;}
       });}catch(e){}
       // Formed and reversed inside the same period, counted once per closure.
       try{stRevNew+=metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).size;}catch(e){}
@@ -10705,7 +10706,6 @@ const METRIC_LABELS={
   total_patients:'Total Patients',
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
   ileostomies:'Ileostomies', urostomies:'Urostomies',
-  stomas_other:'Other stomas',
   reversals_new:'Reversals', gozo_new:'Discharged to Gozo',
   overseas_new:'Relocated Overseas'
 };
@@ -10773,13 +10773,10 @@ function metricMonthly(key,year,d){
   else if(key==='gozo_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
   else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.surgery_date);});}
   else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
-  else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion')addByDate(s.formed_date);});}catch(e){}});}
+  else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&['Colostomy','Ileostomy','Urostomy'].indexOf(daStomaGroup(s.type))>=0)addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='ileostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Ileostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
-  // "Other" = a stoma formed whose recorded type reads as none of the three named
-  // groups (or is blank). Matches the "Other" column in the formation table.
-  else if(key==='stomas_other'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&['Colostomy','Ileostomy','Urostomy'].indexOf(daStomaGroup(s.type))<0)addByDate(s.formed_date);});}catch(e){}});}
   // Formed this year and reversed this year, placed on the month of the reversal.
   else if(key==='reversals_new'){(d.patients||[]).forEach(p=>{
     metricNewReversalDates(p,(f,r)=>String(f||'').slice(0,4)===Y&&!!r).forEach((f,r)=>addByDate(r));});}
@@ -10897,14 +10894,13 @@ function metricPeriodRecords(key,period,d){
     [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
   if(key==='reversals_new'){pats.forEach(p=>{
     metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
-  if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'||key==='stomas_other'){
+  if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'){
     const want={colostomies:'Colostomy',ileostomies:'Ileostomy',urostomies:'Urostomy'}[key];
     pats.forEach(p=>{try{patientStomaList(p).forEach(x=>{
       if(x.kind==='refashion'||!inRange(x.formed_date))return;
       const g=daStomaGroup(x.type);
-      if(want&&g!==want)return;
-      // "Other" is every group that is not one of the three named ones (or blank).
-      if(key==='stomas_other'&&['Colostomy','Ileostomy','Urostomy'].indexOf(g)>=0)return;
+      if(want){if(g!==want)return;}                                        // one named type
+      else if(['Colostomy','Ileostomy','Urostomy'].indexOf(g)<0)return;    // stomas_formed = the three types only
       push(p,x.formed_date,x.type||g||'stoma formed');});}catch(e){}});
     return out;
   }
@@ -11300,9 +11296,9 @@ async function renderStomaFormationTable(elId,year,pats){
   }
   if(request!==annualStomaRequest)return;
   const Y=String(year);
-  const GROUPS=['Colostomy','Ileostomy','Urostomy','Other'];
+  const GROUPS=['Colostomy','Ileostomy','Urostomy'];
   const colourOf=g=>((typeof DA_STOMA_GROUPS!=='undefined'&&DA_STOMA_GROUPS.find(x=>x.label===g))||{}).color||'#64748b';
-  const grid=Array.from({length:12},()=>({Colostomy:0,Ileostomy:0,Urostomy:0,Other:0,total:0}));
+  const grid=Array.from({length:12},()=>({Colostomy:0,Ileostomy:0,Urostomy:0,total:0}));
   (rows||[]).forEach(p=>{
     try{patientStomaList(p).forEach(st=>{
       if(st.kind==='refashion')return;
@@ -11311,8 +11307,8 @@ async function renderStomaFormationTable(elId,year,pats){
       const mi=Number(t.slice(5,7))-1;
       if(!(mi>=0&&mi<12))return;
       const g=daStomaGroup(st.type);
-      const k=GROUPS.indexOf(g)>=0?g:'Other';
-      grid[mi][k]++; grid[mi].total++;
+      if(GROUPS.indexOf(g)<0)return;   // only the three stoma types are counted
+      grid[mi][g]++; grid[mi].total++;
     });}catch(e){}
   });
   const names=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -11329,7 +11325,7 @@ async function renderStomaFormationTable(elId,year,pats){
   // Each count opens the patients behind it. A group maps to its metric; the
   // Total column opens every stoma formed. A zero has nobody to list, so it is
   // left plain. monthNum is 'MM' for a month row, '' for the Year row.
-  const keyOf={Colostomy:'colostomies',Ileostomy:'ileostomies',Urostomy:'urostomies',Other:'stomas_other'};
+  const keyOf={Colostomy:'colostomies',Ileostomy:'ileostomies',Urostomy:'urostomies'};
   const cell=(val,metricKey,monthNum,strong)=>{
     const inner=strong?`<strong>${val}</strong>`:`${val}`;
     if(!(val>0))return `<td>${inner}</td>`;
@@ -11345,9 +11341,9 @@ async function renderStomaFormationTable(elId,year,pats){
       <tr class="annual-total-row"><td><strong>Year</strong></td>
         ${GROUPS.map(g=>cell(colTotal(g),keyOf[g],'',true)).join('')}
         ${cell(yearTotal,'stomas_formed','',true)}
-        <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),Other:colTotal('Other'),total:yearTotal})}</td></tr>
+        <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),total:yearTotal})}</td></tr>
     </tbody></table>
-    <div class="report-note">Each stoma is counted in the month it was formed. A refashioning remakes an existing stoma, so it is not counted again here. “Other” covers a stoma whose recorded type does not read as colostomy, ileostomy or urostomy. <strong>Click any number to see and edit those patients.</strong></div>`;
+    <div class="report-note">Each stoma is counted in the month it was formed, under its type — colostomy, ileostomy or urostomy. A refashioning remakes an existing stoma, so it is not counted again here. <strong>Click any number to see and edit those patients.</strong></div>`;
 }
 function printAnnualReport(){
   if(!annualReportData){alert('The annual report is still loading.');return;}
