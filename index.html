@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-304';
+const APP_BUILD='2026.09.27-305';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6175,7 +6175,13 @@ async function esFollowupNext(){
         });
       }
       try{await SB.from('appointments').update({complication_review:cmp,appliance_review:app,complication_reviews:details.length?details:null}).eq('id',esState.apptId);}catch(e){}
-      esResume={apptId:String(esState.apptId),rows:null,cmp,app};
+      esResume={apptId:String(esState.apptId),rows:null,cmp,app,fu:{
+        owner:document.getElementById('of-owner')?.value,
+        year:document.getElementById('of-year')?.value,
+        month:document.getElementById('of-month')?.value,
+        status:document.getElementById('of-followup-status')?.value,
+        next:document.querySelector('input[name="of-next"]:checked')?.value
+      }};
       await openVisitApplianceWizard({apptId:esState.apptId,patientId:esState.patientId,date,status:'attended',returnToStep3:true},pat);
       return;
     }
@@ -6189,6 +6195,19 @@ function esApplyResumeReview(){
   const set=(name,val)=>{const el=document.querySelector('input[name="'+name+'"][value="'+val+'"]');if(el)el.checked=true;};
   if(esResume.cmp){set('of-cmp-review',esResume.cmp);esCmpReviewChange();}
   if(esResume.app){set('of-app-review',esResume.app);esAppReviewChange();}
+  // The rebuild reset the follow-up fields to the patient's saved defaults, so
+  // the owner (e.g. Jason) and month picked earlier were lost. Put them back.
+  const fu=esResume.fu;
+  if(fu){
+    const setv=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&v!=='')el.value=v;};
+    setv('of-owner',fu.owner); setv('of-followup-status',fu.status);
+    setv('of-year',fu.year); setv('of-month',fu.month);
+    // Recompute the month options / availability for the restored owner while
+    // keeping the chosen month.
+    try{refreshOutcomeMonthOptions();}catch(e){}
+    if(fu.next){const r=document.querySelector('input[name="of-next"][value="'+fu.next+'"]');if(r){r.checked=true;try{esNextChange();}catch(e){}}}
+    try{updateFollowupChangeWarning();}catch(e){}
+  }
 }
 function esGoReview(){esGoStep(4);}
 /* The final Review step: a read-only summary of every answer. There is no Back —
