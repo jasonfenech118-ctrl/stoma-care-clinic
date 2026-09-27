@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-325';
+const APP_BUILD='2026.09.27-324';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5596,10 +5596,12 @@ function complicationReviewSectionHTML(patient,complicationsNow,preset){
     </div>`;
 }
 function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
-  // The appliance & accessories choice now lives on the Appliances step (3) as
-  // two visible radios (No changes / There are changes), so there is no hidden
-  // marker here any more.
-  return '';
+  // The appliance & accessories review is no longer a step-2 choice — pressing
+  // 'Next: Follow-up' opens the appliance / accessories picker directly. This
+  // hidden marker keeps the save path and the open-on-Next logic working; it
+  // carries the current appliance forward when there is one, else records the
+  // first. Value 'changed' avoids the auto-open branch in esAppReviewChange.
+  return `<input type="radio" name="of-app-review" value="${hasAppliance?'changed':'first'}" checked hidden>`;
 }
 function applianceSectionHTML(appliances,accessories){
   const selApp=parseNameList(appliances),selAcc=parseNameList(accessories);
@@ -5989,8 +5991,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   if(!isDntuEditMode){
-    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[],hasApplianceHistory:hasApplianceHistory};
-    esRenderAppliancePane();   // build the appliance step (with its radios) up front so of-app-review exists
+    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[]};
     esGoStep(1);
     esCmpReviewChange();
     esAppReviewChange();
@@ -6168,48 +6169,28 @@ async function esFollowupNext(){
   }
   esGoStep(3);   // Appliances & accessories — the picker opens from there
 }
-/* The Appliances step (3): the current appliance on record, and two radios —
-   "No changes" keeps it, "There are changes" opens the picker (the next page).
-   The chosen radio is the of-app-review marker the save path already reads. */
+/* The Appliances step (3): a summary of what will be recorded and a button to
+   open the appliance / accessory picker. Filled when the step is shown. */
 function esRenderAppliancePane(){
   const pane=document.getElementById('es-pane-3');
   if(!pane||!esState)return;
-  const done=!!(esResume&&esResume.rows&&esResume.rows.length);
-  let summary;
-  if(done){
+  const lines=[];
+  if(esResume&&esResume.rows&&esResume.rows.length){
     const app=[...new Set(esResume.rows.flatMap(r=>r.appliances||[]))].filter(Boolean);
     const acc=[...new Set(esResume.rows.flatMap(r=>r.accessories||[]))].filter(n=>n&&n!=='None');
-    summary='Recorded this visit — Appliance: '+(app.length?app.join(', '):'None')+' · Accessories: '+(acc.length?acc.join(', '):'None');
+    lines.push('Appliance: '+(app.length?app.join(', '):'None recorded'));
+    lines.push('Accessories: '+(acc.length?acc.join(', '):'None'));
   }else{
     const cur=(document.getElementById('es-summary-appliance')?.textContent||'').trim();
-    summary=(cur&&cur!=='…')?('Currently on record: '+cur):'No appliance recorded yet for this patient.';
+    lines.push(cur&&cur!=='…'?('Currently on record: '+cur):'No appliance recorded yet for this patient.');
   }
-  const hasHistory=esState.hasApplianceHistory!==false;
-  const changedVal=hasHistory?'changed':'first';   // 'first' when nothing on file yet
-  // Keep the current choice across re-renders; default to no-change when there is
-  // an appliance on file, else to recording the first one.
-  let sel=document.querySelector('input[name="of-app-review"]:checked')?.value
-        || (esResume&&esResume.app) || (done?changedVal:(hasHistory?'unchanged':'first'));
-  if(sel!=='unchanged')sel=changedVal;   // normalise 'changed'/'first' to this patient
-  const noChanges=sel==='unchanged';
+  const done=!!(esResume&&esResume.rows&&esResume.rows.length);
   pane.innerHTML=`<div class="edit-seen-section">Appliances &amp; accessories</div>
-    <div class="psm-card" style="margin-bottom:12px;font-size:13px;color:#374151;line-height:1.6;">${htmlSafe(summary)}</div>
-    <div class="es-review-choice" id="of-app-choice">
-      <label><input type="radio" name="of-app-review" value="unchanged" ${noChanges?'checked':''} onchange="esApplianceChoiceChange()"> <strong>No changes</strong> — keep the current appliance &amp; accessories</label>
-      <label><input type="radio" name="of-app-review" value="${changedVal}" ${!noChanges?'checked':''} onchange="esApplianceChoiceChange()"> <strong>There are changes</strong> — record the appliance &amp; accessories</label>
+    <div class="psm-card" style="margin-bottom:12px;">
+      ${lines.map(l=>`<div style="font-size:13px;color:#374151;line-height:1.6;">${htmlSafe(l)}</div>`).join('')}
     </div>
-    <div id="of-app-picker-wrap" style="margin-top:10px;${noChanges?'display:none;':''}">
-      <button type="button" class="btn-save" style="width:100%;" onclick="esOpenAppliancePicker()">${done?'Change the appliances & accessories ›':'Open the appliance & accessory picker ›'}</button>
-    </div>
-    <div class="dntu-note" style="margin-top:8px;">Choose whether the appliances / accessories changed at this visit, then press <strong>Next</strong> for Follow-up.</div>`;
-}
-/* Radio choice on the Appliances step: hide the picker button when nothing
-   changed; open the picker straight away when there are changes. */
-function esApplianceChoiceChange(){
-  const v=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
-  const wrap=document.getElementById('of-app-picker-wrap');
-  if(wrap)wrap.style.display=(v==='unchanged')?'none':'';
-  if(v==='changed'||v==='first')esOpenAppliancePicker();
+    <button type="button" class="btn-save" style="width:100%;" onclick="esOpenAppliancePicker()">${done?'Change the appliances & accessories ›':'Open the appliance & accessory picker ›'}</button>
+    <div class="dntu-note" style="margin-top:8px;">Set or change the appliances and accessories used at this visit. You can come back to this step at any time; press <strong>Next</strong> to continue to Follow-up.</div>`;
 }
 /* Open the appliance/accessory picker from the Appliances step. The clinical
    review answers and the follow-up choices are saved to the record and to
