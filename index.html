@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-298';
+const APP_BUILD='2026.09.27-299';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5916,6 +5916,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
           <span class="es-summary-label">Appointment</span><span class="es-summary-value">${htmlSafe(apptWhen)}</span>
           <span class="es-summary-label">Stoma</span><span class="es-summary-value">${htmlSafe(stomaSummary||'Not recorded')}</span>
           <span class="es-summary-label">Follow-up</span><span class="es-summary-value ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
+          <span class="es-summary-label">Appliance</span><span class="es-summary-value" id="es-summary-appliance">…</span>
+          <span class="es-summary-label">Complications</span><span class="es-summary-value" id="es-summary-complications">…</span>
         </div>
       </div>`;
     // Demographics are shown read-only above and carried as hidden inputs — the
@@ -5989,7 +5991,41 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   filterApplianceList();
   updateApplianceSummary();
   updateApplianceVisibility();
+  esFillSummaryExtras(p,complicationsNow);
   if(!isDntuEditMode&&options.resume)esApplySnapshot(options.resume);
+}
+/* The visit summary card's live extras: the complications on record and the
+   appliance & accessories most recently recorded, filled in after the modal
+   opens so the header shows them without going to Edit patient. */
+async function esFillSummaryExtras(p,comps){
+  const cel=document.getElementById('es-summary-complications');
+  if(cel){
+    const names=(comps||[]).map(c=>String(c.text||c.title||'').trim()).filter(Boolean);
+    cel.textContent=names.length?names.join(', '):'None recorded';
+    cel.classList.toggle('warn',names.length>0);
+  }
+  const ael=document.getElementById('es-summary-appliance');
+  if(ael&&p&&p.id){
+    try{
+      const{data:appts}=await SB.from('appointments')
+        .select('appt_date,appliances,accessories,stoma_appliances')
+        .eq('patient_id',p.id).order('appt_date',{ascending:false}).limit(40);
+      let appNames=[],accNames=[];
+      for(const a of (appts||[])){
+        let rows=a.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+        if(Array.isArray(rows)&&rows.some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length))){
+          appNames=[...new Set(rows.flatMap(r=>r.appliances||[]))];
+          accNames=[...new Set(rows.flatMap(r=>r.accessories||[]))];
+        }else{
+          appNames=parseNameList(a.appliances); accNames=parseNameList(a.accessories);
+        }
+        if(appNames.length||accNames.length)break;
+        appNames=[]; accNames=[];
+      }
+      const parts=[...appNames,...accNames.filter(n=>n&&n!=='None')].filter(Boolean);
+      ael.textContent=parts.length?parts.join(', '):'None recorded';
+    }catch(e){ael.textContent='—';}
+  }
 }
 /* ── The Edit-appointment stepper (Attendance → Clinical review → Follow-up).
    It reorders the existing fields into panes shown one at a time; every field
