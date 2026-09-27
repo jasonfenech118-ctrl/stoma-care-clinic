@@ -1570,8 +1570,10 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .totals-group{margin-bottom:12px;}
 .totals-group-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--teal);margin:0 0 7px;}
 .totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+.totals-grid[data-cols="3"]{grid-template-columns:repeat(3,1fr);}
+.totals-grid[data-cols="4"]{grid-template-columns:repeat(4,1fr);}
 .annual-rate-kpis{grid-template-columns:repeat(3,1fr);}
-@media(max-width:860px){.totals-grid{grid-template-columns:repeat(2,1fr);}.annual-rate-kpis{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:860px){.totals-grid,.totals-grid[data-cols]{grid-template-columns:repeat(2,1fr);}.annual-rate-kpis{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:460px){.totals-grid{grid-template-columns:repeat(2,1fr);}.annual-rate-kpis{grid-template-columns:repeat(1,1fr);}}
 /* Metric-comparison modal — selected-period chips and the add-period controls. */
 .mc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 8px;align-items:center;}
@@ -3187,7 +3189,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-283';
+const APP_BUILD='2026.09.27-284';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10380,7 +10382,7 @@ async function renderPeriodTotals(elId,year,month,pats){
   }catch(e){console.warn('Patient total count not available',e);}
 
   let inpatientsInPeriod='—', reversalsInPeriod='—', gozoInPeriod='—', deathsInPeriod='—', relocatedInPeriod='—', deathsNewStomaInPeriod='—';
-  let stomasFormedInPeriod='—', colostomiesInPeriod='—', ileostomiesInPeriod='—', urostomiesInPeriod='—';
+  let stomasFormedInPeriod='—', colostomiesInPeriod='—', ileostomiesInPeriod='—', urostomiesInPeriod='—', reversalsNewInPeriod='—';
   const inRange=d=>{const s=String(d||'').slice(0,10);return !!s&&s>=start&&s<=end;};
   const curYear=new Date().getFullYear();
   const isCurFullYear=!month&&Number(year)===curYear;
@@ -10389,7 +10391,7 @@ async function renderPeriodTotals(elId,year,month,pats){
     const{rows:allPats}=pats?{rows:pats}:await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
     const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
     let rev=0,gozo=0,death=0,relo=0,deathNew=0;
-    let stFormed=0,stColo=0,stIleo=0,stUro=0;
+    let stFormed=0,stColo=0,stIleo=0,stUro=0,stRevNew=0;
     (allPats||[]).forEach(p=>{
       const st=normaliseFollowupStatus(p.followup_status);
       const eff=p.followup_status_effective_date;
@@ -10407,10 +10409,13 @@ async function renderPeriodTotals(elId,year,month,pats){
         stFormed++;
         const g=daStomaGroup(s.type);
         if(g==='Colostomy')stColo++; else if(g==='Ileostomy')stIleo++; else if(g==='Urostomy')stUro++;
+        // Formed and reversed inside the same period. A urostomy is permanent,
+        // so it is never counted as a reversal.
+        if(daStomaGroup(s.type||p.stoma_type)!=='Urostomy'&&inRange(s.reversal_date))stRevNew++;
       });}catch(e){}
     });
     reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew;
-    stomasFormedInPeriod=stFormed; colostomiesInPeriod=stColo; ileostomiesInPeriod=stIleo; urostomiesInPeriod=stUro;
+    stomasFormedInPeriod=stFormed; colostomiesInPeriod=stColo; ileostomiesInPeriod=stIleo; urostomiesInPeriod=stUro; reversalsNewInPeriod=stRevNew;
   }catch(e){console.warn('Outcome totals failed',e);}
   try{
     const{rows:eps}=await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode'));
@@ -10445,19 +10450,20 @@ async function renderPeriodTotals(elId,year,month,pats){
       box('inpatients','Inpatients',inpatientsInPeriod,'admissions (handover)'),
       box('total_patients','Total Patients',totalRegisteredPatients,'registered in system')
     ]},
-    {title:'Sitings & surgery',tiles:[
+    {title:'Sitings & surgery',cols:3,tiles:[
       box('sitings','Sitings',sitingsInPeriod,`new cases sited · ${htmlSafe(periodLabel)}`),
       box('stoma_performed','Stoma Performed',stomaFormedInPeriod,'stoma formed from a siting'),
-      box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
-      box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`)
+      box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`)
     ]},
-    {title:'Stomas formed by type',tiles:[
+    {title:'Stomas formed by type',cols:4,tiles:[
       box('stomas_formed','Stomas Formed',stomasFormedInPeriod,`new stomas · ${htmlSafe(periodLabel)}`),
       box('colostomies','Colostomies',colostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`),
       box('ileostomies','Ileostomies',ileostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`),
       box('urostomies','Urostomies',urostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`)
     ]},
-    {title:'Outcomes',tiles:[
+    {title:'Reversals & outcomes',cols:3,tiles:[
+      box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`),
+      box('reversals_new','Reversals (new stomas)',reversalsNewInPeriod,`formed &amp; reversed in ${htmlSafe(periodLabel)}`),
       box('deaths','Deaths',deathsInPeriod,`died in ${htmlSafe(periodLabel)}`),
       box('deaths_new','Deaths (new stomas)',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
       box('gozo','Discharged to Gozo',gozoInPeriod,`in ${htmlSafe(periodLabel)}`),
@@ -10465,7 +10471,7 @@ async function renderPeriodTotals(elId,year,month,pats){
     ]}
   ];
   if(request!==periodTotalsRequest)return;   // a newer period is already loading
-  el.innerHTML=groups.map(g=>`<div class="totals-group"><div class="totals-group-h">${htmlSafe(g.title)}</div><div class="totals-grid">${g.tiles.join('')}</div></div>`).join('');
+  el.innerHTML=groups.map(g=>`<div class="totals-group"><div class="totals-group-h">${htmlSafe(g.title)}</div><div class="totals-grid" data-cols="${g.cols||4}">${g.tiles.join('')}</div></div>`).join('');
 }
 
 /* ── METRIC COMPARISON ─────────────────────────────────────────────────────
@@ -10482,7 +10488,8 @@ const METRIC_LABELS={
   overseas:'Relocated Overseas', unique_patients:'Unique Patients',
   total_patients:'Total Patients',
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
-  ileostomies:'Ileostomies', urostomies:'Urostomies'
+  ileostomies:'Ileostomies', urostomies:'Urostomies',
+  reversals_new:'Reversals (new stomas)'
 };
 const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff','#c026d3'];
 const MC_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -10550,6 +10557,13 @@ function metricMonthly(key,year,d){
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='ileostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Ileostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
+  // Formed this year and reversed this year, placed on the month of the reversal.
+  else if(key==='reversals_new'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{
+    if(s.kind==='refashion')return;
+    if(daStomaGroup(s.type||p.stoma_type)==='Urostomy')return;
+    if(String(s.formed_date||'').slice(0,4)!==Y)return;
+    addByDate(s.reversal_date);
+  });}catch(e){}});}
   return arr;
 }
 function metricIsDead(p){return !!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';}
@@ -10574,6 +10588,12 @@ function metricPeriodTotal(key,period,d,monthly){
     return (d.patients||[]).filter(p=>metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
   if(key==='deaths_new')
     return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
+  if(key==='reversals_new')
+    return (d.patients||[]).reduce((n,p)=>{
+      try{return n+patientStomaList(p).filter(st=>st.kind!=='refashion'
+        &&daStomaGroup(st.type||p.stoma_type)!=='Urostomy'
+        &&inRange(st.formed_date)&&inRange(st.reversal_date)).length;}catch(e){return n;}
+    },0);
   if(key==='gozo')
     return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='overseas')
@@ -10963,6 +10983,7 @@ function printAnnualReport(){
     .ak-value{font-size:19px;font-weight:900;color:#1a2e4a;line-height:1.1;} .ak-sub{font-size:8.5px;color:#7a8fa6;}
     .totals-group{margin-bottom:6px;} .totals-group-h{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#0d7377;font-weight:bold;margin:8px 0 4px;}
     .totals-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:4px;}
+    .totals-grid[data-cols="3"]{grid-template-columns:repeat(3,1fr);}
     .kpi{border:1px solid #dde3ea;border-radius:7px;padding:6px 8px;}
     .k-label{font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:#7a8fa6;font-weight:bold;}
     .k-value{font-size:17px;font-weight:900;color:#1a2e4a;line-height:1.1;} .k-sub{font-size:8px;color:#7a8fa6;}
