@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-300';
+const APP_BUILD='2026.09.27-301';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5890,8 +5890,20 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     // ── The three-step Attendance → Clinical review → Follow-up workflow. ──
     const fuStatus=derivedFollowupStatus(p);
     const fuLabel=({active:'Active follow-up',reversed:'Reversed',deceased:'Deceased',discharged_gozo:'Discharged to Gozo',relocated_overseas:'Relocated overseas',paused:'Paused',awaiting_feedback:'Awaiting feedback'})[fuStatus]||fuStatus||'—';
-    let stomaSummary='';
-    try{const s=stomasPresentOn(p,appt.appt_date);stomaSummary=s.length?s.map(x=>x.typeLabel||x.label).filter(Boolean).join(' · '):'No stoma recorded';}catch(e){stomaSummary='';}
+    // The stoma line is read from the patient's recorded stomas (by type). A
+    // patient with more than one present stoma gets a column for each.
+    let stomaCell='No stoma recorded';
+    try{
+      let sl=patientStomaList(p).filter(x=>x.present);
+      if(!sl.length)sl=patientStomaList(p).filter(x=>String(x.type||'').trim());
+      if(sl.length>1){
+        stomaCell='<div style="display:flex;flex-wrap:wrap;gap:16px;">'+sl.map(x=>
+          `<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);">Stoma ${x.number||''}${x.code?' · '+htmlSafe(x.code):''}</div><div style="font-weight:600;">${htmlSafe(x.type||'—')}${x.location?' · '+htmlSafe(x.location):''}</div></div>`).join('')+'</div>';
+      }else if(sl.length===1){
+        stomaCell=htmlSafe(sl[0].type||'Recorded')+(sl[0].location?' · '+htmlSafe(sl[0].location):'');
+      }
+    }catch(e){stomaCell='No stoma recorded';}
+    const compNames=(complicationsNow||[]).map(c=>String(c.text||c.title||'').trim()).filter(Boolean);
     const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
     const apptWhen=[appt.appt_date?fmtShortDate(appt.appt_date):'Date not recorded',appt.appt_slot?String(appt.appt_slot).slice(0,5):''].filter(Boolean).join(' · ');
     const summary=`<div class="es-summary">
@@ -5904,10 +5916,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         </div>
         <div class="es-summary-details">
           <span class="es-summary-label">Appointment</span><span class="es-summary-value">${htmlSafe(apptWhen)}</span>
-          <span class="es-summary-label">Stoma</span><span class="es-summary-value">${htmlSafe(stomaSummary||'Not recorded')}</span>
+          <span class="es-summary-label">Stoma</span><span class="es-summary-value">${stomaCell}</span>
           <span class="es-summary-label">Follow-up</span><span class="es-summary-value ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
           <span class="es-summary-label">Appliance</span><span class="es-summary-value" id="es-summary-appliance">…</span>
-          <span class="es-summary-label">Complications</span><span class="es-summary-value" id="es-summary-complications">…</span>
+          ${compNames.length?`<span class="es-summary-label">Complications</span><span class="es-summary-value warn">${htmlSafe(compNames.join(', '))}</span>`:''}
         </div>
       </div>`;
     // Demographics are shown read-only above and carried as hidden inputs — the
@@ -5988,12 +6000,6 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
    appliance & accessories most recently recorded, filled in after the modal
    opens so the header shows them without going to Edit patient. */
 async function esFillSummaryExtras(p,comps,appt){
-  const cel=document.getElementById('es-summary-complications');
-  if(cel){
-    const names=(comps||[]).map(c=>String(c.text||c.title||'').trim()).filter(Boolean);
-    cel.textContent=names.length?names.join(', '):'None recorded';
-    cel.classList.toggle('warn',names.length>0);
-  }
   const ael=document.getElementById('es-summary-appliance');
   if(!ael)return;
   let appNames=[],accNames=[];
@@ -13497,10 +13503,10 @@ async function patientDetailsExtrasHTML(pat){
   // Complications, from the patient record.
   try{
     const comps=parseComplications(pat);
-    out+=`<div class="edit-seen-section" style="margin-top:14px;">Complications</div>
-      <div class="psm-card" style="margin-bottom:12px;">
-        ${comps.length?complicationListHTML(comps,{removable:false}):'<div class="clr-empty">No complications on record.</div>'}
-      </div>`;
+    if(comps.length){
+      out+=`<div class="edit-seen-section" style="margin-top:14px;">Complications</div>
+        <div class="psm-card" style="margin-bottom:12px;">${complicationListHTML(comps,{removable:false})}</div>`;
+    }
   }catch(e){}
   // Current appliance & accessories: the most recent record that has any.
   try{
