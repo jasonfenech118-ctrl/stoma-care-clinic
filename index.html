@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-303';
+const APP_BUILD='2026.09.27-304';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5917,7 +5917,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         <div class="es-summary-details">
           <span class="es-summary-label">Appointment</span><span class="es-summary-value">${htmlSafe(apptWhen)}</span>
           <span class="es-summary-label">Stoma</span><span class="es-summary-value">${stomaCell}</span>
-          <span class="es-summary-label">Follow-up</span><span class="es-summary-value ${fuStatus==='deceased'?'warn':''}">${htmlSafe(fuLabel)}</span>
+          <span class="es-summary-label">Last follow-up</span><span class="es-summary-value" id="es-summary-lastfu">…</span>
           <span class="es-summary-label">Appliance</span><span class="es-summary-value" id="es-summary-appliance">…</span>
           ${compNames.length?`<span class="es-summary-label">Complications</span><span class="es-summary-value warn">${htmlSafe(compNames.join(', '))}</span>`:''}
         </div>
@@ -6000,6 +6000,18 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
    appliance & accessories most recently recorded, filled in after the modal
    opens so the header shows them without going to Edit patient. */
 async function esFillSummaryExtras(p,comps,appt){
+  const lel=document.getElementById('es-summary-lastfu');
+  if(lel&&p&&p.id){
+    try{
+      // The last time the patient was actually SEEN (an attended appointment),
+      // not counting this appointment being completed now.
+      const{data:seen}=await SB.from('appointments')
+        .select('id,appt_date,status').eq('patient_id',p.id).eq('status','attended')
+        .order('appt_date',{ascending:false}).limit(5);
+      const prev=(seen||[]).filter(a=>String(a.id)!==String(appt&&appt.id));
+      lel.textContent=prev.length?fmtShortDate(prev[0].appt_date):'Not yet seen for follow-up';
+    }catch(e){lel.textContent='—';}
+  }
   const ael=document.getElementById('es-summary-appliance');
   if(!ael)return;
   let appNames=[],accNames=[];
