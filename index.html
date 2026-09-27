@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-293';
+const APP_BUILD='2026.09.27-294';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5899,7 +5899,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
           <span class="es-nm">${htmlSafe(nm)}</span>
           <span style="display:inline-flex;align-items:center;gap:8px;">
             <span class="es-summary-id">ID ${htmlSafe(p.id_card||'Not recorded')}</span>
-            ${p.id?`<button type="button" class="ncb-btn es-edit-patient" style="background:#e8f5f4;color:var(--teal);white-space:nowrap;" onclick="openPatientDatesModal('${jsSafe(String(p.id))}')" title="Edit this patient's details">✎ Edit patient</button>`:''}
+            ${p.id?`<button type="button" class="ncb-btn es-edit-patient" style="background:#e8f5f4;color:var(--teal);white-space:nowrap;" onclick="openPatientDatesModal('${jsSafe(String(p.id))}',{apptId:'${jsSafe(String(apptId||''))}',status:'${jsSafe(String(requestedStatus||''))}'})" title="Edit this patient's details">✎ Edit patient</button>`:''}
           </span>
         </div>
         <div class="es-summary-details">
@@ -13329,7 +13329,17 @@ async function fetchPatientById(patientId){
 // Tints the patient modal by sex: warm yellow for male, pink for female.
 function sexModalClass(pat){return pat?.sex==='Male'?' sex-male':pat?.sex==='Female'?' sex-female':'';}
 /* ---- edit an existing patient ---- */
-async function openPatientDatesModal(patientId){
+let patientEditReturn=null;
+/* When the details form is opened from the Complete-visit modal, save (and
+   cancel) return to that visit instead of dropping the nurse back to the list.
+   Any other opener passes no context, so it simply closes as before. */
+function pcdCancelOrReturn(){
+  const ret=patientEditReturn; patientEditReturn=null;
+  if(ret&&ret.apptId)openOutcomeFollowupModal(ret.apptId,ret.status);
+  else closeModal();
+}
+async function openPatientDatesModal(patientId,returnCtx){
+  patientEditReturn=returnCtx||null;
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
@@ -13340,7 +13350,7 @@ async function openPatientDatesModal(patientId){
     ${patientFormHTML(pat,'pcd')}
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:flex-end;gap:8px;">
-        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-cancel" onclick="pcdCancelOrReturn()">Cancel</button>
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')" hidden>Save Patient</button>
       </div>
     <div style="text-align:center;margin-top:14px;">
@@ -13414,7 +13424,9 @@ async function savePatientDates(patientId){
     return;
   }
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
-  closeModal();
+  const ret=patientEditReturn; patientEditReturn=null;
+  if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status);
+  else closeModal();
   refreshReminders();
   // If the record page is open, rebuild it so the edits show; otherwise refresh
   // whichever registry-style page is active.
