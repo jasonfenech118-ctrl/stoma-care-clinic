@@ -3187,7 +3187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-281';
+const APP_BUILD='2026.09.27-282';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10656,8 +10656,12 @@ async function renderMetricCompare(){
     const monthly=metricMonthly(key,p.year,d);
     const color=metricPeriodColor(i);
     const total=metricPeriodTotal(key,p,d,monthly);
-    if(p.month){const mi=Number(p.month)-1;const line=new Array(12).fill(null);line[mi]=monthly[mi];
-      return {label:metricPeriodLabel(p),color,isMonth:true,mi,line,total,monthly,year:p.year,summed:monthly[mi]||0};}
+    if(p.month){const mi=Number(p.month)-1;const line=new Array(12).fill(null);line[mi]=total;
+      // The point, the cell and the total are all the period total, so a measure
+      // whose monthly array is built per year (deaths among that year's new
+      // stomas) cannot show one figure on the chart and another on the card.
+      const cells=new Array(12).fill(null);cells[mi]=total;
+      return {label:metricPeriodLabel(p),color,isMonth:true,mi,line,total,monthly:cells,year:p.year,summed:total};}
     return {label:metricPeriodLabel(p),color,isMonth:false,mi:-1,line:monthly,total,monthly,year:p.year,summed:monthly.reduce((a,b)=>a+b,0)};
   });
   // Unique patients never add up across months, and an undated outcome counts in
@@ -10670,7 +10674,7 @@ async function renderMetricCompare(){
     if(s.isMonth)return {...s,avg:null,peakM:null,peakV:s.total,lowM:null,lowV:s.total};
     let peakI=0,lowI=0;
     s.monthly.forEach((v,i)=>{if(v>s.monthly[peakI])peakI=i;if(v<s.monthly[lowI])lowI=i;});
-    return {...s,avg:s.total/12,peakM:MC_MON[peakI],peakV:s.monthly[peakI],lowM:MC_MON[lowI],lowV:s.monthly[lowI]};
+    return {...s,avg:s.summed/12,peakM:MC_MON[peakI],peakV:s.monthly[peakI],lowM:MC_MON[lowI],lowV:s.monthly[lowI]};
   });
   const statCards=withStats.map(s=>`<div class="mc-stat" style="border-top:3px solid ${s.color};">
       <div class="mc-stat-h"><span class="annual-dot" style="background:${s.color};"></span>${htmlSafe(s.label)}</div>
@@ -10731,6 +10735,7 @@ async function renderMetricCompare(){
 const ANNUAL_OUTCOME_COLORS={booked:'#2a78d6',attended:'#1baf7a',did_not_attend:'#eda100',cancelled:'#d1442f'};
 const ANNUAL_OWNER_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4'];
 let annualReportData=null;
+let annualReportRequest=0;
 function ensureAnnualYearOptions(){
   const sel=document.getElementById('annual-year');
   if(!sel)return;
@@ -10740,6 +10745,9 @@ function ensureAnnualYearOptions(){
   sel.innerHTML=years.map(y=>`<option value="${y}" ${y===cur?'selected':''}>${y}</option>`).join('');
 }
 async function loadAnnualReport(){
+  // Reloads overlap (year or period change, live refresh). Without this the
+  // slower read paints last and the report mixes two different years.
+  const request=++annualReportRequest;
   ensureAnnualYearOptions();
   const year=document.getElementById('annual-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('annual-month')?.value||'';
@@ -10748,8 +10756,10 @@ async function loadAnnualReport(){
   const{rows:raw,error}=await fetchAllRows(()=>SB.from('appointments')
     .select('*').gte('appt_date',`${year}-01-01`).lte('appt_date',`${year}-12-31`)
     .order('appt_date',{ascending:true}).order('appt_slot',{ascending:true}));
+  if(request!==annualReportRequest)return;
   if(error){if(body)body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load the annual report: '+htmlSafe(error.message)+'</div>';return;}
   const appts=await enrichAppointments(raw||[]);
+  if(request!==annualReportRequest)return;
 
   const statuses=['booked','attended','did_not_attend','cancelled'];
   const monthNums=['01','02','03','04','05','06','07','08','09','10','11','12'];
@@ -10798,12 +10808,14 @@ async function loadAnnualReport(){
   try{const{rows}=await getRecallWorklistRows();recallCount=rows.length;}catch(e){}
   try{const{count}=await SB.from('patients').select('id',{count:'exact',head:true});registered=count??'—';}catch(e){}
 
+  if(request!==annualReportRequest)return;
   annualReportData={year,month,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
   renderAnnualReport();
   // One registry read serves both the activity totals and the stoma-formation
   // table, rather than each fetching the whole register for itself.
   let patRows=null;
   try{const r=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));patRows=r.rows||[];}catch(e){patRows=null;}
+  if(request!==annualReportRequest)return;
   renderPeriodTotals('annual-period-totals',year,month,patRows);
   renderStomaFormationTable('annual-stoma-months',year,patRows);
 }
