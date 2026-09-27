@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-302';
+const APP_BUILD='2026.09.27-303';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5981,7 +5981,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   if(!isDntuEditMode){
-    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||''};
+    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[]};
     esGoStep(1);
     esCmpReviewChange();
     esAppReviewChange();
@@ -6140,6 +6140,13 @@ async function esFollowupNext(){
     if(err){err.hidden=false;err.textContent='Before moving on, confirm how complications were reviewed.';}
     return;
   }
+  // A complication ticked but not yet added would be lost on the next step, so
+  // record it now.
+  if(cmp==='new-added'&&!isNewCase&&!isDntu&&esState.patientId){
+    if(document.querySelectorAll('.of-cmp-multi:checked').length){
+      try{await onApptAddComplicationsMulti(esState.patientId);}catch(e){}
+    }
+  }
   const needsPicker=(app==='changed'||app==='first');
   const alreadyDone=!!(esResume&&esResume.apptId===String(esState.apptId)&&esResume.rows);
   if(!isNewCase&&!isDntu&&needsPicker&&esState.patientId&&!alreadyDone){
@@ -6186,6 +6193,7 @@ function esRenderReview(){
   // ticked in the add panel, and any existing ones being reviewed.
   const cmpText=el=>String(el.textContent||'').replace(/\s+/g,' ').trim();
   const cmpNames=[...new Set([
+    ...((esState&&esState.complications)?esState.complications.map(c=>String(c.text||c.title||'').trim()):[]),
     ...[...document.querySelectorAll('#of-cmp-list .cmp-title')].map(cmpText),
     ...[...document.querySelectorAll('.of-cmp-multi:checked')].map(b=>String(b.value||'').trim()),
     ...[...document.querySelectorAll('#of-cmp-existing .cmp-review-row .cmp-title')].map(cmpText)
@@ -14694,7 +14702,7 @@ async function onApptAddComplicationsMulti(patientId){
   if(failed.length)alert('Could not save: '+failed.join(', '));
   // Complications recorded — mark the step's complications answer as settled and
   // move the visit stepper on (once the appliance review is also answered).
-  if(lastList&&typeof esState!=='undefined'&&esState){esState.cmpAdded=true;esMaybeAutoAdvance();}
+  if(lastList&&typeof esState!=='undefined'&&esState){esState.cmpAdded=true;esState.complications=lastList;esMaybeAutoAdvance();}
 }
 /* Save one complication and refresh every view that might be showing the list —
    the picker, the appointment card, the patient card and the handover row — so
