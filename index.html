@@ -3187,7 +3187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-280';
+const APP_BUILD='2026.09.27-281';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10348,7 +10348,7 @@ async function loadReports(){
    status-change date, or — when the whole current year is selected and no date
    was recorded — surfaced there so an undated one is not lost. */
 let periodTotalsRequest=0;
-async function renderPeriodTotals(elId,year,month){
+async function renderPeriodTotals(elId,year,month,pats){
   // The report can be reloaded (year/month change, live refresh) while an older
   // read is still in flight. Without this guard the slower one paints last and
   // the totals end up describing a different period from the rest of the page.
@@ -10386,7 +10386,7 @@ async function renderPeriodTotals(elId,year,month){
   const isCurFullYear=!month&&Number(year)===curYear;
   const outcomeInPeriod=(dateVal,eff)=>{const d=dateVal||eff;return d?inRange(d):isCurFullYear;};
   try{
-    const{rows:allPats}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
+    const{rows:allPats}=pats?{rows:pats}:await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
     const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
     let rev=0,gozo=0,death=0,relo=0,deathNew=0;
     let stFormed=0,stColo=0,stIleo=0,stUro=0;
@@ -10800,7 +10800,12 @@ async function loadAnnualReport(){
 
   annualReportData={year,month,totals,monthRows,ownerRows,recallCount,registered,statuses,monthLabels};
   renderAnnualReport();
-  renderPeriodTotals('annual-period-totals',year,month);
+  // One registry read serves both the activity totals and the stoma-formation
+  // table, rather than each fetching the whole register for itself.
+  let patRows=null;
+  try{const r=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));patRows=r.rows||[];}catch(e){patRows=null;}
+  renderPeriodTotals('annual-period-totals',year,month,patRows);
+  renderStomaFormationTable('annual-stoma-months',year,patRows);
 }
 function annualKpi(label,value,sub,accent,metricKey){
   // When a metric key is passed the tile becomes clickable and opens the same
@@ -10869,8 +10874,63 @@ function renderAnnualReport(){
       ${legend}
       <details class="annual-collapse"><summary>Month by month</summary><div class="annual-collapse-body">${monthTable}</div></details>
       <details class="annual-collapse"><summary>By nurse / column</summary><div class="annual-collapse-body">${ownerTable}</div></details>
+      <details class="annual-collapse"><summary>Stoma formation by month</summary><div class="annual-collapse-body" id="annual-stoma-months"><div class="report-note">Loading stoma formations…</div></div></details>
       <div class="annual-foot">Follow-up split counts the column each appointment was booked into. DNTU = did not turn up. Attended rate is of all appointments that month, cancelled included.</div>
     </div>`;
+}
+/* Every stoma FORMED in the year, month by month and split by type. Each stoma
+   is counted on the date it was formed; a refashioning remakes an existing
+   stoma (it keeps that stoma's number) so it is not counted as a new one. */
+let annualStomaRequest=0;
+async function renderStomaFormationTable(elId,year,pats){
+  const request=++annualStomaRequest;
+  const el=document.getElementById(elId);
+  if(!el)return;
+  el.innerHTML='<div class="report-note">Loading stoma formations…</div>';
+  let rows=pats;
+  if(!rows){
+    try{const r=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));rows=r.rows||[];}
+    catch(e){el.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry for stoma formations.</div>';return;}
+  }
+  if(request!==annualStomaRequest)return;
+  const Y=String(year);
+  const GROUPS=['Colostomy','Ileostomy','Urostomy','Other'];
+  const colourOf=g=>((typeof DA_STOMA_GROUPS!=='undefined'&&DA_STOMA_GROUPS.find(x=>x.label===g))||{}).color||'#64748b';
+  const grid=Array.from({length:12},()=>({Colostomy:0,Ileostomy:0,Urostomy:0,Other:0,total:0}));
+  (rows||[]).forEach(p=>{
+    try{patientStomaList(p).forEach(st=>{
+      if(st.kind==='refashion')return;
+      const t=String(st.formed_date||'');
+      if(t.slice(0,4)!==Y)return;
+      const mi=Number(t.slice(5,7))-1;
+      if(!(mi>=0&&mi<12))return;
+      const g=daStomaGroup(st.type);
+      const k=GROUPS.indexOf(g)>=0?g:'Other';
+      grid[mi][k]++; grid[mi].total++;
+    });}catch(e){}
+  });
+  const names=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const colTotal=k=>grid.reduce((n,m)=>n+m[k],0);
+  const yearTotal=grid.reduce((n,m)=>n+m.total,0);
+  const mixBar=m=>{
+    const tot=m.total||1;
+    const segs=GROUPS.filter(g=>m[g]>0).map(g=>
+      `<span class="annual-seg" title="${htmlSafe(g)}: ${m[g]}" style="width:${(m[g]/tot*100).toFixed(1)}%;background:${colourOf(g)};"></span>`).join('');
+    return `<span class="annual-barwrap">${segs||'<span class="annual-seg empty"></span>'}</span>`;
+  };
+  const legend=`<div class="annual-legend">${GROUPS.map(g=>
+    `<span class="annual-leg"><span class="annual-dot" style="background:${colourOf(g)};"></span>${htmlSafe(g)}</span>`).join('')}</div>`;
+  el.innerHTML=`${legend}
+    <table class="dt annual-table"><thead><tr>
+      <th>Month</th>${GROUPS.map(g=>`<th>${htmlSafe(g)}</th>`).join('')}<th>Total</th><th style="min-width:130px;">Type mix</th></tr></thead><tbody>
+      ${grid.map((m,i)=>`<tr><td><strong>${htmlSafe(names[i])}</strong></td>
+        ${GROUPS.map(g=>`<td>${m[g]}</td>`).join('')}<td>${m.total}</td><td>${mixBar(m)}</td></tr>`).join('')}
+      <tr class="annual-total-row"><td><strong>Year</strong></td>
+        ${GROUPS.map(g=>`<td><strong>${colTotal(g)}</strong></td>`).join('')}
+        <td><strong>${yearTotal}</strong></td>
+        <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),Other:colTotal('Other'),total:yearTotal})}</td></tr>
+    </tbody></table>
+    <div class="report-note">Each stoma is counted in the month it was formed. A refashioning remakes an existing stoma, so it is not counted again here. “Other” covers a stoma whose recorded type does not read as colostomy, ileostomy or urostomy.</div>`;
 }
 function printAnnualReport(){
   if(!annualReportData){alert('The annual report is still loading.');return;}
