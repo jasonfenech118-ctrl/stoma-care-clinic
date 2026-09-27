@@ -3187,7 +3187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-279';
+const APP_BUILD='2026.09.27-280';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10347,7 +10347,12 @@ async function loadReports(){
    and overseas outcomes are counted by status, dated by their own field, the
    status-change date, or — when the whole current year is selected and no date
    was recorded — surfaced there so an undated one is not lost. */
+let periodTotalsRequest=0;
 async function renderPeriodTotals(elId,year,month){
+  // The report can be reloaded (year/month change, live refresh) while an older
+  // read is still in flight. Without this guard the slower one paints last and
+  // the totals end up describing a different period from the rest of the page.
+  const request=++periodTotalsRequest;
   const el=document.getElementById(elId);
   if(!el)return;
   const start=month?`${year}-${month}-01`:`${year}-01-01`;
@@ -10459,6 +10464,7 @@ async function renderPeriodTotals(elId,year,month){
       box('overseas','Relocated Overseas',relocatedInPeriod,`in ${htmlSafe(periodLabel)}`)
     ]}
   ];
+  if(request!==periodTotalsRequest)return;   // a newer period is already loading
   el.innerHTML=groups.map(g=>`<div class="totals-group"><div class="totals-group-h">${htmlSafe(g.title)}</div><div class="totals-grid">${g.tiles.join('')}</div></div>`).join('');
 }
 
@@ -10536,15 +10542,55 @@ function metricMonthly(key,year,d){
   else if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>addByDate(r.surgery_date));}
   else if(key==='inpatients'){(d.episodes||[]).forEach(e=>addByDate(e.record_date));}
   else if(key==='reversals'){(d.patients||[]).forEach(p=>{try{if(daStomaGroup(p.stoma_type)!=='Urostomy')[...new Set(stomaEndDates(p))].forEach(addByDate);}catch(e){}});}
-  else if(key==='deaths'){(d.patients||[]).forEach(p=>{if(!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased')addByDate(p.deceased_date);});}
-  else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{const dead=!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';if(dead&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.deceased_date);});}
-  else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date);});}
-  else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date);});}
+  else if(key==='deaths'){(d.patients||[]).forEach(p=>{if(metricIsDead(p))addByDate(p.deceased_date||p.followup_status_effective_date);});}
+  else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{if(metricIsDead(p)&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.deceased_date||p.followup_status_effective_date);});}
+  else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
+  else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
   else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='ileostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Ileostomy')addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
   return arr;
+}
+function metricIsDead(p){return !!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';}
+/* The total for a period, counted the same way the Annual Report tile counts it
+   — so clicking a box always opens on the number that was on the box.
+   Most measures are additive and their months sum to the total, but two kinds
+   are not: unique patients must be counted DISTINCTLY across the period (a
+   patient seen in five months is still one patient, so the months must never be
+   added up), and the status-based outcomes are dated by their own field, else by
+   the date the status was set, else — for a whole current year — counted anyway
+   so an undated one is not lost. */
+function metricPeriodTotal(key,period,d,monthly){
+  const year=String(period.year), month=period.month||'';
+  const start=month?`${year}-${month}-01`:`${year}-01-01`;
+  const end=month?monthEndDate(year,month):`${year}-12-31`;
+  const inRange=v=>{const t=String(v||'').slice(0,10);return !!t&&t>=start&&t<=end;};
+  const isCurFullYear=!month&&Number(year)===new Date().getFullYear();
+  const outcomeIn=(dateVal,eff)=>{const x=dateVal||eff;return x?inRange(x):isCurFullYear;};
+  if(key==='unique_patients')
+    return new Set((d.appts||[]).filter(a=>a.patient_id&&inRange(a.appt_date)).map(a=>a.patient_id)).size;
+  if(key==='deaths')
+    return (d.patients||[]).filter(p=>metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
+  if(key==='deaths_new')
+    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
+  if(key==='gozo')
+    return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
+  if(key==='overseas')
+    return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date)).length;
+  return month?(monthly[Number(month)-1]||0):monthly.reduce((a,b)=>a+b,0);
+}
+// Distinct patients seen from January up to each month — the honest cumulative
+// for unique patients, where a running sum of the monthly figures would be wrong.
+function metricCumulativeUnique(year,d){
+  const Y=String(year), seen=new Set(), out=[];
+  for(let i=0;i<12;i++){
+    const mm=String(i+1).padStart(2,'0');
+    (d.appts||[]).forEach(a=>{const t=String(a.appt_date||'');
+      if(a.patient_id&&t.slice(0,4)===Y&&t.slice(5,7)===mm)seen.add(a.patient_id);});
+    out.push(seen.size);
+  }
+  return out;
 }
 
 function openMetricCompare(metricKey){
@@ -10609,10 +10655,15 @@ async function renderMetricCompare(){
   const series=periods.map((p,i)=>{
     const monthly=metricMonthly(key,p.year,d);
     const color=metricPeriodColor(i);
+    const total=metricPeriodTotal(key,p,d,monthly);
     if(p.month){const mi=Number(p.month)-1;const line=new Array(12).fill(null);line[mi]=monthly[mi];
-      return {label:metricPeriodLabel(p),color,isMonth:true,mi,line,total:monthly[mi],monthly};}
-    return {label:metricPeriodLabel(p),color,isMonth:false,mi:-1,line:monthly,total:monthly.reduce((a,b)=>a+b,0),monthly};
+      return {label:metricPeriodLabel(p),color,isMonth:true,mi,line,total,monthly,year:p.year,summed:monthly[mi]||0};}
+    return {label:metricPeriodLabel(p),color,isMonth:false,mi:-1,line:monthly,total,monthly,year:p.year,summed:monthly.reduce((a,b)=>a+b,0)};
   });
+  // Unique patients never add up across months, and an undated outcome counts in
+  // the total but cannot sit on a month — say so rather than let the figures argue.
+  const distinctNote=key==='unique_patients';
+  const unplaced=series.some(s=>s.total>s.summed);
 
   // Headline stats per period, for the little summary cards at the top.
   const withStats=series.map(s=>{
@@ -10642,7 +10693,10 @@ async function renderMetricCompare(){
     <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Period</th>${MC_MON.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${htmlSafe(s.label)}</strong></td>${s.monthly.map((v,idx)=>(s.isMonth&&idx!==s.mi)?'<td style="color:#c8d0da;">·</td>':`<td>${v}</td>`).join('')}<td><strong>${s.total}</strong></td></tr>`).join('')}
     </tbody></table></div>
-    <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; an event with no date on file is not shown on the monthly trend. A single-month selection shows as one point.</div>`;
+    <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; a single-month selection shows as one point.${
+      distinctNote?' <strong>Unique Patients is a distinct count</strong> — a patient seen in several months is counted once in the total, so the months do not add up to it.'
+      :unplaced?' The total also includes events with no date on file, which cannot be placed on a month — so the months add up to less than the total.'
+      :''}</div>`;
 
   destroyChart('mc-line');destroyChart('mc-bar');destroyChart('mc-cumulative');destroyChart('mc-share');
   if(typeof Chart==='undefined')return;
@@ -10653,7 +10707,8 @@ async function renderMetricCompare(){
   if(anyYear){
     const cc=document.getElementById('mc-cumulative');
     if(cc)reportCharts['mc-cumulative']=new Chart(cc,{type:'line',
-      data:{labels:MC_MON,datasets:series.filter(s=>!s.isMonth).map(s=>{let run=0;const cum=s.monthly.map(v=>run+=v);
+      data:{labels:MC_MON,datasets:series.filter(s=>!s.isMonth).map(s=>{let run=0;
+        const cum=distinctNote?metricCumulativeUnique(s.year,d):s.monthly.map(v=>run+=v);
         return {label:s.label,data:cum,borderColor:s.color,backgroundColor:s.color,tension:.3,fill:false,borderWidth:2,pointRadius:1};})},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
   }
