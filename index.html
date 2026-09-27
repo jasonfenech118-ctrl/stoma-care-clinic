@@ -1586,6 +1586,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .mc-add select{padding:6px 10px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
 .mc-addbtn{padding:7px 14px;border:none;border-radius:7px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px;font-family:'Inter',sans-serif;}
 .mc-addbtn:hover{filter:brightness(1.05);}
+.mc-listbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 4px;}
 .mc-statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:4px 0 14px;}
 .mc-stat{background:#fbfdff;border:1px solid var(--border);border-radius:10px;padding:9px 11px;}
 .mc-stat-h{font-size:12px;font-weight:800;color:var(--navy);display:flex;align-items:center;gap:6px;}
@@ -3190,7 +3191,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-285';
+const APP_BUILD='2026.09.27-286';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10505,7 +10506,7 @@ function metricPeriodLabel(p){return p.month?`${MC_MON[Number(p.month)-1]} ${p.y
 function metricPeriodKey(p){return `${p.year}|${p.month||''}`;}
 function metricAddYearOptions(){const now=new Date().getFullYear();let o='';for(let y=now+1;y>=now-30;y--)o+=`<option value="${y}"${y===now?' selected':''}>${y}</option>`;return o;}
 
-let metricCompareState={metric:null,periods:[],data:null};
+let metricCompareState={metric:null,periods:[],data:null,showList:false};
 
 async function metricCompareEnsureData(years){
   // The patient, siting, episode and no-stoma tables are clinic-sized and their
@@ -10527,9 +10528,9 @@ async function metricCompareEnsureData(years){
     d.patients=rows||[]; d.fuType={};
     d.patients.forEach(p=>{d.fuType[p.id]=p.followup_type;});
   }
-  if(!d.sitings){try{const{rows}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,status'));d.sitings=rows||[];}catch(e){d.sitings=[];}}
-  if(!d.noStoma){try{const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('id,surgery_date'));d.noStoma=ns||[];}catch(e){d.noStoma=[];}}
-  if(!d.episodes){try{const{rows}=await fetchAllRows(()=>SB.from('clinical_records').select('id,record_date,kind').eq('kind','episode'));d.episodes=rows||[];}catch(e){d.episodes=[];}}
+  if(!d.sitings){try{const{rows}=await fetchAllRows(()=>SB.from('siting_sessions').select('*'));d.sitings=rows||[];}catch(e){d.sitings=[];}}
+  if(!d.noStoma){try{const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('*'));d.noStoma=ns||[];}catch(e){d.noStoma=[];}}
+  if(!d.episodes){try{const{rows}=await fetchAllRows(()=>SB.from('clinical_records').select('id,record_date,kind,patient_id').eq('kind','episode'));d.episodes=rows||[];}catch(e){d.episodes=[];}}
   return d;
 }
 
@@ -10620,6 +10621,100 @@ function metricCumulativeUnique(year,d){
   return out;
 }
 
+/* The individual records behind a figure — same rules as metricPeriodTotal, so
+   the list length equals the number on the box. Each row can be opened or
+   edited, which is also how an outcome with no date on file gets corrected. */
+function metricPeriodRecords(key,period,d){
+  const year=String(period.year), month=period.month||'';
+  const start=month?`${year}-${month}-01`:`${year}-01-01`;
+  const end=month?monthEndDate(year,month):`${year}-12-31`;
+  const inRange=v=>{const t=String(v||'').slice(0,10);return !!t&&t>=start&&t<=end;};
+  const isCurFullYear=!month&&Number(year)===new Date().getFullYear();
+  const outcomeIn=(dv,eff)=>{const x=dv||eff;return x?inRange(x):isCurFullYear;};
+  const pats=d.patients||[];
+  const byId={};pats.forEach(p=>{byId[String(p.id)]=p;});
+  const of=id=>byId[String(id)]||(id?{id}:null);
+  const st=p=>normaliseFollowupStatus(p.followup_status);
+  const out=[];
+  const push=(p,date,note)=>{if(p)out.push({p,date:date||null,note:note||''});};
+  if(key==='unique_patients'){
+    const seen=new Set();
+    (d.appts||[]).forEach(a=>{const k=String(a.patient_id||'');
+      if(a.patient_id&&inRange(a.appt_date)&&!seen.has(k)){seen.add(k);push(of(a.patient_id),a.appt_date,'first seen in period');}});
+    return out;
+  }
+  if(key==='appointments'||key==='attended'||key==='dntu'||key==='cancellations'||key==='followups'){
+    const want={attended:'attended',dntu:'did_not_attend',cancellations:'cancelled'}[key];
+    (d.appts||[]).forEach(a=>{
+      if(!inRange(a.appt_date))return;
+      if(want&&a.status!==want)return;
+      if(key==='followups'&&(a.status==='cancelled'||d.fuType[a.patient_id]==='new_case'))return;
+      push(of(a.patient_id),a.appt_date,statusLabel(a.status));
+    });
+    return out;
+  }
+  if(key==='deaths'){pats.forEach(p=>{if(metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
+    push(p,p.deceased_date||p.followup_status_effective_date,p.deceased_date?'died':'dated by status change');});return out;}
+  if(key==='deaths_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
+    push(p,p.deceased_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
+  if(key==='gozo'){pats.forEach(p=>{if(st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
+    push(p,p.discharged_gozo_date||p.followup_status_effective_date,p.discharged_gozo_date?'':'⚠ no discharge date on file');});return out;}
+  if(key==='gozo_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
+    push(p,p.discharged_gozo_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
+  if(key==='overseas'){pats.forEach(p=>{if(st(p)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date))
+    push(p,p.relocated_overseas_date||p.followup_status_effective_date,p.relocated_overseas_date?'':'⚠ no date on file');});return out;}
+  if(key==='reversals'){pats.forEach(p=>{try{
+    if(daStomaGroup(p.stoma_type)==='Urostomy')return;
+    [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
+  if(key==='reversals_new'){pats.forEach(p=>{try{patientStomaList(p).forEach(x=>{
+    if(x.kind!=='refashion'&&daStomaGroup(x.type||p.stoma_type)!=='Urostomy'&&inRange(x.formed_date)&&inRange(x.reversal_date))
+      push(p,x.reversal_date,'formed '+fmtShortDate(x.formed_date));});}catch(e){}});return out;}
+  if(key==='stomas_formed'||key==='colostomies'||key==='ileostomies'||key==='urostomies'){
+    const want={colostomies:'Colostomy',ileostomies:'Ileostomy',urostomies:'Urostomy'}[key];
+    pats.forEach(p=>{try{patientStomaList(p).forEach(x=>{
+      if(x.kind==='refashion'||!inRange(x.formed_date))return;
+      const g=daStomaGroup(x.type);
+      if(want&&g!==want)return;
+      push(p,x.formed_date,x.type||g||'stoma formed');});}catch(e){}});
+    return out;
+  }
+  if(key==='inpatients'){(d.episodes||[]).forEach(e=>{if(inRange(e.record_date))push(of(e.patient_id),e.record_date,'admission');});return out;}
+  if(key==='sitings'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&inRange(x.session_date))push(of(x.patient_id),x.session_date,'sited');});return out;}
+  if(key==='stoma_performed'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&x.stoma_formed===true&&inRange(x.session_date))push(of(x.patient_id),x.session_date,'stoma formed');});return out;}
+  if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>{if(inRange(r.surgery_date))push(of(r.patient_id),r.surgery_date,'no stoma formed');});return out;}
+  return out;
+}
+function metricToggleList(){
+  metricCompareState.showList=!metricCompareState.showList;
+  renderMetricCompare();
+}
+function metricRecordsHTML(key,d){
+  const periods=metricCompareState.periods||[];
+  return periods.map((p,i)=>{
+    const colour=metricPeriodColor(i);
+    const recs=metricPeriodRecords(key,p,d);
+    const shown=recs.slice(0,200);
+    const rows=shown.map(r=>{
+      const nm=`${r.p.first_name||''} ${r.p.surname||''}`.trim()||'—';
+      const warn=String(r.note||'').startsWith('⚠');
+      return `<tr>
+        <td>${htmlSafe(nm)}</td>
+        <td>${htmlSafe(r.p.id_card||'—')}</td>
+        <td>${r.date?htmlSafe(fmtShortDate(r.date)):'—'}</td>
+        <td${warn?' style="color:#b45309;font-weight:700;"':''}>${htmlSafe(r.note||'')}</td>
+        <td style="white-space:nowrap;">${r.p.id
+          ? `<button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="closeModal();openPatientRecord('${jsSafe(String(r.p.id))}')">View</button>
+             <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientDatesModal('${jsSafe(String(r.p.id))}')">Edit</button>`
+          : '—'}</td></tr>`;
+    }).join('');
+    return `<div style="margin-top:12px;">
+      <div class="mc-stat-h"><span class="annual-dot" style="background:${colour};"></span>${htmlSafe(metricPeriodLabel(p))} — <strong>${recs.length}</strong> record${recs.length!==1?'s':''}</div>
+      ${recs.length?`<div class="da-tw"><table class="dt"><thead><tr><th>Patient</th><th>ID Card</th><th>Date</th><th>Detail</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+        ${recs.length>200?`<div class="report-note">Showing the first 200 of ${recs.length}.</div>`:''}`
+        :'<div class="report-note">Nothing recorded for this period.</div>'}
+    </div>`;
+  }).join('');
+}
 function openMetricCompare(metricKey){
   if(!METRIC_LABELS[metricKey])return;
   metricCompareState.metric=metricKey;
@@ -10724,6 +10819,11 @@ async function renderMetricCompare(){
     <div style="overflow-x:auto;"><table class="dt"><thead><tr><th>Period</th>${MC_MON.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${series.map(s=>`<tr><td><span class="annual-dot" style="background:${s.color};"></span><strong>${htmlSafe(s.label)}</strong></td>${s.monthly.map((v,idx)=>(s.isMonth&&idx!==s.mi)?'<td style="color:#c8d0da;">·</td>':`<td>${v}</td>`).join('')}<td><strong>${s.total}</strong></td></tr>`).join('')}
     </tbody></table></div>
+    <div class="mc-listbar">
+      <button type="button" class="mc-addbtn" onclick="metricToggleList()">${metricCompareState.showList?'Hide the patients':'👥 Show the patients'}</button>
+      <span class="report-note" style="margin:0;">Open a record to read it, or edit it to correct a missing date.</span>
+    </div>
+    <div id="mc-records">${metricCompareState.showList?metricRecordsHTML(key,d):''}</div>
     <div class="report-note" style="margin-top:8px;">Counts are placed by their recorded date; a single-month selection shows as one point.${
       distinctNote?' <strong>Unique Patients is a distinct count</strong> — a patient seen in several months is counted once in the total, so the months do not add up to it.'
       :unplaced?' The total also includes events with no date on file, which cannot be placed on a month — so the months add up to less than the total.'
