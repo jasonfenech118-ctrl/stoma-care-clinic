@@ -3209,7 +3209,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-310';
+const APP_BUILD='2026.09.27-311';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11453,8 +11453,16 @@ const PATIENT_REQUIRED_FIELDS=[
   ['locality','Locality'],['date_of_birth','Date of birth'],
   ['consultant','Firm (consultant)'],['surgery_date','Date of surgery'],
   ['stoma_type','Stoma type'],['findings','Operation and findings']];
-function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!String(p?.[k]??'').trim()).map(([,label])=>label);}
-function patientIsIncomplete(p){return PATIENT_REQUIRED_FIELDS.some(([k])=>!String(p?.[k]??'').trim());}
+// The operation is recorded if EITHER "Operation performed" (procedure_performed)
+// or "Operation and findings" (findings) is filled — an imported patient often
+// carries the operation only in the former, so one standing in for the other
+// keeps the record from reading as incomplete.
+function patientFieldFilled(p,k){
+  if(k==='findings')return !!String(p?.findings??'').trim()||!!String(p?.procedure_performed??'').trim();
+  return !!String(p?.[k]??'').trim();
+}
+function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!patientFieldFilled(p,k)).map(([,label])=>label);}
+function patientIsIncomplete(p){return PATIENT_REQUIRED_FIELDS.some(([k])=>!patientFieldFilled(p,k));}
 // Each stoma refashioning that has been started must carry its required fields.
 function refashioningError(payload){
   return (payload?.extra_refashionings||[]).some(r=>!r.formed_date||!r.findings)
@@ -12932,6 +12940,7 @@ function patientFormHTML(p,prefix){
       <div class="fg"><label>Date of surgery *</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation performed <span style="font-weight:400;color:var(--muted);">(as the register / CPAS records it)</span></label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Formation of transverse loop colostomy"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
       <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
@@ -13211,8 +13220,11 @@ function pfCurrentStep(prefix){return Number(pfWiz(prefix)?.dataset.step||1);}
 function pfStepMissing(prefix,n){
   const step=PF_STEPS.find(s=>s.n===n);
   if(!step)return[];
-  return step.need.filter(([id])=>!String(document.getElementById(`${prefix}-${id}`)?.value||'').trim()
-    ||document.getElementById(`${prefix}-${id}`)?.value==='__add__');
+  const filled=id=>{const v=String(document.getElementById(`${prefix}-${id}`)?.value||'').trim();return !!v&&v!=='__add__';};
+  return step.need.filter(([id])=>
+    // "Operation and findings" is satisfied by "Operation performed" too, so a
+    // patient whose operation sits only in the latter can still move on.
+    id==='findings'?(!filled('findings')&&!filled('procedure')):!filled(id));
 }
 function pfShowStep(prefix,n){
   const wiz=pfWiz(prefix); if(!wiz)return;
@@ -13502,6 +13514,7 @@ function readPatientForm(prefix){
       superseded_date:r.querySelector('.ist-superseded')?.value||null,
       findings:(r.querySelector('.ist-findings')?.value||'').trim()||null
     })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.superseded_date||s.findings||s.reversal_notes),
+    procedure_performed:val('procedure')||null,
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
     refashion_formed_date:refRows[0]?.formed_date||null,
