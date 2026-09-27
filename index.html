@@ -3187,7 +3187,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-282';
+const APP_BUILD='2026.09.27-283';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10424,7 +10424,7 @@ async function renderPeriodTotals(elId,year,month,pats){
     stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
   }catch(e){console.warn('Siting totals failed',e);}
   try{
-    const{data:ns}=await SB.from('operations_no_stoma').select('surgery_date');
+    const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('id,surgery_date'));
     noStomaInPeriod=(ns||[]).filter(r=>inRange(r.surgery_date)).length;
   }catch(e){console.warn('No-stoma total failed',e);}
 
@@ -10517,7 +10517,7 @@ async function metricCompareEnsureData(years){
     d.patients.forEach(p=>{d.fuType[p.id]=p.followup_type;});
   }
   if(!d.sitings){try{const{rows}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,status'));d.sitings=rows||[];}catch(e){d.sitings=[];}}
-  if(!d.noStoma){try{const{data:ns}=await SB.from('operations_no_stoma').select('surgery_date');d.noStoma=ns||[];}catch(e){d.noStoma=[];}}
+  if(!d.noStoma){try{const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('id,surgery_date'));d.noStoma=ns||[];}catch(e){d.noStoma=[];}}
   if(!d.episodes){try{const{rows}=await fetchAllRows(()=>SB.from('clinical_records').select('id,record_date,kind').eq('kind','episode'));d.episodes=rows||[];}catch(e){d.episodes=[];}}
   return d;
 }
@@ -10748,6 +10748,9 @@ async function loadAnnualReport(){
   // Reloads overlap (year or period change, live refresh). Without this the
   // slower read paints last and the report mixes two different years.
   const request=++annualReportRequest;
+  // The comparison modal caches its reads; clear them so a box opened after a
+  // refresh cannot show figures older than the box itself.
+  metricCompareState.data=null;
   ensureAnnualYearOptions();
   const year=document.getElementById('annual-year')?.value||String(new Date().getFullYear());
   const month=document.getElementById('annual-month')?.value||'';
@@ -18500,7 +18503,7 @@ async function createSitingInpatientEpisode(pid,surgeryDate){
 async function loadNoStomaOps(){
   const body=document.getElementById('nostoma-body');
   if(!body)return;
-  const{data,error}=await SB.from('operations_no_stoma').select('*').order('surgery_date',{ascending:false});
+  const{rows:data,error}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('*').order('surgery_date',{ascending:false}));
   if(error){
     const missing=/operations_no_stoma|relation|does not exist|column/i.test(String(error.message||''));
     body.innerHTML=missing
@@ -19335,9 +19338,16 @@ const DA_STATUS_COLORS={
 };
 const DA_SERIES=[
   {key:'new_cases', label:'New cases',  color:'#0891b2', dateField:'surgery_date'},
-  {key:'reversals', label:'Reversals',  color:'#7c3aed', dateField:'reversal_date'},
-  {key:'deaths',    label:'Deaths',     color:'#c0392b', dateField:'deceased_date'}
+  // A urostomy is permanent, so it is never counted as a reversal — here as
+  // everywhere else in the audit.
+  {key:'reversals', label:'Reversals',  color:'#7c3aed', dateField:'reversal_date',
+   dateOf:p=>daStomaGroup(p.stoma_type)==='Urostomy'?null:p.reversal_date},
+  // Dated like the Annual Report: the death date, else the date the status was
+  // set, so the same death is not counted in one tab and missing from another.
+  {key:'deaths',    label:'Deaths',     color:'#c0392b', dateField:'deceased_date',
+   dateOf:p=>p.deceased_date||p.followup_status_effective_date}
 ];
+function daDateOf(s,p){return s&&s.dateOf?s.dateOf(p):p[s.dateField];}
 const DA_SEX_COLORS={Female:'#c2410c',Male:'#1d4ed8','Not recorded':'#94a3b8'};
 // Free-text stoma types are inconsistent — "End - Colostomy", "Sigmoid Loop
 // Colestomy", "Urostomy". Group them by the word that matters, and keep the
@@ -19413,7 +19423,7 @@ function daYearRange(){
   if(daYearsBack==='all'){
     let min=now;
     dataAnalysisRows.forEach(p=>DA_SERIES.forEach(s=>{
-      const y=daYear(p[s.dateField]); if(y&&y>=1950&&y<min)min=y;
+      const y=daYear(daDateOf(s,p)); if(y&&y>=1950&&y<min)min=y;
     }));
     return{from:min,to:now};
   }
@@ -19471,7 +19481,7 @@ function renderDataAnalysis(){
   DA_SERIES.forEach(s=>{
     counts[s.key]=years.map(()=>0);
     rows.forEach(p=>{
-      const y=daYear(p[s.dateField]);
+      const y=daYear(daDateOf(s,p));
       if(inRange(y))counts[s.key][y-from]++;
     });
   });
@@ -20948,10 +20958,10 @@ const MAP_METRICS=[
   {key:'colostomy',label:'Colostomy',   color:'#0891b2',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Colostomy',date:p=>p.surgery_date},
   {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Ileostomy',date:p=>p.surgery_date},
   {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Urostomy',date:p=>p.surgery_date},
-  {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased',date:p=>p.deceased_date},
+  {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased',date:p=>p.deceased_date||p.followup_status_effective_date},
   {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy',date:p=>p.reversal_date},
   {key:'agedeath', label:'Age at death',color:'#9d174d',kind:'avg',  unit:'years',   val:p=>p.deceased_date?mapAgeAt(p.date_of_birth,p.deceased_date):null,date:p=>p.deceased_date},
-  {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null,date:p=>p.reversal_date},
+  {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>(p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy')?mapAgeAt(p.date_of_birth,p.reversal_date):null,date:p=>p.reversal_date},
   {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date),date:p=>p.surgery_date}
 ];
 let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapDisplay='numbers';   // 'numbers' | 'names' | 'none'
