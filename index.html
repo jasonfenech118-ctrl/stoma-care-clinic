@@ -3193,7 +3193,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-294';
+const APP_BUILD='2026.09.27-295';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5899,7 +5899,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
           <span class="es-nm">${htmlSafe(nm)}</span>
           <span style="display:inline-flex;align-items:center;gap:8px;">
             <span class="es-summary-id">ID ${htmlSafe(p.id_card||'Not recorded')}</span>
-            ${p.id?`<button type="button" class="ncb-btn es-edit-patient" style="background:#e8f5f4;color:var(--teal);white-space:nowrap;" onclick="openPatientDatesModal('${jsSafe(String(p.id))}',{apptId:'${jsSafe(String(apptId||''))}',status:'${jsSafe(String(requestedStatus||''))}'})" title="Edit this patient's details">✎ Edit patient</button>`:''}
+            ${p.id?`<button type="button" class="ncb-btn es-edit-patient" style="background:#e8f5f4;color:var(--teal);white-space:nowrap;" onclick="esEditPatient('${jsSafe(String(p.id))}')" title="Edit this patient's details">✎ Edit patient</button>`:''}
           </span>
         </div>
         <div class="es-summary-details">
@@ -5979,6 +5979,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   filterApplianceList();
   updateApplianceSummary();
   updateApplianceVisibility();
+  if(!isDntuEditMode&&options.resume)esApplySnapshot(options.resume);
 }
 /* ── The Edit-appointment stepper (Attendance → Clinical review → Follow-up).
    It reorders the existing fields into panes shown one at a time; every field
@@ -5986,6 +5987,57 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
    as before. Clinical review is only offered for an attended visit. */
 let esState=null;
 let esResume=null;   // appliance rows recorded before Follow-up, carried into the final save
+/* Capture everything the visit modal is holding that is NOT yet saved to the
+   appointment — the step, the live follow-up fields, the clinical-review radios
+   and any appliance rows — so an excursion to Edit patient can drop the nurse
+   back exactly where they were. */
+function esSnapshot(){
+  if(!esState)return null;
+  const g=id=>{const el=document.getElementById(id);return el?el.value:undefined;};
+  const radio=name=>document.querySelector('input[name="'+name+'"]:checked')?.value||'';
+  return {apptId:esState.apptId,step:esState.step,cmpAdded:!!esState.cmpAdded,
+    fields:{'of-status':g('of-status'),'of-owner':g('of-owner'),'of-year':g('of-year'),
+      'of-month':g('of-month'),'of-followup-status':g('of-followup-status'),'of-nurse':g('of-nurse')},
+    cmp:radio('of-cmp-review'),app:radio('of-app-review'),next:radio('of-next'),
+    esResume:(esResume&&esResume.apptId===esState.apptId)?esResume:null};
+}
+function esApplySnapshot(snap){
+  if(!snap||!esState)return;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!==undefined&&v!==null&&v!=='')el.value=v;};
+  const f=snap.fields||{};
+  set('of-status',f['of-status']);
+  set('of-owner',f['of-owner']);
+  set('of-nurse',f['of-nurse']);
+  set('of-followup-status',f['of-followup-status']);
+  // Year drives the month options, so rebuild those before restoring the month.
+  if(f['of-year']){set('of-year',f['of-year']);try{refreshOutcomeMonthOptions();}catch(e){}}
+  set('of-month',f['of-month']);
+  // Restore the radios directly (not via their change handlers, which could
+  // auto-open the appliance picker) and reapply just their visible side effects.
+  const pick=(name,v)=>{if(!v)return;const el=document.querySelector('input[name="'+name+'"][value="'+v+'"]');if(el)el.checked=true;};
+  pick('of-cmp-review',snap.cmp);
+  const add=document.getElementById('of-cmp-add'); if(add)add.hidden=(snap.cmp!=='new-added');
+  pick('of-app-review',snap.app);
+  const note=document.getElementById('of-app-note');
+  if(note){const hints={first:'The appliance picker opens next, to record the first appliance / accessories.',unchanged:'The current appliance / accessories are kept and marked reviewed for this visit — the picker will not reopen.',changed:''};note.textContent=hints[snap.app]||'';}
+  pick('of-next',snap.next);
+  try{esNextChange();}catch(e){}
+  esState.cmpAdded=snap.cmpAdded;
+  if(snap.esResume)esResume=snap.esResume;
+  try{updateApplianceVisibility();}catch(e){}
+  try{updateOutcomeAvailabilityPreview();}catch(e){}
+  try{updateFollowupChangeWarning();}catch(e){}
+  esGoStep(snap.step||1);
+}
+/* Edit patient from the visit header: snapshot the visit, then open the details
+   form set to return here and restore that snapshot. */
+function esEditPatient(patientId){
+  if(!patientId)return;
+  const snap=esSnapshot();
+  const apptId=esState?esState.apptId:'';
+  const status=(document.getElementById('of-status')?.value)||(esState?esState.openedStatus:'')||'';
+  openPatientDatesModal(patientId,{apptId,status,resume:snap});
+}
 function esOutcomeAttended(){return (document.getElementById('of-status')?.value||'')==='attended';}
 function esStepsOrder(){return esOutcomeAttended()?[1,2,3,4]:[1,3];}
 function esGoStep(n){
@@ -13335,7 +13387,7 @@ let patientEditReturn=null;
    Any other opener passes no context, so it simply closes as before. */
 function pcdCancelOrReturn(){
   const ret=patientEditReturn; patientEditReturn=null;
-  if(ret&&ret.apptId)openOutcomeFollowupModal(ret.apptId,ret.status);
+  if(ret&&ret.apptId)openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
   else closeModal();
 }
 async function openPatientDatesModal(patientId,returnCtx){
@@ -13425,7 +13477,7 @@ async function savePatientDates(patientId){
   }
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
   const ret=patientEditReturn; patientEditReturn=null;
-  if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status);
+  if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
   else closeModal();
   refreshReminders();
   // If the record page is open, rebuild it so the edits show; otherwise refresh
