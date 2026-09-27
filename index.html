@@ -590,6 +590,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .rmap-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1.5px solid var(--border);border-radius:20px;background:white;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
 .rmap-chip:hover{border-color:var(--c);color:var(--navy);}
 .rmap-chip.on{background:var(--c);border-color:var(--c);color:white;}
+.rmap-select{padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;background:white;color:var(--navy);font-size:12px;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;outline:none;}
 .rmap-wrap{background:#eaf2fb;border:1px solid var(--border);border-radius:10px;padding:8px;margin-top:6px;}
 #rmap-svg{width:100%;height:auto;max-height:74vh;display:block;}
 .rmap-area{stroke:#fff;stroke-width:1.6;cursor:pointer;transition:fill .15s,stroke .15s;}
@@ -3178,7 +3179,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.26-276';
+const APP_BUILD='2026.09.27-277';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10369,6 +10370,7 @@ async function renderPeriodTotals(elId,year,month){
   }catch(e){console.warn('Patient total count not available',e);}
 
   let inpatientsInPeriod='—', reversalsInPeriod='—', gozoInPeriod='—', deathsInPeriod='—', relocatedInPeriod='—', deathsNewStomaInPeriod='—';
+  let stomasFormedInPeriod='—', colostomiesInPeriod='—', ileostomiesInPeriod='—', urostomiesInPeriod='—';
   const inRange=d=>{const s=String(d||'').slice(0,10);return !!s&&s>=start&&s<=end;};
   const curYear=new Date().getFullYear();
   const isCurFullYear=!month&&Number(year)===curYear;
@@ -10377,6 +10379,7 @@ async function renderPeriodTotals(elId,year,month){
     const{rows:allPats}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
     const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
     let rev=0,gozo=0,death=0,relo=0,deathNew=0;
+    let stFormed=0,stColo=0,stIleo=0,stUro=0;
     (allPats||[]).forEach(p=>{
       const st=normaliseFollowupStatus(p.followup_status);
       const eff=p.followup_status_effective_date;
@@ -10387,8 +10390,17 @@ async function renderPeriodTotals(elId,year,month){
       if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
       // Deaths where BOTH the stoma was performed and the death fell in this period.
       if(inRange(p.surgery_date)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
+      // Stomas actually formed in the period, split by type. Refashionings remake
+      // an existing stoma (they keep its number) so they are not counted as new.
+      try{patientStomaList(p).forEach(s=>{
+        if(s.kind==='refashion'||!inRange(s.formed_date))return;
+        stFormed++;
+        const g=daStomaGroup(s.type);
+        if(g==='Colostomy')stColo++; else if(g==='Ileostomy')stIleo++; else if(g==='Urostomy')stUro++;
+      });}catch(e){}
     });
     reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew;
+    stomasFormedInPeriod=stFormed; colostomiesInPeriod=stColo; ileostomiesInPeriod=stIleo; urostomiesInPeriod=stUro;
   }catch(e){console.warn('Outcome totals failed',e);}
   try{
     const{rows:eps}=await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode'));
@@ -10429,6 +10441,12 @@ async function renderPeriodTotals(elId,year,month){
       box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
       box('reversals','Reversals',reversalsInPeriod,`stomas reversed · ${htmlSafe(periodLabel)}`)
     ]},
+    {title:'Stomas formed by type',tiles:[
+      box('stomas_formed','Stomas Formed',stomasFormedInPeriod,`new stomas · ${htmlSafe(periodLabel)}`),
+      box('colostomies','Colostomies',colostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`),
+      box('ileostomies','Ileostomies',ileostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`),
+      box('urostomies','Urostomies',urostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`)
+    ]},
     {title:'Outcomes',tiles:[
       box('deaths','Deaths',deathsInPeriod,`died in ${htmlSafe(periodLabel)}`),
       box('deaths_new','Deaths (new stomas)',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
@@ -10451,7 +10469,9 @@ const METRIC_LABELS={
   inpatients:'Inpatients', reversals:'Reversals', deaths:'Deaths',
   deaths_new:'Deaths (new stomas)', gozo:'Discharged to Gozo',
   overseas:'Relocated Overseas', unique_patients:'Unique Patients',
-  total_patients:'Total Patients'
+  total_patients:'Total Patients',
+  stomas_formed:'Stomas Formed', colostomies:'Colostomies',
+  ileostomies:'Ileostomies', urostomies:'Urostomies'
 };
 const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff','#c026d3'];
 const MC_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -10515,6 +10535,10 @@ function metricMonthly(key,year,d){
   else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{const dead=!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';if(dead&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.deceased_date);});}
   else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date);});}
   else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date);});}
+  else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion')addByDate(s.formed_date);});}catch(e){}});}
+  else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
+  else if(key==='ileostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Ileostomy')addByDate(s.formed_date);});}catch(e){}});}
+  else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
   return arr;
 }
 
@@ -20751,20 +20775,50 @@ function mapAgeAt(dob,when){
   return m===null?null:Math.floor(m/12);
 }
 const MAP_METRICS=[
-  {key:'colostomy',label:'Colostomy',   color:'#0891b2',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Colostomy'},
-  {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Ileostomy'},
-  {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Urostomy'},
-  {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased'},
-  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy'},
-  {key:'agedeath', label:'Age at death',color:'#9d174d',kind:'avg',  unit:'years',   val:p=>p.deceased_date?mapAgeAt(p.date_of_birth,p.deceased_date):null},
-  {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null},
-  {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date)}
+  {key:'colostomy',label:'Colostomy',   color:'#0891b2',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Colostomy',date:p=>p.surgery_date},
+  {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Ileostomy',date:p=>p.surgery_date},
+  {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Urostomy',date:p=>p.surgery_date},
+  {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased',date:p=>p.deceased_date},
+  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy',date:p=>p.reversal_date},
+  {key:'agedeath', label:'Age at death',color:'#9d174d',kind:'avg',  unit:'years',   val:p=>p.deceased_date?mapAgeAt(p.date_of_birth,p.deceased_date):null,date:p=>p.deceased_date},
+  {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>p.reversal_date?mapAgeAt(p.date_of_birth,p.reversal_date):null,date:p=>p.reversal_date},
+  {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date),date:p=>p.surgery_date}
 ];
 let mapRows=[], mapMetric='colostomy', mapByArea={}, mapUnplaced=[], mapDisplay='numbers';   // 'numbers' | 'names' | 'none'
+let mapYear='', mapMonth='';   // '' = all time; otherwise filter each measure by its own date
 // Councils smaller than this are left unlabelled — the harbour towns are far
 // too small to carry their name, and they are still hoverable and clickable.
 const MAP_LABEL_MIN_AREA=1200;
 function mapMetricDef(){return MAP_METRICS.find(m=>m.key===mapMetric)||MAP_METRICS[0];}
+// Whether a patient falls inside the chosen period for a given measure — each
+// measure is dated by its own event (a stoma by its formation, a death by the
+// death date, a reversal by the reversal date). No year picked = all-time.
+function mapPeriodOK(m,p){
+  if(!mapYear)return true;
+  const ds=String((m&&m.date?m.date(p):'')||'').slice(0,10);
+  if(!ds)return false;
+  if(ds.slice(0,4)!==String(mapYear))return false;
+  if(mapMonth&&ds.slice(5,7)!==mapMonth)return false;
+  return true;
+}
+function mapCountHit(m,p){return m.hit(p)&&mapPeriodOK(m,p);}
+function mapPeriodLabel(){return mapYear?(mapMonth?`${followupMonthName(mapMonth)} ${mapYear}`:String(mapYear)):'all time';}
+function setMapPeriod(){
+  mapYear=document.getElementById('rmap-year')?.value||'';
+  mapMonth=document.getElementById('rmap-month')?.value||'';
+  renderRegistryMap();
+}
+function mapYearOptions(){
+  const now=new Date().getFullYear();let o='<option value="">All years</option>';
+  for(let y=now+1;y>=now-30;y--)o+=`<option value="${y}"${String(y)===String(mapYear)?' selected':''}>${y}</option>`;
+  return o;
+}
+function mapMonthOptions(){
+  const names=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let o='<option value="">Whole year</option>';
+  names.forEach((nm,i)=>{const v=String(i+1).padStart(2,'0');o+=`<option value="${v}"${v===mapMonth?' selected':''}>${nm}</option>`;});
+  return o;
+}
 
 async function loadRegistryMap(){
   const body=document.getElementById('rmap-body');
@@ -20796,8 +20850,8 @@ function setMapMetric(k){mapMetric=k;renderRegistryMap();}
 function mapValueFor(name){
   const m=mapMetricDef(), rows=mapByArea[name]||[];
   if(!rows.length)return null;
-  if(m.kind==='count'){return rows.filter(m.hit).length;}
-  const vals=rows.map(m.val).filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
+  if(m.kind==='count'){return rows.filter(p=>mapCountHit(m,p)).length;}
+  const vals=rows.filter(p=>mapPeriodOK(m,p)).map(m.val).filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
   if(!vals.length)return null;
   return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
 }
@@ -20896,20 +20950,23 @@ function renderRegistryMap(){
   const withVal=councils.map(a=>({a,v:mapValueFor(a.n)})).filter(r=>r.v!==null);
   const top=withVal.slice().sort((x,y)=>y.v-x.v)[0];
   const overall=(function(){
-    if(m.kind==='count')return mapRows.filter(m.hit).length;
-    const vs=mapRows.map(m.val).filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
+    if(m.kind==='count')return mapRows.filter(p=>mapCountHit(m,p)).length;
+    const vs=mapRows.filter(p=>mapPeriodOK(m,p)).map(m.val).filter(v=>v!==null&&v!==undefined&&!Number.isNaN(v));
     return vs.length?Math.round(vs.reduce((a,b)=>a+b,0)/vs.length):0;
   })();
 
   const chips=MAP_METRICS.map(x=>`<button class="rmap-chip ${x.key===mapMetric?'on':''}" style="--c:${x.color}"
       onclick="setMapMetric('${x.key}')"><span class="da-swatch" style="background:${x.color}"></span>${htmlSafe(x.label)}</button>`).join('');
 
+  // Clicking a locality opens it pre-filtered to whatever measure the map is on,
+  // so if the map shows Colostomy the locality opens on colostomy patients only.
+  const initFilter=['colostomy','ileostomy','urostomy','deaths','reversals'].includes(mapMetric)?mapMetric:'';
   const paths=MALTA_MAP.areas.map(a=>{
     const v=mapValueFor(a.n), t=mapT(v,sc);
     const fill=v===null?(a.holiday?'#fde7c8':'#dbe4ee'):mapShade(a.holiday?'#e8892b':m.color,t);
     return `<path d="${a.d}" fill="${fill}" class="rmap-area${a.holiday?' rmap-holiday':''}" tabindex="0"
       onmouseenter="mapHover('${jsSafe(a.n)}',${v===null?'null':v})" onmouseleave="mapHover('')"
-      onclick="openMapLocalityModal('${jsSafe(a.n)}')"><title>${htmlSafe(a.n)} — ${v===null?'no data':htmlSafe(v+' '+m.unit)}</title></path>`;
+      onclick="openMapLocalityModal('${jsSafe(a.n)}','${initFilter}')"><title>${htmlSafe(a.n)} — ${v===null?'no data':htmlSafe(v+' '+m.unit)}</title></path>`;
   }).join('');
   // The fictitious "On Holiday" island always carries its label, so it reads as
   // itself whatever the Show mode.
@@ -20926,6 +20983,10 @@ function renderRegistryMap(){
   body.innerHTML=`
     <div class="da-controls">
       <div class="da-control-row"><span class="da-control-label">Measure</span>${chips}</div>
+      <div class="da-control-row"><span class="da-control-label">Period</span>
+        <select id="rmap-year" onchange="setMapPeriod()" class="rmap-select">${mapYearOptions()}</select>
+        <select id="rmap-month" onchange="setMapPeriod()" class="rmap-select">${mapMonthOptions()}</select>
+        <span class="da-range">${mapYear?`Counting only ${htmlSafe(m.label)} dated in <strong>${htmlSafe(mapPeriodLabel())}</strong>.`:'All-time totals. Pick a year (and month) to count only that period.'}</span></div>
       <div class="da-control-row"><span class="da-control-label">Show</span>
         <button class="rmap-chip ${mapDisplay==='numbers'?'on':''}" style="--c:#1a2e4a" onclick="setMapDisplay('numbers')">Numbers</button>
         <button class="rmap-chip ${mapDisplay==='names'?'on':''}" style="--c:#1a2e4a" onclick="setMapDisplay('names')">Names</button>
@@ -20940,7 +21001,7 @@ function renderRegistryMap(){
       ${annualKpi('Patients placed',placed,`of ${mapRows.length} on the register`)}
     </div>
     <div class="report-card wide" data-rmap-card>
-      <h3>${htmlSafe(m.label)} by locality</h3>
+      <h3>${htmlSafe(m.label)} by locality${mapYear?` · ${htmlSafe(mapPeriodLabel())}`:''}</h3>
       <div class="report-note">Pale is the lowest number, dark the highest. Grey-blue means no patient recorded in that council.</div>
       <div class="rmap-legend"><span>${sc.has?(m.kind==='count'?'0':sc.lo):'0'}</span>${steps}<span>${sc.has?sc.hi:0} ${htmlSafe(m.unit)}</span></div>
       <div id="rmap-hover" class="rmap-hover">Hover a locality for its name and number, click it for the full summary.</div>
@@ -20964,9 +21025,9 @@ function openMapLocalityModal(name,filter){
   const allRows=mapByArea[name]||[];
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  const cnt=k=>{const m=MAP_METRICS.find(x=>x.key===k);return allRows.filter(m.hit).length;};
+  const cnt=k=>{const m=MAP_METRICS.find(x=>x.key===k);return allRows.filter(p=>mapCountHit(m,p)).length;};
   const avg=k=>{const m=MAP_METRICS.find(x=>x.key===k);
-    const v=allRows.map(m.val).filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x));
+    const v=allRows.filter(p=>mapPeriodOK(m,p)).map(m.val).filter(x=>x!==null&&x!==undefined&&!Number.isNaN(x));
     return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length)+' '+m.unit+' (n='+v.length+')':'—';};
   const active=allRows.filter(p=>p.st==='active').length;
   // The count tiles are clickable filters; the average tiles are read-only.
@@ -20974,12 +21035,13 @@ function openMapLocalityModal(name,filter){
     return `<div class="psm-ditem" role="button" tabindex="0" title="Show only ${htmlSafe(label)} patients" onclick="setMapLocalityFilter('${key}')" style="cursor:pointer;border-radius:8px;padding:4px 6px;${on?'background:#e8f5f4;box-shadow:inset 0 0 0 1px #0d9488;':''}"><dt>${htmlSafe(label)}</dt><dd>${cnt(key)}</dd></div>`;};
   const avgLine=(l,v)=>`<div class="psm-ditem"><dt>${htmlSafe(l)}</dt><dd>${v}</dd></div>`;
   const fMetric=mapLocalityState.filter?MAP_METRICS.find(x=>x.key===mapLocalityState.filter):null;
-  const rows=fMetric?allRows.filter(fMetric.hit):allRows;
+  const rows=fMetric?allRows.filter(p=>mapCountHit(fMetric,p)):allRows;
   // A urostomy is permanent — while viewing urostomy patients the reversal figures
   // do not apply, so they are hidden.
   const uro=mapLocalityState.filter==='urostomy';
+  const periodTag=mapYear?` · <span style="color:var(--teal);font-weight:800;">${htmlSafe(mapPeriodLabel())}</span>`:'';
   mb.innerHTML=`<h2>🗺 ${htmlSafe(name)}</h2>
-    <div class="msub"><strong>${allRows.length}</strong> patient${allRows.length!==1?'s':''} on the register from this locality · ${active} still in follow-up</div>
+    <div class="msub"><strong>${allRows.length}</strong> patient${allRows.length!==1?'s':''} on the register from this locality · ${active} still in follow-up${periodTag}</div>
     ${allRows.length?`<dl class="psm-dgrid" style="margin:0 0 10px;">
       ${tile('colostomy','Colostomy')}
       ${tile('ileostomy','Ileostomy')}
@@ -20991,8 +21053,8 @@ function openMapLocalityModal(name,filter){
       ${avgLine('Hospital days',avg('hospdays'))}
     </dl>
     <div class="report-note" style="margin:0 0 8px;">${fMetric
-      ?`Showing <strong>${rows.length}</strong> ${htmlSafe(fMetric.label)} patient${rows.length!==1?'s':''} · <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="setMapLocalityFilter('${mapLocalityState.filter}')">Show all</button>`
-      :'Tap a stat above to filter the list. Tap <strong>View</strong> to open a patient read-only, or <strong>Edit</strong> to change their record.'}</div>
+      ?`Showing <strong>${rows.length}</strong> ${htmlSafe(fMetric.label)} patient${rows.length!==1?'s':''}${mapYear?` in ${htmlSafe(mapPeriodLabel())}`:''} · <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="setMapLocalityFilter('${mapLocalityState.filter}')">Show all</button>`
+      :`Tap a stat above to filter the list${mapYear?' (figures count '+htmlSafe(mapPeriodLabel())+')':''}. Tap <strong>View</strong> to open a patient read-only, or <strong>Edit</strong> to change their record.`}</div>
     <div class="da-tw"><table class="dt"><thead><tr><th>Patient</th><th>Stoma</th><th>Surgery</th><th>Status</th><th></th></tr></thead><tbody>
       ${rows.slice(0,60).map(p=>`<tr><td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim()||'—')}</td>
         <td>${htmlSafe(p.stoma_type||'—')}</td><td>${p.surgery_date?htmlSafe(fmtShortDate(p.surgery_date)):'—'}</td>
