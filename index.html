@@ -3209,7 +3209,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-311';
+const APP_BUILD='2026.09.27-312';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11452,13 +11452,22 @@ const PATIENT_REQUIRED_FIELDS=[
   ['first_name','First name'],['surname','Surname'],['sex','Sex'],
   ['locality','Locality'],['date_of_birth','Date of birth'],
   ['consultant','Firm (consultant)'],['surgery_date','Date of surgery'],
-  ['stoma_type','Stoma type'],['findings','Operation and findings']];
-// The operation is recorded if EITHER "Operation performed" (procedure_performed)
-// or "Operation and findings" (findings) is filled — an imported patient often
-// carries the operation only in the former, so one standing in for the other
-// keeps the record from reading as incomplete.
+  ['stoma_type','Stoma type'],['procedure_performed','Operation performed']];
+// The operation used to live in two boxes — "Operation performed"
+// (procedure_performed, what the register/CPAS writes) and "Operation and
+// findings" (findings). They are now one field on the form, so this joins the
+// two stored values into that single line, keeping both if a record still
+// carries each separately.
+function patientOperationText(p){
+  const a=String(p&&p.procedure_performed||'').trim(), b=String(p&&p.findings||'').trim();
+  return (a&&b&&a!==b)?`${a} — ${b}`:(a||b);
+}
+// The operation is recorded if EITHER of the two stored fields is filled — an
+// imported patient often carries it only in procedure_performed, an older record
+// only in findings — so one standing in for the other keeps the record from
+// reading as incomplete even though the form now shows a single box.
 function patientFieldFilled(p,k){
-  if(k==='findings')return !!String(p?.findings??'').trim()||!!String(p?.procedure_performed??'').trim();
+  if(k==='procedure_performed')return !!String(p?.procedure_performed??'').trim()||!!String(p?.findings??'').trim();
   return !!String(p?.[k]??'').trim();
 }
 function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!patientFieldFilled(p,k)).map(([,label])=>label);}
@@ -12867,7 +12876,7 @@ const PF_STEPS=[
    need:[['first','First name'],['surname','Surname'],['idcard','ID card'],['sex','Sex'],
          ['locality','Locality'],['dob','Date of birth'],['consultant','Firm (consultant)']]},
   {n:2,key:'stoma',title:'Stoma',sub:'The operation',
-   need:[['stoma','Stoma type'],['surgery','Date of surgery'],['findings','Operation and findings']]}
+   need:[['stoma','Stoma type'],['surgery','Date of surgery'],['procedure','Operation performed and findings']]}
 ];
 function pfStepperHTML(prefix){
   return `<ol class="pf-steps" id="${prefix}-steps">`+PF_STEPS.map(s=>
@@ -12940,8 +12949,7 @@ function patientFormHTML(p,prefix){
       <div class="fg"><label>Date of surgery *</label><input type="date" id="${prefix}-surgery" value="${v('surgery_date')}" onchange="renumberStomaRows('${prefix}')"/></div>
       <div class="fg"><label>Stoma location</label><select id="${prefix}-stomaloc" onchange="stomaLocAdd(this)">${stomaLocOptions(p?.stoma_location)}</select></div>
       <div class="fg"><label>Date of discharge</label><input type="date" id="${prefix}-discharge" value="${v('discharge_date')}"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation performed <span style="font-weight:400;color:var(--muted);">(as the register / CPAS records it)</span></label><input type="text" id="${prefix}-procedure" value="${v('procedure_performed')}" placeholder="e.g. Formation of transverse loop colostomy"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings *</label><input type="text" id="${prefix}-findings" value="${v('findings')}" placeholder="e.g. Hartmann's — CA Rectum"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>Operation performed and findings * <span style="font-weight:400;color:var(--muted);">(as the register / CPAS records it)</span></label><input type="text" id="${prefix}-procedure" value="${htmlSafe(patientOperationText(p))}" placeholder="e.g. Formation of transverse loop colostomy — CA rectum"/></div>
       <div class="fg" id="${prefix}-reversalwrap"><label>Date this stoma was reversed <span style="font-weight:400;color:var(--muted);">(leave blank if still present)</span></label>
         <input type="date" id="${prefix}-reversal" value="${v('reversal_date')}" onchange="onPatientFormDate('${prefix}','reversed')"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Reversal notes <span style="font-weight:400;color:var(--muted);">(what was done at the reversal)</span></label>
@@ -13220,11 +13228,8 @@ function pfCurrentStep(prefix){return Number(pfWiz(prefix)?.dataset.step||1);}
 function pfStepMissing(prefix,n){
   const step=PF_STEPS.find(s=>s.n===n);
   if(!step)return[];
-  const filled=id=>{const v=String(document.getElementById(`${prefix}-${id}`)?.value||'').trim();return !!v&&v!=='__add__';};
-  return step.need.filter(([id])=>
-    // "Operation and findings" is satisfied by "Operation performed" too, so a
-    // patient whose operation sits only in the latter can still move on.
-    id==='findings'?(!filled('findings')&&!filled('procedure')):!filled(id));
+  return step.need.filter(([id])=>!String(document.getElementById(`${prefix}-${id}`)?.value||'').trim()
+    ||document.getElementById(`${prefix}-${id}`)?.value==='__add__');
 }
 function pfShowStep(prefix,n){
   const wiz=pfWiz(prefix); if(!wiz)return;
@@ -13514,6 +13519,9 @@ function readPatientForm(prefix){
       superseded_date:r.querySelector('.ist-superseded')?.value||null,
       findings:(r.querySelector('.ist-findings')?.value||'').trim()||null
     })).filter(s=>s.type||s.location||s.discharge_date||s.reversal_date||s.superseded_date||s.findings||s.reversal_notes),
+    // The operation is one field on the form now — it saves to procedure_performed,
+    // and findings (the old second box) is folded into it, so it is cleared here
+    // (val('findings') reads the box that no longer exists → null).
     procedure_performed:val('procedure')||null,
     findings:val('findings')||null,
     refashion_closure_date:refRows[0]?.closure_date||null,
