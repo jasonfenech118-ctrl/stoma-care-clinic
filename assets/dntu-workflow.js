@@ -84,6 +84,14 @@ function dntuRemovePastEvent(i){
   (dntuNurseState.pastEvents||[]).splice(i,1);
   dntuRenderForm();
 }
+// Re-read the fields and repaint so the count, the "when you save" note and the
+// button keep up as a date or the time is entered — otherwise they show the
+// figure from the last repaint and a third miss can look like a second.
+function dntuRecount(){
+  if(!dntuNurseState||dntuNurseState.saving)return;
+  dntuRememberFields();
+  dntuRenderForm();
+}
 function dntuRenderForm(){
   const s=dntuNurseState;if(!s)return;
   const c=dntuFormContext(s);
@@ -92,7 +100,7 @@ function dntuRenderForm(){
   const p=s.p,name=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const pastRows=(s.pastEvents||[]).map((d,i)=>`<div class="dw-past-row">
       <div class="fg dw-full"><label for="dw-past-${i}">Previous DNTU event date *</label>
-        <input id="dw-past-${i}" class="dw-past-date" type="date" max="${TODAY}" value="${htmlSafe(d||'')}"/></div>
+        <input id="dw-past-${i}" class="dw-past-date" type="date" max="${TODAY}" value="${htmlSafe(d||'')}" onchange="dntuRecount()"/></div>
       <button type="button" class="dw-past-remove" title="Remove this date" onclick="dntuRemovePastEvent(${i})">✕</button>
     </div>`).join('');
   const actionSummary=`${already?'Keep':'Mark'} ${dntuWhen(s.date,s.slot)} as ${dntuOrdinal(c.target)} DNTU.`;
@@ -102,8 +110,8 @@ function dntuRenderForm(){
   mb.innerHTML=`<h2>Did not turn up <span class="dw-abbr">DNTU</span></h2>
     <div class="dw-patient"><strong>${htmlSafe(name)}</strong><span>ID: ${htmlSafe(p.id_card||'—')}${p.phone_number?` · ${htmlSafe(p.phone_number)}`:''}</span></div>
     <section class="dw-current"><h3>Missed appointment</h3><div class="dw-fields">
-      <div class="fg"><label for="dw-date">Date *</label><input id="dw-date" type="date" value="${htmlSafe(s.date)}" max="${TODAY}" ${already?'disabled':''}/></div>
-      <div class="fg"><label for="dw-slot">Time *</label><input id="dw-slot" type="time" value="${htmlSafe(s.slot)}" ${already?'disabled':''}/></div>
+      <div class="fg"><label for="dw-date">Date *</label><input id="dw-date" type="date" value="${htmlSafe(s.date)}" max="${TODAY}" ${already?'disabled':''} onchange="dntuRecount()"/></div>
+      <div class="fg"><label for="dw-slot">Time *</label><input id="dw-slot" type="time" value="${htmlSafe(s.slot)}" ${already?'disabled':''} onchange="dntuRecount()"/></div>
       <div class="fg dw-full"><label for="dw-owner">Nurse owner</label><select id="dw-owner" class="followup-owner-plain">${followupOwnerOptions(s.owner)}</select></div>
     </div></section>
     <div class="dw-count" role="status">This is the <strong>${dntuOrdinal(c.target)}</strong> missed appointment in a row.${willPause?' <span class="dw-count-warn">Follow-up will be paused.</span>':''}</div>
