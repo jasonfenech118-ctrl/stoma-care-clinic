@@ -3203,7 +3203,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.27-299';
+const APP_BUILD='2026.09.27-300';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5589,22 +5589,12 @@ function complicationReviewSectionHTML(patient,complicationsNow,preset){
     </div>`;
 }
 function applianceReviewSectionHTML(appt,patient,preset,hasAppliance){
-  const r=preset||'';
-  const choice=(v,label)=>`<label><input type="radio" name="of-app-review" value="${v}" ${r===v?'checked':''} onchange="esAppReviewChange()"> ${label}</label>`;
-  // No appliance ever recorded → there is no choice to make: the one-piece /
-  // two-piece and accessory pages open automatically next. "first" is pre-set
-  // (hidden) so the flow proceeds without a redundant tap.
-  if(!hasAppliance){
-    return `${visitApplianceSummaryHTML(appt,patient)}
-      <input type="radio" name="of-app-review" value="first" checked hidden>
-      <div class="dntu-note" id="of-app-note" style="margin-top:6px;">No appliance is on record — the one-piece / two-piece and accessory pages open next to record the first one.</div>`;
-  }
-  // An appliance is on record → keep it or change it ("Add first" is hidden).
-  return `${visitApplianceSummaryHTML(appt,patient)}
-    <div class="es-review-choice" id="of-app-review">
-      ${choice('unchanged','Continue with current appliance / accessories')}${choice('changed','Appliance / accessories modifications')}
-    </div>
-    <div class="dntu-note" id="of-app-note" style="margin-top:6px;"></div>`;
+  // The appliance & accessories review is no longer a step-2 choice — pressing
+  // 'Next: Follow-up' opens the appliance / accessories picker directly. This
+  // hidden marker keeps the save path and the open-on-Next logic working; it
+  // carries the current appliance forward when there is one, else records the
+  // first. Value 'changed' avoids the auto-open branch in esAppReviewChange.
+  return `<input type="radio" name="of-app-review" value="${hasAppliance?'changed':'first'}" checked hidden>`;
 }
 function applianceSectionHTML(appliances,accessories){
   const selApp=parseNameList(appliances),selAcc=parseNameList(accessories);
@@ -5991,13 +5981,13 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   filterApplianceList();
   updateApplianceSummary();
   updateApplianceVisibility();
-  esFillSummaryExtras(p,complicationsNow);
+  esFillSummaryExtras(p,complicationsNow,appt);
   if(!isDntuEditMode&&options.resume)esApplySnapshot(options.resume);
 }
 /* The visit summary card's live extras: the complications on record and the
    appliance & accessories most recently recorded, filled in after the modal
    opens so the header shows them without going to Edit patient. */
-async function esFillSummaryExtras(p,comps){
+async function esFillSummaryExtras(p,comps,appt){
   const cel=document.getElementById('es-summary-complications');
   if(cel){
     const names=(comps||[]).map(c=>String(c.text||c.title||'').trim()).filter(Boolean);
@@ -6005,27 +5995,42 @@ async function esFillSummaryExtras(p,comps){
     cel.classList.toggle('warn',names.length>0);
   }
   const ael=document.getElementById('es-summary-appliance');
-  if(ael&&p&&p.id){
+  if(!ael)return;
+  let appNames=[],accNames=[];
+  const fromRows=rows=>{
+    if(Array.isArray(rows)&&rows.some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length))){
+      appNames=[...new Set(rows.flatMap(r=>r.appliances||[]))];
+      accNames=[...new Set(rows.flatMap(r=>r.accessories||[]))];
+      return true;
+    }
+    return false;
+  };
+  let found=false;
+  // 1) An appliance just recorded in the picker but not yet saved (this appt).
+  if(esResume&&esResume.rows&&(!esState||String(esResume.apptId)===String(esState.apptId)))found=fromRows(esResume.rows);
+  // 2) What is already saved on THIS appointment.
+  if(!found&&appt){
+    let rows=appt.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+    found=fromRows(rows);
+    if(!found){const fa=parseNameList(appt.appliances),fac=parseNameList(appt.accessories);if(fa.length||fac.length){appNames=fa;accNames=fac;found=true;}}
+  }
+  // 3) The most recent earlier record that has any.
+  if(!found&&p&&p.id){
     try{
       const{data:appts}=await SB.from('appointments')
         .select('appt_date,appliances,accessories,stoma_appliances')
         .eq('patient_id',p.id).order('appt_date',{ascending:false}).limit(40);
-      let appNames=[],accNames=[];
       for(const a of (appts||[])){
         let rows=a.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
-        if(Array.isArray(rows)&&rows.some(r=>(r.appliances&&r.appliances.length)||(r.accessories&&r.accessories.length))){
-          appNames=[...new Set(rows.flatMap(r=>r.appliances||[]))];
-          accNames=[...new Set(rows.flatMap(r=>r.accessories||[]))];
-        }else{
-          appNames=parseNameList(a.appliances); accNames=parseNameList(a.accessories);
-        }
-        if(appNames.length||accNames.length)break;
+        if(fromRows(rows)){found=true;break;}
+        const fa=parseNameList(a.appliances),fac=parseNameList(a.accessories);
+        if(fa.length||fac.length){appNames=fa;accNames=fac;found=true;break;}
         appNames=[]; accNames=[];
       }
-      const parts=[...appNames,...accNames.filter(n=>n&&n!=='None')].filter(Boolean);
-      ael.textContent=parts.length?parts.join(', '):'None recorded';
-    }catch(e){ael.textContent='—';}
+    }catch(e){ael.textContent='—';return;}
   }
+  const parts=[...appNames,...accNames.filter(n=>n&&n!=='None')].filter(Boolean);
+  ael.textContent=parts.length?parts.join(', '):'None recorded';
 }
 /* ── The Edit-appointment stepper (Attendance → Clinical review → Follow-up).
    It reorders the existing fields into panes shown one at a time; every field
@@ -6124,9 +6129,9 @@ async function esFollowupNext(){
   const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
   const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
   const isDntu=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
-  if(!isNewCase&&!isDntu&&(!cmp||!app)){
+  if(!isNewCase&&!isDntu&&!cmp){
     const err=document.getElementById('of-review-error');
-    if(err){err.hidden=false;err.textContent='Before moving on, confirm how complications were reviewed and how appliances were reviewed.';}
+    if(err){err.hidden=false;err.textContent='Before moving on, confirm how complications were reviewed.';}
     return;
   }
   const needsPicker=(app==='changed'||app==='first');
@@ -6281,15 +6286,9 @@ function esAppReviewChange(){
    complication" keep the manual Next (the nurse is still entering details). Back
    is always available on the following page. */
 function esMaybeAutoAdvance(){
-  if(!esState||esState.step!==2||!esOutcomeAttended())return;
-  const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
-  // Advance once the complications answer is settled — none, or identified and
-  // added — and the appliance review has been chosen.
-  const cmpDone=(cmp==='none')||(cmp==='new-added'&&esState.cmpAdded);
-  if(cmpDone&&app){
-    setTimeout(()=>{if(esState&&esState.step===2)esFollowupNext();},140);
-  }
+  // The appliance picker now opens only when the nurse presses 'Next: Follow-up',
+  // so step 2 no longer auto-advances on its own.
+  return;
 }
 /* Step 3 (Follow-up) begins with "what happens next?". Each choice reveals the
    controls it needs: a due-month plan, an exact booking, or neither. It never
