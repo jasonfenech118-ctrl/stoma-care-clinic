@@ -755,7 +755,10 @@
       }
     }
 
-    // The appliance/accessory in use — already composed in house style upstream
+    // The appliance/accessory in use — already composed in house style upstream,
+    // covering every stoma. When it is present the wizard reflects it rather than
+    // asking the one-piece/two-piece system and rebuilding a single appliance.
+    WZ.applianceFromRecord = !!appliance;
     if(appliance) setApplianceSlot(appliance);
     // …and the same items matched onto the letter's own catalogue, so the
     // wizard's system, appliance and accessory pages open already answered.
@@ -1069,7 +1072,12 @@
       urostomyStents:"no", rodInSitu:"no", rodRemovalDate:"", mucusFistula:"", mucusFistulaLocations:[],
       system:"", onePieceIdx:"", onePieceSize:"", onePieceOutlet:"",
       baseplateIdx:"", baseplateSize:"", nextChange:"", nextChangeLater:"", bagIdx:"", bagOutlet:"", bagsShowAll:false,
-      accessories:[], fillerFrom:"", fillerTo:""
+      accessories:[], fillerFrom:"", fillerTo:"",
+      // Set when the patient's current appliance is passed in from the record. The
+      // letter then reflects that appliance (every stoma's, for a multi-stoma
+      // patient) and the one-piece/two-piece and appliance-picking pages are
+      // omitted rather than rebuilding a single appliance that drops the rest.
+      applianceFromRecord:false
     };
   }
 
@@ -1111,7 +1119,12 @@
     if(typeHasSubtype(WZ.type)) head.push("subtype");
     head = head.concat(["patient","surgery","stoma"]);
     if(WZ.type !== 'urostomy') head.push("mucusFistula");
-    head = head.concat(["skin","teaching","system"]);
+    head = head.concat(["skin","teaching"]);
+    // The current appliance is already known from the record and shown in the
+    // letter, so the system and appliance-picking pages are omitted — asking them
+    // would only rebuild a single appliance and lose a second stoma's.
+    if(WZ.applianceFromRecord) return head;
+    head = head.concat(["system"]);
     if(WZ.system === 'two'){
       var twoTail = ["baseplate"];
       var selectedBase = CAT.baseplates[parseInt(WZ.baseplateIdx,10)] || null;
@@ -1696,20 +1709,25 @@
       body.children[1].innerHTML = fillBodyTemplate(tpl.discharge, bodyVars);
     }
 
-    // Discharge appliance sentence (bold, house style)
-    var applianceText = "[appliance]";
-    if(curSystem === 'one'){
-      applianceText = formatItemPhrase(one, WZ.onePieceSize) || "[one-piece pouch]";
-    } else if(curSystem === 'two'){
-      var bagPhrases = selectedBagItems().map(function(b){ return formatItemPhrase(b); });
-      var bagsText = bagPhrases.length ? _humanList(bagPhrases) : "[bag]";
-      applianceText = (formatItemPhrase(base, WZ.baseplateSize) || "[flange]") + " with " + bagsText;
+    // Discharge appliance sentence (bold, house style). Left untouched when the
+    // appliance came from the record — that sentence already reads in house style
+    // and carries every stoma's appliance, which a single-appliance rebuild here
+    // would collapse to one.
+    if(!WZ.applianceFromRecord){
+      var applianceText = "[appliance]";
+      if(curSystem === 'one'){
+        applianceText = formatItemPhrase(one, WZ.onePieceSize) || "[one-piece pouch]";
+      } else if(curSystem === 'two'){
+        var bagPhrases = selectedBagItems().map(function(b){ return formatItemPhrase(b); });
+        var bagsText = bagPhrases.length ? _humanList(bagPhrases) : "[bag]";
+        applianceText = (formatItemPhrase(base, WZ.baseplateSize) || "[flange]") + " with " + bagsText;
+      }
+      var accForLetter = WZ.accessories.filter(function(a){ return a !== "None"; });
+      if(accForLetter.length){
+        applianceText += " and " + _humanList(accForLetter.map(function(a){ return a.toLowerCase(); }));
+      }
+      setApplianceSlot(applianceText);
     }
-    var accForLetter = WZ.accessories.filter(function(a){ return a !== "None"; });
-    if(accForLetter.length){
-      applianceText += " and " + _humanList(accForLetter.map(function(a){ return a.toLowerCase(); }));
-    }
-    setApplianceSlot(applianceText);
     renderPlan(buildPlan());
     updateRibbon();
     closeWizard();
