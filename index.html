@@ -3214,7 +3214,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-331';
+const APP_BUILD='2026.09.28-332';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15804,11 +15804,16 @@ let clrState={patientId:null,patient:null,rows:[],available:true,expanded:{}};
 // they are edited through Edit patient, not the clinical_records table.
 function derivedStomaRecords(pat){
   if(!pat)return [];
-  const out=[];let n=0;
+  const out=[];let n=0,lastType='';
   const reversed=!!pat.reversal_date;
   const add=(o)=>{if(!o.title&&!o.detail&&!o.record_date&&!o.notes)return;
+    const title=o.title||'Stoma';
+    // matchType is what the appliances are matched on. It defaults to the stoma's
+    // own type, but a refashioning keeps the type of the stoma it replaced, so the
+    // appliances and accessories follow it onto the new stoma.
     out.push({kind:'stoma',id:`d${n}-${pat.id||''}`,derived:true,is_current:o.is_current!==false,
-      title:o.title||'Stoma',detail:o.detail||'',record_date:o.record_date||null,status:o.status||'',notes:o.notes||''});n++;};
+      title,matchType:o.matchType||title,detail:o.detail||'',record_date:o.record_date||null,status:o.status||'',notes:o.notes||''});
+    lastType=title;n++;};
   // The stoma formed at surgery.
   if(pat.stoma_type||pat.stoma_location)
     add({title:pat.stoma_type,detail:pat.stoma_location,record_date:pat.surgery_date,
@@ -15820,7 +15825,8 @@ function derivedStomaRecords(pat){
       is_current:!rev,status:rev?'Reversed':'Active',notes:s.findings||''});});
   // A refashioning — old stoma closed and a new one formed.
   if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location)
-    add({title:'Refashioned stoma',detail:pat.refashion_location,record_date:pat.refashion_formed_date,
+    add({title:'Refashioned stoma',matchType:pat.stoma_type||lastType||'Refashioned stoma',
+      detail:pat.refashion_location,record_date:pat.refashion_formed_date,
       status:pat.refashion_closure_date?'Reversed':'Stoma present',notes:pat.refashion_findings});
   // Later new stoma formations.
   parseStomas(pat).forEach(s=>add({title:s.type||'New stoma',detail:s.location,record_date:s.formed_date,
@@ -16066,12 +16072,21 @@ function stomaCategoryHTML(meta,open){
       <span style="font-size:11px;color:var(--muted);">Appliances set today can still be corrected here; after today they lock into the history.</span>
     </div>`:'';
   const single=recs.length===1;
-  const blocks=recs.length?recs.map(r=>{
-    const appl=applianceListForStoma(groups,r.title,single);
-    const applHTML=appl.length?appl.map(applianceRowHTML).join(''):'<div class="clr-empty">No appliance recorded for this stoma yet — they are saved from an inpatient visit or a seen appointment.</div>';
+  // Appliances follow the stoma. When one stoma was refashioned into another of
+  // the same type, the appliances and accessories belong to the current (later)
+  // stoma, not the superseded earlier one — so among records that share a match
+  // type only the last one carries the list; the earlier ones point to it.
+  const lastForType={};
+  recs.forEach((r,i)=>{lastForType[_normType(r.matchType||r.title)]=i;});
+  const blocks=recs.length?recs.map((r,i)=>{
+    const owns=lastForType[_normType(r.matchType||r.title)]===i;
+    const appl=owns?applianceListForStoma(groups,r.matchType||r.title,single):[];
+    const applHTML=owns
+      ?(appl.length?appl.map(applianceRowHTML).join(''):'<div class="clr-empty">No appliance recorded for this stoma yet — they are saved from an inpatient visit or a seen appointment.</div>')
+      :'<div class="clr-empty">This stoma was refashioned — its appliances and accessories now follow the current stoma of this type.</div>';
     /* Every change that was ever made on this stoma, on the ward and at clinic,
        kept as its own dated line so the history is a record and not a summary. */
-    const evs=applianceEventsForStoma(evGroups,r.title,single);
+    const evs=owns?applianceEventsForStoma(evGroups,r.matchType||r.title,single):[];
     const evHTML=evs.length?`<div class="clr-appl-h">Appliance changes <span class="clr-count">${evs.length}</span></div>
       <div class="clr-ev-list">${evs.map(applianceEventRowHTML).join('')}</div>`:'';
     return `<div class="clr-stoma-block">
@@ -18322,9 +18337,14 @@ function episodeWardBed(ep){
 function episodeApplianceSummaryLine(ep){
   const rows=parseEpisodeApplianceRows(ep);
   if(rows.length){
-    // Keep the newest entry for each stoma.
+    // Keep the newest entry for each stoma, keyed by its display tag first. The
+    // same stoma recorded twice under different ids — an early "unassigned" entry
+    // set before it was in the Registry, then one against the stoma — shares a
+    // tag, so the newer replaces the older instead of both showing the same
+    // appliance. A genuine second stoma carries its own quadrant-qualified tag,
+    // so it still lists on its own.
     const latest={};
-    rows.forEach(r=>{const k=r.stoma_uid||r.stoma_code||r.stoma_type||'';
+    rows.forEach(r=>{const k=r.stoma_short||r.stoma_uid||r.stoma_code||r.stoma_type||'';
       if(!latest[k]||String(r.changed_on||'')>=String(latest[k].changed_on||''))latest[k]=r;});
     return Object.values(latest).map(e=>{
       const acc=shortApplianceList((e.accessories||[]).filter(a=>a&&a!=='None'));
