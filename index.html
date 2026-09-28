@@ -3214,7 +3214,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-332';
+const APP_BUILD='2026.09.28-333';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15824,10 +15824,18 @@ function derivedStomaRecords(pat){
     add({title:s.type,detail:s.location,record_date:pat.surgery_date,
       is_current:!rev,status:rev?'Reversed':'Active',notes:s.findings||''});});
   // A refashioning — old stoma closed and a new one formed.
-  if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location)
+  if(pat.refashion_formed_date||pat.refashion_findings||pat.refashion_location){
+    // A refashioning supersedes the stoma it replaced — the most recent one still
+    // present — automatically, so the old stoma reads as closed rather than
+    // Active and the refashioned one is the current stoma of its type.
+    for(let i=out.length-1;i>=0;i--){
+      if(out[i].is_current){out[i].is_current=false;out[i].superseded=true;
+        if(!/revers/i.test(String(out[i].status||'')))out[i].status='Superseded';break;}
+    }
     add({title:'Refashioned stoma',matchType:pat.stoma_type||lastType||'Refashioned stoma',
       detail:pat.refashion_location,record_date:pat.refashion_formed_date,
       status:pat.refashion_closure_date?'Reversed':'Stoma present',notes:pat.refashion_findings});
+  }
   // Later new stoma formations.
   parseStomas(pat).forEach(s=>add({title:s.type||'New stoma',detail:s.location,record_date:s.formed_date,
     status:pat.reversal_date?'Previous stoma reversed':'Two stomas present',notes:s.findings}));
