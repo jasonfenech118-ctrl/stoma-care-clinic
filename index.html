@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-328';
+const APP_BUILD='2026.09.28-329';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6838,7 +6838,10 @@ async function commitEpisodeAppliances(pending,rows){
     // so a single-stoma patient reads one line.
     let pat=null;
     try{const{data:pd}=await SB.from('patients').select('*').eq('id',pending.patientId).maybeSingle();pat=pd;}catch(e){}
-    noteRows=currentApplianceNoteRows(pat,merged);
+    // Include anything set against no present stoma yet (saved "unassigned") so
+    // the ward note carries it too — otherwise the sheet reads "Awaiting first
+    // review" the next time it is built from the note.
+    noteRows=currentApplianceNoteRows(pat,merged).concat(looseApplianceRows(pat,merged));
   }
   const note=episodeApplianceNote(noteRows);
   const{error:pe}=await SB.from('patients').update({inpatient_notes:note}).eq('id',pending.patientId);
@@ -17716,22 +17719,56 @@ function currentApplianceNoteRows(patient,rows){
   const all=stomaTimeline(patient);
   return stomas.map(st=>{
     let candidates=useful.filter(r=>r.stoma_uid===st.uid);
-    // Unlinked legacy appliances are safe only for the original, sole stoma.
-    if(!candidates.length&&all.length===1&&st.origin!=='refashion'&&st.origin!=='new')candidates=useful.filter(r=>!r.stoma_uid);
+    // Unlinked appliances — and ones set from the ward before the stoma was in
+    // the Registry, saved as "unassigned" — are safe only for the original, sole
+    // stoma. Attaching them here means an appliance set early follows the stoma
+    // once it is recorded, rather than staying orphaned off the sheet.
+    if(!candidates.length&&all.length===1&&st.origin!=='refashion'&&st.origin!=='new')candidates=useful.filter(r=>!r.stoma_uid||r.stoma_uid==='unassigned');
     return candidates.reduce((best,r)=>!best||String(r.changed_on||'')>=String(best.changed_on||'')?r:best,null);
   }).filter(Boolean);
+}
+/* Appliance entries that belong to no stoma the patient has on file — set from
+   the ward before the stoma was entered in the Registry (saved as "unassigned"),
+   or against a stoma id that is no longer on the record. The newest per entry,
+   with real content, so what the nurse set is shown on the handover instead of
+   vanishing behind "Awaiting first review". A present or historic stoma's own
+   appliance is NOT surfaced here — that is handled per stoma — so a reversed
+   stoma's old bag never resurfaces. */
+function looseApplianceRows(patient,rows,stomas){
+  const present=stomas||stomasPresentOn(patient,TODAY);
+  const known=new Set(stomaTimeline(patient).map(s=>s.uid));
+  const linked=new Set(currentApplianceNoteRows(patient,rows));
+  const loose={};
+  (rows||[]).forEach(r=>{
+    if(!(r.appliances?.length||r.accessories?.length))return;
+    if(linked.has(r))return;
+    const uid=r.stoma_uid||'';
+    if(uid&&uid!=='unassigned'&&known.has(uid))return;
+    const k=uid||'__u__';
+    if(!loose[k]||String(r.changed_on||'')>=String(loose[k].changed_on||''))loose[k]=r;
+  });
+  return Object.values(loose);
 }
 function handoverStomaLine(patient,epRows){
   const stomas=stomasPresentOn(patient,TODAY);
   const current=currentApplianceNoteRows(patient,epRows);
-  if(!stomas.length)return stomaOperationHistory(patient).length?'No stoma present':null;
+  // Appliances set before the stoma was in the Registry (saved "unassigned") show
+  // even when there is no stoma to hang them on, so what was set is never lost.
+  const loose=looseApplianceRows(patient,epRows,stomas);
+  const looseLine=loose.map(r=>handoverApplianceRowText(r.stoma_short||'',r)).join('  ·  ');
+  if(!stomas.length){
+    if(looseLine)return looseLine;
+    return stomaOperationHistory(patient).length?'No stoma present':null;
+  }
   const hasNewIdentity=stomas.some(s=>s.origin==='refashion'||s.origin==='new');
-  if(!current.length&&!hasNewIdentity&&!stomaOperationHistory(patient).length)return null;
-  return stomas.map(st=>{
+  if(!current.length&&!looseLine&&!hasNewIdentity&&!stomaOperationHistory(patient).length)return null;
+  const lines=stomas.map(st=>{
     const row=current.find(r=>r.stoma_uid===st.uid)||(stomas.length===1&&stomaTimeline(patient).length===1?current[0]:null);
     const tag=[st.shortLabel||st.typeLabel,st.origin==='refashion'?'refashioned':''].filter(Boolean).join(' · ');
     return row?handoverApplianceRowText(tag,row):tag+': Appliance not yet selected';
-  }).join('  ·  ');
+  });
+  if(looseLine)lines.push(looseLine);
+  return lines.join('  ·  ');
 }
 function handoverOperationSummary(p){
   const last=stomaOperationHistory(p).slice(-1)[0];
