@@ -3210,7 +3210,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-327';
+const APP_BUILD='2026.09.28-328';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6032,7 +6032,20 @@ async function esFillSummaryExtras(p,comps,appt){
         .select('*').eq('patient_id',p.id).neq('status','booked')
         .order('appt_date',{ascending:false}).order('appt_slot',{ascending:false}).order('id',{ascending:false}).limit(10);
       const prev=(hist||[]).filter(a=>String(a.id)!==String(appt&&appt.id));
-      lel.textContent=prev.length?`${fmtShortDate(prev[0].appt_date)} (${esLastOutcomeLabel(prev[0])})`:'Not yet seen for follow-up';
+      if(prev.length){
+        const a=prev[0];
+        let label=esLastOutcomeLabel(a);
+        // A DNTU shows its place in the run of consecutive misses (3 pauses the
+        // follow-up), skipping cancellations and stopping at a Seen visit.
+        if(a.status==='did_not_attend'){
+          let streak=0;
+          for(const x of prev){ if(x.status==='cancelled')continue; if(x.status==='did_not_attend')streak++; else break; }
+          label=`Did not turn up — ${Math.min(Math.max(streak,1),3)} of 3`;
+        }
+        lel.textContent=`${fmtShortDate(a.appt_date)} (${label})`;
+      }else{
+        lel.textContent='Not yet seen for follow-up';
+      }
     }catch(e){lel.textContent='—';}
   }
   const ael=document.getElementById('es-summary-appliance');
