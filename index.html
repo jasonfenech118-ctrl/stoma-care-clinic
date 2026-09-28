@@ -1379,6 +1379,9 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 /* Record-a-complication now lives in the appliance/notes cell, under the flange
    chip, as a compact left-aligned button. */
 .hv-cmp-btn{align-self:flex-start;margin-top:6px;padding:5px 10px;font-size:11px;}
+/* An open complication, shown on the sheet so the ward sees it without opening
+   the manager — amber, so it stands apart from the appliance line. */
+.hv-cmp-line{margin-top:5px;padding:4px 8px;border-radius:6px;background:#fde2c8;border:1px solid #f0c07a;color:#8a4b16;font-size:11px;font-weight:800;line-height:1.35;}
 /* The lock and the profile shortcut belong to the phone card only — the desktop
    grid is a wide worksheet and is left exactly as it was. */
 .hv-mob-only{display:none;}
@@ -3214,7 +3217,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-334';
+const APP_BUILD='2026.09.28-335';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17476,7 +17479,7 @@ function handoverShouldAutoLeave(p){
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
-  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
+  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -17853,13 +17856,28 @@ function handoverOperationSummary(p){
   const label={refashion:'Refashioning',new:'New stoma formation',reversal:'Reversal / closure'}[last.kind]||'Operation';
   return label+' · '+(last.date?fmtShortDate(last.date):'date not known')+' · '+(last.operation||'');
 }
+/* The open (unresolved) complications, named, with each one's latest trend when
+   it is recorded — shown on the handover so the ward sees them at a glance
+   instead of having to open the manager. Resolved ones drop off the sheet. */
+function handoverComplicationLine(p){
+  const open=parseComplications(p).filter(c=>c.status!=='resolved');
+  if(!open.length)return '';
+  return open.map(c=>{
+    const ev=(c.events||[]).slice(-1)[0];
+    const trend=(ev&&ev.trend&&ev.trend!=='noted')?` (${ev.trend})`:'';
+    return `${c.text}${trend}`;
+  }).filter(Boolean).join(' · ');
+}
 function handoverRowHTML(p,cls){
   // The appliance line and the "flange due" chip are shown side by side, so the
   // date is stripped from the appliance text (rawAppl) and left to the chip
   // alone — otherwise it appeared twice, one copy going stale on an edit.
   const rawAppl=(p._applianceLine!=null?p._applianceLine:p.inpatient_notes)||'';
   const applLine=stripHandoverFlangeDue(rawAppl);
-  const cmpCount=parseComplications(p).length;
+  const comps=parseComplications(p);
+  const cmpCount=comps.length;
+  const cmpOpen=comps.filter(c=>c.status!=='resolved').length;
+  const cmpLine=handoverComplicationLine(p);
   // Infection alert — a note (or appliance line) carrying CRE, VRE or anything
   // "+ve" turns the Appliance/notes cell bright red so it cannot be missed.
   const infAlert=hvIsInfectionNote(p.inpatient_nurse_notes)||hvIsInfectionNote(applLine);
@@ -17879,7 +17897,8 @@ function handoverRowHTML(p,cls){
             :'<span class="hv-appl-await-txt">🔎 Awaiting first review — tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
           oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${rodChipHTML(p)}
-        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="Complications timeline (tied to a stoma) and the ROD removal date">⚠️ Complications/ROD${cmpCount?` (${cmpCount})`:''}</button>
+        ${cmpLine?`<div class="hv-cmp-line" title="Open complications — tap Complications/ROD for the full timeline">⚠️ ${htmlSafe(cmpLine)}</div>`:''}
+        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="Complications timeline (tied to a stoma) and the ROD removal date">⚠️ Complications/ROD${cmpOpen?` (${cmpOpen})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
