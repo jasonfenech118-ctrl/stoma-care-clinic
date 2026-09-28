@@ -1399,6 +1399,10 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 }
 .hv-rev-badge{background:#dbeafe!important;color:#1d4ed8!important;}
 #hv-table tr.hv-reversal td{background:#eef4ff;}
+/* An existing patient coming in for surgery on a planned date rides at the top
+   of the handover, tinted violet so it reads apart from siting and reversal. */
+.hv-surg-badge{background:#e9d5ff!important;color:#6b21a8!important;}
+#hv-table tr.hv-surgery td{background:#f6efff;}
 .hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
   color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
 /* The pre-operative stoma care checklist inside the "Seen" modal. */
@@ -3210,7 +3214,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-330';
+const APP_BUILD='2026.09.28-331';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16210,6 +16214,40 @@ function addSitingForPatient(){
   const p=clrState.patient; if(!p)return;
   openSitingBooking(TODAY,'',{id_card:p.id_card,first_name:p.first_name,surname:p.surname,consultant:p.consultant});
 }
+/* An existing stoma patient's upcoming operation date. Set here, it puts the
+   patient on the Handover — highlighted — from that day, so the ward is expecting
+   them, and it is cleared on its own when they are admitted. */
+async function openSurgeryDateModal(patientId){
+  let p=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
+  if(!p){const r=await fetchPatientById(patientId);p=r&&r.data;}
+  if(!p){alert('Could not open this patient.');return;}
+  const cur=p.upcoming_surgery_date||'';
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim();
+  const mb=document.getElementById('mb');mb.className='mb'+sexModalClass(p);
+  mb.innerHTML=`<h2>Surgery date</h2>
+    <div class="msub">${htmlSafe(nm)}${p.id_card?' · '+htmlSafe(p.id_card):''}</div>
+    <p class="ap-hint" style="margin:2px 0 12px;">The day this patient is coming in for surgery. From this date they show at the top of the <strong>Handover</strong>, highlighted, so the ward is expecting them. It clears itself once they are admitted; or clear it here.</p>
+    <div class="fg"><label for="usd-date">Date of surgery</label>
+      <input type="date" id="usd-date" value="${htmlSafe(cur)}"/></div>
+    <div class="mact" style="justify-content:space-between;">
+      <div>${cur?`<button class="btn-cancel" onclick="saveSurgeryDate('${p.id}','')">Remove date</button>`:''}</div>
+      <div style="display:flex;gap:8px;"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveSurgeryDate('${p.id}',document.getElementById('usd-date').value)">Save</button></div>
+    </div>`;
+  openMo();
+}
+async function saveSurgeryDate(patientId,val){
+  const next=String(val||'').trim();
+  if(next&&!/^\d{4}-\d{2}-\d{2}$/.test(next)){alert('Please choose a valid date.');return;}
+  const{error,dropped}=await updatePatientTolerant(patientId,{upcoming_surgery_date:next||null});
+  if(dropped&&dropped.includes('upcoming_surgery_date')){
+    alert('The database does not have the surgery-date column yet.\n\nRun sql/add-upcoming-surgery.sql once in Supabase, then try again.');return;}
+  if(error){alert('Could not save the surgery date: '+error.message);return;}
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.upcoming_surgery_date=next||null;
+  closeModal();
+  if(document.getElementById('psm-stomas'))renderStomasPanel();
+  if(document.getElementById('hv-body'))await loadHandover();
+}
 // After a siting is booked/edited, refresh the open patient record's siting
 // section (and the header chip on the next open) so it is not left stale.
 async function refreshRecordSiting(){
@@ -16297,6 +16335,17 @@ async function removeSitingPhoto(sitingId){
 function sitingSummaryHTML(pat,ss){
   const head='<div class="psm-sec-head"><h3>Pre-operative stoma siting</h3></div>';
   if(!ss){
+    // A patient who already has a stoma does not need pre-operative siting. For
+    // them this slot records an upcoming operation date instead: on that day they
+    // ride at the top of the Handover, highlighted, so the ward expects them.
+    if(hasStomaNow(pat)){
+      const sd=pat.upcoming_surgery_date;
+      return `<div><div class="psm-sec-head"><h3>Upcoming surgery</h3></div>
+        <div class="psm-card"><div class="sit-none">
+          <span class="sit-none-t">${psmIc('calendar')} ${sd?('Surgery planned for <strong>'+htmlSafe(fmtShortDate(sd))+'</strong>'):'No surgery date set'}</span>
+          <button type="button" class="pf-add-btn" onclick="openSurgeryDateModal('${pat.id}')">${sd?psmIc('pencil')+' Change surgery date':'＋ Add surgery date'}</button>
+        </div></div></div>`;
+    }
     return `<div>${head}
       <div class="psm-card"><div class="sit-none">
         <span class="sit-none-t">${psmIc('mappin')} Not recorded</span>
@@ -16658,7 +16707,7 @@ async function saveInpatientVisit(){
   }
 
   const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,
-    inpatient_since:admitted};
+    inpatient_since:admitted,upcoming_surgery_date:null};
   const res=await updatePatientTolerant(pid,patch);
   if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
   if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,inpatient_since:admitted});
@@ -16693,7 +16742,7 @@ async function admitThenSetAppliances(){
     const made=await createInpatientEpisodeFor(pid,admitted);
     if(made.error){reportEpisodeError('admitThenSetAppliances: could not open the episode',made.error);return;}
   }
-  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:admitted};
+  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:admitted,upcoming_surgery_date:null};
   const res=await updatePatientTolerant(pid,patch);
   if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
   if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_since:admitted});
@@ -17483,19 +17532,24 @@ async function loadHandover(){
   // Patients whose proposed reversal day has arrived ride at the top too, so the
   // ward sees them on the morning of the operation without anyone adding them.
   const revDue=await handoverAwaitingReversals(rows.map(r=>r.id));
+  // Existing stoma patients with an upcoming operation date that has arrived —
+  // not already on the sheet and not already listed as awaiting reversal.
+  const surgDue=await handoverAwaitingSurgery(rows.map(r=>r.id).concat(revDue.map(p=>p.id)));
   const parts=[];
   if(rows.length)parts.push(`${rows.length} inpatient${rows.length===1?'':'s'}`);
   if(awaiting.length)parts.push(`${awaiting.length} awaiting surgery`);
   if(revDue.length)parts.push(`${revDue.length} awaiting reversal`);
+  if(surgDue.length)parts.push(`${surgDue.length} for surgery`);
   const countTxt=parts.join(' · ');
-  if(!rows.length&&!awaiting.length&&!revDue.length){
+  if(!rows.length&&!awaiting.length&&!revDue.length&&!surgDue.length){
     body.innerHTML=emptyStateHTML('🏥','Nobody is on the ward right now',
       'A patient joins the handover when an inpatient visit is opened on their record. Open them in the Registry and press <strong>＋ Open inpatient visit</strong>.',
       `<button class="btn-save" onclick="switchTab('patients')">Go to the Registry</button>`);
     return;
   }
   const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('')
-    +revDue.map(handoverReversalRowHTML).join('');
+    +revDue.map(handoverReversalRowHTML).join('')
+    +surgDue.map(handoverSurgeryRowHTML).join('');
   // One shade per ward, flipping at each new ward — the same blocks the print uses.
   let pw=null,wg=0;
   const trs=rows.map(p=>{
@@ -17846,6 +17900,57 @@ async function handoverAwaitingReversals(onSheetIds){
       .sort((a,b)=>String(a.proposed_reversal_date).localeCompare(String(b.proposed_reversal_date))
         ||String(a.surname||'').localeCompare(String(b.surname||'')));
   }catch(e){return [];}
+}
+/* Registry patients with an upcoming surgery date that has come round — an
+   existing stoma patient coming in for an operation (not a reversal, which has
+   its own list). One already on the sheet as an inpatient, or shown as awaiting
+   reversal, is skipped so nobody appears twice. */
+async function handoverAwaitingSurgery(shownIds){
+  try{
+    // lte on a null date matches nothing, so patients with no date drop out here.
+    const{data,error}=await SB.from('patients')
+      .select('id,first_name,surname,id_card,consultant,stoma_type,followup_status,deceased_date,upcoming_surgery_date')
+      .lte('upcoming_surgery_date',TODAY);
+    // Before the column exists there is simply nothing to show.
+    if(error)return [];
+    const shown=new Set(shownIds||[]);
+    return (data||[])
+      .filter(p=>p.upcoming_surgery_date&&!shown.has(p.id)&&!handoverDeceased(p))
+      .sort((a,b)=>String(a.upcoming_surgery_date).localeCompare(String(b.upcoming_surgery_date))
+        ||String(a.surname||'').localeCompare(String(b.surname||'')));
+  }catch(e){return [];}
+}
+/* A coming-in-for-surgery row: the patient's record a click away to admit them
+   or record the operation, and a button to move or clear the date. */
+function handoverSurgeryRowHTML(p){
+  const late=String(p.upcoming_surgery_date||'')<TODAY;
+  const note=`Coming in for surgery${p.stoma_type?' · '+htmlSafe(p.stoma_type):''}`
+    +` · planned ${htmlSafe(fmtShortDate(p.upcoming_surgery_date))}${late?' (overdue)':''}`;
+  return `<tr class="hv-awaiting hv-surgery">
+    <td data-label="Ward"><span class="hv-await-badge hv-surg-badge">Surgery</span></td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
+    <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong></td>
+    <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
+    <td data-label="Appliance + notes">${note}</td>
+    <td data-label="Discharge letter">—</td>
+    <td data-label="Schedule 5 permit">—</td>
+    <td class="hv-actions-cell"><div class="followup-actions">
+      <button class="ncb-btn" style="background:#eef2ff;color:#4338ca;" onclick="openPatientRecord('${p.id}')">Open record</button>
+      <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="handoverSurgeryPostpone('${p.id}')">Change / remove</button>
+    </div></td>
+  </tr>`;
+}
+async function handoverSurgeryPostpone(patientId){
+  const{data:pat}=await SB.from('patients').select('id,first_name,surname,upcoming_surgery_date').eq('id',patientId).maybeSingle();
+  const nm=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'this patient';
+  const ans=prompt(`New surgery date for ${nm} (YYYY-MM-DD).\nLeave it empty to take them off the surgery list.`,
+    pat?.upcoming_surgery_date||'');
+  if(ans===null)return;
+  const next=String(ans).trim();
+  if(next&&!/^\d{4}-\d{2}-\d{2}$/.test(next)){alert('Please write the date as YYYY-MM-DD, for example 2026-11-04.');return;}
+  const{error}=await updatePatientTolerant(patientId,{upcoming_surgery_date:next||null});
+  if(error){alert('Could not change the surgery date: '+error.message);return;}
+  await loadHandover();
 }
 /* An awaiting-reversal row: the same shape as an awaiting-surgery one, with the
    patient's record a click away to write the reversal up or move the date. */
