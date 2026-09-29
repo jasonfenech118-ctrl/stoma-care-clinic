@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 September 2026'};
+const MANUAL_META={updated:'29 September 2026 (split-screen)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -64,15 +64,18 @@ const MANUAL_SECTIONS=[
     ${manH2('🔢','Which version am I on?')}
     <p class="man-lede">A small grey pill next to <b>MDH Stoma Care Clinic</b> shows the build, e.g. <span class="man-kbd">v2026.09.29-336</span>. If a new feature is missing, do a hard refresh: <span class="man-kbd">Ctrl</span>+<span class="man-kbd">Shift</span>+<span class="man-kbd">R</span> (on a phone, pull down to refresh).</p>
   `},
-  {id:'usingmanual',title:'Using this manual',keywords:'help search find how to question mark manual guide',html:`
-    ${manWhen('Any time you are unsure how to do something.')}
+  {id:'usingmanual',title:'Using this manual (split screen)',keywords:'help search find how to question mark manual guide split screen side panel dock beside open close help button',html:`
+    ${manWhen('Any time you are unsure how to do something — keep it open beside your work.')}
+    ${manH2('🪟','It opens beside the app, not over it')}
+    <p class="man-lede">The manual opens as a <b>side panel</b>, so the page you are working on stays open next to it. Read a step, do it on the app, read the next — you never have to remember it all.</p>
     ${manSteps([
-      `Open ${manBtn('❓ User Manual','#e0f2f5','#0b6b7a')} from the top tabs.`,
-      `Type what you want in the <b>search box</b> at the top — e.g. <i>"add a patient"</i>, <i>"discharge to Gozo"</i>, <i>"flange due"</i> — and pick the page that appears.`,
-      `Or browse the <b>coloured sections</b> on the left. Each section is the same colour as its area in the app.`,
-      `Every page tells you <b>when to use it</b>, the <b>steps</b>, and any <b>automation</b> the app does for you.`
+      `Open it from the ${manBtn('❓ User Manual','#e0f2f5','#0b6b7a')} tab, or the round ${manBtn('❓ Help','#0d7377','#fff')} button at the bottom-right of any screen.`,
+      `Type what you want in the <b>search box</b> at the top — e.g. <i>"add a patient"</i>, <i>"discharge to Gozo"</i>, <i>"flange due"</i> — and pick the page.`,
+      `Or tap a <b>coloured section</b> to browse. Each section is the same colour as its area in the app.`,
+      `Use the panel’s top buttons: <b>☰</b> all sections · <b>⇔</b> make it wider/narrower · <b>✕</b> close.`
     ])}
-    ${manNote('tip','🔎','The whole manual is inside the app, so it always matches the version you are using. There is nothing to download.')}
+    ${manNote('tip','🔎','On a computer the panel sits to the right and the app shifts across so nothing is hidden. On a phone it opens full-screen — close it to go back to your work.')}
+    ${manNote('tip','📌','The whole manual is inside the app, so it always matches the version you are using. There is nothing to download.')}
   `}
 ]},
 
@@ -380,8 +383,10 @@ function manualAllPages(){
 }
 function manualFindColor(secId){const s=MANUAL_SECTIONS.find(x=>x.id===secId);return s?s.color:'#0d7377';}
 
-function renderManual(){
-  const host=document.getElementById('manual-body');
+let MANUAL_HOST='manual-dock-body';
+function renderManual(hostId){
+  if(hostId)MANUAL_HOST=hostId;
+  const host=document.getElementById(MANUAL_HOST);
   if(!host)return;
   const side=MANUAL_SECTIONS.map(s=>{
     const open=manualState.sec===s.id;
@@ -446,6 +451,21 @@ function manualHome(){
     <div class="man-foot">This manual is part of the app (no Supabase space used) and updates with every change · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
 }
 
+/* ---- docked split-screen: read the manual beside the live app ------------ */
+function openManualDock(){
+  document.body.classList.add('manual-docked');
+  renderManual('manual-dock-body');
+  setTimeout(()=>{const i=document.getElementById('man-search');if(i)try{i.focus();}catch(e){}},60);
+}
+function closeManualDock(){document.body.classList.remove('manual-docked');}
+function toggleManualDock(){document.body.classList.contains('manual-docked')?closeManualDock():openManualDock();}
+function manualDockHome(){manualState.sec=null;manualState.pg=null;renderManual('manual-dock-body');}
+/* Cycle the panel width so a nurse can give the manual more or less room. */
+function manualDockWiden(){
+  const cur=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--mdock-w'),10)||440;
+  const next=cur<400?460:cur<560?640:cur<760?340:460;
+  document.documentElement.style.setProperty('--mdock-w',next+'px');
+}
 let manualHiIndex=-1;
 function manualSearch(q){
   const box=document.getElementById('man-results');
