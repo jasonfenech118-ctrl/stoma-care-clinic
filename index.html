@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.29-339"/>
-<script src="assets/manual.js?v=2026.09.29-339"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-340"/>
+<script src="assets/manual.js?v=2026.09.30-340"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3247,7 +3247,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.29-339';
+const APP_BUILD='2026.09.30-340';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3456,7 +3456,7 @@ function switchTab(name){
   if(name==='ot-audit')loadOvertimeAudit();
   if(name==='clinic-audit')loadClinicAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
-  if(name==='handover')loadHandover();
+  if(name==='handover')return loadHandover();
   if(name==='siting')loadSitingSessions();
   if(name==='nostoma')loadNoStomaOps();
   if(name==='stomaperformed')loadStomaPerformed();
@@ -3507,7 +3507,7 @@ const CLINIC_REALTIME_TABLES=new Set([
 ]);
 let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicRealtimeDirty=new Set();
 const CLINIC_ROSTER_TABLES=new Set(['roster','staff','bank_staff','bank_staff_assignments','leave_records','public_holidays']);
-const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders']);
+const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','clinical_records','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders']);
 function clinicRealtimeBusy(){
   return document.getElementById('mo')?.classList.contains('open')||
     !!document.querySelector('input:focus,textarea:focus,select:focus,[contenteditable="true"]:focus');
@@ -6899,6 +6899,7 @@ async function commitEpisodeAppliances(pending,rows){
   // once, whatever that read returned.
   patchHandoverApplianceRow(pending.patientId,note);
   closeModal();
+  await refreshReminders();
 }
 /* Set one handover row's appliance cell to a known line, without re-reading the
    database. Used right after a save so the sheet never lags behind the write. */
@@ -8836,6 +8837,149 @@ async function getReversalDueReminders(){
       .map(p=>({...p,kind:'reversal',eff:String(p.proposed_reversal_date)}));
   }catch(e){return [];}
 }
+/* These are shared clinical alerts, derived from saved patient and episode data.
+   No task is allocated and no reminder-completion flag is written. */
+const HANDOVER_REMINDER_COLS='id,first_name,surname,id_card,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,flange_due,schedule_five_permit,schedule_five_left_date,stoma_operation_history,stoma_superseded_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas';
+function handoverReminderDate(value){
+  const key=String(value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(key))return '';
+  const date=new Date(key+'T00:00:00Z');
+  return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===key?key:'';
+}
+function handoverReminderDays(from,to){
+  const a=handoverReminderDate(from),b=handoverReminderDate(to);
+  return !a||!b?null:(Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000;
+}
+function flangeReminderTargets(p,rows){
+  const stomas=stomasPresentOn(p,TODAY).filter(s=>!s.ended||String(s.ended)>TODAY);
+  const timeline=stomaTimeline(p);
+  // A cleared entry is still the latest entry: do not resurface its older bag.
+  const latest=new Map();
+  (rows||[]).forEach(r=>{
+    const uid=r.stoma_uid||'unassigned',prior=latest.get(uid);
+    if(!prior||String(r.changed_on||'')>=String(prior.changed_on||''))latest.set(uid,r);
+  });
+  rows=[...latest.values()];
+  const current=currentApplianceNoteRows(p,rows);
+  const twoPiece=r=>applianceRowIsTwoPiece(r)||applianceLineIsTwoPiece((r?.appliances||[]).join(', '));
+  const targets=stomas.flatMap(st=>{
+    const row=current.find(r=>r.stoma_uid===st.uid)||
+      (stomas.length===1&&timeline.length===1&&st.origin!=='refashion'&&st.origin!=='new'?current[0]:null);
+    return row&&twoPiece(row)?[[st.code,st.typeLabel,st.location].filter(Boolean).join(' · ')]:[];
+  });
+  if(targets.length)return targets;
+  // A newer structured one-piece supersedes the old note and its due date.
+  // An unassigned appliance can still be shown before any stoma is recorded.
+  if(rows.length)return !timeline.length&&looseApplianceRows(p,rows).some(twoPiece)?['Stoma not yet recorded']:[];
+  const line=handoverStomaLine(p,[])??p.inpatient_notes;
+  if(!applianceLineIsTwoPiece(stripHandoverFlangeDue(line)))return [];
+  const st=stomas.length===1&&timeline.length===1?stomas[0]:null;
+  return [st?[st.code,st.typeLabel,st.location].filter(Boolean).join(' · '):'Current handover appliance — stoma not recorded'];
+}
+function buildHandoverDueReminders(patients,episodes){
+  const byPatient=new Map();
+  (episodes||[]).filter(e=>e.patient_id&&!e.discharge_date)
+    .sort((a,b)=>String(a.record_date||'').localeCompare(String(b.record_date||''))||String(a.id||'').localeCompare(String(b.id||'')))
+    .forEach(e=>{
+      const id=String(e.patient_id);
+      const rows=parseEpisodeApplianceRows(e).map(r=>({...r,changed_on:r.changed_on||e.record_date||''}));
+      byPatient.set(id,(byPatient.get(id)||[]).concat(rows));
+    });
+  const items=[],seen=new Set();
+  (patients||[]).forEach(p=>{
+    if(!p.id||seen.has(String(p.id)))return;
+    seen.add(String(p.id));
+    const left=handoverReminderDate(p.schedule_five_left_date);
+    const waiting=handoverReminderDays(left,TODAY);
+    // The permit may still be left in the ward after the patient is discharged.
+    if(p.schedule_five_permit==='in_ward'&&waiting!==null&&waiting>5)
+      items.push({...p,kind:'schedule-five',eff:left,days_waiting:waiting});
+    if(!(p.is_inpatient||byPatient.has(String(p.id)))||handoverShouldAutoLeave(p))return;
+    // The handover chip is authoritative, including when its date is cleared.
+    const due=handoverReminderDate(p.flange_due),overdue=handoverReminderDays(due,TODAY);
+    if(overdue===null||overdue<0)return;
+    const stoma_labels=flangeReminderTargets(p,byPatient.get(String(p.id))||[]);
+    if(stoma_labels.length)items.push({...p,kind:'flange',eff:due,days_overdue:overdue,stoma_labels});
+  });
+  return items.sort((a,b)=>String(a.eff).localeCompare(String(b.eff))||String(a.surname||'').localeCompare(String(b.surname||'')));
+}
+async function readHandoverReminderPatients(build){
+  let cols=HANDOVER_REMINDER_COLS.split(',');
+  for(let i=0;i<HANDOVER_REMINDER_COLS.split(',').length;i++){
+    const res=await fetchAllRows(()=>build(SB.from('patients').select(cols.join(',')),cols));
+    if(!res.error)return res;
+    const bad=missingColumnFromError(res.error);
+    if(!bad||!cols.includes(bad)||['id','first_name','surname','id_card'].includes(bad))return res;
+    cols=cols.filter(c=>c!==bad);
+  }
+  return {rows:[],error:{message:'Could not read handover reminder dates.'}};
+}
+async function getHandoverDueReminders(){
+  try{
+    const[patientResult,episodeResult]=await Promise.all([
+      readHandoverReminderPatients((q,cols)=>{
+        const filters=[];
+        if(cols.includes('is_inpatient'))filters.push('is_inpatient.eq.true');
+        if(cols.includes('schedule_five_permit'))filters.push('schedule_five_permit.eq.in_ward');
+        return filters.length?q.or(filters.join(',')):q.in('id',[]);
+      }),
+      fetchAllRows(()=>SB.from('clinical_records').select('id,patient_id,appliances,discharge_date,record_date')
+        .eq('kind','episode').eq('is_current',true))
+    ]);
+    const patients=patientResult.rows||[],episodes=episodeResult.rows||[];
+    const have=new Set(patients.map(p=>String(p.id)));
+    const missing=[...new Set(episodes.filter(e=>e.patient_id&&!e.discharge_date).map(e=>String(e.patient_id)))].filter(id=>!have.has(id));
+    let error=patientResult.error||episodeResult.error;
+    for(let i=0;i<missing.length;i+=100){
+      const extra=await readHandoverReminderPatients(q=>q.in('id',missing.slice(i,i+100)));
+      patients.push(...extra.rows);
+      error=error||extra.error;
+    }
+    return {items:buildHandoverDueReminders(patients,episodes),error:error?.message||''};
+  }catch(e){return {items:[],error:e?.message||'Could not load handover reminders.'};}
+}
+async function openFlangeReminder(patientId){
+  closeReminderPanel();closeModal();
+  await switchTab('handover');
+  const row=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(patientId))}"]`);
+  if(!row){alert('This patient is no longer on the current handover.');await refreshReminders();return;}
+  setHandoverRowLocked(row,false);
+  row.scrollIntoView({block:'center',behavior:'smooth'});
+  (row.querySelector('.hv-flange-date')||row.querySelector('.hv-appl'))?.focus({preventScroll:true});
+}
+async function openScheduleFiveReminder(patientId){
+  closeReminderPanel();closeModal();
+  const{rows,error}=await readHandoverReminderPatients(q=>q.eq('id',patientId));
+  const p=rows[0];
+  if(error||!p){alert('Could not load the permit status. Please reopen the bell and try again.');return;}
+  const mb=document.getElementById('mb');if(!mb)return;
+  const status=p.schedule_five_permit||'';
+  mb.className='mb';
+  mb.innerHTML=`<h2>📋 Schedule 5 permit</h2>
+    <div class="msub">${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))} · ${htmlSafe(p.id_card||'')}</div>
+    <p>Left in ward: ${htmlSafe(p.schedule_five_left_date?fmtShortDate(p.schedule_five_left_date):'Date not recorded')}</p>
+    <div class="fg"><label for="rem-schedule-five-status">Recorded permit status</label>
+      <select id="rem-schedule-five-status" data-original="${htmlSafe(status)}">${HANDOVER_DOCS.schedule_five_permit.states.map(s=>`<option value="${htmlSafe(s.v)}"${s.v===status?' selected':''}>${htmlSafe(s.v==='collected'?'Collected':s.label)}</option>`).join('')}</select></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveScheduleFiveReminder('${jsSafe(patientId)}',this)">Save status</button></div>`;
+  openMo();
+}
+async function saveScheduleFiveReminder(patientId,button){
+  const input=document.getElementById('rem-schedule-five-status');
+  if(!input||button?.disabled)return;
+  const value=input.value;
+  if(value===input.dataset.original){closeModal();return;}
+  if(button)button.disabled=true;
+  const{error,dropped}=await updatePatientTolerant(patientId,{
+    schedule_five_permit:value||null,...docDateUpdates('schedule_five_permit',value)});
+  if(error||dropped?.includes('schedule_five_permit')){
+    if(button)button.disabled=false;
+    alert('Could not save the permit status. Please try again.');return;
+  }
+  closeModal();
+  await refreshReminders();
+  if(currentTabName()==='handover')await loadHandover();
+}
 function renderSitingReminderList(items){
   if(!items||!items.length)return '<div class="rem-empty">No reminders.</div>';
   return items.map(r=>{
@@ -8852,6 +8996,22 @@ function renderSitingReminderList(items){
         <div style="font-weight:900;color:#5f4300;">📦 Send MML order${tag}<span style="font-size:9px;font-weight:900;background:#e6a817;color:#000;padding:2px 7px;border-radius:5px;margin-left:6px;">MML ORDER</span></div>
         <div style="font-size:11px;color:#715600;margin-top:4px;">Jason is rostered on duty this Saturday.</div>
       </div>`;
+    if(r.kind==='schedule-five'||r.kind==='flange'){
+      const schedule=r.kind==='schedule-five';
+      const wb=[r.inpatient_ward,r.inpatient_bed].filter(Boolean).join(' - ');
+      const note=schedule
+        ? 'Left in ward '+fmtShortDate(r.schedule_five_left_date)+' · waiting '+r.days_waiting+' days'
+        : 'Flange change '+fmtShortDate(r.eff)+' · '+(r.days_overdue?'Overdue by '+r.days_overdue+' day'+(r.days_overdue===1?'':'s'):'Due today');
+      const statusTag=schedule
+        ? '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>':tag;
+      return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${statusTag}<span style="font-size:9px;font-weight:800;background:#fef3c7;color:#8a5a00;padding:1px 6px;border-radius:5px;margin-left:6px;">${schedule?'SCHEDULE 5':'FLANGE CHANGE'}</span></div>
+        <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${wb?' · '+htmlSafe(wb):''}</div>
+        ${!schedule?`<div style="font-size:11px;color:var(--navy);">${htmlSafe((r.stoma_labels||[]).join(' / '))}</div>`:''}
+        <div style="font-size:11px;color:var(--muted);">${htmlSafe(note)}</div>
+        <div style="margin-top:5px;"><button class="ncb-btn" style="background:#fef3c7;color:#8a5a00;" onclick="${schedule?'openScheduleFiveReminder':'openFlangeReminder'}('${jsSafe(r.id)}')">${schedule?'Open permit':'Open handover'}</button></div>
+      </div>`;
+    }
     if(r.kind==='reversal')
       return `<div class="rem-row" style="padding:9px 4px;border-bottom:1px solid var(--border);">
         <div style="font-weight:700;color:var(--navy);">${htmlSafe(nm)}${tag}<span style="font-size:9px;font-weight:800;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:5px;margin-left:6px;">REVERSAL</span></div>
@@ -8892,14 +9052,15 @@ function renderSitingReminderList(items){
   }).join('');
 }
 async function refreshReminders(){
-  // Shared pending tasks plus siting / post-op items and the roster-based MML order.
-  const[clinical,pending,dated]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders()]);
-  sitingReminders=clinical;
+  // Load ward dates independently so a siting-table error cannot hide them.
+  const[clinical,pending,dated,handover]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders(),getHandoverDueReminders()]);
+  const items=[...(clinical.items||[]),...(handover.items||[])].sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
+  sitingReminders={items,total:items.length,today:items.filter(r=>r.eff===TODAY).length,handoverError:handover.error||''};
   pendingReminderTasks=pending;
   datedClinicReminders=dated;
   updateReminderBadges(clinicReminderBadgeTotal());
   const bbody=document.getElementById('bell-panel-body');
-  if(bbody)bbody.innerHTML=renderClinicReminderPanelHTML();
+  if(bbody)bbody.innerHTML=renderClinicReminderPanelHTML()+(sitingReminders.handoverError?'<div class="rem-empty">Some handover reminders could not be checked. Reopen the bell to retry.</div>':'');
   const bsub=document.getElementById('bell-panel-sub');
   if(bsub){
     const parts=[];
@@ -9110,7 +9271,9 @@ async function openDailyReminderModal(force){
   // Chrome-free pinned views never get a pop-up.
   if(document.body.classList.contains('ho-only')||document.body.classList.contains('pl-only'))return;
   // Pending to-dos and due/overdue dated reminders also raise the daily prompt.
-  const todayItems=(sitingReminders.items||[]).filter(r=>String(r.eff)===TODAY);
+  // The ward alerts are displayed in the bell; keep the daily pop-up focused
+  // on its existing reminders.
+  const todayItems=(sitingReminders.items||[]).filter(r=>String(r.eff)===TODAY&&!['schedule-five','flange'].includes(r.kind));
   const nPending=pendingReminderOpenCount();
   const nDated=dueDatedReminderItems().length;
   if(!todayItems.length&&!nPending&&!nDated)return;
@@ -17444,6 +17607,7 @@ async function cycleHandoverDoc(patientId,kind){
   const{error}=await updatePatientTolerant(patientId,{[kind]:st.v===''?null:st.v,...docDateUpdates(kind,st.v)});
   if(error){await loadHandover();return;}
   await refreshDocDateLine(patientId,kind);
+  if(kind==='schedule_five_permit')await refreshReminders();
 }
 // An infection-control flag: a note mentioning CRE, VRE (whole words) or
 // anything "+ve" (MRSA +ve, ESBL +ve, …) turns the handover cell bright red.
@@ -18280,6 +18444,7 @@ async function saveFlangeDueInline(pid,el){
   if(box){const m=flangeDueMeta(val);
     box.className='hv-flangebox hv-flange-'+m.cls;
     const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
+  await refreshReminders();
 }
 /* The rod (bridge) removal date on its own chip, next to the flange chip, so it
    reads at a glance on the sheet instead of only living in a note. It shows for a
@@ -18370,6 +18535,7 @@ async function dischargeFromHandover(patientId,name){
   await closeOpenInpatientEpisode(patientId,{postop:true});
   await stampPostopDischargeDate(patientId,TODAY);
   loadHandover();
+  await refreshReminders();
 }
 /* An old case: taken off the handover without being counted as a postop
    discharge. The episode is closed but not stamped with a discharge date, so it
@@ -18380,6 +18546,7 @@ async function dischargeOldFromHandover(patientId,name){
   if(error){alert('Could not discharge: '+error.message);return;}
   await closeOpenInpatientEpisode(patientId,{postop:false});
   loadHandover();
+  await refreshReminders();
 }
 /* Discharge to Gozo, or relocated overseas: the patient leaves the local
    follow-up service, so they come off the handover, their inpatient episode is
