@@ -19,8 +19,7 @@ const MAN_TABS=[
   ['siting','📍','Siting','#7c3aed'],
   ['handover','🏥','Handover','#b45309'],
   ['patients','👥','Registry','#0891b2'],
-  ['audit','📊','Audit & Reports','#c0392b'],
-  ['help','❓','User Manual','#0d7377']
+  ['audit','📊','Audit & Reports','#c0392b']
 ];
 /* A mini replica of the real top tab-bar, with one area lit up: "you are here". */
 function manMap(activeKey){
@@ -47,8 +46,8 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- the manual content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh',html:`
-    ${manMap('help')}
+  {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
+    ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
     ${manWhen('Your first time in the app, or when you cannot find a page.')}
     ${manH2('🧭','The six work areas')}
     <p class="man-lede">The coloured tabs along the top run in the order the day is worked. Tap an area to open it, then use the row of <b>sub-tabs</b> underneath to reach each page.</p>
@@ -69,7 +68,7 @@ const MANUAL_SECTIONS=[
     ${manH2('🪟','It opens beside the app, not over it')}
     <p class="man-lede">The manual opens as a <b>side panel</b>, so the page you are working on stays open next to it. Read a step, do it on the app, read the next — you never have to remember it all.</p>
     ${manSteps([
-      `Open it from the ${manBtn('❓ User Manual','#e0f2f5','#0b6b7a')} tab, or the round ${manBtn('❓ Help','#0d7377','#fff')} button at the bottom-right of any screen.`,
+      `Open it from the ${manBtn('❓','#0d7377','#fff')} <b>button next to the 🔔 bell</b> at the top-right of every screen. Tap it again to close.`,
       `Type what you want in the <b>search box</b> at the top — e.g. <i>"add a patient"</i>, <i>"discharge to Gozo"</i>, <i>"flange due"</i> — and pick the page.`,
       `Or tap a <b>coloured section</b> to browse. Each section is the same colour as its area in the app.`,
       `Use the panel’s top buttons: <b>☰</b> all sections · <b>⇔</b> make it wider/narrower · <b>✕</b> close.`
