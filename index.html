@@ -3217,7 +3217,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.28-335';
+const APP_BUILD='2026.09.29-336';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17905,6 +17905,8 @@ function handoverRowHTML(p,cls){
     <td class="hv-actions-cell"><div class="followup-actions">
       <button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Postop discharge</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}')">Discharge (old case)</button>
+      <button class="ncb-btn" style="background:#fef9c3;color:#713f12;" onclick="dischargeToStatusFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}','relocated_overseas')">Relocated overseas</button>
+      <button class="ncb-btn" style="background:#dbeafe;color:#1e3a8a;" onclick="dischargeToStatusFromHandover('${p.id}','${jsSafe(`${p.first_name||''} ${p.surname||''}`.trim())}','discharged_gozo')">Discharged to Gozo</button>
       <button class="ncb-btn hv-mob-only hv-lock" onclick="toggleHandoverLock('${p.id}')">✏️ Edit</button>
       <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Patient profile (read-only)">🪪 Profile</button>
     </div></td>
@@ -18344,6 +18346,27 @@ async function dischargeOldFromHandover(patientId,name){
   if(error){alert('Could not discharge: '+error.message);return;}
   await closeOpenInpatientEpisode(patientId,{postop:false});
   loadHandover();
+}
+/* Discharge to Gozo, or relocated overseas: the patient leaves the local
+   follow-up service, so they come off the handover, their inpatient episode is
+   closed, and today's date is written as the outcome date (and the follow-up
+   status effective date) automatically. Switching between the two clears the
+   other's date so only the chosen outcome is on file. */
+async function dischargeToStatusFromHandover(patientId,name,status){
+  const label=status==='discharged_gozo'?'discharged to Gozo':'relocated overseas';
+  if(!confirm(`Mark ${name||'this patient'} as ${label}?\n\nThey come off the handover, their inpatient episode is closed, and today (${fmtShortDate(TODAY)}) is recorded as the ${label} date on their follow-up. They keep everything on their record.`))return;
+  const dateCol=status==='discharged_gozo'?'discharged_gozo_date':'relocated_overseas_date';
+  const otherCol=status==='discharged_gozo'?'relocated_overseas_date':'discharged_gozo_date';
+  const patch={is_inpatient:false,followup_status:status,followup_status_effective_date:TODAY,
+    [dateCol]:TODAY,[otherCol]:null};
+  const{error,dropped}=await updatePatientTolerant(patientId,patch);
+  if(error){alert('Could not discharge: '+(error.message||error));return;}
+  if(dropped&&dropped.includes('followup_status')){alert('The follow-up status column is not in the database yet, so this could not be saved.');return;}
+  if(dropped&&(dropped.includes(dateCol)||dropped.includes('followup_status_effective_date')))
+    alert(`The patient is marked as ${label}, but the outcome-date column is not in the database yet — run the matching file in sql/ once in Supabase to record the date.`);
+  await closeOpenInpatientEpisode(patientId,{postop:false});
+  loadHandover();
+  try{refreshReminders();}catch(e){}
 }
 /* ------------------------------------------------------------------------- *
  * Postop Discharges — the patients discharged home after their operation.
@@ -19649,7 +19672,8 @@ function printHandover(){
   // Bold the "flange due …" and "rod due/out …" notes the way the ward sheet does.
   const notes=t=>htmlSafe(t)
     .replace(/(flange due[^,;·]*)/ig,'<b>$1</b>')
-    .replace(/(rod (?:due|out)[^,;·]*)/ig,'<b>$1</b>');
+    .replace(/(rod (?:due|out)[^,;·]*)/ig,'<b>$1</b>')
+    .replace(/(Complication:.*)$/i,'<b>$1</b>');
   // Shade by ward group (like the Excel sheet): each ward's block of rows keeps
   // one shade, and the shade flips to the next ward — not per-row zebra striping.
   let prevWard=null, wg=0;
@@ -19678,7 +19702,12 @@ function printHandover(){
       if(rd&&rd.value)rv='rod due '+fmtShortDate(rd.value);
       else{const rdone=c.querySelector('.hv-rod-done .hv-flange-note');
         if(rdone&&rdone.textContent.trim())rv='rod out '+rdone.textContent.trim();}
-      return [tr.querySelector('.hv-operation-note')?.textContent?.trim(),av,nv,fv,rv].filter(Boolean).join(' · ');
+      // Open complications print with the appliance line, bolded, so the ward
+      // sheet carries them too. The on-screen warning emoji is dropped — it
+      // prints faint on a mono laser — and a plain "Complication:" label stands in.
+      const cmpEl=c.querySelector('.hv-cmp-line');
+      const cv=cmpEl?String(cmpEl.textContent||'').replace(/⚠️|⚠|️/g,'').trim():'';
+      return [tr.querySelector('.hv-operation-note')?.textContent?.trim(),av,nv,fv,rv,cv?('Complication: '+cv):''].filter(Boolean).join(' · ');
     };
     const val=i=>cell(i)?.querySelector('.hs-btn')?.dataset.value||'';
     // The dated line under each document button prints beneath its mark.
