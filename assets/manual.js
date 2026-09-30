@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (handover reminders)'};
+const MANUAL_META={updated:'30 September 2026 (stoma forms and handover appliances)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -84,9 +84,8 @@ const MANUAL_SECTIONS=[
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('➕ Add Patient','#e7f7ef','#1c8f5f')}.`,
-      `Fill the <b>demographics</b> — name, ID card, sex, date of birth, locality, phone. Age is worked out for you.`,
-      `Add the <b>stoma details</b>: type (colostomy / ileostomy / urostomy), location, operation date and the operation performed.`,
-      `Set the <b>follow-up owner</b> (the nurse responsible) and any consultant/firm.`,
+      `Complete the <b>Patient</b> page — name, ID card, sex, date of birth, locality, phone and consultant/firm.`,
+      `Press <b>Next</b> for the first stoma’s page. Enter its type, location, surgery date, date of discharge, and operation and findings.`,
       `Press <b>Save</b>. The patient now appears in the Registry and a stoma code (<span class="man-kbd">STO-…</span>) is created for them automatically.`
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
@@ -97,7 +96,7 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
-      `Use <b>Edit patient</b> (bottom-right) to change demographics or stoma details.`
+      `Use <b>Edit patient</b> to change patient details. In <b>Stomas &amp; operation</b>, select a stoma to edit its own operation and dates. Tabs inside the stoma form take you directly to another stoma.`
     ])}
     ${manH2('🗂','What each tab holds')}
     <ul class="man-ul">
@@ -113,10 +112,11 @@ const MANUAL_SECTIONS=[
     ${manWhen('The patient had a stoma operation — a new stoma, a refashioning, or a reversal/closure.')}
     ${manSteps([
       `Open the patient → <b>Stomas &amp; operation</b>.`,
-      `Use <b>＋ Add a stoma</b> for a new stoma, or <b>↻ Add a refashioning</b> for a refashioning, or open the stoma and record its <b>reversal</b>.`,
-      `Enter the operation date, type/location and the operation performed, then save.`
+      `Open the individual stoma form. Its golden heading shows the stoma type; tabs above it let you switch between this patient's stomas.`,
+      `Choose <b>Closed / reversed</b> to reveal the closure date; <b>Refashioned</b> → <b>Yes</b> to review the confirmation and open a new stoma ID with the same, fixed type; or <b>Add new stoma</b> to choose a new type.`,
+      `Enter the surgery date, date of discharge, and operation and findings on that stoma's page, then review and save.`
     ])}
-    ${manNote('auto','⚙️','A <b>refashioning automatically supersedes</b> the stoma it replaced — the old stoma is closed (reads "Superseded", not Active) and the new one becomes the current stoma. The appliances and accessories <b>follow onto the new stoma</b> on their own.')}
+    ${manNote('auto','⚙️','A <b>refashioning automatically supersedes</b> the stoma it replaced — the old stoma stays as an old case. The refashioned stoma gets its own ID; choose a new appliance for that ID in handover.')}
     ${manNote('auto','⚙️','Recording a <b>reversal</b> clears any planned reversal date and updates the follow-up status; a fully-reversed patient then drops off the handover by itself.')}
   `},
   {id:'surgerydate',title:'Add an upcoming surgery date',keywords:'upcoming surgery date existing patient handover expected coming in operation planned',html:`
@@ -244,7 +244,7 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `On the patient’s row, tap the <b>appliance cell</b> (the blue text or "Awaiting first review").`,
       `Choose the stoma, then the appliance system and the items. Set a flange-due date for a two-piece.`,
-      `Save — it writes to the admission and shows on the sheet at once.`
+      `Save — the latest selection for that stoma replaces the previous selection on the handover at once. An older two-piece system does not remain beside a new one-piece system.`
     ])}
     ${manNote('auto','⚙️','What you set is written against the stoma and the current admission, so it lands in the stoma’s history — not only on the ward note.')}
   `},
@@ -346,7 +346,8 @@ const MANUAL_SECTIONS=[
         ['🏥','Handover archived at 4 pm','A read-only snapshot of the ward sheet is saved automatically every day and kept for reference.','Handover › Archived'],
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
-        ['🧷','Appliances follow the refashioning','The appliances &amp; accessories move onto the refashioned stoma; the old one hands them over.','Registry / Handover'],
+        ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],
+        ['🔄','Latest handover appliance','The sheet shows the latest appliance per present stoma. Earlier selections remain in the admission history.','Handover'],
         ['🆕','Unassigned appliance is kept','An appliance set before the stoma is on the registry still shows on the handover, and attaches to the stoma once it is recorded.','Handover'],
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
         ['🔪','Upcoming surgery shows up','An existing patient’s surgery date makes them appear (highlighted) at the top of the handover on the day; it clears when they are admitted.','Handover'],

@@ -50,6 +50,18 @@ function kinds(c,p,episodes=[]){
   return Array.from(c.buildHandoverDueReminders([p],episodes),r=>r.kind);
 }
 
+test('handover keeps only the latest linked one-piece appliance when an old unassigned two-piece remains in history',()=>{
+  const c=context(),p=patient();
+  const old=appliance('unassigned','Flange Deep','2026-09-20','2026-09-30');
+  const current=appliance('base','Lentell','2026-09-29');
+  const rows=[old,current];
+  const selected=Array.from(c.currentApplianceNoteRows(p,rows));
+  assert.deepEqual(selected,[current]);
+  assert.deepEqual(Array.from(c.looseApplianceRows(p,rows)),[]);
+  assert.equal(c.applianceLineIsTwoPiece(selected[0].appliances.join(', ')),false);
+  assert.deepEqual(kinds(c,{...p,flange_due:'2026-09-30'},[episode(rows)]),[]);
+});
+
 test('Schedule 5 begins on the sixth calendar day, persists after discharge, and clears on status change',()=>{
   const c=context();
   const base=patient({is_inpatient:false,schedule_five_permit:'in_ward',schedule_five_left_date:'2026-09-25'});
