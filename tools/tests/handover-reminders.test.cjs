@@ -10,7 +10,7 @@ function source(name){
   assert.ok(start>=0,name+' not found');
   const end=html.indexOf('\n}',start);
   assert.ok(end>start,name+' end not found');
-  return html.slice(start,end+2);
+  return html.slice(html.slice(start-6,start)==='async '?start-6:start,end+2);
 }
 function context(today='2026-09-30'){
   const c=vm.createContext({
@@ -80,22 +80,38 @@ test('Schedule 5 begins on the sixth calendar day, persists after discharge, and
   assert.equal(context('2026-03-30').handoverReminderDays('2026-03-24','2026-03-30'),6);
 });
 
-test('Schedule V handover and bell turn red only after five days from the saved left date',()=>{
+test('Schedule V colours progress daily from the saved left date, with the bell starting on day six',()=>{
   const c=context();
   const start=html.indexOf('const HANDOVER_DOCS=');
   const end=html.indexOf('function handoverDocState(',start);
   vm.runInContext(html.slice(start,end),c);
   for(const name of ['handoverDocState','fmtDayMon','handoverDocDatesLine','handoverDocBtnInner','handoverDocButtonHTML'])vm.runInContext(source(name),c);
   const p=patient({schedule_five_permit:'in_ward',surgery_date:'2020-01-01',inpatient_since:'2026-01-01',flange_due:'2026-01-01'});
-  for(const left of ['2026-09-30','2026-09-25',null,'2026-02-30','2026-10-01']){
+  for(let days=0;days<=12;days++){
+    const left=new Date(Date.parse(c.TODAY+'T00:00:00Z')-days*86400000).toISOString().slice(0,10);
+    const row={...p,schedule_five_left_date:left};
+    const stage='hs-schedule-day-'+Math.min(days,7);
+    assert.equal(c.scheduleFiveWaitingMeta(row).overdue,days>5);
+    const ward=c.handoverDocButtonHTML(row,'schedule_five_permit');
+    assert.match(ward,new RegExp('hs-btn hs-schedule-waiting '+stage));
+    assert.match(ward,new RegExp(days+' day'+(days===1?'':'s')+' waiting'));
+    assert.deepEqual(kinds(c,row),days>5?['schedule-five']:[]);
+    const bell=c.renderSitingReminderList([{...row,kind:'schedule-five',eff:'2020-01-01',days_waiting:99}]);
+    if(days>5){
+      assert.match(bell,new RegExp('rem-schedule-overdue hs-schedule-waiting '+stage));
+      assert.match(bell,new RegExp('Left in ward '+left+'.*waiting '+days+' days'));
+      assert.doesNotMatch(bell,/waiting 99/);
+    }else assert.equal(bell,'');
+  }
+  for(const left of [null,'2026-02-30','2026-10-01']){
     const row={...p,schedule_five_left_date:left};
     assert.equal(c.scheduleFiveWaitingMeta(row).overdue,false);
-    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-overdue/);
+    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-schedule-day-|Overdue/);
     assert.deepEqual(kinds(c,row),[]);
   }
   const overdue={...p,schedule_five_left_date:'2026-09-24'};
   const ward=c.handoverDocButtonHTML(overdue,'schedule_five_permit');
-  assert.match(ward,/hs-btn hs-overdue/);
+  assert.match(ward,/hs-btn hs-schedule-waiting hs-schedule-day-6/);
   assert.match(ward,/Left 24\/9.*6 days waiting/);
   const bell=c.renderSitingReminderList([{...overdue,kind:'schedule-five',eff:'2020-01-01',days_waiting:99}]);
   assert.match(bell,/rem-schedule-overdue/);
@@ -103,17 +119,59 @@ test('Schedule V handover and bell turn red only after five days from the saved 
   assert.doesNotMatch(bell,/waiting 99/);
   for(const status of ['signed','collected','']){
     const row={...overdue,schedule_five_permit:status};
-    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-overdue/);
+    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-schedule-day-|Overdue/);
     assert.equal(c.renderSitingReminderList([{...row,kind:'schedule-five'}]),'');
   }
   // Crossing midnight updates the ward colour without discarding row edits.
   vm.runInContext(source('refreshScheduleFiveWardDates'),c);
   const button={dataset:{schedulePid:'patient-1',value:'in_ward',leftDate:'2026-09-25',signedDate:''}},line={innerHTML:''};
   c.document={querySelectorAll:()=>[button],getElementById:()=>line};
-  c.refreshScheduleFiveWardDates();assert.equal(button.className,'hs-btn hs-ward');
+  c.refreshScheduleFiveWardDates();assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-5');
   c.TODAY='2026-10-01';c.refreshScheduleFiveWardDates();
-  assert.equal(button.className,'hs-btn hs-overdue');assert.match(line.innerHTML,/6 days waiting/);
+  assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-6');assert.match(line.innerHTML,/6 days waiting/);
+  c.TODAY='2026-10-02';c.refreshScheduleFiveWardDates();
+  assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-7');assert.match(line.innerHTML,/7 days waiting/);
   button.dataset.value='signed';c.refreshScheduleFiveWardDates();assert.equal(button.className,'hs-btn hs-done');
+});
+
+test('Schedule V starts green immediately on save and reloads the colour from stored dates',async()=>{
+  const c=context();
+  const start=html.indexOf('const HANDOVER_DOCS=');
+  const end=html.indexOf('function handoverDocState(',start);
+  vm.runInContext(html.slice(start,end),c);
+  for(const name of ['handoverDocState','handoverDocNext','docDateUpdates','fmtDayMon','handoverDocDatesLine','handoverDocBtnInner','refreshDocDateLine','cycleHandoverDoc'])vm.runInContext(source(name),c);
+  const button={dataset:{value:'',leftDate:'2026-01-01',signedDate:''}},line={innerHTML:''};
+  const saved=patient({schedule_five_permit:'',schedule_five_left_date:'2026-01-01'});
+  c.document={getElementById:id=>id.startsWith('hsd-')?line:button};
+  c.SB={from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:saved,error:null})})};
+  let completeSave,refreshes=0;
+  c.updatePatientTolerant=(id,patch)=>{
+    assert.equal(id,saved.id);
+    Object.assign(saved,patch);
+    return new Promise(resolve=>{completeSave=()=>resolve({error:null});});
+  };
+  c.refreshReminders=async()=>{refreshes++;};
+  c.loadHandover=async()=>assert.fail('A successful status change should keep other ward edits.');
+  const first=c.cycleHandoverDoc(saved.id,'schedule_five_permit');
+  assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-0');
+  assert.equal(button.dataset.leftDate,'2026-09-30');
+  assert.match(line.innerHTML,/0 days waiting/);
+  completeSave();await first;
+  assert.equal(saved.schedule_five_left_date,'2026-09-30');
+  saved.schedule_five_left_date='2026-09-23';
+  await c.refreshDocDateLine(saved.id,'schedule_five_permit');
+  assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-7');
+  assert.equal(button.dataset.leftDate,'2026-09-23');
+  assert.match(line.innerHTML,/Overdue.*7 days waiting/);
+  for(const [status,cls] of [['signed','hs-done'],['collected','hs-black']]){
+    const task=c.cycleHandoverDoc(saved.id,'schedule_five_permit');
+    assert.equal(button.dataset.value,status);
+    assert.equal(button.className,'hs-btn '+cls);
+    assert.doesNotMatch(line.innerHTML,/waiting|Overdue/);
+    completeSave();await task;
+  }
+  assert.equal(saved.schedule_five_left_date,null);
+  assert.equal(refreshes,3);
 });
 
 test('flange alerts use the editable handover date and only current two-piece stomas',()=>{

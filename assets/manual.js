@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (Schedule V date and red reminder)'};
+const MANUAL_META={updated:'30 September 2026 (Schedule V daily colours)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -214,7 +214,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#b45309',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
-  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes flange due rod due complications infection cre vre chip urgency reminders schedule 5 permit bell',html:`
+  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes flange due rod due complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
@@ -222,21 +222,22 @@ const MANUAL_SECTIONS=[
       <li><b>Appliance line</b> — the current appliance &amp; accessories, per stoma (e.g. "Colo: Lentell 100mm").</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
       <li><b>Flange due / Rod due</b> chips — colour by urgency; overdue turns red.</li>
-      <li><b>Schedule V permit</b> — “Left in ward” records today's date. Its handover button and bell reminder turn red once more than five calendar days have passed from that saved date. The date line shows days waiting; “Signed” or “Collected” clears the red warning.</li>
+      <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
       <li><b>Complications/ROD</b> button — opens the full complication timeline and the ROD date.</li>
     </ul>
     ${manNote('auto','⚙️','A note carrying <b>CRE, VRE or "+ve"</b> turns the whole cell <b>bright red</b> so an infection alert can never be missed.')}
     ${manNote('auto','⚙️','"Awaiting first review" means an appliance has not been set yet — tap the cell to set it. An appliance set before the stoma is even on the registry is kept and shown, and follows the stoma once it is recorded.')}
   `},
-  {id:'reminders',title:'Ward reminders in the bell',keywords:'bell schedule 5 permit left in ward signed collected five days sixth day flange change due today overdue two piece handover',html:`
+  {id:'reminders',title:'Ward reminders in the bell',keywords:'bell schedule 5 permit left in ward signed collected five days sixth day flange change due today overdue two piece handover green yellow orange dark red daily colour',html:`
     <p class="man-lede">The shared bell checks the dates already recorded on the handover and patient record. It does not assign these to a person.</p>
     <ol class="man-steps">
-      <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Both the handover button and bell reminder turn red from day six, calculated only from the recorded Left in ward date. The reminder can remain after discharge.</li>
+      <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Its button starts green and changes shade daily, using only the recorded Left in ward date. The overdue bell reminder appears on day six in red, then dark red from day seven. It can remain after discharge.</li>
       <li>Tap <b>Open permit</b> in the bell to set the actual status. <b>Signed</b> or <b>Collected</b> clears the reminder. Without a recorded left date, the app cannot count the days and does not guess.</li>
       <li>For a two-piece appliance, set the <b>Flange due</b> date on the handover. The bell shows it on the due date and while overdue, naming the current stoma where recorded. <b>Open handover</b> goes to that editable date.</li>
       <li>Update or clear the flange date when it changes. The alert also clears when a one-piece replaces the two-piece, the patient leaves the handover, or that stoma is reversed or superseded.</li>
     </ol>
+    ${manNote('auto','📋','The day the permit is left is <b>day 0 (green)</b>. Then: <b>day 1 light green</b>, <b>day 2 yellow-green</b>, <b>day 3 yellow</b>, <b>day 4 amber</b>, <b>day 5 orange</b>, <b>day 6 red</b>, and <b>day 7 onwards dark red</b>. The colour updates automatically when the calendar day changes; the number of days waiting remains visible.')}
   `},
   {id:'setappliance',title:'Set an appliance from the ward',keywords:'set appliance handover wizard one piece two piece flange bag accessory stoma',html:`
     ${manMap('handover')}
@@ -358,7 +359,7 @@ const MANUAL_SECTIONS=[
         ['✅','Booking worklist empties itself','A patient comes off "awaiting booking" the moment an appointment is booked for them.','Appointments'],
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
-        ['📋','Schedule V waiting in the ward','The saved Left in ward date controls the red handover and bell warning from day six. Signed or Collected clears it. A missing date is never guessed.','Bell › Handover'],
+        ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
         ['🩹','Flange change due','The bell shows due-today and overdue changes for current two-piece appliances on the handover, using its editable flange date.','Bell › Handover'],
         ['✉️','Discharge letter pre-fills','Demographics, stoma type, op date, current appliance/accessories and mucus fistula fill in; the one/two-piece question is skipped when the appliance is known.','Discharge letter'],
         ['🔍','Duplicate detection','Likely duplicate patients are flagged, including name-order-swapped ones.','Registry › Needs Checking'],

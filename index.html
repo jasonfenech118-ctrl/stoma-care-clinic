@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-342"/>
-<script src="assets/manual.js?v=2026.09.30-342"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-343"/>
+<script src="assets/manual.js?v=2026.09.30-343"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1509,10 +1509,20 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 .hs-none:hover{background:#e7ecf1;}
 .hs-ward{background:#fff3cd;color:#8a6100;border-color:#f0d68a;}
 .hs-ward:hover{background:#ffeaa7;}
-.hs-overdue{background:#fde2e1;color:#a3241a;border-color:#e69b97;}
-.hs-overdue:hover{background:#f9cdca;}
-.hs-overdue-date{color:#a3241a;}
-.rem-schedule-overdue{background:#fff1f0;color:#a3241a;}
+/* One shade per calendar day from the saved Left in ward date. Day 7+ stays
+   dark red; the waiting count remains visible so colour is not the only cue. */
+.hs-schedule-day-0{--schedule-bg:#dcf5e8;--schedule-ink:#136c42;--schedule-tone:#136c42;--schedule-border:#a8e3c6;--schedule-soft:#ecfdf5;}
+.hs-schedule-day-1{--schedule-bg:#d9f0b1;--schedule-ink:#3f6212;--schedule-tone:#3f6212;--schedule-border:#a7ce71;--schedule-soft:#f2fbe6;}
+.hs-schedule-day-2{--schedule-bg:#ecf1a9;--schedule-ink:#5a600c;--schedule-tone:#5a600c;--schedule-border:#cbd279;--schedule-soft:#fafbe6;}
+.hs-schedule-day-3{--schedule-bg:#fff1aa;--schedule-ink:#75600a;--schedule-tone:#75600a;--schedule-border:#e7d472;--schedule-soft:#fffbe6;}
+.hs-schedule-day-4{--schedule-bg:#ffe0a1;--schedule-ink:#8a5000;--schedule-tone:#8a5000;--schedule-border:#e8bd67;--schedule-soft:#fff8e6;}
+.hs-schedule-day-5{--schedule-bg:#ffccad;--schedule-ink:#913b12;--schedule-tone:#913b12;--schedule-border:#e9a07d;--schedule-soft:#fff2e9;}
+.hs-schedule-day-6{--schedule-bg:#fdd9d5;--schedule-ink:#a3241a;--schedule-tone:#a3241a;--schedule-border:#e69b97;--schedule-soft:#fff1f0;}
+.hs-schedule-day-7{--schedule-bg:#7f1d1d;--schedule-ink:#fff;--schedule-tone:#7f1d1d;--schedule-border:#641818;--schedule-soft:#fce8e8;}
+.hs-btn.hs-schedule-waiting{background:var(--schedule-bg);color:var(--schedule-ink);border-color:var(--schedule-border);}
+.hs-btn.hs-schedule-waiting:hover{filter:brightness(.96);}
+.hs-date.hs-schedule-waiting{color:var(--schedule-tone);}
+.rem-schedule-overdue{background:var(--schedule-soft);color:var(--schedule-tone);}
 .hs-done{background:#dcf5e8;color:#136c42;border-color:#a8e3c6;}
 .hs-done:hover{background:#c9eeda;}
 /* The final "Collected" state — the document is fully dealt with and filed. */
@@ -3263,7 +3273,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.30-342';
+const APP_BUILD='2026.09.30-343';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8878,7 +8888,8 @@ function scheduleFiveWaitingMeta(p,today=TODAY){
   const elapsed=handoverReminderDays(left,today);
   const pending=String(p?.schedule_five_permit||'').trim().toLowerCase()==='in_ward';
   const days=elapsed!==null&&elapsed>=0?elapsed:null;
-  return {left,days,pending,overdue:pending&&days!==null&&days>5};
+  const colourClass=pending&&days!==null?`hs-schedule-waiting hs-schedule-day-${Math.min(days,7)}`:'';
+  return {left,days,pending,overdue:pending&&days!==null&&days>5,colourClass};
 }
 function flangeReminderTargets(p,rows){
   const stomas=stomasPresentOn(p,TODAY).filter(s=>!s.ended||String(s.ended)>TODAY);
@@ -9034,13 +9045,13 @@ function renderSitingReminderList(items){
         ? 'Left in ward '+fmtShortDate(waiting.left)+' · waiting '+waiting.days+' days'
         : 'Flange change '+fmtShortDate(r.eff)+' · '+(r.days_overdue?'Overdue by '+r.days_overdue+' day'+(r.days_overdue===1?'':'s'):'Due today');
       const statusTag=schedule
-        ? '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>':tag;
-      return `<div class="rem-row${schedule?' rem-schedule-overdue':''}" style="padding:9px 4px;border-bottom:1px solid var(--border);">
-        <div style="font-weight:700;color:${schedule?'#a3241a':'var(--navy)'};">${htmlSafe(nm)}${statusTag}<span style="font-size:9px;font-weight:800;background:${schedule?'#fde2e1':'#fef3c7'};color:${schedule?'#a3241a':'#8a5a00'};padding:1px 6px;border-radius:5px;margin-left:6px;">${schedule?'SCHEDULE V':'FLANGE CHANGE'}</span></div>
+        ? '<span style="font-size:9px;font-weight:800;background:var(--schedule-bg);color:var(--schedule-ink);padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>':tag;
+      return `<div class="rem-row${schedule?' rem-schedule-overdue '+waiting.colourClass:''}" style="padding:9px 4px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:700;color:${schedule?'var(--schedule-tone)':'var(--navy)'};">${htmlSafe(nm)}${statusTag}<span style="font-size:9px;font-weight:800;background:${schedule?'var(--schedule-bg)':'#fef3c7'};color:${schedule?'var(--schedule-ink)':'#8a5a00'};padding:1px 6px;border-radius:5px;margin-left:6px;">${schedule?'SCHEDULE V':'FLANGE CHANGE'}</span></div>
         <div style="font-size:11px;color:var(--muted);">${htmlSafe(r.id_card||'')}${wb?' · '+htmlSafe(wb):''}</div>
         ${!schedule?`<div style="font-size:11px;color:var(--navy);">${htmlSafe((r.stoma_labels||[]).join(' / '))}</div>`:''}
         <div style="font-size:11px;color:var(--muted);">${htmlSafe(note)}</div>
-        <div style="margin-top:5px;"><button class="ncb-btn" style="background:${schedule?'#fde2e1':'#fef3c7'};color:${schedule?'#a3241a':'#8a5a00'};" onclick="${schedule?'openScheduleFiveReminder':'openFlangeReminder'}('${jsSafe(r.id)}')">${schedule?'Open permit':'Open handover'}</button></div>
+        <div style="margin-top:5px;"><button class="ncb-btn" style="background:${schedule?'var(--schedule-bg)':'#fef3c7'};color:${schedule?'var(--schedule-ink)':'#8a5a00'};" onclick="${schedule?'openScheduleFiveReminder':'openFlangeReminder'}('${jsSafe(r.id)}')">${schedule?'Open permit':'Open handover'}</button></div>
       </div>`;
     }
     if(r.kind==='reversal')
@@ -17686,7 +17697,7 @@ function handoverDocDatesLine(kind,p){
     if(signed)parts.push(`Signed ${htmlSafe(signed)}`);
     if(waiting.pending&&waiting.days!==null)parts.push(`${waiting.overdue?'Overdue · ':''}${waiting.days} day${waiting.days===1?'':'s'} waiting`);
     if(waiting.pending&&!left)parts.push('Left date not recorded');
-    return parts.length?`<span class="hs-date${waiting.overdue?' hs-overdue-date':''}">${parts.join(' · ')}</span>`:'';
+    return parts.length?`<span class="hs-date${waiting.colourClass?' '+waiting.colourClass:''}">${parts.join(' · ')}</span>`:'';
   }
   return '';
 }
@@ -17700,7 +17711,7 @@ function handoverDocBtnInner(doc,st){
 function handoverDocButtonHTML(patient,kind){
   const doc=HANDOVER_DOCS[kind],patientId=patient.id,st=handoverDocState(kind,patient[kind]);
   const waiting=kind==='schedule_five_permit'?scheduleFiveWaitingMeta(patient):null;
-  const cls=waiting?.overdue?'hs-overdue':st.cls;
+  const cls=waiting?.colourClass||st.cls;
   return `<div class="hs-wrap">
     <button type="button" class="hs-btn ${cls}" id="hs-${kind}-${patientId}" data-value="${htmlSafe(st.v)}"
       ${waiting?`data-schedule-pid="${htmlSafe(patientId)}" data-left-date="${htmlSafe(waiting.left)}" data-signed-date="${htmlSafe(patient.schedule_five_signed_date||'')}"`:''}
@@ -17713,7 +17724,7 @@ function refreshScheduleFiveWardDates(){
   document.querySelectorAll('[data-schedule-pid]').forEach(btn=>{
     const p={schedule_five_permit:btn.dataset.value,schedule_five_left_date:btn.dataset.leftDate,schedule_five_signed_date:btn.dataset.signedDate};
     const st=handoverDocState('schedule_five_permit',p.schedule_five_permit);
-    btn.className=`hs-btn ${scheduleFiveWaitingMeta(p).overdue?'hs-overdue':st.cls}`;
+    btn.className=`hs-btn ${scheduleFiveWaitingMeta(p).colourClass||st.cls}`;
     const line=document.getElementById(`hsd-schedule_five_permit-${btn.dataset.schedulePid}`);
     if(line)line.innerHTML=handoverDocDatesLine('schedule_five_permit',p);
   });
@@ -17732,13 +17743,13 @@ async function refreshDocDateLine(patientId,kind){
     const btn=document.getElementById(`hs-${kind}-${patientId}`);
     if(btn){
       const st=handoverDocState(kind,data[kind]);
-      const overdue=kind==='schedule_five_permit'&&scheduleFiveWaitingMeta(data).overdue;
+      const waiting=kind==='schedule_five_permit'?scheduleFiveWaitingMeta(data):null;
       btn.dataset.value=st.v;
       if(kind==='schedule_five_permit'){
         btn.dataset.leftDate=handoverReminderDate(data.schedule_five_left_date);
         btn.dataset.signedDate=data.schedule_five_signed_date||'';
       }
-      btn.className=`hs-btn ${overdue?'hs-overdue':st.cls}`;
+      btn.className=`hs-btn ${waiting?.colourClass||st.cls}`;
       btn.innerHTML=handoverDocBtnInner(HANDOVER_DOCS[kind],st);
     }
   }catch(e){}
@@ -17748,13 +17759,22 @@ async function cycleHandoverDoc(patientId,kind){
   if(!btn)return;
   const next=handoverDocNext(kind,btn.dataset.value);
   const st=handoverDocState(kind,next);
+  const dates=docDateUpdates(kind,st.v);
+  const p={schedule_five_left_date:btn.dataset.leftDate,schedule_five_signed_date:btn.dataset.signedDate,...dates,[kind]:st.v};
+  const waiting=kind==='schedule_five_permit'?scheduleFiveWaitingMeta(p):null;
   // Move on screen first — a ward tap should never wait on the network.
   btn.dataset.value=st.v;
-  btn.className=`hs-btn ${st.cls}`;
+  if(waiting){
+    btn.dataset.leftDate=waiting.left;
+    btn.dataset.signedDate=p.schedule_five_signed_date||'';
+  }
+  btn.className=`hs-btn ${waiting?.colourClass||st.cls}`;
   btn.innerHTML=handoverDocBtnInner(HANDOVER_DOCS[kind],st);
+  const line=document.getElementById(`hsd-${kind}-${patientId}`);
+  if(line)line.innerHTML=handoverDocDatesLine(kind,p);
   // Save the status and its date(s) together; missing date columns are dropped
   // so the status still saves before the migration is run.
-  const{error}=await updatePatientTolerant(patientId,{[kind]:st.v===''?null:st.v,...docDateUpdates(kind,st.v)});
+  const{error}=await updatePatientTolerant(patientId,{[kind]:st.v===''?null:st.v,...dates});
   if(error){await loadHandover();return;}
   await refreshDocDateLine(patientId,kind);
   if(kind==='schedule_five_permit')await refreshReminders();
