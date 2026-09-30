@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (current Lentell and appliance selections)'};
+const MANUAL_META={updated:'30 September 2026 (booking the selected follow-up month)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -181,15 +181,16 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The next <b>follow-up due month is worked out for you</b>, and the patient is added to the booking worklist. Booking an appointment on/after their due date takes them off it automatically.')}
   `},
-  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking',html:`
+  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient selected nurse month earlier appointment',html:`
     ${manMap('appointments')}
     ${manWhen('To see who is due and book them in.')}
     ${manSteps([
       `Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('🔁 Follow-up Planning','#e0f2f0','#0b6b6b')}.`,
       `Work the <b>booking worklist</b> — patients due or overdue with no appointment yet — from the top down.`,
-      `Filter by <b>owner</b> to see one nurse’s caseload.`
+      `Filter by <b>owner</b> to see one nurse’s caseload, then choose the year and month.`,
+      `Saving a patient in <b>My patients</b> assigns the selected nurse and due month. The patient also appears in <b>Due this month</b> until that follow-up has a covering booking. An appointment in an earlier month does not remove them from the selected month.`
     ])}
-    ${manNote('auto','⚙️','A patient leaves the worklist the moment an appointment is booked for them, so nobody has to strike names off by hand.')}
+    ${manNote('auto','⚙️','A patient leaves the due-month worklist when booked in that month or the following grace month. For example, an October appointment does not cover a January follow-up. All future appointments are checked, so an earlier visit does not hide a separate January booking.')}
   `}
 ]},
 
@@ -356,7 +357,7 @@ const MANUAL_SECTIONS=[
         ['🩹','Handover self-heal','A deceased or fully-reversed patient drops off the ward sheet on their own; someone with an open episode is pulled back if their flag drifts.','Handover'],
         ['🚫','3 DNTUs pause follow-up','Three did-not-turn-ups in a row automatically pause the patient’s follow-up; the streak shows as "N of 3".','Appointments'],
         ['📆','Follow-up due month','The next due month is worked out from the visit and the patient is placed on the booking worklist.','Appointments'],
-        ['✅','Booking worklist empties itself','A patient comes off "awaiting booking" the moment an appointment is booked for them.','Appointments'],
+        ['✅','Booking worklist empties itself','A patient comes off "awaiting booking" once booked for the due month or the following grace month. An earlier visit does not cover a later follow-up; all future bookings are checked.','Appointments'],
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],

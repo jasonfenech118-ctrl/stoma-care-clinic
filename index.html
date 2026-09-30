@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-344"/>
-<script src="assets/manual.js?v=2026.09.30-344"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-345"/>
+<script src="assets/manual.js?v=2026.09.30-345"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3273,7 +3273,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.30-344';
+const APP_BUILD='2026.09.30-345';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7966,23 +7966,18 @@ async function loadBookingCalendar(){
     if(patsRes.error&&/followup_flexible/i.test(String(patsRes.error.message||'')))
       patsRes=await fetchAllRows(()=>SB.from('patients').select(bcBaseCols));
     const pats=patsRes.rows;
-    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date').gte('appt_date',TODAY).neq('status','cancelled'));
-    // Earliest future appointment per patient. A patient counts as booked — and so
-    // leaves the to-book list — only when that appointment actually covers this due
-    // month (on or before the due month plus one month of grace), exactly as the
-    // recall reminders judge it. A patient whose only future appointment sits past
-    // that window is treated as mis-booked and stays on the list to be re-booked,
-    // instead of silently vanishing the way a plain "has any appointment" test hid
-    // them before.
+    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,status').gte('appt_date',TODAY).neq('status','cancelled'));
+    // A booking covers this follow-up only in its due month or the following
+    // grace month. An earlier appointment is a separate visit. Check every
+    // future booking so an earlier visit cannot hide a later covering booking.
+    const bookingDates=futureBookingDatesByPatient(future);
     const earliestFuture={};
-    (future||[]).forEach(r=>{const k=String(r.patient_id);if(!earliestFuture[k]||r.appt_date<earliestFuture[k])earliestFuture[k]=r.appt_date;});
-    const coversDue=monthKeyToEndDate(addMonthsToKey(year*100+month,LATE_BOOKING_GRACE_MONTHS));
+    Object.entries(bookingDates).forEach(([pid,dates])=>{earliestFuture[pid]=dates[0];});
     const duePatients=(pats||[]).filter(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
       if(Number(p.followup_due_month)!==month||Number(p.followup_year)!==year)return false;
       if(owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
-      const appt=earliestFuture[String(p.id)];
-      return !(appt&&appt<=coversDue);
+      return !bookingDateForDueMonth(bookingDates[String(p.id)],year*100+month);
     }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||'')));
     // Keep the full table for the flexible/DNTU list, and the earliest-future map
     // so the flexible list can drop patients who already have a covering booking.
@@ -8437,6 +8432,25 @@ function addMonthsToKey(key,n){
   const d=new Date(y,m-1+n,1);
   return d.getFullYear()*100+(d.getMonth()+1);
 }
+/* All live bookings, shared by the booking workspace and reminder worklist. */
+function futureBookingDatesByPatient(rows){
+  const dates={};
+  (rows||[]).forEach(r=>{
+    const pid=String(r.patient_id||''),date=String(r.appt_date||'');
+    if(!pid||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<TODAY)return;
+    if(r.status&&r.status!=='booked')return;
+    (dates[pid]||(dates[pid]=[])).push(date);
+  });
+  Object.keys(dates).forEach(pid=>{dates[pid]=[...new Set(dates[pid])].sort();});
+  return dates;
+}
+function bookingDateForDueMonth(dates,dueKey){
+  const year=Math.floor(Number(dueKey)/100),month=Number(dueKey)%100;
+  if(!Number.isInteger(year)||year<=2000||!Number.isInteger(month)||month<1||month>12)return '';
+  const first=`${year}-${String(month).padStart(2,'0')}-01`;
+  const last=monthKeyToEndDate(addMonthsToKey(dueKey,LATE_BOOKING_GRACE_MONTHS));
+  return (dates||[]).find(date=>date>=first&&date<=last)||'';
+}
 function monthsBetweenKeys(a,b){
   return (Math.floor(b/100)-Math.floor(a/100))*12+((b%100)-(a%100));
 }
@@ -8468,22 +8482,19 @@ async function getReminderData(){
   const candidates=active.filter(p=>hasDueDate(p)&&(Number(p.followup_year)*100+Number(p.followup_due_month))<=horizon.key);
   if(!candidates.length&&!missingDue.length)return blank;
 
-  // Earliest future appointment per patient — a booking only counts as handled
-  // if it actually lands on or before the due month (plus the grace period).
+  // A separate earlier visit does not fulfil this month's follow-up.
   const{rows:future}=await fetchAllRows(()=>SB.from('appointments')
-    .select('patient_id,appt_date').gte('appt_date',TODAY).neq('status','cancelled'));
-  const earliestFuture={};
-  (future||[]).forEach(r=>{
-    const k=String(r.patient_id);
-    if(!earliestFuture[k]||r.appt_date<earliestFuture[k])earliestFuture[k]=r.appt_date;
-  });
+    .select('patient_id,appt_date,status').gte('appt_date',TODAY).neq('status','cancelled'));
+  const bookingDates=futureBookingDatesByPatient(future);
 
   const pending=[],misbooked=[];
   candidates.forEach(p=>{
     const dueKey=Number(p.followup_year)*100+Number(p.followup_due_month);
-    const booked=earliestFuture[String(p.id)];
+    const dates=bookingDates[String(p.id)]||[];
+    if(bookingDateForDueMonth(dates,dueKey))return;
+    const last=monthKeyToEndDate(addMonthsToKey(dueKey,LATE_BOOKING_GRACE_MONTHS));
+    const booked=dates.find(date=>date>last);
     if(!booked){pending.push({p,dueKey,booked:null});return;}
-    if(booked<=monthKeyToEndDate(addMonthsToKey(dueKey,LATE_BOOKING_GRACE_MONTHS)))return; // properly booked
     misbooked.push({p,dueKey,booked});
   });
 
