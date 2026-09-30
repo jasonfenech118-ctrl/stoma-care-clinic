@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (stoma forms and handover appliances)'};
+const MANUAL_META={updated:'30 September 2026 (Schedule V date and red reminder)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -222,7 +222,7 @@ const MANUAL_SECTIONS=[
       <li><b>Appliance line</b> — the current appliance &amp; accessories, per stoma (e.g. "Colo: Lentell 100mm").</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
       <li><b>Flange due / Rod due</b> chips — colour by urgency; overdue turns red.</li>
-      <li><b>Schedule 5 permit</b> — “Left in ward” records today's date; “Signed” or “Collected” clears its overdue bell reminder.</li>
+      <li><b>Schedule V permit</b> — “Left in ward” records today's date. Its handover button and bell reminder turn red once more than five calendar days have passed from that saved date. The date line shows days waiting; “Signed” or “Collected” clears the red warning.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
       <li><b>Complications/ROD</b> button — opens the full complication timeline and the ROD date.</li>
     </ul>
@@ -232,7 +232,7 @@ const MANUAL_SECTIONS=[
   {id:'reminders',title:'Ward reminders in the bell',keywords:'bell schedule 5 permit left in ward signed collected five days sixth day flange change due today overdue two piece handover',html:`
     <p class="man-lede">The shared bell checks the dates already recorded on the handover and patient record. It does not assign these to a person.</p>
     <ol class="man-steps">
-      <li>Mark a Schedule 5 permit <b>Left in ward</b> on the handover. If it remains there more than five calendar days, the bell shows the patient and days waiting, starting on day six. The reminder can remain after discharge.</li>
+      <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Both the handover button and bell reminder turn red from day six, calculated only from the recorded Left in ward date. The reminder can remain after discharge.</li>
       <li>Tap <b>Open permit</b> in the bell to set the actual status. <b>Signed</b> or <b>Collected</b> clears the reminder. Without a recorded left date, the app cannot count the days and does not guess.</li>
       <li>For a two-piece appliance, set the <b>Flange due</b> date on the handover. The bell shows it on the due date and while overdue, naming the current stoma where recorded. <b>Open handover</b> goes to that editable date.</li>
       <li>Update or clear the flange date when it changes. The alert also clears when a one-piece replaces the two-piece, the patient leaves the handover, or that stoma is reversed or superseded.</li>
@@ -358,7 +358,7 @@ const MANUAL_SECTIONS=[
         ['✅','Booking worklist empties itself','A patient comes off "awaiting booking" the moment an appointment is booked for them.','Appointments'],
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
-        ['📋','Schedule 5 waiting in the ward','From day six after a permit was marked Left in ward, the bell shows days waiting until it is Signed or Collected.','Bell › Handover'],
+        ['📋','Schedule V waiting in the ward','The saved Left in ward date controls the red handover and bell warning from day six. Signed or Collected clears it. A missing date is never guessed.','Bell › Handover'],
         ['🩹','Flange change due','The bell shows due-today and overdue changes for current two-piece appliances on the handover, using its editable flange date.','Bell › Handover'],
         ['✉️','Discharge letter pre-fills','Demographics, stoma type, op date, current appliance/accessories and mucus fistula fill in; the one/two-piece question is skipped when the appliance is known.','Discharge letter'],
         ['🔍','Duplicate detection','Likely duplicate patients are flagged, including name-order-swapped ones.','Registry › Needs Checking'],

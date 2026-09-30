@@ -80,6 +80,42 @@ test('Schedule 5 begins on the sixth calendar day, persists after discharge, and
   assert.equal(context('2026-03-30').handoverReminderDays('2026-03-24','2026-03-30'),6);
 });
 
+test('Schedule V handover and bell turn red only after five days from the saved left date',()=>{
+  const c=context();
+  const start=html.indexOf('const HANDOVER_DOCS=');
+  const end=html.indexOf('function handoverDocState(',start);
+  vm.runInContext(html.slice(start,end),c);
+  for(const name of ['handoverDocState','fmtDayMon','handoverDocDatesLine','handoverDocBtnInner','handoverDocButtonHTML'])vm.runInContext(source(name),c);
+  const p=patient({schedule_five_permit:'in_ward',surgery_date:'2020-01-01',inpatient_since:'2026-01-01',flange_due:'2026-01-01'});
+  for(const left of ['2026-09-30','2026-09-25',null,'2026-02-30','2026-10-01']){
+    const row={...p,schedule_five_left_date:left};
+    assert.equal(c.scheduleFiveWaitingMeta(row).overdue,false);
+    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-overdue/);
+    assert.deepEqual(kinds(c,row),[]);
+  }
+  const overdue={...p,schedule_five_left_date:'2026-09-24'};
+  const ward=c.handoverDocButtonHTML(overdue,'schedule_five_permit');
+  assert.match(ward,/hs-btn hs-overdue/);
+  assert.match(ward,/Left 24\/9.*6 days waiting/);
+  const bell=c.renderSitingReminderList([{...overdue,kind:'schedule-five',eff:'2020-01-01',days_waiting:99}]);
+  assert.match(bell,/rem-schedule-overdue/);
+  assert.match(bell,/Left in ward 2026-09-24.*waiting 6 days/);
+  assert.doesNotMatch(bell,/waiting 99/);
+  for(const status of ['signed','collected','']){
+    const row={...overdue,schedule_five_permit:status};
+    assert.doesNotMatch(c.handoverDocButtonHTML(row,'schedule_five_permit'),/hs-overdue/);
+    assert.equal(c.renderSitingReminderList([{...row,kind:'schedule-five'}]),'');
+  }
+  // Crossing midnight updates the ward colour without discarding row edits.
+  vm.runInContext(source('refreshScheduleFiveWardDates'),c);
+  const button={dataset:{schedulePid:'patient-1',value:'in_ward',leftDate:'2026-09-25',signedDate:''}},line={innerHTML:''};
+  c.document={querySelectorAll:()=>[button],getElementById:()=>line};
+  c.refreshScheduleFiveWardDates();assert.equal(button.className,'hs-btn hs-ward');
+  c.TODAY='2026-10-01';c.refreshScheduleFiveWardDates();
+  assert.equal(button.className,'hs-btn hs-overdue');assert.match(line.innerHTML,/6 days waiting/);
+  button.dataset.value='signed';c.refreshScheduleFiveWardDates();assert.equal(button.className,'hs-btn hs-done');
+});
+
 test('flange alerts use the editable handover date and only current two-piece stomas',()=>{
   const c=context();
   const rows=[appliance('base','Flange Deep')];
