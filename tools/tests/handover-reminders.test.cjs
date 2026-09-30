@@ -26,7 +26,7 @@ function context(today='2026-09-30'){
     jsSafe:v=>String(v),
     fmtShortDate:v=>v
   });
-  for(const name of ['parseEpisodeApplianceRows','currentApplianceNoteRows','looseApplianceRows','applianceRowIsTwoPiece','applianceLineIsTwoPiece','stripHandoverFlangeDue'])
+  for(const name of ['parseEpisodeApplianceRows','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','applianceRowIsTwoPiece','applianceLineIsTwoPiece','stripHandoverFlangeDue'])
     vm.runInContext(source(name),c);
   const start=html.indexOf('const HANDOVER_REMINDER_COLS=');
   const end=html.indexOf('function renderSitingReminderList(',start);

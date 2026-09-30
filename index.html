@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-343"/>
-<script src="assets/manual.js?v=2026.09.30-343"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-344"/>
+<script src="assets/manual.js?v=2026.09.30-344"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3273,7 +3273,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.30-343';
+const APP_BUILD='2026.09.30-344';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18131,9 +18131,13 @@ async function attachHandoverApplianceLines(rows){
   const byPatient={};
   if(ids.length){
     try{
-      const{data}=await SB.from('clinical_records').select('patient_id,appliances,record_date,is_current')
-        .in('patient_id',ids).eq('kind','episode').eq('is_current',true);
-      (data||[]).forEach(ep=>{(byPatient[ep.patient_id]=byPatient[ep.patient_id]||[]).push(...parseEpisodeApplianceRows(ep));});
+      const{data}=await SB.from('clinical_records').select('id,patient_id,appliances,record_date,is_current,discharge_date')
+        .in('patient_id',ids).eq('kind','episode').eq('is_current',true).is('discharge_date',null)
+        .order('record_date',{ascending:true}).order('id',{ascending:true});
+      (data||[]).forEach(ep=>{
+        const entries=parseEpisodeApplianceRows(ep).map(r=>({...r,changed_on:r.changed_on||ep.record_date||''}));
+        (byPatient[ep.patient_id]=byPatient[ep.patient_id]||[]).push(...entries);
+      });
     }catch(e){}
   }
   rows.forEach(p=>{p._applianceLine=handoverStomaLine(p,byPatient[p.id]||[]);});
@@ -18157,22 +18161,40 @@ function handoverApplianceRowText(tag,r){
   const fd=(r&&r.flange_due)?(' - flange due '+fmtShortDate(r.flange_due)):'';
   return (tag?tag+': ':'')+(bits||'—')+fd;
 }
-/* The appliance entries that are current for a patient right now — the newest
-   per stoma — which is what both the ward note and the handover line should
-   show. A patient with one stoma keeps only the single newest entry, so an
-   appliance that replaced another is never written beside it. */
+/* Entries predating stored stoma IDs used date-based IDs. Resolve those aliases
+   against the whole timeline, including closed stomas, without changing history.
+   An ambiguous alias is left unlinked rather than assigned to the wrong stoma. */
+function applianceStomaUid(row,timeline){
+  const uid=String(row?.stoma_uid||'');
+  if(!uid||uid==='unassigned')return '';
+  if(timeline.some(st=>st.uid===uid))return uid;
+  const initial=timeline.filter(st=>st.origin==='initial');
+  const matches=timeline.filter(st=>{
+    if(st.origin==='new'&&st.formed)return uid==='new:'+st.formed;
+    if(st.origin==='refashion'&&st.formed)return uid==='ref:'+st.formed;
+    if(st.origin==='initial')return uid==='init:'+String(st.type||'')+':'+String(st.location||'')+':'+initial.indexOf(st);
+    return false;
+  });
+  return matches.length===1?matches[0].uid:uid;
+}
+/* The newest selection per present stoma, shared by the saved ward note and the
+   handover. Earlier selections remain on the admission as history. */
 function currentApplianceNoteRows(patient,rows){
-  const useful=(rows||[]).filter(r=>r.appliances?.length||r.accessories?.length);
-  const stomas=stomasPresentOn(patient,TODAY);
+  const stomas=stomasPresentOn(patient,TODAY).filter(st=>!st.ended||String(st.ended)>TODAY);
   const all=stomaTimeline(patient);
   return stomas.map(st=>{
-    let candidates=useful.filter(r=>r.stoma_uid===st.uid);
+    let candidates=(rows||[]).filter(r=>applianceStomaUid(r,all)===st.uid);
     // Unlinked appliances — and ones set from the ward before the stoma was in
     // the Registry, saved as "unassigned" — are safe only for the original, sole
     // stoma. Attaching them here means an appliance set early follows the stoma
     // once it is recorded, rather than staying orphaned off the sheet.
-    if(!candidates.length&&all.length===1&&st.origin!=='refashion'&&st.origin!=='new')candidates=useful.filter(r=>!r.stoma_uid||r.stoma_uid==='unassigned');
-    return candidates.reduce((best,r)=>!best||String(r.changed_on||'')>=String(best.changed_on||'')?r:best,null);
+    if(all.length===1&&st.origin!=='refashion'&&st.origin!=='new')candidates=candidates.concat((rows||[]).filter(r=>!applianceStomaUid(r,all)));
+    // Select before checking content: a cleared latest selection must not bring
+    // the previous bag back onto the handover.
+    const best=candidates.reduce((prev,r)=>!prev||String(r.changed_on||'')>=String(prev.changed_on||'')?r:prev,null);
+    if(!best||(!best.appliances?.length&&!best.accessories?.some(a=>a&&a!=='None')))return null;
+    const uid=applianceStomaUid(best,all);
+    return uid&&uid!==best.stoma_uid?{...best,stoma_uid:uid}:best;
   }).filter(Boolean);
 }
 /* Appliance entries that belong to no stoma the patient has on file — set from
@@ -18183,26 +18205,30 @@ function currentApplianceNoteRows(patient,rows){
    appliance is NOT surfaced here — that is handled per stoma — so a reversed
    stoma's old bag never resurfaces. */
 function looseApplianceRows(patient,rows,stomas){
-  const present=stomas||stomasPresentOn(patient,TODAY);
-  const known=new Set(stomaTimeline(patient).map(s=>s.uid));
+  const present=(stomas||stomasPresentOn(patient,TODAY)).filter(st=>!st.ended||String(st.ended)>TODAY);
+  const all=stomaTimeline(patient),known=new Set(all.map(s=>s.uid));
   const linked=new Set(currentApplianceNoteRows(patient,rows));
   const hasCurrentForSoleStoma=present.length===1&&linked.size>0;
   const loose={};
   (rows||[]).forEach(r=>{
-    if(!(r.appliances?.length||r.accessories?.length))return;
     if(linked.has(r))return;
-    const uid=r.stoma_uid||'';
-    // A historic unassigned appliance must not appear beside a newer appliance
-    // explicitly linked to the patient's sole present stoma.
-    if(hasCurrentForSoleStoma&&(!uid||uid==='unassigned'))return;
-    if(uid&&uid!=='unassigned'&&known.has(uid))return;
+    const uid=applianceStomaUid(r,all),date=String(r.changed_on||'');
+    if(uid&&known.has(uid))return;
+    if(!uid){
+      // A dated legacy entry is history once newer selections cover every
+      // present stoma. This also works for a patient with several stomas.
+      if(hasCurrentForSoleStoma&&[...linked].some(n=>String(n.changed_on||'')>=date))return;
+      if(present.length&&present.every(st=>(rows||[]).some(n=>applianceStomaUid(n,all)===st.uid&&String(n.changed_on||'')>=date)))return;
+      // No appliance is carried from before a refashioning/new identity.
+      if(date&&all.length>present.length&&present.length&&present.every(st=>st.formed&&String(st.formed)>date))return;
+    }
     const k=uid||'__u__';
     if(!loose[k]||String(r.changed_on||'')>=String(loose[k].changed_on||''))loose[k]=r;
   });
-  return Object.values(loose);
+  return Object.values(loose).filter(r=>r.appliances?.length||r.accessories?.some(a=>a&&a!=='None'));
 }
 function handoverStomaLine(patient,epRows){
-  const stomas=stomasPresentOn(patient,TODAY);
+  const stomas=stomasPresentOn(patient,TODAY).filter(st=>!st.ended||String(st.ended)>TODAY);
   const current=currentApplianceNoteRows(patient,epRows);
   // Appliances set before the stoma was in the Registry (saved "unassigned") show
   // even when there is no stoma to hang them on, so what was set is never lost.

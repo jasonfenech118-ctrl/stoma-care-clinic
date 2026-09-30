@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (Schedule V daily colours)'};
+const MANUAL_META={updated:'30 September 2026 (current Lentell and appliance selections)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -214,12 +214,12 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#b45309',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
-  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes flange due rod due complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
+  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod due complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
-      <li><b>Appliance line</b> — the current appliance &amp; accessories, per stoma (e.g. "Colo: Lentell 100mm").</li>
+      <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
       <li><b>Flange due / Rod due</b> chips — colour by urgency; overdue turns red.</li>
       <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
@@ -245,7 +245,7 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `On the patient’s row, tap the <b>appliance cell</b> (the blue text or "Awaiting first review").`,
       `Choose the stoma, then the appliance system and the items. Set a flange-due date for a two-piece.`,
-      `Save — the latest selection for that stoma replaces the previous selection on the handover at once. An older two-piece system does not remain beside a new one-piece system.`
+      `Save — the latest selection for that stoma replaces the previous selection on the handover at once. An older two-piece system does not remain beside a new one-piece system. Older stoma links are recognised too, so a closed stoma’s Lentell does not appear as a second current appliance.`
     ])}
     ${manNote('auto','⚙️','What you set is written against the stoma and the current admission, so it lands in the stoma’s history — not only on the ward note.')}
   `},
@@ -348,7 +348,7 @@ const MANUAL_SECTIONS=[
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],
-        ['🔄','Latest handover appliance','The sheet shows the latest appliance per present stoma. Earlier selections remain in the admission history.','Handover'],
+        ['🔄','Latest handover appliance','The sheet shows the latest appliance per present stoma, recognising older stoma links and suppressing replaced unlinked entries. Closed stomas and earlier selections remain in history.','Handover'],
         ['🆕','Unassigned appliance is kept','An appliance set before the stoma is on the registry still shows on the handover, and attaches to the stoma once it is recorded.','Handover'],
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
         ['🔪','Upcoming surgery shows up','An existing patient’s surgery date makes them appear (highlighted) at the top of the handover on the day; it clears when they are admitted.','Handover'],
