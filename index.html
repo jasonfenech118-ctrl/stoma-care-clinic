@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-345"/>
-<script src="assets/manual.js?v=2026.09.30-345"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-346"/>
+<script src="assets/manual.js?v=2026.09.30-346"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -282,6 +282,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .mact{display:flex;gap:8px;margin-top:20px;}
 .btn-cancel{flex:1;padding:10px;background:#f0f2f5;border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
 .btn-save{flex:1;padding:10px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
+.btn-stoma{flex:1.35;padding:10px;background:#fff6d8;color:#7a4b00;border:1px solid #d9a31a;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;}
+.btn-stoma:hover{background:#ffedb3;}
+.btn-stoma:disabled{opacity:.55;cursor:wait;}
 
 
 
@@ -3273,7 +3276,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.30-345';
+const APP_BUILD='2026.09.30-346';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13952,6 +13955,7 @@ async function openPatientDatesModal(patientId,returnCtx){
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:flex-end;gap:8px;">
         <button class="btn-cancel" onclick="pcdCancelOrReturn()">${fromVisit?'Back to appointment':'Cancel'}</button>
+        <button type="button" class="btn-stoma" id="pcd-stomabtn" onclick="openCurrentStomaFromPatientDetails('${patientId}')">Input / edit current stoma</button>
         <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')">${fromVisit?'Save & return to appointment':'Save patient details'}</button>
       </div>
     <div style="text-align:center;margin-top:14px;">
@@ -13960,6 +13964,25 @@ async function openPatientDatesModal(patientId,returnCtx){
         title="Archive this patient while keeping the full record">Archive patient</button>
     </div>`;
   openMo();
+}
+/* Shortcut from Patient details: open the stoma that is present now. When no
+   stoma is present, start the new-stoma pathway instead of reopening an old,
+   reversed or superseded stoma. The individual stoma form already provides
+   tabs when a patient has more than one stoma. */
+async function openCurrentStomaFromPatientDetails(patientId){
+  const btn=document.getElementById('pcd-stomabtn');
+  if(btn){btn.disabled=true;btn.textContent='Opening stoma…';}
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat){
+    alert('Could not open this patient’s stoma. Try again.');
+    if(btn){btn.disabled=false;btn.textContent='Input / edit current stoma';}
+    return;
+  }
+  const current=patientStomaList(pat).filter(x=>x.present);
+  patientEditReturn=null;
+  modalCloseGuard=null;
+  if(current.length)await openStomaModal(patientId,current[0].slot);
+  else await openStomaOperation(patientId,'new');
 }
 /* Existing patients have a separate demographics form. The new-patient wizard
    still collects a first operation before the initial patient record is saved. */
