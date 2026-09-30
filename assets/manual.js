@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (booking the selected follow-up month)'};
+const MANUAL_META={updated:'30 September 2026 (current-stoma shortcut)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -96,7 +96,8 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
-      `Use <b>Edit patient</b> to change patient details. In <b>Stomas &amp; operation</b>, select a stoma to edit its own operation and dates. Tabs inside the stoma form take you directly to another stoma.`
+      `Use <b>Edit patient</b> to change patient details. In that window, press ${manBtn('Input / edit current stoma','#fff6d8','#7a4b00')} to open the stoma that is present now; when none is present, it starts the new-stoma form.`,
+      `In <b>Stomas &amp; operation</b>, select any stoma to edit its own operation and dates. Tabs inside the stoma form take you directly to another stoma.`
     ])}
     ${manH2('🗂','What each tab holds')}
     <ul class="man-ul">
