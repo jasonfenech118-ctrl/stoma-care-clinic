@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'30 September 2026 (current-stoma shortcut)'};
+const MANUAL_META={updated:'30 September 2026 (one card per stoma and current-stoma shortcut)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -90,19 +90,20 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
   `},
-  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome appointments episodes edit',html:`
+  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome appointments episodes edit single card golden title appliance history discharge current closed',html:`
     ${manMap('patients')}
     ${manWhen('To view or change anything about one patient.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
       `Use <b>Edit patient</b> to change patient details. In that window, press ${manBtn('Input / edit current stoma','#fff6d8','#7a4b00')} to open the stoma that is present now; when none is present, it starts the new-stoma form.`,
-      `In <b>Stomas &amp; operation</b>, select any stoma to edit its own operation and dates. Tabs inside the stoma form take you directly to another stoma.`
+      `In <b>Stomas &amp; operation</b>, each stoma appears once, on its own card with a bold golden title, stoma code, surgery date, discharge date and operation and findings. Select the card heading to edit that stoma. Tabs inside the stoma form take you directly to another stoma.`,
+      `The latest recorded appliances and accessories sit underneath that stoma's details. Expand <b>Appliance history</b> for its dated ward and clinic changes. Use <b>Current</b> or <b>Closed</b> to view the relevant stomas when there is more than one.`
     ])}
     ${manH2('🗂','What each tab holds')}
     <ul class="man-ul">
       <li><b>Overview</b> — demographics, follow-up status and owner, contact.</li>
-      <li><b>Stomas &amp; operation</b> — every stoma with its code, appliances &amp; accessories, and the operation history. Also the upcoming-surgery date for existing patients.</li>
+      <li><b>Stomas &amp; operation</b> — one card per stoma, with its code, operation and dates, and its own appliances &amp; accessories and history. Older appliance entries whose stoma cannot be identified are kept under <b>Other appliance history</b>. Also the upcoming-surgery date for existing patients.</li>
       <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …).</li>
       <li><b>Appointments</b> — this patient's clinic appointments.</li>
       <li><b>Episodes</b> — their inpatient admissions.</li>

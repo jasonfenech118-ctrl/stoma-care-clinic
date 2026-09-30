@@ -4,8 +4,8 @@ function source(name){const m=html.match(new RegExp('(?:async )?function '+name+
 function context(){
  const dom=new JSDOM('<body><div id="mo"></div><div id="mb"></div></body>');
  const c=vm.createContext({document:dom.window.document,TODAY:'2026-09-25',Date,console,htmlSafe:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'),fmtShortDate:s=>s,prettyStomaType:s=>s,initialStomaCode:s=>'ID-'+s,newStomaUid:()=> 'draft-uid',sexModalClass:()=>'',openMo:()=>{},confirm:()=>true,closeModalGuarded:()=>{},normaliseFollowupStatus:s=>s||'active',patientIsDeceased:p=>!!p.deceased_date,shortApplianceList:a=>a||[],stomaShortType:t=>t,stomaQuadrant:()=>'',collectStomaTargetsFromPatient:()=>[],stomaTypeOptions:t=>`<option>${t||'End colostomy'}</option>`,stomaLocOptions:t=>`<option>${t||'Existing location'}</option>`});
- for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation'])vm.runInContext(source(name),c);
- vm.runInContext('let stomaOperationCtx=null;let PF_STOMA_TARGETS=[];let modalCloseGuard=null;',c);
+ for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation','openCurrentStomaFromPatientDetails'])vm.runInContext(source(name),c);
+ vm.runInContext('let stomaOperationCtx=null;let PF_STOMA_TARGETS=[];let modalCloseGuard=null;let patientEditReturn=null;',c);
  return c;
 }
 const patient=()=>({id:'p1',stoma_type:'End colostomy',stoma_location:'LIF',surgery_date:'2026-01-01',followup_status:'active',extra_stomas:[],extra_refashionings:[],initial_stomas:[],stoma_operation_history:[]});
@@ -77,6 +77,51 @@ test('a refashioning cannot inherit an unlinked appliance recorded before its fo
  assert.match(line,/Appliance not yet selected/);assert.doesNotMatch(line,/Previous stoma pouch/);
 });
 test('legacy flat clinic appliances are not offered to a refashioned ID',()=>{const c=context();c.parseNameList=x=>x||[];const rows=c.previousStomaRecords([{id:'a1',appliances:['Old pouch'],accessories:[]}],null,[{uid:'new-id',origin:'refashion'}]);assert.equal(rows['new-id'],undefined);});
+test('registry appliance history stays with the exact stoma ID through a refashioning',()=>{
+ const c=context();c.parseNameList=v=>Array.isArray(v)?v:(v?[v]:[]);c.fixText=s=>s;c.recCode=r=>r.episode_ref||'';
+ vm.runInContext("const _normType=t=>String(t||'').trim().toLowerCase();",c);
+ for(const name of ['parseEpisodeApplianceRows','stomaApplianceHistory'])vm.runInContext(source(name),c);
+ const p={...patient(),extra_refashionings:[{uid:'new-id',type:'End colostomy',target_uid:'base',formed_date:'2026-09-25'}]};
+ const records=[{kind:'episode',record_date:'2026-09-20',appliances:[
+  {stoma_uid:'base',stoma_type:'End colostomy',appliances:['Old pouch'],changed_on:'2026-09-20'},
+  {stoma_uid:'new-id',stoma_type:'End colostomy',appliances:['Ward pouch'],changed_on:'2026-09-25'}]}];
+ const appointments=[{status:'attended',appt_date:'2026-09-28',stoma_appliances:[{uid:'new-id',stoma_type:'End colostomy',appliances:['Clinic pouch'],accessories:['Belt']}]}];
+ const groups=c.stomaApplianceHistory(p,records,appointments);
+ assert.deepEqual(Array.from(groups.get('base'),e=>e.appliances[0]),['Old pouch']);
+ assert.deepEqual(Array.from(groups.get('new-id'),e=>e.appliances[0]),['Clinic pouch','Ward pouch']);
+ assert.deepEqual(Array.from(groups.get('new-id')[0].added),['Clinic pouch','Belt']);
+ assert.deepEqual(Array.from(groups.get('new-id')[0].stopped),['Ward pouch']);
+ assert.equal(groups.has('__unassigned__'),false);
+});
+test('registry appliance history does not guess between two matching current stomas',()=>{
+ const c=context();c.parseNameList=v=>Array.isArray(v)?v:(v?[v]:[]);c.fixText=s=>s;c.recCode=()=>'';
+ vm.runInContext("const _normType=t=>String(t||'').trim().toLowerCase();",c);
+ for(const name of ['parseEpisodeApplianceRows','stomaApplianceHistory'])vm.runInContext(source(name),c);
+ const p={...patient(),initial_stomas:[{uid:'second-id',type:'End colostomy',location:'RIF'}]};
+ const records=[{kind:'episode',record_date:'2026-09-25',appliances:[{stoma_type:'End colostomy',appliances:['Unlinked pouch'],changed_on:'2026-09-25'}]}];
+ const groups=c.stomaApplianceHistory(p,records,[]);
+ assert.equal(groups.has('base'),false);assert.equal(groups.has('second-id'),false);
+ assert.deepEqual(Array.from(groups.get('__unassigned__')[0].appliances),['Unlinked pouch']);
+});
+test('same-day legacy history can still belong to a stoma closed during that operation',()=>{
+ const c=context();c.parseNameList=v=>Array.isArray(v)?v:(v?[v]:[]);c.fixText=s=>s;c.recCode=()=>'';
+ vm.runInContext("const _normType=t=>String(t||'').trim().toLowerCase();",c);
+ for(const name of ['parseEpisodeApplianceRows','stomaApplianceHistory'])vm.runInContext(source(name),c);
+ const p={...patient(),reversal_date:'2026-09-25',extra_stomas:[{uid:'new-id',type:'End ileostomy',formed_date:'2026-09-25'}]};
+ const records=[{kind:'episode',record_date:'2026-09-25',appliances:[{stoma_type:'End colostomy',appliances:['Final colostomy pouch'],changed_on:'2026-09-25'}]}];
+ const groups=c.stomaApplianceHistory(p,records,[]);
+ assert.deepEqual(Array.from(groups.get('base')[0].appliances),['Final colostomy pouch']);
+ assert.equal(groups.has('__unassigned__'),false);
+});
+test('stomas panel renders the unified stoma summary without a second generated stoma section',()=>{
+ const c=context();c.document.body.insertAdjacentHTML('beforeend','<section id="psm-stomas"></section>');
+ c.sitingSummaryHTML=()=>'<div data-siting></div>';c.patientStomaSummaryHTML=()=>'<div data-unified-stomas></div>';
+ vm.runInContext("let clrState={patient:{id:'p1'},siting:null,available:true};",c);
+ vm.runInContext(source('renderStomasPanel'),c);c.renderStomasPanel();
+ const host=c.document.getElementById('psm-stomas');
+ assert.equal(host.querySelectorAll('[data-unified-stomas]').length,1);
+ assert.equal(host.querySelectorAll('.clr-cats').length,0);
+});
 test('opening and reviewing a draft performs no write and preserves location control',async()=>{const c=context();let writes=0;c.fetchPatientById=async()=>({data:patient()});c.SB={from:()=>{writes++;throw Error('Unexpected write');}};await c.openStomaOperation('p1','refashion');assert.equal(writes,0);const d=c.document;assert.equal(d.getElementById('so-location').value,'LIF');d.getElementById('so-date').value='2026-09-25';d.getElementById('so-findings').value='Procedure';d.getElementById('so-admission').value='yes';c.stomaBadgesHTML=x=>x.present?'Present':'History';c.reviewStomaOperation();assert.equal(d.getElementById('so-details').hidden,true);assert.equal(writes,0);c.backStomaOperation();assert.equal(d.getElementById('so-details').hidden,false);});
 test('refashion page fixes the stoma type and retains the discharge date',async()=>{const c=context();c.fetchPatientById=async()=>({data:patient()});await c.openStomaOperation('p1','refashion','base:base');const d=c.document;assert.equal(d.getElementById('so-type').disabled,true);assert.match(d.getElementById('so-title').textContent,/End colostomy/);d.getElementById('so-type').innerHTML='<option>End ileostomy</option>';d.getElementById('so-date').value='2026-09-25';d.getElementById('so-discharge').value='2026-09-26';d.getElementById('so-findings').value='Operation details';d.getElementById('so-admission').value='yes';const f=c.readStomaOperation();assert.equal(f.type,'End colostomy');assert.equal(f.discharge_date,'2026-09-26');});
 test('individual stoma modal exposes its three paths and closure date without saving',async()=>{
@@ -93,12 +138,21 @@ test('individual stoma modal exposes its three paths and closure date without sa
  c.stomaModalRefashionAction();assert.equal(d.getElementById('sm-refashion-choice').hidden,false);
  c.stomaModalRefashionChoice(true);assert.equal(d.getElementById('sm-refashion-confirm').hidden,false);
 });
+test('patient details shortcut opens the present stoma and starts a new one when none is present',async()=>{
+ const c=context();let opened=null;
+ c.openStomaModal=async(id,slot)=>{opened=['current',id,slot];};
+ c.openStomaOperation=async(id,kind)=>{opened=['operation',id,kind];};
+ c.fetchPatientById=async()=>({data:patient(),error:null});
+ await c.openCurrentStomaFromPatientDetails('p1');assert.deepEqual(Array.from(opened),['current','p1','base']);
+ c.fetchPatientById=async()=>({data:{id:'p1',initial_stomas:[],extra_stomas:[],extra_refashionings:[],stoma_operation_history:[]},error:null});
+ await c.openCurrentStomaFromPatientDetails('p1');assert.deepEqual(Array.from(opened),['operation','p1','new']);
+});
 test('saving patient details updates demographics without writing stoma history',async()=>{
  const c=context(),p={...patient(),first_name:'Alex',surname:'Example',id_card:'0000000M',sex:'Male',locality:'Mosta',date_of_birth:'1980-01-01',consultant:'Firm A'};
  c.document.body.insertAdjacentHTML('beforeend','<div id="pcd-error"></div><input id="pcd-first" value="Alexander"><input id="pcd-surname" value="Example" data-locked="1"><input id="pcd-idcard" value="0000000M" data-locked="1">');
  c.fetchPatientById=async()=>({data:p,error:null});c.normaliseIdCard=s=>s;c.findRegistryPatientsByIdCard=async()=>({matches:[],error:null});c.refreshReminders=()=>{};c.closeModal=()=>{};
  let written;c.updatePatientTolerant=async(id,patch)=>{written=patch;return{error:null,dropped:[]};};
- vm.runInContext(source('savePatientDates'),c);vm.runInContext('let patientEditReturn=null;',c);
+ vm.runInContext(source('savePatientDates'),c);vm.runInContext('patientEditReturn=null;',c);
  await c.savePatientDates('p1');assert.equal(written.first_name,'Alexander');assert.equal(written.surname,undefined);
  assert.equal(written.stoma_type,undefined);assert.equal(written.extra_refashionings,undefined);
 });
