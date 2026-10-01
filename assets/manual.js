@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (alphabetical due-month list)'};
+const MANUAL_META={updated:'1 October 2026 (outcome button colours)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -90,7 +90,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
   `},
-  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome reversal closure button appointments episodes edit single card golden title appliance history discharge current closed',html:`
+  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome reversal closure button appointments episodes edit single card golden title appliance history discharge current closed colours purple black blue teal missing date',html:`
     ${manMap('patients')}
     ${manWhen('To view or change anything about one patient.')}
     ${manSteps([
@@ -104,7 +104,7 @@ const MANUAL_SECTIONS=[
     <ul class="man-ul">
       <li><b>Overview</b> — demographics, follow-up status and owner, contact.</li>
       <li><b>Stomas &amp; operation</b> — one card per stoma, with its code, operation and dates, and its own appliances &amp; accessories and history. Older appliance entries whose stoma cannot be identified are kept under <b>Other appliance history</b>. Also the upcoming-surgery date for existing patients.</li>
-      <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …). Under <b>Change the outcome</b>, press <b>Reversal / closure</b> to record the operation on the affected stoma.</li>
+      <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …). Under <b>Change the outcome</b>, press <b>Reversal / closure</b> to record the operation on the affected stoma. The buttons match the table: <b>purple</b> for reversal / closure, <b>black</b> for deceased, <b>blue</b> for Gozo and <b>teal</b> for overseas. The current outcome keeps its colour; an amber outline and <b>add date</b> label show a missing date.</li>
       <li><b>Appointments</b> — this patient's clinic appointments.</li>
       <li><b>Episodes</b> — their inpatient admissions.</li>
     </ul>
@@ -120,7 +120,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manH2('↩','Reversal from the Outcome tab')}
     ${manSteps([
-      `Open the patient → <b>Outcome</b> → ${manBtn('↩ Reversal / closure','#f2f8ff','#0369a1')} under <b>Change the outcome</b>. This button is available when a stoma is present.`,
+      `Open the patient → <b>Outcome</b> → ${manBtn('↩ Reversal / closure','#6d28d9','#ede9fe')} under <b>Change the outcome</b>. This button is available when a stoma is present.`,
       `Check the patient's name and ID card in the inline confirmation. Press <b>Yes</b> to enter the closure details, or <b>No, leave it</b> to leave the record unchanged.`,
       `Choose the stoma that was reversed or closed. Enter its reversal / closure date, or select <b>Date not known</b>, and record the operation and findings.`,
       `Check the selected stoma and details, then press <b>OK</b> to save. <b>Cancel</b> leaves the record unchanged. The selected stoma's history is retained; any other present stomas remain present.`
