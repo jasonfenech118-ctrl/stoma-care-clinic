@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (stoma forms and status reversion)'};
+const MANUAL_META={updated:'1 October 2026 (booking workspace, follow-up history and stoma forms)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -199,19 +199,32 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The next <b>follow-up due month is worked out for you</b>, and the patient is added to the booking worklist. Booking an appointment on/after their due date takes them off it automatically.')}
   `},
-  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient saved appliances details assignment selected nurse month earlier appointment alphabetical first name surname print',html:`
+  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient saved appliances details assignment selected nurse month appointment alphabetical first name surname print scroll scrollbar keyboard last follow up history select to book',html:`
     ${manMap('appointments')}
     ${manWhen('To see who is due and book them in.')}
     ${manSteps([
       `Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('🔁 Follow-up Planning','#e0f2f0','#0b6b6b')}.`,
       `Work the <b>booking worklist</b> — patients due or overdue with no appointment yet — from the top down.`,
       `Filter by <b>owner</b> to see one nurse’s caseload, then choose the year and month.`,
+      `Scroll the <b>Due this month</b> patient column with its own right-hand scrollbar, mouse wheel or a vertical swipe. Its heading and the calendar stay in view. You can also focus the list and use the arrow keys or Page Up / Page Down. Your place in the list is kept when selecting a patient or opening a calendar day; choosing a different nurse, month or list starts at the top.`,
+      `Each patient card shows their <b>last follow-up appointment date and outcome</b> in place of the surgery date; <b>Print patient list</b> shows the same information. Click the card or the patient’s name to open their full follow-up history and current booking status.`,
+      `To book, drag the patient onto an available day or slot. Alternatively, press <b>Select to book</b>, open a clinic day and press a free time slot.`,
       `In <b>My patients</b>, press <b>Add patient</b>, enter the ID card and press <b>Find</b>. Check the patient, then press <b>Add to list</b>. Saved appliances from ward and clinic records appear automatically; no stoma choice, appliance selection or complication review is required to assign the patient.`,
-      `Saving a patient in <b>My patients</b> assigns the selected nurse and due month. The patient also appears in <b>Due this month</b> until that follow-up has a covering booking. An appointment in an earlier month does not remove them from the selected month.`
+      `Saving a patient in <b>My patients</b> assigns the selected nurse and due month. The patient appears in <b>Due this month</b> when they have no upcoming booked appointment.`
     ])}
     ${manNote('tip','ℹ️','Adding a patient to this list uses their existing record and creates no appointment or new clinical entry. Their saved appliances, accessories, complications and clinical status stay on record. To change clinical details, press <b>Patient record</b> beside the patient on your list.')}
     ${manNote('auto','🔤','The <b>Due this month</b> patient list is sorted A–Z by the displayed name (first name, then surname), ignoring capitalisation and accents. <b>Print patient list</b> uses the same order.')}
-    ${manNote('auto','⚙️','A patient leaves the due-month worklist when booked in that month or the following grace month. For example, an October appointment does not cover a January follow-up. All future appointments are checked, so an earlier visit does not hide a separate January booking.')}
+    ${manNote('auto','⚙️','The booking workspace omits patients with any upcoming booked appointment, including a booking for a different month or nurse. Cancelled appointments, completed visits and past bookings do not hide someone needing a new appointment.')}
+  `},
+  {id:'history',title:'Follow-up history & bookings',keywords:'follow up history patient card past visits last appointment booked appointments awaiting appointment upcoming nurse outcome appliances accessories',html:`
+    ${manMap('appointments')}
+    ${manWhen('To review previous follow-ups and check whether another appointment is booked.')}
+    ${manSteps([
+      `Click a patient card or name in <b>Due this month</b>, or use a <b>History</b> button elsewhere in the app.`,
+      `<b>Booked appointments</b> lists upcoming bookings separately, with dates, times and the nurse or clinic column. If there is no upcoming booking, this section shows <b>Awaiting appointment</b>.`,
+      `<b>Follow-up history</b> lists earlier appointment records, including Seen, DNTU and cancellations, with recorded appliances and accessories.`,
+      `Use <b>Edit</b> beside an appointment or <b>Rebook Patient</b> to arrange the next appointment.`
+    ])}
   `}
 ]},
 
@@ -384,8 +397,8 @@ const MANUAL_SECTIONS=[
         ['🩹','Handover self-heal','A deceased or fully-reversed patient drops off the ward sheet on their own; someone with an open episode is pulled back if their flag drifts.','Handover'],
         ['🚫','3 DNTUs pause follow-up','Three did-not-turn-ups in a row automatically pause the patient’s follow-up; the streak shows as "N of 3".','Appointments'],
         ['📆','Follow-up due month','The next due month is worked out from the visit and the patient is placed on the booking worklist.','Appointments'],
-        ['🔤','Alphabetical due-month list','Due this month lists patients A–Z by the displayed name (first name, then surname), ignoring capitalisation and accents. The printed patient list keeps the same order.','Appointments › Follow-up Planning'],
-        ['✅','Booking worklist empties itself','A patient comes off "awaiting booking" once booked for the due month or the following grace month. An earlier visit does not cover a later follow-up; all future bookings are checked.','Appointments'],
+        ['🔤','Alphabetical, scrollable due-month list','Due this month lists patients A–Z by the displayed name (first name, then surname), ignoring capitalisation and accents. The column has its own scrollbar and keeps your place when selecting a patient or opening a calendar day. The printed patient list keeps the same order.','Appointments › Follow-up Planning'],
+        ['✅','Booked patients leave the booking workspace','Due this month and Flexible & DNTU omit patients who already have an upcoming booked appointment, in any month or nurse column. Due-date reminders continue to check whether the booking covers the due month or following grace month.','Appointments'],
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
