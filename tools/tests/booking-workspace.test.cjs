@@ -44,10 +44,45 @@ function context({patients=[patient()],appointments=[]}={}){
       then(resolve,reject){return Promise.resolve(this.result()).then(resolve,reject);}
     };return q;
   }};
-  for(const name of ['htmlSafe','jsSafe','fmtShortDate','followupMonthName','statusLabel','fetchAllRows','getAppointmentHistoryLite','futureBookingDatesByPatient','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcLastFollowupLabel','loadBookingCalendar','bcStomaLabel','bcListHTML','openFollowupHistory','bcBook','bcSelectPatient','bcPointerDown','bcPointerMove','bcPointerUp'])vm.runInContext(source(name),c);
+  for(const name of ['htmlSafe','jsSafe','fmtShortDate','followupMonthName','statusLabel','fetchAllRows','getAppointmentHistoryLite','futureBookingDatesByPatient','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcLastFollowupLabel','loadBookingCalendar','bcStomaLabel','bcSameNameTones','bcListHTML','openFollowupHistory','bcBook','bcSelectPatient','bcPointerDown','bcPointerMove','bcPointerUp'])vm.runInContext(source(name),c);
   return{c,root,modal};
 }
 const ids=c=>Array.from(c.bookCalState.duePatients,p=>p.id);
+
+test('matching first names and surnames with distinct IDs get different tones independent of list order',()=>{
+  const {c}=context();
+  const list=[patient({id:'a',first_name:' Alex  John ',id_card:'200M'}),patient({id:'b',first_name:'alex john',surname:' EXAMPLE ',id_card:'100m'}),patient({id:'other',first_name:'Alex',id_card:'300M'})];
+  const tones=c.bcSameNameTones(list);
+  assert.equal(tones.size,2);assert.notEqual(tones.get('a'),tones.get('b'));assert.equal(tones.has('other'),false);
+  const reversed=c.bcSameNameTones(list.slice().reverse());
+  for(const id of ['a','b'])assert.equal(tones.get(id),reversed.get(id));
+});
+
+test('same ID numbers, incomplete names and missing IDs do not create false matching-name alerts',()=>{
+  const {c}=context();
+  for(const list of [
+    [patient({id:'a',id_card:'100m'}),patient({id:'b',id_card:' 100 M '})],
+    [patient({id:'a',id_card:'100M'}),patient({id:'b',id_card:'   '})],
+    [patient({id:'a',first_name:'',id_card:'100M'}),patient({id:'b',first_name:'',id_card:'200M'})],
+    [patient({id:'a',surname:'',id_card:'100M'}),patient({id:'b',surname:'',id_card:'200M'})],
+    [patient({id:'a',first_name:'Alex John',surname:'Example',id_card:'100M'}),patient({id:'b',first_name:'Alex',surname:'John Example',id_card:'200M'})]
+  ])assert.equal(c.bcSameNameTones(list).size,0);
+});
+
+test('both booking lists render prominent escaped ID badges and keep matching-name cues when selected',()=>{
+  const {c}=context();
+  const patients=[patient({id:'a',id_card:'100M'}),patient({id:'b',id_card:'200M'}),patient({id:'escaped',first_name:'Other',id_card:'<300M>'})];
+  Object.assign(c.bookCalState,{patients,selId:'b'});
+  for(const mode of ['due','flex']){
+    c.bookCalState.mode=mode;
+    const cards=c.bcListHTML();
+    assert.match(cards,/<div class="bc-id-card"><span>ID card<\/span><strong>100M<\/strong>/);
+    assert.match(cards,/class="bc-list-pat sel bc-name-tone-1" data-id="b"/);
+    assert.equal((cards.match(/Same name — check ID card/g)||[]).length,2);
+    assert.match(cards,/<strong>&lt;300M&gt;<\/strong>/);assert.doesNotMatch(cards,/<strong><300M>/);
+    assert.match(cards,/aria-label="Select Alex Example, ID card 200M, to book"/);
+  }
+});
 
 test('any upcoming live booking hides the patient, including another month or nurse',async()=>{
   for(const date of ['2026-10-01','2026-10-14','2026-12-20','2027-01-10']){

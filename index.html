@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-359"/>
-<script src="assets/manual.js?v=2026.10.01-359"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-360"/>
+<script src="assets/manual.js?v=2026.10.01-360"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1807,6 +1807,13 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .bc-list-pat.sel{border-color:var(--teal);box-shadow:0 0 0 2px rgba(13,115,119,.28);background:#e8f5f4;}
 .bc-list-pat .bc-nm{font-weight:900;color:var(--navy);font-size:13px;}
 .bc-list-pat .bc-meta{font-size:11px;color:var(--muted);line-height:1.4;margin-top:2px;}
+.bc-list-pat.bc-name-tone-1:not(.sel){background:#eff5fc;}
+.bc-list-pat.bc-name-tone-2:not(.sel){background:#fff6e8;}
+.bc-list-pat.bc-name-tone-3:not(.sel){background:#f6f0fa;}
+.bc-id-card{display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 8px;max-width:100%;box-sizing:border-box;margin:7px 0;padding:5px 8px;border:1px solid #c7d5e1;border-radius:6px;background:#ffffffcc;color:var(--navy);}
+.bc-id-card span{font-size:11px;font-weight:700;color:#52677b;}
+.bc-id-card strong{font-size:16px;font-weight:900;letter-spacing:.4px;overflow-wrap:anywhere;}
+.bc-name-note{margin:0 0 5px;font-size:11px;font-weight:700;color:#52677b;}
 .bc-history-link{border:0;background:none;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;}
 .bc-history-link:hover{text-decoration:underline;}
 .bc-last-followup{margin-top:6px;font-size:11px;line-height:1.5;color:var(--muted);}
@@ -3316,7 +3323,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-359';
+const APP_BUILD='2026.10.01-360';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8226,6 +8233,24 @@ function bcDayViewHTML(){
     ${bookCalState.selId?`<div class="bc-pickhint">Tap a free slot to book <strong>${htmlSafe(spName)}</strong>.</div>`:''}
     ${slots}`;
 }
+function bcSameNameTones(list){
+  const groups=new Map(),tones=new Map();
+  const namePart=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
+  list.forEach(p=>{
+    const first=namePart(p.first_name),surname=namePart(p.surname);
+    const card=String(p.id_card||'').replace(/\s+/g,'').toUpperCase();
+    if(!first||!surname||!card)return;
+    const key=JSON.stringify([first,surname]);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push({id:String(p.id),card});
+  });
+  groups.forEach(group=>{
+    const cards=[...new Set(group.map(p=>p.card))].sort();
+    if(cards.length<2)return;
+    group.forEach(p=>tones.set(p.id,cards.indexOf(p.card)%4));
+  });
+  return tones;
+}
 function bcListHTML(){
   const flex=bookCalState.mode==='flex';
   if(flex&&bookCalState.flexLoading)
@@ -8234,23 +8259,28 @@ function bcListHTML(){
   const title=flex?'Flexible &amp; DNTU to book':'Due this month';
   if(!list.length)
     return `<div class="bc-head"><h4>${title}</h4></div><div class="report-note">${flex?'✅ No “according to availability” or 1–2 DNTU patients to book for this nurse.':'✅ No patients due to book for this nurse and month.'}</div>`;
+  const sameNameTones=bcSameNameTones(list);
   return `<div class="bc-head"><h4>${title} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
     ${flex?'<div class="bc-pickhint">Set to “according to clinic availability”, or missed 1–2 appointments. Press Select to book, then choose a free slot.</div>':''}
     <div class="bc-list-scroll" tabindex="0" role="region" aria-label="${title} patient list">
     ${list.map(p=>{
       const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
-      const parts=[p.id_card?'ID '+p.id_card:'',bcStomaLabel(p),p.locality||''];
+      const parts=[bcStomaLabel(p),p.locality||''];
       if(flex&&p._flex)parts.push('according to availability');
       if(flex&&p._dntu)parts.push('DNTU '+p._dntu+'×');
       const meta=parts.filter(Boolean).join(' · ');
       const selected=bookCalState.selId===String(p.id);
+      const sameNameTone=sameNameTones.get(String(p.id));
+      const cardNumber=String(p.id_card||'').trim()||'Not recorded';
       const last=bookCalState.lastFollowupByPatient?.[String(p.id)];
       const lastLabel=bcLastFollowupLabel(last);
-      return `<div class="bc-list-pat ${selected?'sel':''}" data-id="${htmlSafe(p.id)}" title="Click to view follow-up history and bookings; drag to book">
-        <div class="bc-nm"><button type="button" class="bc-history-link" onclick="openFollowupHistory('${jsSafe(p.id)}')" title="Open follow-up history and bookings">${htmlSafe(nm)}</button></div>
+      return `<div class="bc-list-pat ${selected?'sel ':''}${sameNameTone!==undefined?'bc-name-tone-'+sameNameTone:''}" data-id="${htmlSafe(p.id)}" title="Click to view follow-up history and bookings; drag to book">
+        <div class="bc-nm"><button type="button" class="bc-history-link" onclick="openFollowupHistory('${jsSafe(p.id)}')" aria-label="Open follow-up history and bookings for ${htmlSafe(nm)}, ID card ${htmlSafe(cardNumber)}" title="Open follow-up history and bookings">${htmlSafe(nm)}</button></div>
+        <div class="bc-id-card"><span>ID card</span><strong>${htmlSafe(cardNumber)}</strong></div>
+        ${sameNameTone!==undefined?'<div class="bc-name-note">Same name — check ID card</div>':''}
         <div class="bc-meta">${htmlSafe(meta)}</div>
         <div class="bc-last-followup"><strong>Last follow-up:</strong> ${htmlSafe(lastLabel)}</div>
-        <button type="button" class="bc-select-btn" aria-pressed="${selected}" aria-label="Select ${htmlSafe(nm)} to book" onclick="bcSelectPatient('${jsSafe(p.id)}')">${selected?'Selected to book':'Select to book'}</button></div>`;
+        <button type="button" class="bc-select-btn" aria-pressed="${selected}" aria-label="Select ${htmlSafe(nm)}, ID card ${htmlSafe(cardNumber)}, to book" onclick="bcSelectPatient('${jsSafe(p.id)}')">${selected?'Selected to book':'Select to book'}</button></div>`;
     }).join('')}</div>`;
 }
 function bcOpenDay(ds){bookCalState.dayOpen=ds;renderBookingCalendar();}
