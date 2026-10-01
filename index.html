@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-349"/>
-<script src="assets/manual.js?v=2026.10.01-349"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-350"/>
+<script src="assets/manual.js?v=2026.10.01-350"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3297,7 +3297,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-349';
+const APP_BUILD='2026.10.01-350';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6607,6 +6607,16 @@ async function openVisitApplianceWizard(pending,patient){
     visitWizard.rows[uid]={uid,code:st.code,short:st.shortLabel||'',label:visitStomaLabel(st),stoma_type:st.typeLabel||'',
       appliances:parseNameList(epToday[uid].appliances),accessories:parseNameList(epToday[uid].accessories),
       flange_due:epToday[uid].flange_due||''};});
+  // A date edited on the handover is the active schedule for a sole flange.
+  // Do not reopen the picker with the older date retained in appliance history.
+  if(pending.mode==='episode'&&list.length===1){
+    const uid=list[0].uid,e=epPrev[uid];
+    if(e&&(applianceRowIsTwoPiece(e)||applianceLineIsTwoPiece(e.appliances.join(', ')))&&Object.prototype.hasOwnProperty.call(patient,'flange_due')){
+      const due=handoverReminderDate(patient.flange_due);
+      prev[uid].flange_due=due;
+      if(visitWizard.rows[uid])visitWizard.rows[uid].flange_due=due;
+    }
+  }
   if(list.length===1){startVisitStoma(list[0].uid);} else {renderVisitStep();}
 }
 function stomaRecordsFor(appt){
@@ -6946,10 +6956,13 @@ async function commitEpisodeAppliances(pending,rows){
     noteRows=currentApplianceNoteRows(pat,merged).concat(looseApplianceRows(pat,merged));
   }
   const note=episodeApplianceNote(noteRows);
-  // A one-piece replacement ends the old flange schedule as well as replacing
-  // the visible appliance. Keep the date when any current stoma is two-piece.
+  // Publish the selected next-change date to the shared handover/bell field.
+  // Updating only the episode left an old month on both screens. A one-piece
+  // replacement clears it; changing another stoma leaves its flange schedule.
   const wardPatch={inpatient_notes:note};
-  if(!applianceLineIsTwoPiece(note))wardPatch.flange_due=null;
+  if(entries.some(r=>applianceRowIsTwoPiece(r)||applianceLineIsTwoPiece(r.appliances.join(', '))))
+    wardPatch.flange_due=episodeFlangeDueDate(noteRows);
+  else if(!applianceLineIsTwoPiece(note))wardPatch.flange_due=null;
   const{error:pe}=await SB.from('patients').update(wardPatch).eq('id',pending.patientId);
   if(pe){console.error('commitEpisodeAppliances: ward note update failed',pe);
     alert('The appliance was recorded, but the ward note could not be updated: '+pe.message);}
@@ -9131,9 +9144,13 @@ function renderSitingReminderList(items){
     </div>`;
   }).join('');
 }
+let reminderRefreshVersion=0;
 async function refreshReminders(){
+  const version=++reminderRefreshVersion;
   // Load ward dates independently so a siting-table error cannot hide them.
   const[clinical,pending,dated,handover]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders(),getHandoverDueReminders()]);
+  // A read started before a flange-date save must not overwrite its new alert.
+  if(version!==reminderRefreshVersion)return sitingReminders;
   const items=[...(clinical.items||[]),...(handover.items||[])].sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
   sitingReminders={items,total:items.length,today:items.filter(r=>r.eff===TODAY).length,handoverError:handover.error||''};
   pendingReminderTasks=pending;
@@ -18187,6 +18204,14 @@ function applianceRowIsTwoPiece(r){
     return it&&it.system==='two';
   });
 }
+/* Current selections only: the shared chip shows the earliest recorded due
+   date when more than one flange is in use. A cleared date stays cleared. */
+function episodeFlangeDueDate(rows){
+  const dates=(rows||[])
+    .filter(r=>applianceRowIsTwoPiece(r)||applianceLineIsTwoPiece((r.appliances||[]).join(', ')))
+    .map(r=>handoverReminderDate(r.flange_due)).filter(Boolean).sort();
+  return dates[0]||null;
+}
 /* Only the latest entry per stoma counts: setting an appliance again leaves the
    earlier entries in place as history, and it is what is on the stoma now that
    the ward has to change. */
@@ -18707,7 +18732,7 @@ function flangeDueChipHTML(p,applianceText){
   const m=flangeDueMeta(due);
   return `<label class="hv-flangebox hv-flange-${m.cls}" title="Next flange change — type or pick a date">
     <span class="hv-flange-cap">Flange due</span>
-    <input type="date" class="hv-inp hv-flange-date" value="${htmlSafe(due)}"
+    <input type="date" class="hv-inp hv-flange-date" value="${htmlSafe(due)}" data-saved-date="${htmlSafe(due)}"
       onchange="saveFlangeDueInline('${p.id}',this)"/>
     <span class="hv-flange-note">${htmlSafe(m.note)}</span>
   </label>`;
@@ -18718,7 +18743,8 @@ async function saveFlangeDueInline(pid,el){
   const val=el.value||'';
   const box=el.closest('.hv-flangebox');
   const ok=await saveHandoverField(pid,'flange_due',val);
-  if(!ok)return;
+  if(!ok){el.value=el.dataset.savedDate||'';return;}
+  el.dataset.savedDate=val;
   if(box){const m=flangeDueMeta(val);
     box.className='hv-flangebox hv-flange-'+m.cls;
     const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}

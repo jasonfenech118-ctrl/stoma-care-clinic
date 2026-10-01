@@ -257,9 +257,23 @@ test('bell combines ward alerts even when siting reminders fail',async()=>{
   c.renderClinicReminderPanelHTML=()=>'<div>bell</div>';
   c.renderDailyReminderTasksHTML=()=>'<div>daily</div>';
   c.document={getElementById:()=>null};
-  vm.runInContext('let sitingReminders={};let pendingReminderTasks={};let datedClinicReminders={};',c);
+  vm.runInContext('let sitingReminders={};let pendingReminderTasks={};let datedClinicReminders={};let reminderRefreshVersion=0;',c);
   vm.runInContext(html.slice(start,end),c);
   const result=await c.refreshReminders();
   assert.equal(result.total,1);
   assert.equal(result.items[0].kind,'flange');
+});
+
+test('a slow reminder read cannot restore the old flange date after a newer refresh',async()=>{
+  const c=context('2026-10-01');let release,first=true;
+  const oldResult=new Promise(resolve=>{release=resolve;});
+  c.getSitingReminders=async()=>({items:[]});c.getPendingReminderTasks=async()=>({items:[]});c.getDatedClinicReminders=async()=>({items:[]});
+  c.getHandoverDueReminders=()=>{if(first){first=false;return oldResult;}return Promise.resolve({items:[{kind:'flange',eff:'2026-10-01',days_overdue:0}],error:''});};
+  c.document={getElementById:()=>null};c.updateReminderBadges=()=>{};c.clinicReminderBadgeTotal=()=>1;
+  vm.runInContext('let sitingReminders={items:[]};let pendingReminderTasks={};let datedClinicReminders={};let reminderRefreshVersion=0;',c);
+  vm.runInContext(source('refreshReminders'),c);
+  const old=c.refreshReminders();await c.refreshReminders();
+  release({items:[{kind:'flange',eff:'2026-09-01',days_overdue:30}],error:''});await old;
+  const items=vm.runInContext('sitingReminders.items',c);
+  assert.equal(items[0].eff,'2026-10-01');assert.equal(items[0].days_overdue,0);
 });

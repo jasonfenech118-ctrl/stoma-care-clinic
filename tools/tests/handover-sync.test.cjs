@@ -39,7 +39,7 @@ function database(){
         then(resolve,reject){
           return Promise.resolve().then(()=>{
             if(db.failReads&&table==='clinical_records'&&selection.includes('appliances'))return {data:null,error:{message:'Connection interrupted'}};
-            if(db.failWrites&&patch&&table==='clinical_records')return {data:null,error:{message:'Save failed'}};
+            if(patch&&((db.failWrites&&table==='clinical_records')||(db.failPatientWrites&&table==='patients')))return {data:null,error:{message:'Save failed'}};
             const matches=(db[table]||[]).filter(row=>filters.every(f=>f(row))).slice(0,limit);
             if(patch){matches.forEach(row=>Object.assign(row,copy(patch)));if(db.broadcasts)listeners.forEach(fn=>fn({payload:{table}}));}
             return {data:single?(copy(matches)[0]||null):copy(matches),error:null};
@@ -75,9 +75,13 @@ function session(db,name='Nurse A'){
   const names=['parseEpisodeApplianceRows','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows',
     'shortAppliance','shortApplianceList','episodeApplianceNote','applianceRowIsTwoPiece','applianceLineIsTwoPiece',
     'handoverApplianceRowText','handoverStomaLine','stripHandoverFlangeDue','handoverComplicationLine','handoverRowHTML',
-    'attachHandoverApplianceLines','loadHandover','currentInpatientEpisode','commitEpisodeAppliances'];
+    'attachHandoverApplianceLines','loadHandover','currentInpatientEpisode','commitEpisodeAppliances',
+    'handoverReminderDate','daysUntilDate','flangeDueMeta','flangeDueChipHTML','episodeFlangeDueDate'];
   vm.runInContext('let handoverLoadVersion=0;let handoverWasPhone=false;let plLoaded=true;',c);
   names.forEach(n=>vm.runInContext(source(n),c));
+  const reminderStart=html.indexOf('const HANDOVER_REMINDER_COLS=');
+  const reminderEnd=html.indexOf('function renderSitingReminderList(',reminderStart);
+  vm.runInContext(html.slice(reminderStart,reminderEnd),c);
   const start=html.indexOf('const CLINIC_REALTIME_TABLES=');
   const end=html.indexOf('async function loadHolidays(',start);
   vm.runInContext(html.slice(start,end),c);
@@ -174,4 +178,83 @@ test('a failed appliance save leaves the shared handover unchanged',async()=>{
   const db=database(),a=session(db);await a.c.loadHandover();const before=copy(db.clinical_records[0].appliances);
   db.failWrites=true;await a.c.commitEpisodeAppliances(pending,onePiece);
   assert.deepEqual(db.clinical_records[0].appliances,before);assert.match(a.line(),/Flange Deep/);assert.match(a.alerts[0],/Could not record what was set/);
+});
+
+test('saving a two-piece appliance replaces the stale month in the handover and bell',async()=>{
+  const db=database(),a=session(db);db.patients[0].flange_due='2026-09-01';
+  await a.c.commitEpisodeAppliances(pending,[{uid:'base',short:'Colo',appliances:['Flange Deep','Drainable Bag'],flange_due:'2026-10-01'}]);
+  assert.equal(db.patients[0].flange_due,'2026-10-01');
+  assert.equal(a.dom.window.document.querySelector('.hv-flange-date').value,'2026-10-01');
+  const reminders=Array.from(a.c.buildHandoverDueReminders(db.patients,db.clinical_records));
+  assert.equal(reminders.length,1);assert.equal(reminders[0].eff,'2026-10-01');assert.equal(reminders[0].days_overdue,0);
+});
+
+test('the selected future flange date clears today’s alert until that date arrives',async()=>{
+  const db=database(),a=session(db);db.patients[0].flange_due='2026-10-01';
+  await a.c.commitEpisodeAppliances(pending,[{uid:'base',short:'Colo',appliances:['Flange Deep'],flange_due:'2026-10-03'}]);
+  assert.equal(db.patients[0].flange_due,'2026-10-03');
+  assert.equal(a.dom.window.document.querySelector('.hv-flange-date').value,'2026-10-03');
+  assert.equal(a.c.buildHandoverDueReminders(db.patients,db.clinical_records).length,0);
+  a.c.TODAY='2026-10-03';const due=Array.from(a.c.buildHandoverDueReminders(db.patients,db.clinical_records));
+  assert.equal(due.length,1);assert.equal(due[0].days_overdue,0);
+});
+
+test('clearing the next date in a two-piece save removes the stale flange alert',async()=>{
+  const db=database(),a=session(db);db.patients[0].flange_due='2026-09-01';
+  await a.c.commitEpisodeAppliances(pending,[{uid:'base',appliances:['Flange Deep'],flange_due:''}]);
+  assert.equal(db.patients[0].flange_due,null);assert.equal(a.c.buildHandoverDueReminders(db.patients,db.clinical_records).length,0);
+});
+
+test('saving several current flanges uses their earliest selected due date',async()=>{
+  const db=database(),a=session(db);
+  db.patients[0]._stomas.push({uid:'second',origin:'initial',shortLabel:'Ileo',formed:'2026-01-01'});
+  await a.c.commitEpisodeAppliances(pending,[
+    {uid:'base',short:'Colo',appliances:['Flange Deep'],flange_due:'2026-10-05'},
+    {uid:'second',short:'Ileo',appliances:['Flange Deep'],flange_due:'2026-10-03'}
+  ]);
+  assert.equal(db.patients[0].flange_due,'2026-10-03');
+});
+
+test('changing a different stoma to one-piece keeps the manually edited flange schedule',async()=>{
+  const db=database(),a=session(db);db.patients[0].flange_due='2026-10-04';
+  db.patients[0]._stomas.push({uid:'second',origin:'initial',shortLabel:'Ileo',formed:'2026-01-01'});
+  await a.c.commitEpisodeAppliances(pending,[{...onePiece[0],uid:'second'}]);
+  assert.equal(db.patients[0].flange_due,'2026-10-04');
+});
+
+function loadWizard(c){
+  vm.runInContext('let visitWizard=null;',c);c.renderVisitStep=()=>{};
+  for(const name of ['visitStomaLabel','stomaRecordsFor','previousStomaRecords','startVisitStoma','openVisitApplianceWizard'])vm.runInContext(source(name),c);
+}
+
+test('an inline date edit is shown in the bell and carried into the reopened appliance form',async()=>{
+  const db=database(),a=session(db);await a.c.loadHandover();
+  for(const name of ['saveHandoverField','saveFlangeDueInline'])vm.runInContext(source(name),a.c);
+  const input=a.dom.window.document.querySelector('.hv-flange-date');input.value='2026-10-04';
+  await a.c.saveFlangeDueInline('patient-1',input);
+  assert.equal(db.patients[0].flange_due,'2026-10-04');assert.equal(input.dataset.savedDate,'2026-10-04');
+  assert.equal(a.c.buildHandoverDueReminders(db.patients,db.clinical_records).length,0);
+  // A same-day row is also prefilled and must respect the later ward edit.
+  db.clinical_records[0].appliances[0].changed_on='2026-10-01';
+  loadWizard(a.c);
+  await a.c.openVisitApplianceWizard({...pending,mode:'episode',date:'2026-10-01',apptId:null},db.patients[0]);
+  assert.equal(vm.runInContext('visitWizard.work.flange_due',a.c),'2026-10-04');
+  assert.equal(vm.runInContext('visitWizard.rows.base.flange_due',a.c),'2026-10-04');
+  assert.equal(db.clinical_records[0].appliances[0].flange_due,'2026-10-02');
+});
+
+test('a cleared handover date does not reappear from the older appliance history when reopening',async()=>{
+  const db=database(),a=session(db);db.patients[0].flange_due=null;loadWizard(a.c);
+  await a.c.openVisitApplianceWizard({...pending,mode:'episode',date:'2026-10-01',apptId:null},db.patients[0]);
+  assert.equal(vm.runInContext('visitWizard.work.flange_due',a.c),'');
+  assert.equal(db.clinical_records[0].appliances[0].flange_due,'2026-10-02');
+});
+
+test('a failed inline date save restores the saved date on screen',async()=>{
+  const db=database(),a=session(db);await a.c.loadHandover();
+  for(const name of ['saveHandoverField','saveFlangeDueInline'])vm.runInContext(source(name),a.c);
+  db.failPatientWrites=true;const input=a.dom.window.document.querySelector('.hv-flange-date');input.value='2026-10-04';
+  await a.c.saveFlangeDueInline('patient-1',input);
+  assert.equal(db.patients[0].flange_due,'2026-10-02');assert.equal(input.value,'2026-10-02');
+  assert.equal(input.dataset.savedDate,'2026-10-02');assert.match(a.alerts[0],/Could not save the handover change/);
 });

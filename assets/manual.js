@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (shared handover appliance updates)'};
+const MANUAL_META={updated:'1 October 2026 (shared handover and flange reminder dates)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -238,7 +238,7 @@ const MANUAL_SECTIONS=[
     <ol class="man-steps">
       <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Its button starts green and changes shade daily, using only the recorded Left in ward date. The overdue bell reminder appears on day six in red, then dark red from day seven. It can remain after discharge.</li>
       <li>Tap <b>Open permit</b> in the bell to set the actual status. <b>Signed</b> or <b>Collected</b> clears the reminder. Without a recorded left date, the app cannot count the days and does not guess.</li>
-      <li>For a two-piece appliance, set the <b>Flange due</b> date on the handover. The bell shows it on the due date and while overdue, naming the current stoma where recorded. <b>Open handover</b> goes to that editable date.</li>
+      <li>For a two-piece appliance, choose the next flange-change date in the appliance form. Saving it updates the <b>Flange due</b> chip and the bell together. You can also edit the date directly on the handover. The bell shows it on the due date and while overdue, naming the current stoma where recorded. <b>Open handover</b> goes to that editable date.</li>
       <li>Update or clear the flange date when it changes. The alert also clears when a one-piece replaces the two-piece, the patient leaves the handover, or that stoma is reversed or superseded.</li>
     </ol>
     ${manNote('auto','📋','The day the permit is left is <b>day 0 (green)</b>. Then: <b>day 1 light green</b>, <b>day 2 yellow-green</b>, <b>day 3 yellow</b>, <b>day 4 amber</b>, <b>day 5 orange</b>, <b>day 6 red</b>, and <b>day 7 onwards dark red</b>. The colour updates automatically when the calendar day changes; the number of days waiting remains visible.')}
@@ -249,7 +249,7 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `On the patient’s row, tap the <b>appliance cell</b> (the blue text or "Awaiting first review").`,
       `Choose the stoma, then the appliance system and the items. Set a flange-due date for a two-piece.`,
-      `Save — the latest selection for that stoma replaces the previous selection on the handover at once. An older two-piece system does not remain beside a new one-piece system. Older stoma links are recognised too, so a closed stoma’s Lentell does not appear as a second current appliance.`
+      `Save — the latest selection for that stoma replaces the previous selection on the handover at once. The selected flange date updates the handover and bell together. With several current flanges, the shared chip uses the earliest recorded due date. A date edited on the handover is kept when reopening a sole flange’s appliance form. An older two-piece system does not remain beside a new one-piece system. Older stoma links are recognised too, so a closed stoma’s Lentell does not appear as a second current appliance.`
     ])}
     ${manNote('auto','⚙️','What you set is written against the stoma and the current admission, so it lands in the stoma’s history — not only on the ward note.')}
   `},
@@ -364,7 +364,7 @@ const MANUAL_SECTIONS=[
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
-        ['🩹','Flange change due','The bell shows due-today and overdue changes for current two-piece appliances on the handover, using its editable flange date.','Bell › Handover'],
+        ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
         ['✉️','Discharge letter pre-fills','Demographics, stoma type, op date, current appliance/accessories and mucus fistula fill in; the one/two-piece question is skipped when the appliance is known.','Discharge letter'],
         ['🔍','Duplicate detection','Likely duplicate patients are flagged, including name-order-swapped ones.','Registry › Needs Checking'],
         ['🧮','Reconciled numbers','Every Annual Report figure matches the exact patient list behind it.','Audit & Reports'],
