@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-351"/>
-<script src="assets/manual.js?v=2026.10.01-351"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-352"/>
+<script src="assets/manual.js?v=2026.10.01-352"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2307,12 +2307,11 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
         <select id="followup-status" hidden><option value="active" selected>Active Follow-ups</option></select>
       </div>
       <div class="srow" id="followup-stats"></div>
-      <!-- Administrator-only private worklist: hidden for everyone else and never
-           populated unless the admin is signed in. Adding a patient here does NOT
-           change their nurse owner. -->
+      <!-- Administrator-only private worklist. Adding a patient assigns the
+           selected nurse and due month using their existing clinical record. -->
       <div class="card" id="admin-worklist-card" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-          <div class="card-title" style="margin-bottom:0;">My patients — appliances &amp; complications
+          <div class="card-title" style="margin-bottom:0;">My patients
             <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Administrator only · assigns the patient to the selected nurse &amp; month · <span id="admin-worklist-count"></span></span></div>
           <button class="btn-add" onclick="openAdminPatientForm()" style="padding:7px 14px;">＋ Add patient</button>
         </div>
@@ -3297,7 +3296,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-351';
+const APP_BUILD='2026.10.01-352';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9915,15 +9914,12 @@ async function openFollowupHistory(patientId){
 }
 
 /* ── ADMINISTRATOR PRIVATE WORKLIST (Jason only) ──────────────────────────
-   A per-nurse, per-month list the administrator keeps by hand of patients to
-   work through — set their appliance & accessories and their complications in
-   one form and save. Adding a patient never writes to the patient record, so
-   the nurse owner is left exactly as it was; the list lives in this browser
-   only, so no other nurse sees it. Each entry remembers the nurse and month it
-   was added under, so it appears under that nurse for that month, matching the
-   page selection. The whole card is gated on IS_ADMIN, resolved at login. */
+   A per-nurse, per-month list for follow-up planning. Adding a patient assigns
+   the selected follow-up owner and due month using their existing record.
+   Clinical data is read for the summary, never rewritten by this dialog.
+   The local list is private to this browser; the allocation is shared. */
 const ADMIN_WORKLIST_KEY='admin_worklist_v2';
-let admFormPatient=null, admFormApptId=null;
+let admFormPatient=null, admFormSelection=null, admFormLookupVersion=0, admFormBusy=false;
 function adminWorklistLoad(){
   try{const v=JSON.parse(localStorage.getItem(ADMIN_WORKLIST_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}
 }
@@ -9974,7 +9970,7 @@ function renderAdminWorklist(){
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 4px;border-bottom:1px solid var(--border,#e2e8f0);">
       <div style="min-width:0;"><div style="font-weight:700;">${htmlSafe(nm)}</div><div style="font-size:12px;color:var(--muted);">${htmlSafe(meta)}</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openAdminPatientForm('${jsSafe(p.id)}')">Update</button>
+        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientRecord('${jsSafe(p.id)}')">Patient record</button>
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${jsSafe(p.id)}')">History</button>
         <button class="ncb-btn" style="background:#fdecec;color:#b91c1c;" onclick="adminWorklistRemoveAndRender('${jsSafe(key)}')">Remove</button>
       </div>
@@ -10013,19 +10009,20 @@ async function renderAdminAvailability(owner,year,month){
     </div>`;
   }catch(e){if(token===renderAdminAvailability._t)host.innerHTML='';}
 }
-/* Add / update one patient: enter an ID card, bring up the patient, then set
-   their appliance & accessories and their complications, and save. Reopened for
-   a patient already on the list by passing their id. */
+/* Adding an existing patient is an allocation, not a clinical review. Show
+   their saved appliances from ward and clinic records without asking for them
+   again. Clinical changes are made through the patient record. */
 function openAdminPatientForm(patientId){
+  if(admFormBusy)return;
   const {owner,year,month}=adminCurrentSelection();
-  admFormPatient=null; admFormApptId=null;
-  const mb=document.getElementById('mb'); mb.className='mb mb-wide';
+  admFormPatient=null;admFormSelection={owner,year,month};admFormLookupVersion++;
+  const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>Add patient — ${htmlSafe(owner)} · ${followupMonthName(month)} ${year}</h2>
-    <div class="msub">Enter the ID card number to bring up the patient, then update their appliance and complications. Saving assigns them to <strong>${htmlSafe(owner)}</strong> for <strong>${followupMonthName(month)} ${year}</strong> and books no clinic.</div>
+    <div class="msub">Find the patient by ID card, then press <strong>Add to list</strong>. Their saved details and appliances are used. This assigns them to <strong>${htmlSafe(owner)}</strong> for <strong>${followupMonthName(month)} ${year}</strong>.</div>
     <div class="fg" style="max-width:460px;">
       <label>ID card number</label>
       <div style="display:flex;gap:8px;">
-        <input type="text" id="adm-idcard" placeholder="e.g. 191290M" style="flex:1;padding:10px 12px;border:1px solid var(--border,#cbd5e1);border-radius:9px;" onkeydown="if(event.key==='Enter'){event.preventDefault();admFindPatient();}"/>
+        <input type="text" id="adm-idcard" placeholder="e.g. 191290M" style="flex:1;padding:10px 12px;border:1px solid var(--border,#cbd5e1);border-radius:9px;" oninput="admBeginPatientLookup()" onkeydown="if(event.key==='Enter'){event.preventDefault();admFindPatient();}"/>
         <button class="btn-save" type="button" onclick="admFindPatient()">Find</button>
       </div>
       <div id="adm-find-note" style="margin-top:6px;"></div>
@@ -10034,157 +10031,112 @@ function openAdminPatientForm(patientId){
   openMo();
   if(patientId){
     const p=adminWorklistLoad().find(x=>String(x.id)===String(patientId));
-    const el=document.getElementById('adm-idcard'); if(el&&p)el.value=p.id_card||'';
+    const el=document.getElementById('adm-idcard');if(el&&p)el.value=p.id_card||'';
     admLoadPatientById(patientId);
   }else{
     setTimeout(()=>document.getElementById('adm-idcard')?.focus(),60);
   }
 }
+function admBeginPatientLookup(){
+  admFormPatient=null;
+  const body=document.getElementById('adm-form-body');if(body)body.innerHTML='';
+  const note=document.getElementById('adm-find-note');if(note)note.innerHTML='';
+  return ++admFormLookupVersion;
+}
 async function admFindPatient(){
+  if(admFormBusy)return;
+  const version=admBeginPatientLookup();
   const idc=normaliseIdCard(document.getElementById('adm-idcard')?.value||'');
   const note=document.getElementById('adm-find-note');
   if(!idc){if(note)note.innerHTML='<div class="registry-lookup-note error">Type an ID card number first.</div>';return;}
   if(note)note.innerHTML='<div class="registry-lookup-note">Searching…</div>';
-  const{data,error}=await fetchPatientsSelect(cols=>SB.from('patients').select(cols).ilike('id_card',idc).limit(1));
-  if(error){if(note)note.innerHTML='<div class="registry-lookup-note error">Could not search: '+htmlSafe(error.message||'')+'</div>';return;}
-  const pat=Array.isArray(data)?data[0]:data;
-  if(!pat){if(note)note.innerHTML=`<div class="registry-lookup-note error">No patient with ID card <strong>${htmlSafe(idc)}</strong>. Check the number, or add them in the Registry first.</div>`;return;}
-  if(note)note.innerHTML='';
-  admRenderPatientForm(pat);
+  try{
+    const{data,error}=await fetchPatientsSelect(cols=>SB.from('patients').select(cols).ilike('id_card',idc).limit(1));
+    if(version!==admFormLookupVersion)return;
+    if(error)throw error;
+    const pat=Array.isArray(data)?data[0]:data;
+    if(!pat){if(note)note.innerHTML=`<div class="registry-lookup-note error">No patient with ID card <strong>${htmlSafe(idc)}</strong>. Check the number, or add them in the Registry first.</div>`;return;}
+    if(note)note.innerHTML='';
+    await admRenderPatientForm(pat);
+  }catch(error){if(version===admFormLookupVersion&&note)note.innerHTML='<div class="registry-lookup-note error">Could not search: '+htmlSafe(error.message||'Please try again.')+'</div>';}
 }
 async function admLoadPatientById(patientId){
-  const{data:pat,error}=await fetchPatientById(patientId);
+  if(admFormBusy)return;
+  const version=admBeginPatientLookup();
   const note=document.getElementById('adm-find-note');
-  if(error||!pat){if(note)note.innerHTML='<div class="registry-lookup-note error">Could not open this patient.</div>';return;}
-  admRenderPatientForm(pat);
+  try{
+    const{data:pat,error}=await fetchPatientById(patientId);
+    if(version!==admFormLookupVersion)return;
+    if(error||!pat)throw error||Error('Patient not found.');
+    if(note)note.innerHTML='';
+    await admRenderPatientForm(pat);
+  }catch(error){if(version===admFormLookupVersion&&note)note.innerHTML='<div class="registry-lookup-note error">Could not open this patient.</div>';}
+}
+function admSavedAppliancesHTML(pat,records,appointments){
+  const history=stomaApplianceHistory(pat,records,appointments);
+  const present=patientStomaList(pat).filter(s=>s.present);
+  const entryHTML=(label,event)=>`<div class="psm-card" style="margin:8px 0;">
+    <div style="font-weight:700;">${htmlSafe(label)}</div>
+    ${event?(event.appliances.length||event.accessories.length?`<div style="margin-top:6px;">${appliancePillsHTML(event.appliances,event.accessories)}</div>`:'<div class="clr-empty">No appliance or accessory selected in the latest entry.</div>'):'<div class="clr-empty">No appliance recorded for this stoma yet.</div>'}
+    ${event?.date?`<div style="font-size:11px;color:var(--muted);margin-top:5px;">Latest recorded ${htmlSafe(fmtShortDate(event.date))} · ${event.source==='followup'?'Clinic':'Ward'}</div>`:''}
+  </div>`;
+  const rows=present.map(st=>entryHTML(stomaTitle(st)+(st.type?' · '+prettyStomaType(st.type):''),history.get(st.uid)?.[0]));
+  const unassigned=history.get('__unassigned__')?.[0];
+  if(unassigned)rows.push(entryHTML('Other saved appliance record · stoma not identified',unassigned));
+  return rows.join('')||'<div class="clr-empty">No stoma is currently present.</div>';
 }
 async function admRenderPatientForm(pat){
+  const body=document.getElementById('adm-form-body');if(!body)return;
   admFormPatient=pat;
-  const{data:appts}=await SB.from('appointments')
-    .select('id,appt_date,appt_slot,status,appliances,accessories,stoma_appliances')
-    .eq('patient_id',pat.id).neq('status','cancelled')
-    .order('appt_date',{ascending:false}).order('appt_slot',{ascending:false}).limit(1);
-  const latest=(appts||[])[0]||null;
-  admFormApptId=latest?latest.id:null;
-  const flatApp=latest?parseNameList(latest.appliances):[];
-  const flatAcc=latest?parseNameList(latest.accessories):[];
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const owner=normaliseFollowupOwner(pat.followup_owner||'Common');
-  const sel=adminCurrentSelection();
+  const sel=admFormSelection||adminCurrentSelection();
   const newOwner=(sel.owner&&sel.owner!=='All Patients')?sel.owner:owner;
   const ownerLine=String(newOwner)===String(owner)
     ? `Follow-up owner: <strong>${htmlSafe(owner)}</strong>`
-    : `Follow-up owner: <strong>${htmlSafe(owner)}</strong> → will be set to <strong>${htmlSafe(newOwner)}</strong>`;
-  const stomaList=patientStomaList(pat);
-  const present=stomaList.filter(s=>s.present);
-  const defStoma=present.length===1?String(present[0].number):'';
-  const hasStoma=stomaList.length>0;
-  const cat=complicationCatalogue.slice().filter(r=>r.active).sort((a,b)=>(a.display_order-b.display_order)||String(a.name).localeCompare(String(b.name)));
-  const cmpBoxes=cat.length?cat.map(r=>`<label style="display:flex;align-items:center;gap:7px;padding:6px 4px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;"><input type="checkbox" class="adm-cmp" value="${htmlSafe(r.name)}"/> ${htmlSafe(r.name)}</label>`).join(''):'<div class="clr-empty">No complications in the list yet.</div>';
-  const cmpSetup=complicationTypesAvailable?'':`<div class="registry-lookup-note" style="margin:6px 0 0;font-size:11px;">Run <strong>sql/add-complications.sql</strong> once in Supabase to save complications and grow the list.</div>`;
-  const body=document.getElementById('adm-form-body');
-  if(!body)return;
+    : `Follow-up owner: <strong>${htmlSafe(owner)}</strong> → <strong>${htmlSafe(newOwner)}</strong>`;
   body.innerHTML=`
     <div style="background:#f1f5f9;border-radius:10px;padding:10px 12px;margin:12px 0;">
       <div style="font-weight:800;font-size:16px;">${htmlSafe(nm)}</div>
       <div style="font-size:12px;color:#52677b;">${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')} · ${ownerLine}</div>
     </div>
-    <div style="margin-bottom:10px;">
-      <label style="font-size:12px;color:#52677b;display:block;margin-bottom:3px;">Which stoma is this update about?${hasStoma?' *':''}</label>
-      <select id="adm-stoma" style="width:100%;padding:9px 10px;border:1px solid var(--border,#cbd5e1);border-radius:9px;">${cmpStomaOptions(pat,defStoma)}</select>
-    </div>
-    ${applianceSectionHTML(flatApp,flatAcc)}
-    <div class="edit-seen-section" style="margin-top:12px;">Complications</div>
-    <div class="es-review-choice" id="adm-cmp-review">
-      <label><input type="radio" name="adm-cmp-review" value="none" checked onchange="admCmpReviewChange()"> No complications identified</label>
-      <label><input type="radio" name="adm-cmp-review" value="new" onchange="admCmpReviewChange()"> A complication is identified</label>
-    </div>
-    <div id="adm-cmp-add" hidden style="margin-top:8px;">
-      <div style="font-size:11px;color:#52677b;margin-bottom:6px;">Tick every complication identified — they are saved to the patient record, tied to the stoma above.</div>
-      <div style="max-height:200px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:9px;padding:2px 8px;">${cmpBoxes}</div>
-      ${cmpSetup}
-    </div>
-    <div class="mact"><button class="btn-cancel" type="button" onclick="closeModal()">Cancel</button><button class="btn-save" type="button" id="adm-save-btn" onclick="admSavePatient()">Save</button></div>`;
-  filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();
+    <div class="edit-seen-section">Saved appliances &amp; accessories</div>
+    <div id="adm-saved-appliances"><div class="report-note">Loading saved appliances…</div></div>
+    <div class="registry-lookup-note">No clinical details need to be entered again. To change them later, open <strong>Patient record</strong> from your list.</div>
+    <div id="adm-save-note" class="pf-step-err" hidden role="alert"></div>
+    <div class="mact"><button class="btn-cancel" type="button" onclick="closeModal()">Cancel</button><button class="btn-save" type="button" id="adm-save-btn" onclick="admSavePatient()">Add to list</button></div>`;
+  const summary=document.getElementById('adm-saved-appliances');
+  try{
+    const results=await Promise.allSettled([
+      SB.from('clinical_records').select('*').eq('patient_id',pat.id).order('record_date',{ascending:false}),
+      SB.from('appointments').select('*').eq('patient_id',pat.id).eq('status','attended').order('appt_date',{ascending:false})
+    ]);
+    if(admFormPatient!==pat||document.getElementById('adm-form-body')!==body)return;
+    const failed=results.some(r=>r.status!=='fulfilled'||r.value.error);
+    const data=results.map(r=>r.status==='fulfilled'&&!r.value.error?r.value.data||[]:[]);
+    summary.innerHTML=admSavedAppliancesHTML(pat,data[0],data[1])+(failed?'<div class="report-note">Some saved appliance records could not be loaded. You can still add this patient to the list.</div>':'');
+  }catch(error){if(admFormPatient===pat&&document.getElementById('adm-form-body')===body)summary.innerHTML='<div class="report-note">Saved appliances could not be loaded. You can still add this patient to the list.</div>';}
 }
-function admCmpReviewChange(){
-  const v=document.querySelector('input[name="adm-cmp-review"]:checked')?.value||'none';
-  const add=document.getElementById('adm-cmp-add'); if(add)add.hidden=(v!=='new');
-}
-/* Save the form: write the appliance to the patient's latest appointment (or a
-   dated record when they have none), add any ticked complications tied to the
-   stoma, and file the patient on the admin list under the selected nurse and
-   month. The patients table's follow-up owner is never touched. */
+/* Assignment writes only the nurse and due month. Saved clinical information,
+   appointment appliances and complications are left on their original records. */
 async function admSavePatient(){
-  const pat=admFormPatient;
-  if(!pat){closeModal();return;}
-  const btn=document.getElementById('adm-save-btn'); if(btn){btn.disabled=true;btn.textContent='Saving…';}
-  const reset=()=>{if(btn){btn.disabled=false;btn.textContent='Save';}};
-  const stomaEl=document.getElementById('adm-stoma');
-  const stomaNumber=stomaEl?stomaEl.value:'';
-  const stomaList=patientStomaList(pat);
-  const hasStoma=stomaList.length>0;
-  const cmpMode=document.querySelector('input[name="adm-cmp-review"]:checked')?.value||'none';
-  let cmpNames=[];
-  if(cmpMode==='new'){
-    cmpNames=[...new Set([...document.querySelectorAll('.adm-cmp:checked')].map(b=>b.value).filter(Boolean))];
-    if(!cmpNames.length){alert('Tick at least one complication, or choose “No complications identified”.');return reset();}
-    if(hasStoma&&!stomaNumber){alert('Choose which stoma this update is about.');return reset();}
-  }
-  const appliances=selectedAppliances();
-  const accessories=applianceValues('of-accessories').filter(v=>v!=='None');
-  let applianceSkipped=false;
-  if((appliances.length||accessories.length)&&hasStoma&&!stomaNumber){alert('Choose which stoma the appliance is for.');return reset();}
-  if(appliances.length||accessories.length){
-    if(!admFormApptId){
-      // Never invent a visit just to hold an appliance — a phantom appointment
-      // would count the patient as "booked" in Postop Discharges and inflate the
-      // attended figures. With no appointment to attach it to, the appliance is
-      // left for the real visit; the complications and nurse / month still save.
-      applianceSkipped=true;
-    }else{
-      const stObj=stomaList.find(s=>String(s.number)===String(stomaNumber));
-      const row={uid:stObj?.uid||'unassigned',code:stObj?.code||'S?',short:'',label:stObj?('Stoma '+stObj.number):'',stoma_type:stObj?prettyStomaType(stObj.type):'',appliances,accessories,flange_due:''};
-      const err=await adminWriteAppliances(pat.id,admFormApptId,[row]);
-      if(err){alert(err);return reset();}
-    }
-  }
-  const failed=[];
-  if(cmpMode==='new'){
-    for(const text of cmpNames){
-      const res=await addComplicationToPatient(pat.id,{text,stoma:stomaNumber,date:TODAY,note:'',source:'Appointment'});
-      if(res.missing){alert('Complications could not be saved — run sql/add-complications.sql once in Supabase, then try again.');return reset();}
-      if(res.error)failed.push(text);
-    }
-  }
-  const {owner,year,month}=adminCurrentSelection();
-  // The administrator is assigning this patient to the chosen nurse for the
-  // chosen month, so the follow-up owner and due month change to match — this is
-  // what makes them appear under that nurse for that month everywhere. ("All
-  // Patients" is a filter, not a real nurse, so the owner is left as it is then.)
-  const alloc={followup_due_month:Number(month),followup_year:Number(year),followup_status:'active'};
-  if(owner&&owner!=='All Patients')alloc.followup_owner=owner;
-  const{error:allocErr}=await updatePatientTolerant(pat.id,alloc);
-  if(allocErr){alert('Appliance and complications saved, but the follow-up owner / month could not be updated: '+allocErr.message);}
-  adminWorklistUpsert({id:pat.id,first_name:pat.first_name||'',surname:pat.surname||'',id_card:pat.id_card||'',phone_number:pat.phone_number||'',owner,year,month});
-  closeModal();
-  renderAdminWorklist();
-  refreshAppointmentViews();
-  if(failed.length)alert('Saved, but these complications could not be saved: '+failed.join(', '));
-  if(applianceSkipped)alert('Saved the nurse / month'+(cmpMode==='new'?' and complications':'')+'. The appliance was NOT recorded because this patient has no appointment yet to attach it to — set the appliance at their visit. (This avoids creating a booking they never had.)');
-}
-/* Write only the appliance columns on an EXISTING appointment — never the
-   patients table, and never a new appointment (that would look like a booking).
-   Called only when the patient already has an appointment to attach it to. */
-async function adminWriteAppliances(patientId,apptId,rows){
-  if(!apptId)return null;
-  const flat=list=>[...new Set(rows.flatMap(r=>r[list]||[]))];
-  const payload={appliances:flat('appliances'),accessories:flat('accessories'),stoma_appliances:rows};
-  const protectedCols=['appliances','accessories','stoma_appliances'];
-  const saved=await updateAppointmentTolerant(apptId,payload,protectedCols);
-  if(saved.protectedMissing)return 'The appliance columns are not in the database yet. Run sql/add-appliances.sql once in Supabase, then try again.';
-  if(saved.error)return 'Could not save the appliance: '+saved.error.message;
-  return null;
+  const pat=admFormPatient,btn=document.getElementById('adm-save-btn');
+  if(!pat||!btn||admFormBusy)return;
+  admFormBusy=true;btn.disabled=true;btn.textContent='Adding…';
+  const idInput=document.getElementById('adm-idcard');if(idInput)idInput.disabled=true;
+  const note=document.getElementById('adm-save-note');if(note)note.hidden=true;
+  try{
+    const {owner,year,month}=admFormSelection||adminCurrentSelection();
+    const alloc={followup_due_month:Number(month),followup_year:Number(year)};
+    if(owner&&owner!=='All Patients')alloc.followup_owner=owner;
+    const{error}=await updatePatientTolerant(pat.id,alloc);
+    if(error)throw error;
+    adminWorklistUpsert({id:pat.id,first_name:pat.first_name||'',surname:pat.surname||'',id_card:pat.id_card||'',phone_number:pat.phone_number||'',owner,year,month});
+  }catch(error){
+    if(note){note.hidden=false;note.textContent='Could not add this patient: '+(error.message||'Please try again.');}
+    return;
+  }finally{admFormBusy=false;btn.disabled=false;btn.textContent='Add to list';if(idInput)idInput.disabled=false;}
+  closeModal();renderAdminWorklist();refreshAppointmentViews();
 }
 
 

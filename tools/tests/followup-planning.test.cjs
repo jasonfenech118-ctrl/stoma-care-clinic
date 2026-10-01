@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const {JSDOM}=require('jsdom');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));
@@ -15,6 +16,7 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
   const elements={'bookcal-root':{innerHTML:''},'followup-year':{value:'2027'},'followup-month':{value:'1'},'adm-save-btn':{disabled:false,textContent:'Save'}};
   const c=vm.createContext({
     TODAY:'2026-09-30',Date,Map,Set,selectedFollowupOwner:owner,
+    admFormBusy:false,admFormSelection:null,admFormLookupVersion:0,
     LATE_BOOKING_GRACE_MONTHS:1,PLAN_MONTHS_AHEAD:12,
     REMINDER_BUCKETS:['overdue','current','next','nodue','misbooked'].map(key=>({key})),
     bookCalState:{},staffList:[{id:'nurse'}],
@@ -40,8 +42,7 @@ test('saving My patients puts the patient in the selected due-month list despite
   const p=patient({followup_owner:'Common',followup_due_month:10,followup_year:2026});
   const c=context({patients:[p],future:[booking('2026-10-04')]});
   let added,reload;
-  c.admFormPatient=p;c.admFormApptId=null;
-  c.patientStomaList=()=>[];c.selectedAppliances=()=>[];c.applianceValues=()=>[];
+  c.admFormPatient=p;
   c.adminCurrentSelection=()=>({owner:'Lorraine',year:2027,month:1});
   c.updatePatientTolerant=async(id,patch)=>{assert.equal(id,p.id);Object.assign(p,patch);return{error:null};};
   c.adminWorklistUpsert=entry=>{added=entry;};c.closeModal=()=>{};c.renderAdminWorklist=()=>{};
@@ -53,6 +54,100 @@ test('saving My patients puts the patient in the selected due-month list despite
   const reminders=await c.getReminderData();
   assert.deepEqual(Array.from(reminders.all,p=>p.id),['added-patient']);
   assert.equal(reminders.buckets.misbooked.length,0);
+});
+
+test('adding an existing patient writes only allocation and needs no clinical answers',async()=>{
+  const p=patient({followup_status:'paused',appliances:['Saved pouch'],complications:[{text:'Saved complication'}],flange_due:'2026-10-04'});
+  const before=JSON.stringify(p),c=context();let written,added=0,closed=0;
+  c.admFormPatient=p;c.admFormSelection={owner:'Jason',year:2027,month:1};
+  c.SB={from(){throw Error('Assignment must not write to appointments or clinical records.');}};
+  c.selectedAppliances=()=>{throw Error('No appliance input is needed.');};
+  c.addComplicationToPatient=()=>{throw Error('No complication review is needed.');};
+  c.updatePatientTolerant=async(id,patch)=>{assert.equal(id,p.id);written=patch;return{error:null};};
+  c.adminWorklistUpsert=entry=>{added++;assert.equal(entry.owner,'Jason');assert.equal(entry.month,1);};
+  c.closeModal=()=>closed++;c.renderAdminWorklist=()=>{};c.refreshAppointmentViews=()=>{};
+  vm.runInContext(source('admSavePatient'),c);await c.admSavePatient();
+  assert.deepEqual(JSON.parse(JSON.stringify(written)),{followup_due_month:1,followup_year:2027,followup_owner:'Jason'});
+  assert.equal(added,1);assert.equal(closed,1);assert.equal(JSON.stringify(p),before);
+});
+
+test('failed allocation leaves the dialog open for retry and does not add a local entry',async()=>{
+  const c=context(),note={hidden:true,textContent:''};let added=0,closed=0;
+  const original=c.document.getElementById;c.document.getElementById=id=>id==='adm-save-note'?note:original(id);
+  c.admFormPatient=patient();c.adminCurrentSelection=()=>({owner:'Jason',year:2027,month:1});
+  c.updatePatientTolerant=async()=>({error:{message:'Connection lost'}});
+  c.adminWorklistUpsert=()=>added++;c.closeModal=()=>closed++;c.renderAdminWorklist=()=>{};c.refreshAppointmentViews=()=>{};
+  vm.runInContext(source('admSavePatient'),c);await c.admSavePatient();
+  assert.equal(added,0);assert.equal(closed,0);assert.equal(note.hidden,false);assert.match(note.textContent,/Connection lost/);
+  assert.equal(c.admFormBusy,false);assert.equal(c.document.getElementById('adm-save-btn').disabled,false);
+});
+
+test('repeated Add to list taps save once and keep the nurse and month shown in the dialog',async()=>{
+  const c=context();let release,writes=0,added=0;
+  c.admFormPatient=patient();c.admFormSelection={owner:'Jason',year:2027,month:1};
+  c.adminCurrentSelection=()=>({owner:'Common',year:2026,month:10});
+  c.updatePatientTolerant=async(id,patch)=>{writes++;assert.equal(patch.followup_owner,'Jason');assert.equal(patch.followup_year,2027);assert.equal(patch.followup_due_month,1);await new Promise(resolve=>release=resolve);return{error:null};};
+  c.adminWorklistUpsert=()=>added++;c.closeModal=()=>{};c.renderAdminWorklist=()=>{};c.refreshAppointmentViews=()=>{};
+  vm.runInContext(source('admSavePatient'),c);const first=c.admSavePatient();await c.admSavePatient();release();await first;
+  assert.equal(writes,1);assert.equal(added,1);
+});
+
+function savedRecordContext({records=[],appointments=[]}={}){
+  const c=context(),dom=new JSDOM('<body><div id="adm-find-note"></div><div id="adm-form-body"></div></body>');
+  c.document=dom.window.document;c.admFormSelection={owner:'Jason',year:2027,month:1};
+  c.parseNameList=v=>Array.isArray(v)?v:(v?[v]:[]);c.prettyStomaType=s=>s;c.fmtShortDate=s=>s;c.STOMA_KINDS={};c.fixText=s=>s;c.recCode=()=>'';
+  c.stomaShortType=s=>s;c.stomaQuadrant=()=>'';c.initialStomaCode=s=>s;
+  c.SB={from(table){return{select(){return this;},eq(){return this;},order(){return this;},then(resolve){resolve({data:table==='clinical_records'?records:appointments,error:null});}};}};
+  vm.runInContext("const _normType=t=>String(t||'').trim().toLowerCase();",c);
+  for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','patientStomaList','stomaTimeline','applianceStomaUid','parseEpisodeApplianceRows','stomaApplianceHistory','stomaTitle','appliancePillsHTML','admSavedAppliancesHTML','admRenderPatientForm','admBeginPatientLookup','admLoadPatientById'])vm.runInContext(source(name),c);
+  return c;
+}
+const stomaPatient=extra=>patient({stoma_type:'End colostomy',surgery_date:'2026-01-01',initial_stomas:[],extra_stomas:[],extra_refashionings:[],stoma_operation_history:[],...extra});
+
+test('Add patient shows the latest saved appliance per stoma from ward and attended clinic records',async()=>{
+  const p=stomaPatient({initial_stomas:[{uid:'second-id',type:'End ileostomy'}]});
+  const c=savedRecordContext({records:[{kind:'episode',record_date:'2026-09-28',appliances:[{stoma_uid:'base',appliances:['Ward pouch'],changed_on:'2026-09-28'}]}],appointments:[
+    {status:'attended',appt_date:'2026-09-20',stoma_appliances:[{uid:'base',appliances:['Old pouch']},{uid:'second-id',appliances:['Other stoma pouch'],accessories:['Belt']}]},
+    {status:'booked',appt_date:'2027-01-03',appliances:['Future booking pouch']}
+  ]});
+  await c.admRenderPatientForm(p);const d=c.document,summary=d.getElementById('adm-saved-appliances').textContent;
+  assert.match(summary,/Ward pouch/);assert.match(summary,/Other stoma pouch/);assert.match(summary,/Belt/);assert.doesNotMatch(summary,/Old pouch|Future booking pouch/);
+  assert.equal(d.getElementById('adm-save-btn').disabled,false);assert.equal(d.getElementById('adm-stoma'),null);
+  assert.equal(d.querySelector('[name="adm-cmp-review"]'),null);assert.equal(d.getElementById('of-appliance-search'),null);
+});
+
+test('an empty latest selection or a new refashioned ID does not reuse an old appliance',()=>{
+  const c=savedRecordContext(),p=stomaPatient();
+  const records=[{kind:'episode',record_date:'2026-09-28',appliances:[{stoma_uid:'base',appliances:['Old pouch'],changed_on:'2026-09-20'},{stoma_uid:'base',appliances:[],accessories:[],changed_on:'2026-09-28'}]}];
+  assert.doesNotMatch(c.admSavedAppliancesHTML(p,records,[]),/Old pouch/);
+  const refashioned={...p,extra_refashionings:[{uid:'new-id',type:'End colostomy',target_uid:'base',formed_date:'2026-09-25'}]};
+  assert.doesNotMatch(c.admSavedAppliancesHTML(refashioned,records,[]),/Old pouch/);
+});
+
+test('a slower earlier patient lookup cannot replace the patient now selected',async()=>{
+  const c=savedRecordContext(),first=stomaPatient({id:'first'}),second=stomaPatient({id:'second'});let release;
+  c.fetchPatientById=id=>id==='first'?new Promise(resolve=>release=resolve):Promise.resolve({data:second,error:null});
+  const pending=c.admLoadPatientById('first');await c.admLoadPatientById('second');release({data:first,error:null});await pending;
+  assert.equal(c.admFormPatient.id,'second');
+});
+
+test('assignment remains available when saved appliance reads fail',async()=>{
+  const c=savedRecordContext();
+  c.SB={from(){return{select(){return this;},eq(){return this;},order(){return this;},then(resolve){resolve({data:null,error:{message:'Unavailable'}});}};}};
+  await c.admRenderPatientForm(stomaPatient());
+  assert.equal(c.document.getElementById('adm-save-btn').disabled,false);
+  assert.match(c.document.getElementById('adm-saved-appliances').textContent,/You can still add this patient/);
+});
+
+test('a slower appliance summary cannot replace the details of another patient',async()=>{
+  const c=savedRecordContext(),pending=[];
+  c.SB={from(table){return{select(){return this;},eq(key,value){if(key==='patient_id')this.patientId=value;return this;},order(){return this;},then(resolve){
+    const result={data:table==='clinical_records'?[{kind:'episode',record_date:'2026-09-28',appliances:[{stoma_uid:'base',appliances:[this.patientId+' pouch'],changed_on:'2026-09-28'}]}]:[],error:null};
+    if(this.patientId==='first')pending.push(()=>resolve(result));else resolve(result);
+  }};}};
+  const first=c.admRenderPatientForm(stomaPatient({id:'first'}));await Promise.resolve();
+  await c.admRenderPatientForm(stomaPatient({id:'second'}));pending.forEach(release=>release());await first;
+  const text=c.document.getElementById('adm-saved-appliances').textContent;assert.match(text,/second pouch/);assert.doesNotMatch(text,/first pouch/);
 });
 
 test('a booking in the due month or following grace month removes the patient from both worklists',async()=>{

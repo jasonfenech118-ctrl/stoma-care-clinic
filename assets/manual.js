@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (Outcome reversal button)'};
+const MANUAL_META={updated:'1 October 2026 (follow-up assignment using saved records)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -189,15 +189,17 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The next <b>follow-up due month is worked out for you</b>, and the patient is added to the booking worklist. Booking an appointment on/after their due date takes them off it automatically.')}
   `},
-  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient selected nurse month earlier appointment',html:`
+  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient saved appliances details assignment selected nurse month earlier appointment',html:`
     ${manMap('appointments')}
     ${manWhen('To see who is due and book them in.')}
     ${manSteps([
       `Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('🔁 Follow-up Planning','#e0f2f0','#0b6b6b')}.`,
       `Work the <b>booking worklist</b> — patients due or overdue with no appointment yet — from the top down.`,
       `Filter by <b>owner</b> to see one nurse’s caseload, then choose the year and month.`,
+      `In <b>My patients</b>, press <b>Add patient</b>, enter the ID card and press <b>Find</b>. Check the patient, then press <b>Add to list</b>. Saved appliances from ward and clinic records appear automatically; no stoma choice, appliance selection or complication review is required to assign the patient.`,
       `Saving a patient in <b>My patients</b> assigns the selected nurse and due month. The patient also appears in <b>Due this month</b> until that follow-up has a covering booking. An appointment in an earlier month does not remove them from the selected month.`
     ])}
+    ${manNote('tip','ℹ️','Adding a patient to this list uses their existing record and creates no appointment or new clinical entry. Their saved appliances, accessories, complications and clinical status stay on record. To change clinical details, press <b>Patient record</b> beside the patient on your list.')}
     ${manNote('auto','⚙️','A patient leaves the due-month worklist when booked in that month or the following grace month. For example, an October appointment does not cover a January follow-up. All future appointments are checked, so an earlier visit does not hide a separate January booking.')}
   `}
 ]},
