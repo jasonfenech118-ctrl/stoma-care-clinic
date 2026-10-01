@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-350"/>
-<script src="assets/manual.js?v=2026.10.01-350"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-351"/>
+<script src="assets/manual.js?v=2026.10.01-351"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3297,7 +3297,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-350';
+const APP_BUILD='2026.10.01-351';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14767,7 +14767,7 @@ async function openStomaOperation(patientId,kind='new',slot=''){
   stomaOperationCtx={patientId,pat,kind,uid:newStomaUid(),target:target?.uid||'',lockTarget:kind==='refashion'&&!!slot,busy:false};
   PF_STOMA_TARGETS=collectStomaTargetsFromPatient(pat);
   const mb=document.getElementById('mb');mb.className='mb mb-wide'+sexModalClass(pat);
-  mb.innerHTML=`<h2 class="sm-gold-title" id="so-title">${kind==='refashion'?htmlSafe(prettyStomaType(target?.type)||'Stoma')+' · Refashioned stoma':'New stoma'}</h2><div class="msub">${htmlSafe([pat.first_name,pat.surname].filter(Boolean).join(' '))} · ${htmlSafe(pat.id_card||'')} · New stoma ID ${htmlSafe(initialStomaCode(stomaOperationCtx.uid))}</div>
+  mb.innerHTML=`<h2 class="sm-gold-title" id="so-title">${kind==='refashion'?htmlSafe(prettyStomaType(target?.type)||'Stoma')+' · Refashioned stoma':'New stoma'}</h2><div class="msub">${htmlSafe([pat.first_name,pat.surname].filter(Boolean).join(' '))} · ${htmlSafe(pat.id_card||'')}${kind==='reversal'?'':` · New stoma ID ${htmlSafe(initialStomaCode(stomaOperationCtx.uid))}`}</div>
     <div id="so-details"><div class="fg" hidden><label>What happened?</label><select id="so-kind" onchange="changeStomaOperationKind()">
     <option value="reversal">Reversal / closure</option><option value="new">New stoma formation</option><option value="refashion">Refashioning</option></select></div>
     <div id="so-targetwrap" class="fg"><label id="so-targetlabel">Which stoma?</label><select id="so-target" onchange="changeStomaOperationTarget()">${open.map(x=>`<option value="${htmlSafe(x.uid)}">${htmlSafe(operationTargetLabel(x))}</option>`).join('')}</select></div>
@@ -15880,14 +15880,9 @@ function stomaOutcomesPanelHTML(pat){
     ${stomaLines?`<div><div class="psm-sec-head"><h3>Stomas</h3></div>${stomaLines}</div>`:''}`;
 }
 /* ── outcome change on the record page ───────────────────────────────────────
-   The outcome buttons that used to live in the register form's third step now
-   sit on the record's Outcome tab. Each one asks first, in the patient's own
-   name and ID card, then takes the date, and only then writes to the database —
-   nothing changes on a stray click. A death is the end of the record, so once a
-   patient reads as deceased the other three are switched off until the date of
-   death is cleared. The reversal date travels with the stoma being reversed, so
-   the change is applied through the very same form logic the register uses
-   (built hidden and read straight back), never a hand-rolled second path. */
+   Patient-status buttons ask for confirmation and a date before saving.
+   Reversal / closure opens the existing operation form, where the affected
+   stoma, date and findings are reviewed before its history is updated. */
 function croPatientLabel(){
   const p=clrState.patient||{};
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
@@ -15907,17 +15902,16 @@ function croStatusDate(pat,key){
 }
 function croStatusPanelHTML(pat){
   const cur=derivedFollowupStatus(pat);
-  // Reversal is a stoma outcome, not a patient follow-up status, so it is not
-  // offered as a patient-status button here — it is recorded on the stoma itself
-  // (the "Record reversal / closure" action under Stomas), and the patient's
-  // status then follows from the stoma. Deceased, Gozo and overseas remain, as
-  // those are decisions about the patient rather than about one stoma.
+  // Reversal uses the stoma operation form so only the chosen stoma is closed.
+  const canReverse=patientStomaList(pat).some(x=>x.present);
+  const reversalBtn=`<button type="button" class="pf-sbtn pf-sbtn-rev" ${canReverse?'':'disabled'}
+    title="${canReverse?'Record reversal or closure of a present stoma':'No stoma is currently present to reverse or close'}"
+    onclick="openStomaOperation('${jsSafe(pat.id)}','reversal')"><span aria-hidden="true">↩</span>Reversal / closure</button>`;
   const btns=PF_STATUS_ACTIONS.filter(a=>a.key!=='reversed').map(a=>{
     const on=cur===a.key;
     // Current status but no date on file: keep the button live so the date can
     // still be recorded, rather than locking it as "current" with the date
-    // missing forever. A reversal date is filled from Edit patient (it lives on
-    // the stoma), so that one is not offered here.
+    // missing forever. Reversal uses the separate operation shortcut above.
     const needDate=on&&a.key!=='reversed'&&!croStatusDate(pat,a.key);
     // Only the current status (with its date already on file) is locked. Every
     // other status stays selectable — including while the patient reads as
@@ -15946,8 +15940,8 @@ function croStatusPanelHTML(pat){
   return `<div>
       <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Tap a status, then its date</span></div>
       <div class="psm-card">
-        <div class="pf-sbtns">${btns}${clearBtn}</div>
-        ${patientStomaList(pat).some(x=>x.present)?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;">A stoma <strong>reversal or closure</strong> is recorded on the stoma below, not here.</div>`:''}
+        <div class="pf-sbtns">${reversalBtn}${btns}${clearBtn}</div>
+        ${canReverse?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;"><strong>Reversal / closure</strong>: choose the stoma, record its date and findings, then review and save.</div>`:''}
         ${datePrompt}
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
       </div>

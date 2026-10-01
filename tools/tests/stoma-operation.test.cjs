@@ -10,6 +10,33 @@ function context(){
 }
 const patient=()=>({id:'p1',stoma_type:'End colostomy',stoma_location:'LIF',surgery_date:'2026-01-01',followup_status:'active',extra_stomas:[],extra_refashionings:[],initial_stomas:[],stoma_operation_history:[]});
 const draft=(kind='refashion')=>({kind,uid:'new-id',target_uid:'base',date:'2026-09-25',date_unknown:false,type:'End colostomy',location:'LIF',operation:'Procedure and findings',same_admission:true,admission_answer:'yes',outcomes:[],discharge_date:null});
+function outcomePanel(c,p){
+ c.jsSafe=s=>String(s);c.derivedFollowupStatus=p=>p.followup_status||'active';
+ const start=html.indexOf('const PF_STATUS_ACTIONS=[');vm.runInContext(html.slice(start,html.indexOf('\n];',start)+3),c);
+ for(const name of ['croStatusDate','croStatusPanelHTML'])vm.runInContext(source(name),c);
+ const panel=c.document.createElement('section');panel.innerHTML=c.croStatusPanelHTML(p);c.document.body.appendChild(panel);return panel;
+}
+test('Outcome reversal shortcut opens a draft and closes only the selected stoma',async()=>{
+ const c=context(),p={...patient(),initial_stomas:[{uid:'second-id',type:'End ileostomy',location:'RIF'}]},before=JSON.stringify(p);let writes=0;
+ c.fetchPatientById=async()=>({data:p});c.SB={from:()=>{writes++;throw Error('Unexpected write');}};
+ const button=outcomePanel(c,p).querySelector('.pf-sbtn-rev');assert.equal(button.disabled,false);
+ await vm.runInContext(button.getAttribute('onclick'),c);
+ const d=c.document;assert.equal(d.getElementById('so-kind').value,'reversal');assert.equal(d.getElementById('so-target').options.length,2);
+ assert.equal(d.getElementById('so-title').textContent,'Reversal / closure');assert.doesNotMatch(d.querySelector('.msub').textContent,/New stoma ID/);
+ assert.equal(d.getElementById('so-target').disabled,false);assert.equal(writes,0);
+ d.getElementById('so-target').value='second-id';c.changeStomaOperationTarget();
+ d.getElementById('so-date').value='2026-09-25';d.getElementById('so-findings').value='Closure of ileostomy';
+ c.stomaBadgesHTML=x=>x.present?'Present':'History';c.reviewStomaOperation();
+ assert.equal(d.getElementById('so-details').hidden,true);assert.equal(writes,0);assert.equal(JSON.stringify(p),before);
+ const patch=c.buildStomaOperationPatch(p,c.readStomaOperation());
+ assert.equal(patch.reversal_date,undefined);assert.equal(patch.initial_stomas[0].reversal_date,'2026-09-25');
+ assert.equal(patch.followup_status,'active');assert.deepEqual(Array.from(c.patientStomaList({...p,...patch}).filter(x=>x.present),x=>x.uid),['base']);
+});
+test('Outcome reversal shortcut is unavailable when no stoma remains present',()=>{
+ const c=context(),p={...patient(),reversal_date:'2026-09-24',followup_status:'reversed'};
+ const button=outcomePanel(c,p).querySelector('.pf-sbtn-rev');assert.equal(button.disabled,true);
+ assert.match(button.title,/No stoma is currently present/);
+});
 test('refashion creates a fresh linked ID, retaining prior history and one present stoma',()=>{const c=context(),p=patient(),patch=c.buildStomaOperationPatch(p,draft());assert.equal(patch.extra_refashionings[0].target_uid,'base');assert.equal(patch.extra_refashionings[0].uid,'new-id');assert.equal(patch.reversal_date,undefined);assert.equal(patch.extra_stomas,undefined);assert.equal(p.extra_refashionings.length,0);const list=c.patientStomaList({...p,...patch});assert.equal(list.filter(x=>x.present).length,1);assert.equal(list.find(x=>x.uid==='base').superseded,true);});
 test('a refashioned stoma can itself be refashioned; appliance choices use only the latest ID',()=>{const c=context();let p=patient();p={...p,...c.buildStomaOperationPatch(p,draft())};p={...p,...c.buildStomaOperationPatch(p,{...draft(),uid:'third-id',target_uid:'new-id'})};assert.deepEqual(Array.from(c.patientStomaList(p).filter(x=>x.present),x=>x.uid),['third-id']);assert.deepEqual(Array.from(c.stomasPresentOn(p,'2026-09-25'),x=>x.uid),['third-id']);});
 test('combined reversal and new stoma stays active; unaffected stomas stay present',()=>{const c=context(),p=patient();const patch=c.buildStomaOperationPatch(p,{...draft('new'),outcomes:[{uid:'base',state:'reversed'}]});assert.equal(patch.reversal_date,'2026-09-25');assert.equal(patch.followup_status,'active');assert.equal(c.patientStomaList({...p,...patch}).filter(x=>x.present).length,1);const two=c.buildStomaOperationPatch(p,{...draft('new'),outcomes:[{uid:'base',state:'present'}]});assert.equal(c.patientStomaList({...p,...two}).filter(x=>x.present).length,2);});

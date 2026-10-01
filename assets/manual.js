@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (shared handover and flange reminder dates)'};
+const MANUAL_META={updated:'1 October 2026 (Outcome reversal button)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -90,7 +90,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
   `},
-  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome appointments episodes edit single card golden title appliance history discharge current closed',html:`
+  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome reversal closure button appointments episodes edit single card golden title appliance history discharge current closed',html:`
     ${manMap('patients')}
     ${manWhen('To view or change anything about one patient.')}
     ${manSteps([
@@ -104,12 +104,12 @@ const MANUAL_SECTIONS=[
     <ul class="man-ul">
       <li><b>Overview</b> — demographics, follow-up status and owner, contact.</li>
       <li><b>Stomas &amp; operation</b> — one card per stoma, with its code, operation and dates, and its own appliances &amp; accessories and history. Older appliance entries whose stoma cannot be identified are kept under <b>Other appliance history</b>. Also the upcoming-surgery date for existing patients.</li>
-      <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …).</li>
+      <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …). Under <b>Change the outcome</b>, press <b>Reversal / closure</b> to record the operation on the affected stoma.</li>
       <li><b>Appointments</b> — this patient's clinic appointments.</li>
       <li><b>Episodes</b> — their inpatient admissions.</li>
     </ul>
   `},
-  {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure supersede record surgery',html:`
+  {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome button supersede record surgery',html:`
     ${manMap('patients')}
     ${manWhen('The patient had a stoma operation — a new stoma, a refashioning, or a reversal/closure.')}
     ${manSteps([
@@ -117,6 +117,12 @@ const MANUAL_SECTIONS=[
       `Open the individual stoma form. Its golden heading shows the stoma type; tabs above it let you switch between this patient's stomas.`,
       `Choose <b>Closed / reversed</b> to reveal the closure date; <b>Refashioned</b> → <b>Yes</b> to review the confirmation and open a new stoma ID with the same, fixed type; or <b>Add new stoma</b> to choose a new type.`,
       `Enter the surgery date, date of discharge, and operation and findings on that stoma's page, then review and save.`
+    ])}
+    ${manH2('↩','Reversal from the Outcome tab')}
+    ${manSteps([
+      `Open the patient → <b>Outcome</b> → ${manBtn('↩ Reversal / closure','#f2f8ff','#0369a1')} under <b>Change the outcome</b>. This button is available when a stoma is present.`,
+      `Choose the stoma that was reversed or closed. Enter its reversal / closure date, or select <b>Date not known</b>, and record the operation and findings.`,
+      `Press <b>Review operation</b>, check the affected stoma and details, then save. Opening the form alone changes nothing; any other present stomas remain present.`
     ])}
     ${manNote('auto','⚙️','A <b>refashioning automatically supersedes</b> the stoma it replaced — the old stoma stays as an old case. The refashioned stoma gets its own ID; choose a new appliance for that ID in handover.')}
     ${manNote('auto','⚙️','Recording a <b>reversal</b> clears any planned reversal date and updates the follow-up status; a fully-reversed patient then drops off the handover by itself.')}
