@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (discharge letters for every current stoma, automatic complications and rod details)'};
+const MANUAL_META={updated:'1 October 2026 (prominent patient names and ID card numbers)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -90,12 +90,13 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
   `},
-  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview stomas outcome reversal closure button appointments episodes edit input missing stoma details patient demographics unlock save single card golden title appliance history discharge current closed colours purple black blue teal missing date',html:`
+  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview name surname prominent identity ID card number badge mobile stomas outcome reversal closure button appointments episodes edit input missing stoma details patient demographics unlock save single card golden title appliance history discharge current closed colours purple black blue teal missing date',html:`
     ${manMap('patients')}
     ${manWhen('To view or change anything about one patient.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
+      `The top of every record tab shows the patient's <b>name and surname in large bold text</b> and their <b>ID card number in a dark badge</b>. Overview highlights both again under <b>Patient details</b>. Long names wrap on a phone, and an absent ID is shown as <b>Not recorded</b>.`,
       `Use <b>Edit patient</b> to open patient details. Press ${manBtn('Input / edit stoma details','#fff6d8','#7a4b00')} to open the present stoma, or start the new-stoma form when none is present. When no stoma type has been recorded, this is the main action; you can go straight to the stoma without re-entering demographics.`,
       `In <b>Stomas &amp; operation</b>, each stoma appears once, on its own card with a bold golden title, stoma code, surgery date, discharge date and operation and findings. Select the card heading to edit that stoma. Tabs inside the stoma form take you directly to another stoma.`,
       `The latest recorded appliances and accessories sit underneath that stoma's details. Expand <b>Appliance history</b> for its dated ward and clinic changes. Use <b>Current</b> or <b>Closed</b> to view the relevant stomas when there is more than one.`
