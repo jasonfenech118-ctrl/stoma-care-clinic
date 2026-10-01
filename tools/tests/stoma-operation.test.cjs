@@ -4,7 +4,7 @@ function source(name){const m=html.match(new RegExp('(?:async )?function '+name+
 function context(){
  const dom=new JSDOM('<body><div id="mo"></div><div id="mb"></div></body>');
  const c=vm.createContext({document:dom.window.document,TODAY:'2026-09-25',Date,console,htmlSafe:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'),fmtShortDate:s=>s,prettyStomaType:s=>s,initialStomaCode:s=>'ID-'+s,newStomaUid:()=> 'draft-uid',sexModalClass:()=>'',openMo:()=>{},confirm:()=>true,closeModalGuarded:()=>{},normaliseFollowupStatus:s=>s||'active',patientIsDeceased:p=>!!p.deceased_date,shortApplianceList:a=>a||[],stomaShortType:t=>t,stomaQuadrant:()=>'',collectStomaTargetsFromPatient:()=>[],stomaTypeOptions:t=>`<option>${t||'End colostomy'}</option>`,stomaLocOptions:t=>`<option>${t||'Existing location'}</option>`});
- for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation','openCurrentStomaFromPatientDetails'])vm.runInContext(source(name),c);
+ for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation','persistStomaOperation','openCurrentStomaFromPatientDetails'])vm.runInContext(source(name),c);
  vm.runInContext('let stomaOperationCtx=null;let PF_STOMA_TARGETS=[];let modalCloseGuard=null;let patientEditReturn=null;',c);
  return c;
 }
@@ -12,25 +12,85 @@ const patient=()=>({id:'p1',stoma_type:'End colostomy',stoma_location:'LIF',surg
 const draft=(kind='refashion')=>({kind,uid:'new-id',target_uid:'base',date:'2026-09-25',date_unknown:false,type:'End colostomy',location:'LIF',operation:'Procedure and findings',same_admission:true,admission_answer:'yes',outcomes:[],discharge_date:null});
 function outcomePanel(c,p){
  c.jsSafe=s=>String(s);c.derivedFollowupStatus=p=>p.followup_status||'active';
+ c.document.defaultView.HTMLElement.prototype.scrollIntoView=()=>{};
  const start=html.indexOf('const PF_STATUS_ACTIONS=[');vm.runInContext(html.slice(start,html.indexOf('\n];',start)+3),c);
- for(const name of ['croStatusDate','croStatusPanelHTML'])vm.runInContext(source(name),c);
- const panel=c.document.createElement('section');panel.innerHTML=c.croStatusPanelHTML(p);c.document.body.appendChild(panel);return panel;
+ for(const name of ['croPatientLabel','croStatusDate','croStatusPanelHTML','croAsk','croCancel','croConfirm','croConfirmReversal','croApply','croApplyReversal','croAskClear'])vm.runInContext(source(name),c);
+ c.outcomePatient=p;vm.runInContext('let clrState={patient:outcomePatient};let croReversalCtx=null;',c);
+ const panel=c.document.createElement('section');panel.id='psm-outcomes';panel.innerHTML=c.croStatusPanelHTML(p);c.document.body.appendChild(panel);return panel;
 }
-test('Outcome reversal shortcut opens a draft and closes only the selected stoma',async()=>{
- const c=context(),p={...patient(),initial_stomas:[{uid:'second-id',type:'End ileostomy',location:'RIF'}]},before=JSON.stringify(p);let writes=0;
- c.fetchPatientById=async()=>({data:p});c.SB={from:()=>{writes++;throw Error('Unexpected write');}};
+test('Outcome reversal uses inline Yes / No, then closes only the chosen stoma in one guarded write',async()=>{
+ const c=context(),p={...patient(),first_name:'Alex',surname:'Example',id_card:'0000000M',updated_at:'2026-09-25T08:00:00Z',initial_stomas:[{uid:'second-id',type:'End ileostomy',location:'RIF'}]},before=JSON.stringify(p);let writes=0,patch,refreshed=0,panel;const filters=[];
+ c.fetchPatientById=async()=>({data:p});
+ const query={eq:(key,value)=>{filters.push([key,value]);return query;},select:()=>({single:async()=>({data:{id:p.id}})})};
+ c.SB={from:table=>({update:value=>{assert.equal(table,'patients');writes++;patch=value;return query;}})};
+ c.refreshReminders=async()=>{};c.afterStomaSaved=async id=>{assert.equal(id,p.id);refreshed++;};c.switchPatientPanel=value=>{panel=value;};
  const button=outcomePanel(c,p).querySelector('.pf-sbtn-rev');assert.equal(button.disabled,false);
  await vm.runInContext(button.getAttribute('onclick'),c);
- const d=c.document;assert.equal(d.getElementById('so-kind').value,'reversal');assert.equal(d.getElementById('so-target').options.length,2);
- assert.equal(d.getElementById('so-title').textContent,'Reversal / closure');assert.doesNotMatch(d.querySelector('.msub').textContent,/New stoma ID/);
- assert.equal(d.getElementById('so-target').disabled,false);assert.equal(writes,0);
- d.getElementById('so-target').value='second-id';c.changeStomaOperationTarget();
- d.getElementById('so-date').value='2026-09-25';d.getElementById('so-findings').value='Closure of ileostomy';
- c.stomaBadgesHTML=x=>x.present?'Present':'History';c.reviewStomaOperation();
- assert.equal(d.getElementById('so-details').hidden,true);assert.equal(writes,0);assert.equal(JSON.stringify(p),before);
- const patch=c.buildStomaOperationPatch(p,c.readStomaOperation());
+ const d=c.document,box=d.getElementById('cro-confirm');assert.equal(box.hidden,false);
+ assert.match(box.textContent,/Alex Example/);assert.match(box.textContent,/0000000M/);assert.match(box.textContent,/reversed \/ closed/);
+ assert.equal(box.querySelector('.pf-sc-no').textContent,'No, leave it');assert.equal(box.querySelector('.pf-sc-yes').textContent,'Yes');
+ assert.equal(d.getElementById('so-details'),null);assert.equal(d.getElementById('cro-date'),null);assert.equal(writes,0);
+ await vm.runInContext(box.querySelector('.pf-sc-yes').getAttribute('onclick'),c);
+ assert.equal(d.getElementById('cro-stoma').value,'');assert.equal(d.getElementById('cro-stoma').options.length,3);
+ d.getElementById('cro-stoma').value='second-id';d.getElementById('cro-date').value='2026-09-25';d.getElementById('cro-notes').value='Closure of ileostomy';
+ assert.equal(writes,0);assert.equal(JSON.stringify(p),before);
+ await Promise.all([c.croApply('reversed'),c.croApply('reversed')]);assert.equal(writes,1);
  assert.equal(patch.reversal_date,undefined);assert.equal(patch.initial_stomas[0].reversal_date,'2026-09-25');
  assert.equal(patch.followup_status,'active');assert.deepEqual(Array.from(c.patientStomaList({...p,...patch}).filter(x=>x.present),x=>x.uid),['base']);
+ assert.equal(patch.stoma_operation_history.length,1);assert.equal(patch.stoma_operation_history[0].affected[0].uid,'second-id');
+ assert.equal(patch.proposed_reversal_date,null);assert.equal(JSON.stringify(p),before);assert.equal(refreshed,1);assert.equal(panel,'outcomes');
+ assert.deepEqual(filters,[['id','p1'],['stoma_operation_history','[]'],['updated_at',p.updated_at]]);
+});
+test('declining or cancelling inline closure makes no changes; the stoma-specific shortcut keeps its target',()=>{
+ const c=context(),p={...patient(),initial_stomas:[{uid:'second-id',type:'End ileostomy'}]},before=JSON.stringify(p);
+ c.fetchPatientById=()=>{throw Error('Unexpected read before OK');};c.SB={from:()=>{throw Error('Unexpected write');}};
+ outcomePanel(c,p);c.croAsk('reversed');c.croCancel();assert.equal(c.document.getElementById('cro-confirm').hidden,true);
+ c.croAsk('reversed','initial:second-id');c.croConfirm('reversed');assert.equal(c.document.getElementById('cro-stoma').value,'second-id');
+ c.croCancel();assert.equal(c.document.getElementById('cro-date'),null);assert.equal(JSON.stringify(p),before);
+ c.croAsk('deceased');assert.match(c.document.getElementById('cro-confirm').textContent,/Deceased/);c.croConfirm('deceased');
+ assert.equal(c.document.getElementById('cro-stoma'),null);assert.equal(c.document.getElementById('cro-date').max,c.TODAY);
+});
+test('inline closure validates the selected stoma, date chronology and findings before any write',async()=>{
+ const c=context(),p={...patient(),date_of_birth:'1980-01-01',initial_stomas:[{uid:'second-id',type:'End ileostomy'}]};let reads=0;
+ outcomePanel(c,p);c.fetchPatientById=async()=>{reads++;return{data:p};};c.SB={from:()=>{throw Error('Unexpected write');}};
+ c.croAsk('reversed');c.croConfirm('reversed');const d=c.document;
+ await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Choose the present stoma/);
+ d.getElementById('cro-stoma').value='base';await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Enter the operation date/);
+ d.getElementById('cro-date').value='2026-09-26';d.getElementById('cro-notes').value='Closure';await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Check the operation date/);
+ d.getElementById('cro-date').value='1979-01-01';await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Check the operation date/);
+ d.getElementById('cro-date').value='2025-12-31';await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/before the affected stoma was formed/);
+ d.getElementById('cro-date').value='2026-09-25';d.getElementById('cro-notes').value=' ';await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/operation performed and findings/);
+ assert.equal(reads,0);assert.equal(d.querySelector('#cro-confirm .pf-sc-ok').disabled,false);
+});
+test('inline closure refuses a stale record and restores the form for correction',async()=>{
+ const c=context(),p=patient();outcomePanel(c,p);c.croAsk('reversed');c.croConfirm('reversed');const d=c.document;
+ d.getElementById('cro-date').value='2026-09-25';d.getElementById('cro-notes').value='Closure';
+ c.fetchPatientById=async()=>({data:{...p,reversal_date:'2026-09-24'}});c.SB={from:()=>{throw Error('Unexpected stale write');}};
+ await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/record has changed/);
+ assert.equal(d.getElementById('cro-date').value,'2026-09-25');assert.equal(d.querySelector('#cro-confirm .pf-sc-ok').disabled,false);
+ c.croCancel();assert.equal(d.getElementById('cro-confirm').hidden,true);
+});
+test('inline closure keeps the draft after a failed save and can retry without dropping history',async()=>{
+ const c=context(),p=patient();let writes=0,refreshed=0;
+ outcomePanel(c,p);c.croAsk('reversed');c.croConfirm('reversed');const d=c.document;
+ d.getElementById('cro-date').value='2026-09-25';d.getElementById('cro-notes').value='Closure';c.fetchPatientById=async()=>({data:p});
+ const query={eq:()=>query,select:()=>({single:async()=>writes===1?{error:{message:'stoma_operation_history column missing'}}:{data:{id:'p1'}}})};
+ c.SB={from:()=>({update:patch=>{writes++;assert.equal(patch.stoma_operation_history.length,1);assert.equal(patch.followup_status,'reversed');return query;}})};
+ c.refreshReminders=async()=>{};c.afterStomaSaved=async()=>{refreshed++;};c.switchPatientPanel=()=>{};
+ await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Nothing from this operation has been saved/);
+ assert.equal(refreshed,0);assert.equal(d.querySelector('#cro-confirm .pf-sc-ok').disabled,false);assert.equal(d.getElementById('cro-notes').value,'Closure');
+ await c.croApply('reversed');assert.equal(writes,2);assert.equal(refreshed,1);
+});
+test('inline closure retains an unknown date and preserves an existing date of death',async()=>{
+ const c=context(),p={...patient(),deceased_date:'2026-09-24',followup_status:'deceased'};let patch;
+ outcomePanel(c,p);c.croAsk('reversed');assert.doesNotMatch(c.document.getElementById('cro-confirm').textContent,/date of death is cleared/);c.croConfirm('reversed');const d=c.document;
+ d.getElementById('cro-date').value='2026-09-25';d.getElementById('cro-notes').value='Closure';c.fetchPatientById=async()=>({data:p});
+ await c.croApply('reversed');assert.match(d.getElementById('cro-err').textContent,/Check the operation date/);
+ d.getElementById('cro-unknown').checked=true;
+ const query={eq:()=>query,select:()=>({single:async()=>({data:{id:'p1'}})})};c.SB={from:()=>({update:value=>{patch=value;return query;}})};
+ c.refreshReminders=async()=>{};c.afterStomaSaved=async()=>{};c.switchPatientPanel=()=>{};
+ await c.croApply('reversed');assert.equal(patch.reversal_date,null);assert.equal(patch.deceased_date,undefined);assert.equal(patch.followup_status,'deceased');assert.equal(patch.stoma_operation_history[0].date_unknown,true);
+ assert.equal(c.patientStomaList({...p,...patch})[0].present,false);
 });
 test('Outcome reversal shortcut is unavailable when no stoma remains present',()=>{
  const c=context(),p={...patient(),reversal_date:'2026-09-24',followup_status:'reversed'};
