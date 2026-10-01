@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (follow-up assignment using saved records)'};
+const MANUAL_META={updated:'1 October 2026'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -109,7 +109,7 @@ const MANUAL_SECTIONS=[
       <li><b>Episodes</b> — their inpatient admissions.</li>
     </ul>
   `},
-  {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome button supersede record surgery',html:`
+  {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome button supersede record surgery confirm yes no cancel date unknown',html:`
     ${manMap('patients')}
     ${manWhen('The patient had a stoma operation — a new stoma, a refashioning, or a reversal/closure.')}
     ${manSteps([
@@ -121,8 +121,9 @@ const MANUAL_SECTIONS=[
     ${manH2('↩','Reversal from the Outcome tab')}
     ${manSteps([
       `Open the patient → <b>Outcome</b> → ${manBtn('↩ Reversal / closure','#f2f8ff','#0369a1')} under <b>Change the outcome</b>. This button is available when a stoma is present.`,
+      `Check the patient's name and ID card in the inline confirmation. Press <b>Yes</b> to enter the closure details, or <b>No, leave it</b> to leave the record unchanged.`,
       `Choose the stoma that was reversed or closed. Enter its reversal / closure date, or select <b>Date not known</b>, and record the operation and findings.`,
-      `Press <b>Review operation</b>, check the affected stoma and details, then save. Opening the form alone changes nothing; any other present stomas remain present.`
+      `Check the selected stoma and details, then press <b>OK</b> to save. <b>Cancel</b> leaves the record unchanged. The selected stoma's history is retained; any other present stomas remain present.`
     ])}
     ${manNote('auto','⚙️','A <b>refashioning automatically supersedes</b> the stoma it replaced — the old stoma stays as an old case. The refashioned stoma gets its own ID; choose a new appliance for that ID in handover.')}
     ${manNote('auto','⚙️','Recording a <b>reversal</b> clears any planned reversal date and updates the follow-up status; a fully-reversed patient then drops off the handover by itself.')}
@@ -365,6 +366,7 @@ const MANUAL_SECTIONS=[
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
         ['🔪','Upcoming surgery shows up','An existing patient’s surgery date makes them appear (highlighted) at the top of the handover on the day; it clears when they are admitted.','Handover'],
         ['📍','Awaiting surgery / reversal','A sited patient (surgery day) or a planned reversal (reversal day) appears at the top of the handover automatically.','Handover'],
+        ['↩','Closure keeps the stoma history','Saving reversal / closure closes only the selected stoma, retains its history and clears the planned reversal date. Other present stomas remain open; follow-up is updated from the remaining stomas.','Registry › Outcome'],
         ['🩹','Handover self-heal','A deceased or fully-reversed patient drops off the ward sheet on their own; someone with an open episode is pulled back if their flag drifts.','Handover'],
         ['🚫','3 DNTUs pause follow-up','Three did-not-turn-ups in a row automatically pause the patient’s follow-up; the streak shows as "N of 3".','Appointments'],
         ['📆','Follow-up due month','The next due month is worked out from the visit and the patient is placed on the booking worklist.','Appointments'],

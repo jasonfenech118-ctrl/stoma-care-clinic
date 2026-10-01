@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-352"/>
-<script src="assets/manual.js?v=2026.10.01-352"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-353"/>
+<script src="assets/manual.js?v=2026.10.01-353"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3296,7 +3296,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-352';
+const APP_BUILD='2026.10.01-353';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14839,13 +14839,7 @@ async function saveStomaOperation(){
   const ctx=stomaOperationCtx;if(!ctx||ctx.busy||!ctx.patch)return;
   ctx.busy=true;const btn=document.getElementById('so-save');btn.disabled=true;
   try{
-    const{data:fresh,error}=await fetchPatientById(ctx.patientId);if(error||!fresh)throw Error('Could not check the latest patient record.');
-    if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s stoma record has changed. Close and reopen the operation to review the latest record.');
-    // Strict single update: an unavailable column must never silently drop part of an operation.
-    let query=SB.from('patients').update(ctx.patch).eq('id',ctx.patientId).eq('stoma_operation_history',JSON.stringify(stomaOperationHistory(fresh)));
-    if(fresh.updated_at)query=query.eq('updated_at',fresh.updated_at);
-    const saved=await query.select('id').single();
-    if(saved.error)throw Error(/stoma_operation_history/.test(saved.error.message||'')?'Database setup is needed: run sql/add-stoma-operation-history.sql, then save again. Nothing from this operation has been saved.':saved.error.message);
+    const fresh=await persistStomaOperation(ctx);
     modalCloseGuard=null;closeModal();refreshReminders();
     try{
       await afterStomaSaved(ctx.patientId);
@@ -14853,6 +14847,17 @@ async function saveStomaOperation(){
     }catch(e){alert('The operation was saved. Refresh handover and select an appliance for the new stoma ID.');}
   }catch(e){stomaOperationError(e.message||'Could not save the operation.');}
   finally{ctx.busy=false;btn.disabled=false;}
+}
+// The modal and inline closure share the same guarded, all-or-nothing write.
+async function persistStomaOperation(ctx){
+  const{data:fresh,error}=await fetchPatientById(ctx.patientId);if(error||!fresh)throw Error('Could not check the latest patient record.');
+  if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s stoma record has changed. Cancel and reopen the operation to review the latest record.');
+  // Strict single update: an unavailable column must never silently drop part of an operation.
+  let query=SB.from('patients').update(ctx.patch).eq('id',ctx.patientId).eq('stoma_operation_history',JSON.stringify(stomaOperationHistory(fresh)));
+  if(fresh.updated_at)query=query.eq('updated_at',fresh.updated_at);
+  const saved=await query.select('id').single();
+  if(saved.error)throw Error(/stoma_operation_history/.test(saved.error.message||'')?'Database setup is needed: run sql/add-stoma-operation-history.sql, then save again. Nothing from this operation has been saved.':saved.error.message);
+  return fresh;
 }
 
 /* Add a stoma to a patient from their record, then open it so it can be
@@ -15800,7 +15805,7 @@ function stomaOutcomesPanelHTML(pat){
         <div class="clr-rec-copy">
           <span class="clr-rec-title">${htmlSafe(stomaTitle(x))}${x.type?` · ${htmlSafe(prettyStomaType(x.type))}`:''}</span>
           <span class="clr-rec-meta"><span class="stoma-badge ${o.cls}">${htmlSafe(o.label)}</span> <span class="stoma-badge ${s.cls}">${htmlSafe(s.label)}</span></span>
-          ${x.present?`<button type="button" class="pf-add-btn" style="justify-self:start;margin-top:5px;" onclick="openStomaOperation('${pat.id}','reversal','${jsSafe(x.slot)}')" title="Record reversal or closure of this stoma">${psmIc('refresh')} Record reversal / closure</button>`:''}
+          ${x.present?`<button type="button" class="pf-add-btn" style="justify-self:start;margin-top:5px;" onclick="croAsk('reversed','${jsSafe(x.slot)}')" title="Record reversal or closure of this stoma">${psmIc('refresh')} Record reversal / closure</button>`:''}
         </div>
       </div>`;}).join('')}
       <div class="psm-audit">${psmIc('stoma')} ${present} present · ${reversedN} reversed${supersededN?` · ${supersededN} superseded`:''}</div>
@@ -15832,9 +15837,9 @@ function stomaOutcomesPanelHTML(pat){
     ${stomaLines?`<div><div class="psm-sec-head"><h3>Stomas</h3></div>${stomaLines}</div>`:''}`;
 }
 /* ── outcome change on the record page ───────────────────────────────────────
-   Patient-status buttons ask for confirmation and a date before saving.
-   Reversal / closure opens the existing operation form, where the affected
-   stoma, date and findings are reviewed before its history is updated. */
+   Every outcome starts with an inline Yes / No question. Reversal then asks
+   which stoma, its closure date and findings, sharing the operation save rules. */
+let croReversalCtx=null;
 function croPatientLabel(){
   const p=clrState.patient||{};
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
@@ -15854,11 +15859,11 @@ function croStatusDate(pat,key){
 }
 function croStatusPanelHTML(pat){
   const cur=derivedFollowupStatus(pat);
-  // Reversal uses the stoma operation form so only the chosen stoma is closed.
+  // Reversal uses a stoma-specific draft so only the chosen stoma is closed.
   const canReverse=patientStomaList(pat).some(x=>x.present);
   const reversalBtn=`<button type="button" class="pf-sbtn pf-sbtn-rev" ${canReverse?'':'disabled'}
     title="${canReverse?'Record reversal or closure of a present stoma':'No stoma is currently present to reverse or close'}"
-    onclick="openStomaOperation('${jsSafe(pat.id)}','reversal')"><span aria-hidden="true">↩</span>Reversal / closure</button>`;
+    onclick="croAsk('reversed')"><span aria-hidden="true">↩</span>Reversal / closure</button>`;
   const btns=PF_STATUS_ACTIONS.filter(a=>a.key!=='reversed').map(a=>{
     const on=cur===a.key;
     // Current status but no date on file: keep the button live so the date can
@@ -15893,14 +15898,15 @@ function croStatusPanelHTML(pat){
       <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Tap a status, then its date</span></div>
       <div class="psm-card">
         <div class="pf-sbtns">${reversalBtn}${btns}${clearBtn}</div>
-        ${canReverse?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;"><strong>Reversal / closure</strong>: choose the stoma, record its date and findings, then review and save.</div>`:''}
+        ${canReverse?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;"><strong>Reversal / closure</strong>: confirm, then choose the stoma and record its closure date and findings.</div>`:''}
         ${datePrompt}
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
       </div>
     </div>`;
 }
 // Step one of the guard: the question, in the patient's own name and card.
-function croAsk(key){
+function croAsk(key,slot=''){
+  if(croReversalCtx?.busy)return;
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
   // When the patient already reads as this outcome, the button is only there to
@@ -15909,9 +15915,17 @@ function croAsk(key){
   // deceased and a DIFFERENT status is picked, it is a correction, so the
   // question says the date of death will be cleared.
   const cur=clrState.patient?derivedFollowupStatus(clrState.patient):'';
+  croReversalCtx=null;
   box.hidden=false;
   let q;
-  if(cur===key)
+  if(key==='reversed'){
+    const pat=clrState.patient;
+    const open=patientStomaList(pat).filter(x=>x.present);
+    const target=slot?open.find(x=>x.slot===slot):null;
+    if(!pat?.id||!open.length||(slot&&!target)){croCancel();return;}
+    croReversalCtx={patientId:pat.id,pat,uid:newStomaUid(),target:target?.uid||'',busy:false};
+    q=`Do you want ${croPatientLabel()} to have ${target?`<strong>${htmlSafe(operationTargetLabel(target))}</strong>`:'a stoma'} recorded as <strong>reversed / closed</strong>?`;
+  }else if(cur===key)
     q=`${croPatientLabel()} already reads as <strong>${htmlSafe(a.label)}</strong>, but no date is on file. Record it now?`;
   else if(cur==='deceased')
     q=`${croPatientLabel()} currently reads as <strong>deceased</strong>. Change them to <strong>${htmlSafe(a.label)}</strong> instead? The recorded date of death is cleared.`;
@@ -15924,9 +15938,15 @@ function croAsk(key){
     </div>`;
   box.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
-function croCancel(){const box=document.getElementById('cro-confirm');if(box){box.hidden=true;box.innerHTML='';}}
+function croCancel(){
+  if(croReversalCtx?.busy)return;
+  croReversalCtx=null;
+  const box=document.getElementById('cro-confirm');if(box){box.hidden=true;box.innerHTML='';}
+}
 // Step two: Yes was pressed, so now — and only now — ask for the date.
 function croConfirm(key){
+  if(croReversalCtx?.busy)return;
+  if(key==='reversed'){croConfirmReversal();return;}
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
   // An optional reason/note travels with the change and its effective date, so
@@ -15951,10 +15971,56 @@ function croConfirm(key){
     <div class="pf-step-err" id="cro-err" hidden></div>`;
   document.getElementById('cro-date')?.focus();
 }
-// Step three: OK. Validate, then apply the change through the register form's own
-// logic (built hidden from the patient, so the reversal lands on the right stoma)
-// and save it. The record is rebuilt so the header chips and totals read it back.
+function croConfirmReversal(){
+  const ctx=croReversalCtx,box=document.getElementById('cro-confirm');
+  if(!ctx||!box||ctx.busy)return;
+  const open=patientStomaList(ctx.pat).filter(x=>x.present);
+  const target=ctx.target||(open.length===1?open[0].uid:'');
+  box.innerHTML=`<div class="pf-sconfirm-q">${croPatientLabel()} → <strong>Reversal / closure</strong>.
+      <span style="font-weight:400;color:var(--muted);">The record changes when you press OK.</span></div>
+    <div class="fg"><label for="cro-stoma">Which stoma was reversed / closed?</label>
+      <select id="cro-stoma">${open.length>1?'<option value="">Choose the stoma</option>':''}${open.map(x=>`<option value="${htmlSafe(x.uid)}">${htmlSafe(operationTargetLabel(x))}</option>`).join('')}</select></div>
+    <div class="fg"><label for="cro-date">Date of reversal / closure</label>
+      <input type="date" id="cro-date" max="${htmlSafe(TODAY)}"/>
+      <label class="pf-xchk"><input type="checkbox" id="cro-unknown" onchange="document.getElementById('cro-date').disabled=this.checked"/> Date not known</label></div>
+    <div class="pf-sc-notes"><label for="cro-notes">Operation and findings *</label>
+      <textarea id="cro-notes" rows="3" placeholder="e.g. Closure of ileostomy"></textarea></div>
+    <div style="font-size:11.5px;color:var(--muted);margin:8px 0 11px;">Only the selected stoma is closed. Its history is retained; any other present stomas remain open.</div>
+    <div class="pf-sconfirm-act">
+      <button type="button" class="pf-sc-no" onclick="croCancel()">Cancel</button>
+      <button type="button" class="pf-sc-ok" onclick="croApply('reversed')">OK</button>
+    </div><div class="pf-step-err" id="cro-err" hidden role="alert"></div>`;
+  document.getElementById('cro-stoma').value=target;
+  document.getElementById(target?'cro-date':'cro-stoma')?.focus();
+}
+async function croApplyReversal(){
+  const ctx=croReversalCtx,box=document.getElementById('cro-confirm');
+  if(!ctx||ctx.busy||!box||clrState.patient?.id!==ctx.patientId)return;
+  const err=document.getElementById('cro-err');
+  const say=message=>{if(err){err.hidden=false;err.textContent=message;}};
+  if(err)err.hidden=true;
+  const unknown=!!document.getElementById('cro-unknown')?.checked;
+  const draft={kind:'reversal',uid:ctx.uid,target_uid:document.getElementById('cro-stoma')?.value||'',
+    date:unknown?null:document.getElementById('cro-date')?.value||'',date_unknown:unknown,
+    operation:String(document.getElementById('cro-notes')?.value||'').trim()};
+  try{ctx.patch=buildStomaOperationPatch(ctx.pat,draft);}catch(e){say(e.message);return;}
+  ctx.busy=true;
+  const controls=[...box.querySelectorAll('button,input,select,textarea'),...document.querySelectorAll('#psm-outcomes .pf-sbtn,#psm-outcomes .pf-add-btn')];
+  const states=controls.map(el=>[el,el.disabled]);states.forEach(([el])=>{el.disabled=true;});
+  const btn=box.querySelector('.pf-sc-ok');if(btn)btn.textContent='Saving…';
+  try{
+    await persistStomaOperation(ctx);
+    croReversalCtx=null;
+    try{await refreshReminders();}catch(e){}
+    try{await afterStomaSaved(ctx.patientId);switchPatientPanel('outcomes');}
+    catch(e){alert('Reversal / closure saved. Refresh the patient record to see it.');}
+  }catch(e){say(e.message||'Could not save the reversal / closure.');}
+  finally{ctx.busy=false;states.forEach(([el,disabled])=>{el.disabled=disabled;});if(btn)btn.textContent='OK';}
+}
+// Step three: OK. Patient-level outcomes reuse the register form's rules;
+// stoma closure uses its own selected target and operation history above.
 async function croApply(key){
+  if(key==='reversed'){await croApplyReversal();return;}
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const pat=clrState.patient; if(!pat||!pat.id)return;
   const date=document.getElementById('cro-date')?.value||'';
@@ -15973,15 +16039,8 @@ async function croApply(key){
   holder.innerHTML=patientFormHTML(pat,'crx');
   document.body.appendChild(holder);
   try{
-    if(key==='reversed'){
-      if(!pfSetNewestOpenStomaReversal('crx',date,note)){
-        say('There is no stoma still present to reverse. Add the new stoma from Edit patient first.');
-        return;
-      }
-    }else{
-      const f=document.getElementById(`crx-${a.date}`);
-      if(f)f.value=date;
-    }
+    const f=document.getElementById(`crx-${a.date}`);
+    if(f)f.value=date;
     // A clean switch: clear the other patient-level outcome dates and any
     // secondary statuses so the chosen one is the only status on file. This is
     // what lets a mistake be corrected — picking a different status (or the
@@ -16014,6 +16073,8 @@ async function croApply(key){
 // whether they read as active or reversed; nothing on the operation history is
 // touched.
 function croAskClear(){
+  if(croReversalCtx?.busy)return;
+  croReversalCtx=null;
   const box=document.getElementById('cro-confirm'); if(!box)return;
   box.hidden=false;
   box.innerHTML=`<div class="pf-sconfirm-q">Set ${croPatientLabel()} back to <strong>still in follow-up</strong>?
