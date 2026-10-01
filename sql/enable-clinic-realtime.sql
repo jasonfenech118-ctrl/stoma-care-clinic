@@ -7,9 +7,16 @@ CREATE POLICY clinic_realtime_receive ON realtime.messages
   FOR SELECT TO authenticated
   USING (realtime.topic() = 'clinic:changes' AND extension = 'broadcast');
 
-CREATE OR REPLACE FUNCTION public.clinic_notify_realtime()
+-- Keep privileged trigger code outside the exposed API schema.
+CREATE SCHEMA IF NOT EXISTS clinic_private;
+REVOKE ALL ON SCHEMA clinic_private FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION clinic_private.notify_realtime()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
+  -- Only signed-in clinic writes notify clients; dashboard/service changes are
+  -- picked up by the handover's periodic read without opening a broadcast API.
+  IF auth.uid() IS NULL THEN RETURN NULL; END IF;
   PERFORM realtime.send(
     pg_catalog.jsonb_build_object('table', TG_TABLE_NAME),
     'changed', 'clinic:changes', true
@@ -18,7 +25,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.clinic_notify_realtime() FROM PUBLIC;
+REVOKE ALL ON FUNCTION clinic_private.notify_realtime() FROM PUBLIC, anon, authenticated;
 
 -- Statement-level triggers send one message for each save, including bulk edits.
 -- Skip optional tables that have not been installed in this clinic database.
@@ -36,7 +43,7 @@ BEGIN
       EXECUTE format('DROP TRIGGER IF EXISTS clinic_realtime_changed ON public.%I', table_name);
       EXECUTE format(
         'CREATE TRIGGER clinic_realtime_changed AFTER INSERT OR UPDATE OR DELETE ON public.%I '
-        || 'FOR EACH STATEMENT EXECUTE FUNCTION public.clinic_notify_realtime()',
+        || 'FOR EACH STATEMENT EXECUTE FUNCTION clinic_private.notify_realtime()',
         table_name
       );
     END IF;

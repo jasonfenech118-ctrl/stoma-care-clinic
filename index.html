@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.09.30-347"/>
-<script src="assets/manual.js?v=2026.09.30-347"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-349"/>
+<script src="assets/manual.js?v=2026.10.01-349"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3297,7 +3297,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.09.30-348';
+const APP_BUILD='2026.10.01-349';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3556,7 +3556,7 @@ const CLINIC_REALTIME_TABLES=new Set([
   'handover_snapshots','public_holidays','localities','firms','complication_types',
   'clinic_pending_tasks','clinic_dated_reminders'
 ]);
-let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicRealtimeDirty=new Set();
+let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicHandoverPoll=null,clinicRealtimeDirty=new Set();
 const CLINIC_ROSTER_TABLES=new Set(['roster','staff','bank_staff','bank_staff_assignments','leave_records','public_holidays']);
 const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','clinical_records','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders']);
 function clinicRealtimeBusy(){
@@ -3611,6 +3611,9 @@ function flushClinicRealtime(){
   if(relevant&&[...tables].some(t=>relevant.has(t)))switchTab(tab);
 }
 async function startClinicRealtime(){
+  // Re-read the shared ward record even if a broadcast or connection is missed.
+  // Queue through the same edit guard so a refresh cannot reset an open form.
+  if(!clinicHandoverPoll)clinicHandoverPoll=setInterval(queueHandoverRefresh,30000);
   if(clinicRealtimeChannel)return;
   try{
     await SB.realtime.setAuth();
@@ -3627,14 +3630,21 @@ async function startClinicRealtime(){
 }
 function stopClinicRealtime(){
   clearTimeout(clinicRealtimeTimer);clinicRealtimeDirty.clear();
+  clearInterval(clinicHandoverPoll);clinicHandoverPoll=null;
   if(clinicRealtimeChannel){SB.removeChannel(clinicRealtimeChannel);clinicRealtimeChannel=null;}
 }
+function queueHandoverRefresh(){
+  if(document.hidden||document.getElementById('app')?.style.display==='none'||currentTabName()!=='handover')return;
+  queueClinicRealtime('clinical_records');
+}
 document.addEventListener('focusout',()=>setTimeout(flushClinicRealtime,250));
+window.addEventListener('focus',queueHandoverRefresh);
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&clinicRealtimeChannel){
     CLINIC_REALTIME_TABLES.forEach(t=>clinicRealtimeDirty.add(t));
     queueClinicRealtime();
   }
+  queueHandoverRefresh();
 });
 
 async function loadHolidays(){
@@ -6947,25 +6957,10 @@ async function commitEpisodeAppliances(pending,rows){
   // what the database actually holds rather than what was hoped for.
   if(clrState.patientId===pending.patientId){await loadClinicalRecords(pending.patientId);renderClinicalPanel();}
   if(document.getElementById('hv-body'))await loadHandover();
-  // The row is then set from the note we just wrote, not from what the reload
-  // read back. A SELECT fired straight after the UPDATE can still return the old
-  // appliance — which is why the sheet used to keep the previous one until the
-  // Refresh button (a later read) was pressed. This makes the change show at
-  // once, whatever that read returned.
-  patchHandoverApplianceRow(pending.patientId,note);
+  // Every user renders the same saved admission. A local note override here
+  // could overwrite a newer selection saved by another nurse during this save.
   closeModal();
   await refreshReminders();
-}
-/* Set one handover row's appliance cell to a known line, without re-reading the
-   database. Used right after a save so the sheet never lags behind the write. */
-function patchHandoverApplianceRow(pid,line){
-  const sel=(window.CSS&&CSS.escape)?CSS.escape(String(pid)):String(pid);
-  const row=document.querySelector(`tr[data-pid="${sel}"]`);
-  if(!row)return;
-  const btn=row.querySelector('.hv-appl');
-  if(!btn)return;
-  btn.dataset.appliance=line||'';
-  btn.innerHTML=line?htmlSafe(line):'<span class="hv-appl-empty">Tap to set appliance</span>';
 }
 /* How an appliance is written on the ward sheet. The picker keeps the full
    supplier name and code so it can still be found by either; what gets written
@@ -17917,9 +17912,11 @@ function handoverDeceased(p){
 function handoverShouldAutoLeave(p){
   return handoverDeceased(p)||handoverReversedGone(p);
 }
+let handoverLoadVersion=0;
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
+  const version=++handoverLoadVersion;
   const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
@@ -17932,6 +17929,7 @@ async function loadHandover(){
     break;
   }
   if(error){
+    if(version!==handoverLoadVersion)return;
     const missing=/is_inpatient|column/i.test(String(error.message||''));
     body.innerHTML=missing
       ? handoverMissingHTML('The inpatient columns are not in the database yet. Run <strong>sql/add-inpatients.sql</strong> once in Supabase to turn the handover list on.')
@@ -17987,7 +17985,12 @@ async function loadHandover(){
     if(closeIds.length){try{await Promise.all(closeIds.map(id=>
       SB.from('clinical_records').update({is_current:false}).eq('patient_id',id).eq('kind','episode').eq('is_current',true)));}catch(e){}}
   }
-  await attachHandoverApplianceLines(rows);
+  try{await attachHandoverApplianceLines(rows);}
+  catch(e){
+    if(version!==handoverLoadVersion)return;
+    body.innerHTML=`<div class="report-note">Could not load the current appliances. Refresh the handover to try again. ${htmlSafe(e.message||'')}</div>`;
+    return;
+  }
   // Siting patients whose surgery day has arrived show at the top as "awaiting
   // surgery", automatically, until the outcome is recorded from the handover.
   const awaitingAll=await handoverAwaitingSitings();
@@ -18002,6 +18005,8 @@ async function loadHandover(){
   // Existing stoma patients with an upcoming operation date that has arrived —
   // not already on the sheet and not already listed as awaiting reversal.
   const surgDue=await handoverAwaitingSurgery(rows.map(r=>r.id).concat(revDue.map(p=>p.id)));
+  // A slower earlier refresh must never replace a newer handover after a save.
+  if(version!==handoverLoadVersion)return;
   const parts=[];
   if(rows.length)parts.push(`${rows.length} inpatient${rows.length===1?'':'s'}`);
   if(awaiting.length)parts.push(`${awaiting.length} awaiting surgery`);
@@ -18203,15 +18208,15 @@ async function attachHandoverApplianceLines(rows){
   const ids=rows.map(r=>r.id);
   const byPatient={};
   if(ids.length){
-    try{
-      const{data}=await SB.from('clinical_records').select('id,patient_id,appliances,record_date,is_current,discharge_date')
-        .in('patient_id',ids).eq('kind','episode').eq('is_current',true).is('discharge_date',null)
-        .order('record_date',{ascending:true}).order('id',{ascending:true});
-      (data||[]).forEach(ep=>{
-        const entries=parseEpisodeApplianceRows(ep).map(r=>({...r,changed_on:r.changed_on||ep.record_date||''}));
-        (byPatient[ep.patient_id]=byPatient[ep.patient_id]||[]).push(...entries);
-      });
-    }catch(e){}
+    const{data,error}=await SB.from('clinical_records').select('id,patient_id,appliances,record_date,is_current,discharge_date')
+      .in('patient_id',ids).eq('kind','episode').eq('is_current',true).is('discharge_date',null)
+      .order('record_date',{ascending:true}).order('id',{ascending:true});
+    // Do not silently substitute an older copied ward note on a failed read.
+    if(error)throw error;
+    (data||[]).forEach(ep=>{
+      const entries=parseEpisodeApplianceRows(ep).map(r=>({...r,changed_on:r.changed_on||ep.record_date||''}));
+      (byPatient[ep.patient_id]=byPatient[ep.patient_id]||[]).push(...entries);
+    });
   }
   rows.forEach(p=>{p._applianceLine=handoverStomaLine(p,byPatient[p.id]||[]);});
 }
@@ -18312,7 +18317,7 @@ function handoverStomaLine(patient,epRows){
     return stomaOperationHistory(patient).length?'No stoma present':null;
   }
   const hasNewIdentity=stomas.some(s=>s.origin==='refashion'||s.origin==='new');
-  if(!current.length&&!looseLine&&!hasNewIdentity&&!stomaOperationHistory(patient).length)return null;
+  if(!epRows.length&&!current.length&&!looseLine&&!hasNewIdentity&&!stomaOperationHistory(patient).length)return null;
   const lines=stomas.map(st=>{
     const row=current.find(r=>r.stoma_uid===st.uid)||(stomas.length===1&&stomaTimeline(patient).length===1?current[0]:null);
     const tag=st.shortLabel||st.typeLabel;
