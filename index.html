@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-357"/>
-<script src="assets/manual.js?v=2026.10.01-357"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-358"/>
+<script src="assets/manual.js?v=2026.10.01-358"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3301,7 +3301,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-357';
+const APP_BUILD='2026.10.01-358';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11843,7 +11843,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason';
+const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -13297,6 +13297,7 @@ function unlockDemographics(prefix){
     el.removeAttribute('data-locked');el.classList.remove('pf-lockedfld');
   });
   const bar=document.getElementById(prefix+'-lockbar');if(bar)bar.remove();
+  if(prefix==='pcd')revealPatientDetailsSave();
 }
 function patientFormHTML(p,prefix){
   // The stomas a refashioning can name, from the record as it stands.
@@ -13997,6 +13998,8 @@ async function openPatientDatesModal(patientId,returnCtx){
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const needsStoma=!patientStomaList(pat).some(x=>String(x.type||'').trim());
+  const stomaFirst=needsStoma&&!fromVisit;
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide'+sexModalClass(pat);
   mb.innerHTML=`<h2>Patient details</h2>
@@ -14005,8 +14008,8 @@ async function openPatientDatesModal(patientId,returnCtx){
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:flex-end;gap:8px;">
         <button class="btn-cancel" onclick="pcdCancelOrReturn()">${fromVisit?'Back to appointment':'Cancel'}</button>
-        <button type="button" class="btn-stoma" id="pcd-stomabtn" onclick="openCurrentStomaFromPatientDetails('${patientId}')">Input / edit current stoma</button>
-        <button class="btn-save" id="pcd-savebtn" onclick="savePatientDates('${patientId}')">${fromVisit?'Save & return to appointment':'Save patient details'}</button>
+        <button type="button" class="${stomaFirst?'btn-save':'btn-stoma'}" id="pcd-stomabtn" onclick="openCurrentStomaFromPatientDetails('${patientId}')">Input / edit stoma details</button>
+        <button class="btn-save" id="pcd-savebtn" ${stomaFirst?'hidden':''} onclick="savePatientDates('${patientId}')">${fromVisit?'Save & return to appointment':'Save patient details'}</button>
       </div>
     <div style="text-align:center;margin-top:14px;">
       <button type="button" onclick="confirmArchivePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')"
@@ -14014,6 +14017,15 @@ async function openPatientDatesModal(patientId,returnCtx){
         title="Archive this patient while keeping the full record">Archive patient</button>
     </div>`;
   openMo();
+  if(stomaFirst){
+    const pane=document.getElementById('pcd-pane-1');
+    pane?.addEventListener('input',revealPatientDetailsSave);
+    pane?.addEventListener('change',revealPatientDetailsSave);
+  }
+}
+function revealPatientDetailsSave(){
+  const save=document.getElementById('pcd-savebtn');if(save)save.hidden=false;
+  const stoma=document.getElementById('pcd-stomabtn');if(stoma)stoma.className='btn-stoma';
 }
 /* Shortcut from Patient details: open the stoma that is present now. When no
    stoma is present, start the new-stoma pathway instead of reopening an old,
@@ -14025,7 +14037,7 @@ async function openCurrentStomaFromPatientDetails(patientId){
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){
     alert('Could not open this patient’s stoma. Try again.');
-    if(btn){btn.disabled=false;btn.textContent='Input / edit current stoma';}
+    if(btn){btn.disabled=false;btn.textContent='Input / edit stoma details';}
     return;
   }
   const current=patientStomaList(pat).filter(x=>x.present);
@@ -14394,12 +14406,6 @@ async function openStomaModal(patientId,slot){
           <input type="date" id="sm-discharge" value="${v('discharge_date')}" max="${htmlSafe(TODAY)}"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label>
           <textarea id="sm-operation" rows="3" placeholder="Operation and findings">${v('operation')}</textarea></div>
-        <div class="fg" style="grid-column:1 / -1;"><label>Comments</label>
-          <textarea id="sm-comments" rows="2" placeholder="Any extra notes">${v('comments')}</textarea></div>
-        ${x.kind==='later'?`<div class="fg" style="grid-column:1 / -1;">
-          <label>Does this stoma replace an earlier one at the same site? <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
-          <select id="sm-replaces">${stomaReplacesOptions(x.replaces_uid)}</select>
-          <div class="ap-hint">If this new stoma was formed where an earlier one was taken down, choose it here. The earlier stoma is then closed on this stoma's formation date — kept as history, no longer counted as present, and <strong>not</strong> a reversal.</div></div>`:''}
       </div>
 
       <div class="sm-actions" aria-label="Stoma actions">
@@ -14427,9 +14433,6 @@ async function openStomaModal(patientId,slot){
         <div class="fg" id="sm-revwrap" ${presentVal==='reversed'?'':'hidden'}>
           <label>Date closed / reversed *</label>
           <input type="date" id="sm-reversal" value="${v('reversal_date')}" max="${htmlSafe(TODAY)}" onchange="onStomaModalPreview()"/></div>
-        <div class="fg" id="sm-revnoteswrap" ${presentVal==='reversed'?'':'hidden'}>
-          <label>Closure / reversal notes</label>
-          <input type="text" id="sm-revnotes" value="${v('reversal_notes')}" placeholder="e.g. Reversal of Hartmann's"/></div>
         <div class="fg" id="sm-present-again" ${presentVal==='reversed'?'':'hidden'}><button type="button" onclick="stomaModalMarkPresent()">Undo closed / reversed selection</button></div>
         ${isRef?'':`<div class="fg" id="sm-supwrap" ${presentVal==='superseded'?'':'hidden'}>
           <label>Date the new stoma was formed at this site *</label>
@@ -14482,6 +14485,8 @@ function stomaModalCloseAction(){
   document.getElementById('sm-reversal')?.focus();
 }
 function stomaModalMarkPresent(){
+  const original=stomaModalCtx&&stomaBySlot(stomaModalCtx.pat,stomaModalCtx.slot);
+  if(original&&!original.present&&!confirm(`Revert the closed / reversed status of ${operationTargetLabel(original)}?`))return;
   document.querySelector('input[name="sm-present"][value="yes"]').checked=true;
   onStomaPresent();
   document.getElementById('sm-present-again').hidden=true;
@@ -14522,16 +14527,14 @@ function onStomaTypeChange(){
 function onStomaPresent(){
   const val=document.querySelector('input[name="sm-present"]:checked')?.value;
   const gone=val==='reversed', sup=val==='superseded';
-  const rw=document.getElementById('sm-revwrap'),nw=document.getElementById('sm-revnoteswrap'),sw=document.getElementById('sm-supwrap');
+  const rw=document.getElementById('sm-revwrap'),sw=document.getElementById('sm-supwrap');
   if(rw)rw.hidden=!gone;
-  if(nw)nw.hidden=!gone;
   if(sw)sw.hidden=!sup;
   const undo=document.getElementById('sm-present-again');if(undo)undo.hidden=!gone;
   // Clear the boxes that no longer apply, so the answer and the dates can never
   // contradict each other.
   if(!gone){
     const d=document.getElementById('sm-reversal'); if(d)d.value='';
-    const n=document.getElementById('sm-revnotes'); if(n)n.value='';
   }
   if(!sup){const s=document.getElementById('sm-superseded'); if(s)s.value='';}
   onStomaModalPreview();
@@ -14568,11 +14571,11 @@ function readStomaModal(){
     // Each outcome keeps only its own date; the others are cleared so the answer
     // and the dates can never disagree. Superseded is a close, not a reversal.
     reversal_date:state==='reversed'?(val('reversal')||null):null,
-    reversal_notes:state==='reversed'?(val('revnotes')||null):null,
+    reversal_notes:original?.reversal_notes||null,
     superseded_date:state==='superseded'?(val('superseded')||null):null,
-    operation:val('operation')||null,comments:val('comments')||null,
+    operation:val('operation')||null,comments:original?.comments||null,
     target_uid:val('target')||null,
-    replaces_uid:val('replaces')||null,
+    replaces_uid:original?.replaces_uid||null,
     state:state||null,
     present:state===undefined?null:state==='yes',
     same_admission:same===undefined?null:same==='yes'};
@@ -14666,7 +14669,12 @@ async function saveStomaModal(){
   const restore=()=>{if(btn){btn.disabled=false;btn.textContent='Save this stoma';delete btn.dataset.busy;}};
   if(btn){btn.dataset.busy='1';btn.disabled=true;btn.textContent='Saving…';}
   let res;
-  try{res=await updatePatientTolerant(ctx.patientId,payload);}
+  try{
+    if(payload.stoma_operation_history){
+      await persistStomaOperation({patientId:ctx.patientId,pat:ctx.pat,patch:payload});
+      res={error:null,dropped:[]};
+    }else res=await updatePatientTolerant(ctx.patientId,payload);
+  }
   catch(e){restore();say(patientSaveError(e));return;}
   const{error,dropped}=res;
   if(error){restore();say(patientSaveError(error));return;}
@@ -14685,7 +14693,9 @@ function stomaPayloadFor(pat,slot,f){
     const out={stoma_type:f.type,stoma_location:f.location,surgery_date:f.formed_date,
       discharge_date:f.discharge_date,reversal_date:f.reversal_date,
       reversal_notes:f.reversal_notes,stoma_superseded_date:f.superseded_date||null,
-      procedure_performed:f.operation,findings:f.comments};
+      procedure_performed:f.operation};
+    const original=stomaBySlot(pat,slot);
+    if(f.present&&(original?.reversal_date||original?.reversal_unknown))out.stoma_operation_history=revertStomaClosureHistory(pat,[original]);
     out.followup_status=derivedFollowupStatus({...pat,...out});
     return out;
   }
@@ -14700,18 +14710,23 @@ function stomaPayloadFor(pat,slot,f){
       return{...item,type:f.type,location:f.location,formed_date:f.formed_date,
         target_uid:f.target_uid,
         closure_date:f.reversal_date,discharge_date:f.discharge_date,
-        reversal_notes:f.reversal_notes,operation:f.operation,comments:f.comments,
-        findings:f.comments||null,
+        reversal_notes:f.reversal_notes,operation:f.operation,
         same_admission:f.same_admission};
     return{...item,type:f.type,location:f.location,
       ...(where==='later'?{formed_date:f.formed_date,replaces_uid:f.replaces_uid||null}:{}),
       discharge_date:f.discharge_date,reversal_date:f.reversal_date,
       reversal_notes:f.reversal_notes,superseded_date:f.superseded_date||null,
-      operation:f.operation,comments:f.comments,
-      findings:f.comments||null,
+      operation:f.operation,
       mucus_fistula:/mucus\s*fistula/i.test(f.type||'')||!!item.mucus_fistula};
   });
   const out={[col]:list};
+  if(f.present){
+    const original=stomaBySlot(pat,slot);
+    if(original?.reversal_date||original?.reversal_unknown){
+      out.stoma_operation_history=revertStomaClosureHistory(pat,[original]);
+      Object.assign(out,revertedLegacyClosureDates(pat,[original]));
+    }
+  }
   out.followup_status=derivedFollowupStatus({...pat,...out});
   return out;
 }
@@ -14765,7 +14780,7 @@ function stomaOperationHistory(p){
   return Array.isArray(rows)?rows:[];
 }
 function stomaOperationFingerprint(p){
-  return JSON.stringify(['stoma_type','stoma_location','surgery_date','reversal_date','reversal_notes','stoma_superseded_date','initial_stomas','extra_stomas','extra_refashionings','stoma_operation_history','followup_status','deceased_date'].map(k=>p[k]??null));
+  return JSON.stringify(['stoma_type','stoma_location','surgery_date','reversal_date','reversal_notes','stoma_superseded_date','initial_stomas','extra_stomas','extra_refashionings','stoma_operation_history','followup_status','deceased_date','discharged_gozo_date','relocated_overseas_date','followup_status_effective_date','followup_status_reason','extra_statuses','updated_at'].map(k=>p[k]??null));
 }
 function operationTargetLabel(x){return `${x.code||x.uid} · ${prettyStomaType(x.type)||'Stoma'}${x.formed_date?' · '+fmtShortDate(x.formed_date):''}`;}
 async function openStomaOperation(patientId,kind='new',slot=''){
@@ -14786,7 +14801,7 @@ async function openStomaOperation(patientId,kind='new',slot=''){
     <div class="fg" id="so-otherwrap" hidden><label>Type it in full *</label><input id="so-other" type="text"/></div>
     <div class="fg"><label>Stoma location</label><select id="so-location" onchange="stomaLocAdd(this)">${stomaLocOptions(target?.location)}</select></div></div>
     <div id="so-outcomes">${open.map(x=>`<div class="fg"><label>What happened to ${htmlSafe(operationTargetLabel(x))}?</label><select data-so-outcome="${htmlSafe(x.uid)}"><option value="present">Remains present</option><option value="reversed">Reversed / closed during this operation</option><option value="replaced">Taken down and replaced by the new stoma</option></select></div>`).join('')}</div>
-    <div class="fg"><label>Operation and findings *</label><textarea id="so-findings" rows="3"></textarea></div>
+      <div class="fg" id="so-findingswrap" ${kind==='reversal'?'hidden':''}><label>Operation and findings *</label><textarea id="so-findings" rows="3"></textarea></div>
     <div class="fg" id="so-admissionwrap"><label>Same admission as the previous operation? *</label><select id="so-admission"><option value="">Choose</option><option value="yes">Yes — same admission</option><option value="no">No — separate admission</option><option value="unknown">Not known</option></select></div>
     <div class="fg" id="so-dischargewrap"><label>Date of discharge (optional)</label><input type="date" id="so-discharge" max="${TODAY}"/></div></div>
     <div id="so-review" hidden></div><div id="so-error" class="pf-step-err" hidden role="alert"></div>
@@ -14818,6 +14833,7 @@ function changeStomaOperationKind(){
   document.getElementById('so-outcomes').hidden=ctx.kind!=='new';
   document.getElementById('so-admissionwrap').hidden=ctx.kind!=='refashion';
   document.getElementById('so-dischargewrap').hidden=ctx.kind==='reversal';
+  const findings=document.getElementById('so-findingswrap');if(findings)findings.hidden=ctx.kind==='reversal';
   document.getElementById('so-targetlabel').textContent=ctx.kind==='refashion'?'Which stoma was refashioned?':'Which stoma was reversed / closed?';
   document.getElementById('so-datelabel').textContent=ctx.kind==='reversal'?'Date of reversal / closure':'Surgery date';
   changeStomaOperationTarget();
@@ -14830,7 +14846,7 @@ function changeStomaOperationKind(){
 function readStomaOperation(){
   const val=k=>document.getElementById('so-'+k)?.value||'';
   return{kind:val('kind'),uid:stomaOperationCtx.uid,target_uid:val('target'),date:document.getElementById('so-unknown').checked?null:val('date'),date_unknown:document.getElementById('so-unknown').checked,
-    type:val('kind')==='refashion'?(patientStomaList(stomaOperationCtx.pat).find(s=>s.uid===val('target'))?.type||''):(val('type')==='Other'?val('other').trim():val('type')),location:val('location'),operation:val('findings').trim(),same_admission:val('admission')==='yes'?true:val('admission')==='no'?false:null,admission_answer:val('admission'),discharge_date:val('discharge')||null,
+    type:val('kind')==='refashion'?(patientStomaList(stomaOperationCtx.pat).find(s=>s.uid===val('target'))?.type||''):(val('type')==='Other'?val('other').trim():val('type')),location:val('location'),operation:val('kind')==='reversal'?null:val('findings').trim(),same_admission:val('admission')==='yes'?true:val('admission')==='no'?false:null,admission_answer:val('admission'),discharge_date:val('discharge')||null,
     outcomes:val('kind')==='new'?[...document.querySelectorAll('[data-so-outcome]')].map(el=>({uid:el.dataset.soOutcome,state:el.value})):[]};
 }
 function buildStomaOperationPatch(p,d){
@@ -14840,7 +14856,7 @@ function buildStomaOperationPatch(p,d){
   if(d.kind!=='new'&&!target)throw Error('Choose the present stoma affected by this operation.');
   if(!d.date&&!d.date_unknown)throw Error('Enter the operation date or select Date not known.');
   if(d.date&&(d.date>TODAY||(p.date_of_birth&&d.date<p.date_of_birth)||(p.deceased_date&&d.date>p.deceased_date)))throw Error('Check the operation date against today, birth and death dates.');
-  if(!d.operation)throw Error('Record the operation performed and findings.');
+  if(d.kind!=='reversal'&&!d.operation)throw Error('Record the operation performed and findings.');
   if(d.kind!=='reversal'&&!d.type)throw Error('Choose the stoma type.');
   if(d.location==='__add__')throw Error('Complete the stoma location selection.');
   if(d.kind==='refashion'&&!d.admission_answer)throw Error('Select same admission, separate admission or not known.');
@@ -14855,11 +14871,11 @@ function buildStomaOperationPatch(p,d){
     const field=o.state==='reversed'?'reversal_date':'superseded_date';
     if(x.slot==='base'){
       patch[o.state==='reversed'?'reversal_date':'stoma_superseded_date']=d.date||null;
-      if(o.state==='reversed')patch.reversal_notes=d.operation;
+      if(o.state==='reversed'&&d.operation)patch.reversal_notes=d.operation;
     }else{
       const col=x.kind==='initial'?'initial_stomas':x.kind==='refashion'?'extra_refashionings':'extra_stomas';
       const parse=x.kind==='initial'?parseInitialStomas:x.kind==='refashion'?parseRefashionings:parseStomas;
-      patch[col]=(patch[col]||parse(p)).map(s=>s.uid===x.uid?{...s,[x.kind==='refashion'&&field==='reversal_date'?'closure_date':field]:d.date||null,...(o.state==='reversed'?{reversal_notes:d.operation}:{})}:s);
+      patch[col]=(patch[col]||parse(p)).map(s=>s.uid===x.uid?{...s,[x.kind==='refashion'&&field==='reversal_date'?'closure_date':field]:d.date||null,...(o.state==='reversed'&&d.operation?{reversal_notes:d.operation}:{})}:s);
     }
   }
   if(d.kind!=='reversal'){
@@ -14869,7 +14885,7 @@ function buildStomaOperationPatch(p,d){
     if(d.kind==='refashion'){row.target_uid=target.uid;row.same_admission=d.same_admission;}
     patch[col]=existing.concat([row]);
   }
-  patch.stoma_operation_history=stomaOperationHistory(p).concat([{id:d.uid,kind:d.kind,date:d.date||null,date_unknown:d.date_unknown,affected,new_uid:d.kind==='reversal'?null:d.uid,operation:d.operation,discharge_date:d.discharge_date||null,recorded_at:new Date().toISOString()}]);
+  patch.stoma_operation_history=stomaOperationHistory(p).concat([{id:d.uid,kind:d.kind,date:d.date||null,date_unknown:d.date_unknown,affected,new_uid:d.kind==='reversal'?null:d.uid,operation:d.operation||null,discharge_date:d.discharge_date||null,recorded_at:new Date().toISOString()}]);
   const result={...p,...patch};
   const remain=patientStomaList(result).filter(x=>x.present).length;
   const status=normaliseFollowupStatus(p.followup_status);
@@ -14883,7 +14899,7 @@ function reviewStomaOperation(){
   try{ctx.draft=readStomaOperation();ctx.patch=buildStomaOperationPatch(ctx.pat,ctx.draft);}catch(e){stomaOperationError(e.message);return;}
   const next=patientStomaList({...ctx.pat,...ctx.patch});
   const label={new:'New stoma formation',reversal:'Reversal / closure',refashion:'Refashioning'}[ctx.draft.kind];
-  document.getElementById('so-review').innerHTML=`<h3>Review ${htmlSafe(label.toLowerCase())}</h3><div class="registry-lookup-note">${htmlSafe(ctx.draft.date?fmtShortDate(ctx.draft.date):'Date not known')} · ${htmlSafe(ctx.draft.operation)}</div>${next.map(x=>`<div class="fg"><strong>${htmlSafe(operationTargetLabel(x))}</strong><div>${stomaBadgesHTML(x)}</div></div>`).join('')}<div class="pf-outcome">${next.filter(x=>x.present).length} stoma(s) present · ${htmlSafe(ctx.patch.followup_status.replace(/_/g,' '))}</div>${ctx.draft.kind==='refashion'?'<p>Recorded as one refashioning, with its own stoma ID. No new-stoma formation or reversal is added.</p>':''}`;
+  document.getElementById('so-review').innerHTML=`<h3>Review ${htmlSafe(label.toLowerCase())}</h3><div class="registry-lookup-note">${htmlSafe(ctx.draft.date?fmtShortDate(ctx.draft.date):'Date not known')}${ctx.draft.operation?' · '+htmlSafe(ctx.draft.operation):''}</div>${next.map(x=>`<div class="fg"><strong>${htmlSafe(operationTargetLabel(x))}</strong><div>${stomaBadgesHTML(x)}</div></div>`).join('')}<div class="pf-outcome">${next.filter(x=>x.present).length} stoma(s) present · ${htmlSafe(ctx.patch.followup_status.replace(/_/g,' '))}</div>${ctx.draft.kind==='refashion'?'<p>Recorded as one refashioning, with its own stoma ID. No new-stoma formation or reversal is added.</p>':''}`;
   document.getElementById('so-details').hidden=true;document.getElementById('so-review').hidden=false;
   document.getElementById('so-back').textContent='Back to details';const btn=document.getElementById('so-save');btn.textContent=ctx.pat.is_inpatient&&ctx.kind!=='reversal'?'Save operation & select appliance':'Save operation';btn.onclick=saveStomaOperation;
 }
@@ -14908,11 +14924,12 @@ async function saveStomaOperation(){
 // The modal and inline closure share the same guarded, all-or-nothing write.
 async function persistStomaOperation(ctx){
   const{data:fresh,error}=await fetchPatientById(ctx.patientId);if(error||!fresh)throw Error('Could not check the latest patient record.');
-  if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s stoma record has changed. Cancel and reopen the operation to review the latest record.');
+  if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s record has changed. Cancel and reopen this form to review the latest record.');
   // Strict single update: an unavailable column must never silently drop part of an operation.
   let query=SB.from('patients').update(ctx.patch).eq('id',ctx.patientId).eq('stoma_operation_history',JSON.stringify(stomaOperationHistory(fresh)));
   if(fresh.updated_at)query=query.eq('updated_at',fresh.updated_at);
   const saved=await query.select('id').single();
+  if(saved.error&&(saved.error.code==='PGRST116'||/0 rows/.test(saved.error.message||'')))throw Error('The patient record changed while saving. Cancel and reopen this form to review the latest record.');
   if(saved.error)throw Error(/stoma_operation_history/.test(saved.error.message||'')?'Database setup is needed: run sql/add-stoma-operation-history.sql, then save again. Nothing from this operation has been saved.':saved.error.message);
   return fresh;
 }
@@ -15895,8 +15912,9 @@ function stomaOutcomesPanelHTML(pat){
 }
 /* ── outcome change on the record page ───────────────────────────────────────
    Every outcome starts with an inline Yes / No question. Reversal then asks
-   which stoma, its closure date and findings, sharing the operation save rules. */
+   which stoma and its closure date, sharing the operation save rules. */
 let croReversalCtx=null;
+let croRevertCtx=null;
 function croPatientLabel(){
   const p=clrState.patient||{};
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
@@ -15939,12 +15957,8 @@ function croStatusPanelHTML(pat){
       ${disabled?'disabled':''}${needDate?' style="border-color:#f0a94a;box-shadow:0 0 0 2px #f0c47a;font-weight:800;"':''} title="${title}"
       onclick="croAsk('${a.key}')"><span aria-hidden="true">${a.icon}</span>${htmlSafe(a.label)}${suffix}</button>`;
   }).join('');
-  // A patient-level status set by mistake can be cleared straight back to
-  // follow-up; the stoma history then decides active vs reversed. Shown only
-  // when there is such a date to clear — a plain reversal is corrected from Edit
-  // patient (its date lives on the stoma).
-  const canClear=!!(pat.deceased_date||pat.discharged_gozo_date||pat.relocated_overseas_date);
-  const clearBtn=canClear?`<button type="button" class="pf-sbtn" style="color:#0d7377;border-color:#b5e0dd;background:#f0faf9;" title="Clear a status set by mistake and return to follow-up" onclick="croAskClear()"><span aria-hidden="true">↺</span>Back to follow-up</button>`:'';
+  const canClear=cur!=='active';
+  const clearBtn=canClear?`<button type="button" class="pf-sbtn" style="color:#0d7377;border-color:#b5e0dd;background:#f0faf9;" title="Revert this outcome after confirmation" onclick="croAskClear()"><span aria-hidden="true">↺</span>Revert status</button>`:'';
   // When the current status has no date on file, say so plainly and point at the
   // exact button to press — a missing date should never be easy to miss.
   const missingDateAction=PF_STATUS_ACTIONS.find(a=>cur===a.key&&a.key!=='reversed'&&!croStatusDate(pat,a.key));
@@ -15955,7 +15969,7 @@ function croStatusPanelHTML(pat){
       <div class="psm-sec-head"><h3>Change the outcome</h3><span class="psm-badge">Tap a status, then its date</span></div>
       <div class="psm-card">
         <div class="pf-sbtns">${reversalBtn}${btns}${clearBtn}</div>
-        ${canReverse?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;"><strong>Reversal / closure</strong>: confirm, then choose the stoma and record its closure date and findings.</div>`:''}
+        ${canReverse?`<div style="font-size:11.5px;color:var(--muted);margin:8px 2px 0;"><strong>Reversal / closure</strong>: confirm, then choose the stoma and record its closure date.</div>`:''}
         ${datePrompt}
         <div class="pf-sconfirm" id="cro-confirm" hidden></div>
       </div>
@@ -15963,7 +15977,7 @@ function croStatusPanelHTML(pat){
 }
 // Step one of the guard: the question, in the patient's own name and card.
 function croAsk(key,slot=''){
-  if(croReversalCtx?.busy)return;
+  if(croReversalCtx?.busy||croRevertCtx?.busy)return;
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
   // When the patient already reads as this outcome, the button is only there to
@@ -15973,6 +15987,7 @@ function croAsk(key,slot=''){
   // question says the date of death will be cleared.
   const cur=clrState.patient?derivedFollowupStatus(clrState.patient):'';
   croReversalCtx=null;
+  croRevertCtx=null;
   box.hidden=false;
   let q;
   if(key==='reversed'){
@@ -15996,13 +16011,14 @@ function croAsk(key,slot=''){
   box.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function croCancel(){
-  if(croReversalCtx?.busy)return;
+  if(croReversalCtx?.busy||croRevertCtx?.busy)return;
   croReversalCtx=null;
+  croRevertCtx=null;
   const box=document.getElementById('cro-confirm');if(box){box.hidden=true;box.innerHTML='';}
 }
 // Step two: Yes was pressed, so now — and only now — ask for the date.
 function croConfirm(key){
-  if(croReversalCtx?.busy)return;
+  if(croReversalCtx?.busy||croRevertCtx?.busy)return;
   if(key==='reversed'){croConfirmReversal();return;}
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
@@ -16040,8 +16056,6 @@ function croConfirmReversal(){
     <div class="fg"><label for="cro-date">Date of reversal / closure</label>
       <input type="date" id="cro-date" max="${htmlSafe(TODAY)}"/>
       <label class="pf-xchk"><input type="checkbox" id="cro-unknown" onchange="document.getElementById('cro-date').disabled=this.checked"/> Date not known</label></div>
-    <div class="pf-sc-notes"><label for="cro-notes">Operation and findings *</label>
-      <textarea id="cro-notes" rows="3" placeholder="e.g. Closure of ileostomy"></textarea></div>
     <div style="font-size:11.5px;color:var(--muted);margin:8px 0 11px;">Only the selected stoma is closed. Its history is retained; any other present stomas remain open.</div>
     <div class="pf-sconfirm-act">
       <button type="button" class="pf-sc-no" onclick="croCancel()">Cancel</button>
@@ -16059,7 +16073,7 @@ async function croApplyReversal(){
   const unknown=!!document.getElementById('cro-unknown')?.checked;
   const draft={kind:'reversal',uid:ctx.uid,target_uid:document.getElementById('cro-stoma')?.value||'',
     date:unknown?null:document.getElementById('cro-date')?.value||'',date_unknown:unknown,
-    operation:String(document.getElementById('cro-notes')?.value||'').trim()};
+    operation:null};
   try{ctx.patch=buildStomaOperationPatch(ctx.pat,draft);}catch(e){say(e.message);return;}
   ctx.busy=true;
   const controls=[...box.querySelectorAll('button,input,select,textarea'),...document.querySelectorAll('#psm-outcomes .pf-sbtn,#psm-outcomes .pf-add-btn')];
@@ -16077,6 +16091,7 @@ async function croApplyReversal(){
 // Step three: OK. Patient-level outcomes reuse the register form's rules;
 // stoma closure uses its own selected target and operation history above.
 async function croApply(key){
+  if(croRevertCtx?.busy)return;
   if(key==='reversed'){await croApplyReversal();return;}
   const a=PF_STATUS_ACTIONS.find(x=>x.key===key); if(!a)return;
   const pat=clrState.patient; if(!pat||!pat.id)return;
@@ -16125,52 +16140,110 @@ async function croApply(key){
     if(document.body.contains(holder))holder.remove();
   }
 }
-// Undo a patient-level status set by mistake: clear the date of death / Gozo /
-// overseas and return the patient to follow-up. The stoma history then decides
-// whether they read as active or reversed; nothing on the operation history is
-// touched.
+// Reopen only the latest closure, retaining earlier closed/superseded stomas.
+function outcomeRevertTargets(pat){
+  const closed=patientStomaList(pat).filter(x=>!x.present&&!x.superseded&&(x.reversal_date||x.reversal_unknown));
+  if(!closed.length)return pat.reversal_date?[{uid:'base',slot:'base',kind:'first',type:pat.stoma_type||null,reversal_date:pat.reversal_date}]:[];
+  const latestDate=closed.map(x=>x.reversal_date||'').sort().pop();
+  for(const event of stomaOperationHistory(pat).slice().reverse()){
+    const targets=closed.filter(x=>(event.affected||[]).some(a=>a.uid===x.uid&&a.state==='reversed')&&
+      (event.date_unknown?x.reversal_unknown&&!x.reversal_date:!!event.date&&event.date===x.reversal_date));
+    if(targets.length&&(event.date_unknown||event.date===latestDate))return targets;
+  }
+  return closed.filter(x=>x.reversal_date===latestDate);
+}
+// Keep the original event and notes as an audit of the correction. A reverted
+// affected entry no longer closes the stoma or counts as a current reversal.
+function revertStomaClosureHistory(pat,targets){
+  const stamp=new Date().toISOString();
+  return stomaOperationHistory(pat).map(event=>{
+    let changed=false;
+    const affected=(event.affected||[]).map(a=>{
+      if(a.state!=='reversed'||!targets.some(x=>x.uid===a.uid))return a;
+      changed=true;return{...a,state:'present',reverted_state:'reversed',reverted_at:stamp};
+    });
+    if(!changed)return event;
+    return{...event,affected,...(event.kind==='reversal'&&affected.every(a=>a.state==='present')?{reverted_at:stamp}:{})};
+  });
+}
+function revertedLegacyClosureDates(pat,targets){
+  const patch={};
+  for(const[kind,parse,formedCol,closedCol]of [['later',parseStomas,'newstoma_formed_date','newstoma_closure_date'],['refashion',parseRefashionings,'refashion_formed_date','refashion_closure_date']]){
+    const first=parse(pat)[0];
+    if(first&&pat[closedCol]&&targets.some(x=>x.kind===kind&&x.uid===first.uid&&x.reversal_date===pat[closedCol]&&(!pat[formedCol]||x.formed_date===pat[formedCol])))patch[closedCol]=null;
+  }
+  return patch;
+}
+function buildOutcomeRevertPatch(pat){
+  const current=derivedFollowupStatus(pat);
+  const rawStatus=normaliseFollowupStatus(pat.followup_status);
+  if(current!=='reversed'){
+    const patch={followup_status:rawStatus===current?'active':rawStatus,extra_statuses:rawExtraStatuses(pat).filter(s=>s!==current)};
+    const dateCol={deceased:'deceased_date',discharged_gozo:'discharged_gozo_date',relocated_overseas:'relocated_overseas_date'}[current];
+    if(dateCol)patch[dateCol]=null;
+    if(rawStatus===current){patch.followup_status_effective_date=null;patch.followup_status_reason=null;}
+    patch.followup_status=derivedFollowupStatus({...pat,...patch});
+    return patch;
+  }
+  const targets=outcomeRevertTargets(pat);
+  const patch={followup_status:rawStatus==='reversed'?'active':rawStatus,extra_statuses:rawExtraStatuses(pat).filter(s=>s!=='reversed')};
+  if(rawStatus==='reversed'){patch.followup_status_effective_date=null;patch.followup_status_reason=null;}
+  if(targets.some(x=>x.slot==='base'))patch.reversal_date=null;
+  const stores=[['initial_stomas',parseInitialStomas,'initial'],['extra_stomas',parseStomas,'later'],['extra_refashionings',parseRefashionings,'refashion']];
+  for(const[col,parse,kind]of stores){
+    const chosen=targets.filter(x=>x.kind===kind);if(!chosen.length)continue;
+    patch[col]=parse(pat).map(row=>{
+      const match=chosen.some(x=>x.uid===row.uid&&(row.uid!=null||(x.formed_date===row.formed_date&&x.reversal_date===(row.reversal_date||row.closure_date||null))));
+      if(!match)return row;
+      return{...row,...(kind==='refashion'?{closure_date:null}:{reversal_date:null}),...(row.closure_date?{closure_date:null}:{}),...(kind==='refashion'&&row.reversal_date?{reversal_date:null}:{})};
+    });
+    // Legacy scalar dates must agree with the corrected JSON fallback row.
+    if(kind==='later'&&chosen.some(x=>x.uid==null))patch.newstoma_closure_date=null;
+    if(kind==='refashion'&&chosen.some(x=>x.uid==null))patch.refashion_closure_date=null;
+  }
+  Object.assign(patch,revertedLegacyClosureDates(pat,targets));
+  if(targets.length)patch.stoma_operation_history=revertStomaClosureHistory(pat,targets);
+  patch.followup_status=derivedFollowupStatus({...pat,...patch});
+  return patch;
+}
 function croAskClear(){
-  if(croReversalCtx?.busy)return;
+  if(croReversalCtx?.busy||croRevertCtx?.busy)return;
   croReversalCtx=null;
+  const pat=clrState.patient;if(!pat?.id)return;
   const box=document.getElementById('cro-confirm'); if(!box)return;
+  const patch=buildOutcomeRevertPatch(pat),targets=derivedFollowupStatus(pat)==='reversed'?outcomeRevertTargets(pat):[];
+  croRevertCtx={patientId:pat.id,pat,patch,busy:false};
+  const label=followupStatusText(derivedFollowupStatus(pat));
+  const detail=targets.length?`<div style="margin-top:8px;">This reopens ${targets.map(x=>htmlSafe(operationTargetLabel(x))).join('; ')}. Earlier closed stomas stay in the history.</div>`:'';
+  const result=followupStatusText(derivedFollowupStatus({...pat,...patch}));
   box.hidden=false;
-  box.innerHTML=`<div class="pf-sconfirm-q">Set ${croPatientLabel()} back to <strong>still in follow-up</strong>?
-      This clears any date of death, Gozo or overseas date set by mistake. The stoma and any reversal on the operation history are unchanged.</div>
+  box.innerHTML=`<div class="pf-sconfirm-q">Do you want to revert <strong>${htmlSafe(label)}</strong> for ${croPatientLabel()}?${detail}
+      <div style="margin-top:8px;">The outcome will read <strong>${htmlSafe(result)}</strong>.</div></div>
     <div class="pf-sconfirm-act">
       <button type="button" class="pf-sc-no" onclick="croCancel()">No, leave it</button>
-      <button type="button" class="pf-sc-ok" onclick="croApplyClear()">Yes, back to follow-up</button>
+      <button type="button" class="pf-sc-ok" onclick="croApplyClear()">Yes, revert</button>
     </div>
     <div class="pf-step-err" id="cro-err" hidden></div>`;
   box.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 async function croApplyClear(){
-  const pat=clrState.patient; if(!pat||!pat.id)return;
+  const ctx=croRevertCtx,box=document.getElementById('cro-confirm');
+  if(!ctx||ctx.busy||!box||clrState.patient?.id!==ctx.patientId)return;
   const err=document.getElementById('cro-err');
   const say=m=>{if(err){err.hidden=false;err.textContent=m;}};
-  const holder=document.createElement('div');
-  holder.style.display='none';
-  holder.innerHTML=patientFormHTML(pat,'crx');
-  document.body.appendChild(holder);
+  if(err)err.hidden=true;
+  ctx.busy=true;
+  const controls=[...box.querySelectorAll('button'),...document.querySelectorAll('#psm-outcomes .pf-sbtn,#psm-outcomes .pf-add-btn')];
+  const states=controls.map(el=>[el,el.disabled]);states.forEach(([el])=>{el.disabled=true;});
+  const btn=box.querySelector('.pf-sc-ok');if(btn)btn.textContent='Saving…';
   try{
-    ['rip','gozodate','ovsdate'].forEach(id=>{const f=document.getElementById('crx-'+id);if(f)f.value='';});
-    SECONDARY_STATUSES.forEach(k=>{const cb=document.getElementById('crx-xs-'+k);if(cb)cb.checked=false;});
-    const sel=document.getElementById('crx-status');if(sel)sel.value='active';
-    const payload=readPatientForm('crx');
-    // Returning to follow-up clears the status reason and effective date too.
-    payload.followup_status_effective_date=null;
-    payload.followup_status_reason=null;
-    holder.remove();
-    const btn=document.querySelector('#cro-confirm .pf-sc-ok');
-    if(btn){btn.disabled=true;btn.textContent='Saving…';}
-    const{error,dropped}=await updatePatientTolerant(pat.id,payload);
-    if(error){say('Could not save: '+(error.message||error));if(btn){btn.disabled=false;btn.textContent='Yes, back to follow-up';}return;}
-    if(dropped&&dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.`);
+    await persistStomaOperation(ctx);
+    croRevertCtx=null;
     try{await refreshReminders();}catch(e){}
-    await openPatientRecord(pat.id);
-    switchPatientPanel('outcomes');
-  }finally{
-    if(document.body.contains(holder))holder.remove();
-  }
+    try{await afterStomaSaved(ctx.patientId);switchPatientPanel('outcomes');}
+    catch(e){alert('Status reverted. Refresh the patient record to see it.');}
+  }catch(e){say(e.message||'Could not revert this status.');}
+  finally{ctx.busy=false;states.forEach(([el,disabled])=>{el.disabled=disabled;});if(btn)btn.textContent='Yes, revert';}
 }
 async function onCardAddComplication(patientId){
   const list=await readAndAddComplication('pcmp',patientId,'Clinic');
@@ -18416,10 +18489,10 @@ function handoverStomaLine(patient,epRows){
   return lines.join('  ·  ');
 }
 function handoverOperationSummary(p){
-  const last=stomaOperationHistory(p).slice(-1)[0];
+  const last=stomaOperationHistory(p).filter(e=>!e.reverted_at).slice(-1)[0];
   if(!last)return '';
   const label={refashion:'Refashioning',new:'New stoma formation',reversal:'Reversal / closure'}[last.kind]||'Operation';
-  return label+' · '+(last.date?fmtShortDate(last.date):'date not known')+' · '+(last.operation||'');
+  return label+' · '+(last.date?fmtShortDate(last.date):'date not known')+(last.operation?' · '+last.operation:'');
 }
 /* The open (unresolved) complications, named, with each one's latest trend when
    it is recorded — shown on the handover so the ward sees them at a glance
