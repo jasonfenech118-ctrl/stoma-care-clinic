@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-360"/>
-<script src="assets/manual.js?v=2026.10.01-360"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-361"/>
+<script src="assets/manual.js?v=2026.10.01-361"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2800,7 +2800,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
           <button class="btn-add" onclick="openDischargeFull()" style="background:#0369a1;">↗ Open full page</button>
         </div>
       </div>
-      <iframe id="discharge-frame" class="discharge-frame" title="Stoma Discharge Letter" data-src="discharge-letter.html"></iframe>
+      <iframe id="discharge-frame" class="discharge-frame" title="Stoma Discharge Letter" data-src="discharge-letter.html?v=2026.10.01-361"></iframe>
     </div>
 
     <!-- PATIENT RECORD (opened full-page from the Registry) -->
@@ -3323,7 +3323,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-360';
+const APP_BUILD='2026.10.01-361';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15869,12 +15869,13 @@ function rodSectionInnerHTML(pat,rod,rodRemoved,rodStoma){
     ? `<div class="cmp-rod-row"><span style="color:#0a5e33;font-weight:800;">✓ Rod removed on ${htmlSafe(fmtShortDate(rodRemoved))}${tied?' · '+htmlSafe(tied):''}</span>
         <button type="button" class="ncb-btn" style="background:#f1f5f9;color:#334155;" onclick="undoRodRemoved('${patientId}')">Undo</button></div>
        <div class="cmp-rod-hint">Recorded as removed, so it no longer appears in the reminders.</div>`
-    : `<div class="cmp-rod-row" style="flex-wrap:wrap;gap:6px;">
+    : `<div class="cmp-rod-hint"><strong>Rod present: ${rod?'Yes':'No'}</strong>. Set its planned removal date to record a rod; clear the date to record no rod.</div>
+      <div class="cmp-rod-row" style="flex-wrap:wrap;gap:6px;">
         <input type="date" id="rod-date" value="${htmlSafe(rod)}"/>
         ${rodStomaControlHTML(pat,rodStoma)}
-        <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save ROD date</button>
+        <button type="button" class="pf-add-btn" onclick="saveRodRemovalDate('${patientId}')">Save rod &amp; removal date</button>
         ${rod?`<button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${patientId}')">✓ Rod removed</button>`:''}
-        ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">Clear</button>`:''}
+        ${rod?`<button type="button" class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="clearRodRemovalDate('${patientId}')">No rod</button>`:''}
       </div>
       <div class="cmp-rod-hint">Set the planned date and the stoma its rod belongs to. When the rod is out, press <strong>✓ Rod removed</strong> — it records the removal and stops the reminder.</div>`;
 }
@@ -15914,8 +15915,9 @@ async function onPickAddComplication(patientId,source){
   const host=document.getElementById('cmp-pick-list'); if(host)host.innerHTML=complicationListHTML(list,{removable:true,patientId});
   if(document.getElementById('hv-body'))await loadHandover();
 }
-/* The ROD (stoma rod / bridge) removal date lives on the patient. Setting it
-   raises a reminder on that day; clearing it (once the rod is out) stops it. */
+/* The planned ROD (stoma rod / bridge) removal date lives on the patient.
+   Setting it records presence and raises a reminder; marking it removed keeps
+   the actual removal date for the discharge letter and stops the reminder. */
 async function saveRodRemovalDate(patientId){
   const v=document.getElementById('rod-date')?.value||'';
   const stomaEl=document.getElementById('rod-stoma');
@@ -15939,27 +15941,32 @@ function clearRodRemovalDate(patientId){
 }
 /* Rod removed — yes/no. "Yes" records the removal date (today) so it stays on
    the record and drops off the reminders; "Not yet" leaves it chasing. */
-async function markRodRemoved(patientId){
-  const{error,dropped}=await updatePatientTolerant(patientId,{rod_removed_date:TODAY});
-  if(error){alert('Could not record the rod removal: '+(error.message||error));return;}
-  if(dropped&&dropped.includes('rod_removed_date')){
-    // The column is not in the database yet — clear the due date so it still
-    // drops off the reminders, and point the user at the migration.
-    await updatePatientTolerant(patientId,{rod_removal_date:null});
-    alert('Marked as removed.\n\nTip: run sql/add-rod-removed-date.sql once in Supabase to also keep the removal date on the record.');
-  }
-  closeReminderPanel();
-  // If a ROD block is open (manager or picker) repaint it in place to show the
-  // removed state; if this came from the reminder, just close it and refresh.
-  const inBlock=!!document.getElementById('cmp-rod-body');
-  if(!inBlock)closeModal();
-  try{await refreshReminders();}catch(e){}
-  await refreshRodHost(patientId);
+async function markRodRemoved(patientId,button){
+  if(button?.disabled)return;
+  if(button)button.disabled=true;
+  try{
+    const{error,dropped}=await updatePatientTolerant(patientId,{rod_removed_date:TODAY});
+    if(error){alert('Could not record the rod removal: '+(error.message||error));return;}
+    if(dropped&&dropped.includes('rod_removed_date')){
+      // The column is not in the database yet — clear the due date so it still
+      // drops off the reminders, and point the user at the migration.
+      await updatePatientTolerant(patientId,{rod_removal_date:null});
+      alert('Marked as removed.\n\nTip: run sql/add-rod-removed-date.sql once in Supabase to also keep the removal date on the record.');
+    }
+    closeReminderPanel();
+    // If a ROD block is open (manager or picker) repaint it in place to show the
+    // removed state; if this came from the reminder, just close it and refresh.
+    const inBlock=!!document.getElementById('cmp-rod-body');
+    if(!inBlock)closeModal();
+    try{await refreshReminders();}catch(e){}
+    await refreshRodHost(patientId);
+  }finally{if(button)button.disabled=false;}
 }
 function rodNotRemoved(){
   alert('Kept on the reminders — it will keep showing until you mark the rod removed.');
 }
 async function undoRodRemoved(patientId){
+  if(!confirm('Revert the recorded rod removal?'))return;
   const{error}=await updatePatientTolerant(patientId,{rod_removed_date:null});
   if(error){alert('Could not undo: '+(error.message||error));return;}
   try{await refreshReminders();}catch(e){}
@@ -17578,10 +17585,16 @@ function composeApplianceSentence(appliances,accessories){
    and accessory from their most recent seen visit, so the letter opens already
    written in the clinic's own wording. */
 async function openDischargeLetterFor(patientId){
-  let p=(clrState.patient&&clrState.patient.id===patientId)?clrState.patient:null;
-  if(!p){const r=await fetchPatientById(patientId);p=r&&r.data;}
+  // Handover may have changed since the patient card was opened.
+  const{data:p,error}=await fetchPatientById(patientId);
+  if(error||!p){alert('Could not check the latest patient details for the discharge letter. Try again.');return;}
   const q=new URLSearchParams();
+  q.set('v',APP_BUILD);
   if(p){
+    const rod=dischargeLetterRodData(p);
+    q.set('rod',rod.state);
+    if(rod.due)q.set('rodDue',rod.due);
+    if(rod.removed)q.set('rodRemoved',rod.removed);
     if(p.first_name)q.set('fn',p.first_name);
     if(p.surname)q.set('sn',p.surname);
     if(p.id_card)q.set('id',p.id_card);
@@ -17645,6 +17658,11 @@ async function openDischargeLetterFor(patientId){
   }
   const qs=q.toString();
   window.open('discharge-letter.html'+(qs?'?'+qs:''),'_blank');
+}
+function dischargeLetterRodData(p){
+  if(!p||!('rod_removal_date' in p)||!('rod_removed_date' in p))return{state:'unknown',due:'',removed:''};
+  const due=String(p.rod_removal_date||'').slice(0,10),removed=String(p.rod_removed_date||'').slice(0,10);
+  return{state:removed?'removed':due?'present':'none',due:removed?'':due,removed};
 }
 async function openPatientRecord(patientId){
   const host=document.getElementById('page-patient-record');
@@ -18147,7 +18165,7 @@ function loadDischargeLetters(){
   const f=document.getElementById('discharge-frame');
   if(f&&!f.getAttribute('src'))f.setAttribute('src',f.dataset.src);
 }
-function openDischargeFull(){window.open('discharge-letter.html','_blank');}
+function openDischargeFull(){window.open('discharge-letter.html?v='+APP_BUILD,'_blank');}
 /* True when an inpatient's stoma has been reversed and none is left — the most
    recent stoma is ended on or before today, with no new or refashioned stoma
    still present. Such a patient has nothing to hand over about, so they leave
@@ -18995,37 +19013,46 @@ async function saveFlangeDueInline(pid,el){
    reads at a glance on the sheet instead of only living in a note. It shows for a
    patient who has a rod date on file: the due date is editable and colour-coded
    (due / soon / overdue) just like the flange chip, and once the rod is actually
-   removed it reads a green "Rod out · <date>". A patient with no rod shows nothing. */
+   removed it reads a green "Rod out · <date>". A patient with no rod has a
+   ＋ Rod button for recording one without leaving the Handover. */
 function rodChipHTML(p){
+  if(!p?.id)return '';
   const due=p&&p.rod_removal_date?String(p.rod_removal_date).slice(0,10):'';
   const removed=p&&p.rod_removed_date?String(p.rod_removed_date).slice(0,10):'';
-  if(!due&&!removed)return '';
+  if(!due&&!removed)return `<span class="hv-flangebox"><span class="hv-flange-cap">${'rod_removal_date' in p&&'rod_removed_date' in p?'Rod: No':'Rod'}</span><button type="button" class="ncb-btn" onclick="openComplicationPicker('${p.id}','Handover')" title="Record a rod and its planned removal date">＋ Rod</button></span>`;
   if(removed)
     return `<span class="hv-flangebox hv-rod-done" title="Rod removed">
       <span class="hv-flange-cap">Rod out</span>
       <span class="hv-flange-note">${htmlSafe(fmtShortDate(removed))}</span>
+      <button type="button" class="ncb-btn" onclick="undoRodRemoved('${p.id}')" title="Revert the recorded rod removal">Undo</button>
     </span>`;
   const m=flangeDueMeta(due);
-  return `<label class="hv-flangebox hv-flange-${m.cls}" title="Rod removal due — type or pick a date">
-    <span class="hv-flange-cap">Rod due</span>
-    <input type="date" class="hv-inp hv-flange-date hv-rod-date" value="${htmlSafe(due)}"
+  return `<div class="hv-flangebox hv-flange-${m.cls}" data-rod-due="${htmlSafe(due)}" title="Rod present — planned removal date">
+    <span class="hv-flange-cap">Rod: Yes</span>
+    <input type="date" aria-label="Planned rod removal date" class="hv-inp hv-flange-date hv-rod-date" value="${htmlSafe(due)}"
       onchange="saveRodDueInline('${p.id}',this)"/>
     <span class="hv-flange-note">${htmlSafe(m.note)}</span>
-  </label>`;
+    <button type="button" class="ncb-btn" style="background:#e6f7ec;color:#0a5e33;" onclick="markRodRemoved('${p.id}',this)">✓ Rod removed</button>
+  </div>`;
 }
 /* Save the rod removal-due date straight from the row, recolouring in place. Uses
    the tolerant update so it still works before the rod columns are migrated. */
 async function saveRodDueInline(pid,el){
   const val=el.value||'';
   const box=el.closest('.hv-flangebox');
-  const{error,dropped}=await updatePatientTolerant(pid,{rod_removal_date:val||null});
+  const previous=box?.dataset.rodDue||'';
+  const{error,dropped}=await updatePatientTolerant(pid,{rod_removal_date:val||null,...(!val?{rod_stoma_uid:null}:{})});
   if(error||(dropped&&dropped.includes('rod_removal_date'))){
+    el.value=previous;
     alert('Could not save the rod date — run sql/add-rod-removed-date.sql once in Supabase if the rod columns are missing.');
     return;
   }
-  if(box){const m=flangeDueMeta(val);
+  if(box&&!val)box.outerHTML=rodChipHTML({id:pid,rod_removal_date:null,rod_removed_date:null});
+  else if(box){const m=flangeDueMeta(val);
+    box.dataset.rodDue=val;
     box.className='hv-flangebox hv-flange-'+m.cls;
     const note=box.querySelector('.hv-flange-note');if(note)note.textContent=m.note;}
+  try{await refreshReminders();}catch(e){}
 }
 /* Setting an appliance from the handover files it against the stoma and the
    admission the patient is on now, so it lands in the stoma's history rather

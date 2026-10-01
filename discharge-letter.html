@@ -684,15 +684,38 @@
     }
     return 0;
   }
+  function prefillRodFromQuery(q){
+    function date(v){
+      v=String(v||'');
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return '';
+      var d=new Date(v+'T00:00:00Z');
+      return !isNaN(d.getTime())&&d.toISOString().slice(0,10)===v?v:'';
+    }
+    // Only the saved Handover state can supply rod details. A standalone or
+    // older letter has no rod information to infer from its stoma type.
+    var state=q.get('rod');
+    WZ.rodFromRecord=state==='present'||state==='removed'||state==='none';
+    WZ.rodInSitu=state==='present'?'yes':'no';
+    WZ.rodRemovalDate=state==='present'?date(q.get('rodDue')):'';
+    WZ.rodRemovedDate=state==='removed'?date(q.get('rodRemoved')):'';
+  }
+  function automaticRodPlan(){
+    if(WZ.rodInSitu==='yes')return [WZ.rodRemovalDate
+      ?planPhrase('plan.rod',{rodDate:_fmtDate(WZ.rodRemovalDate)})
+      :'Rod in situ. The planned removal date has not been recorded.'];
+    if(WZ.rodRemovedDate)return [planPhrase('plan.rodRemoved',{rodDate:_fmtDate(WZ.rodRemovedDate)})];
+    return [];
+  }
   function prefillFromQuery(){
     var q;
     try{ q = new URLSearchParams(location.search); }catch(e){ return false; }
+    prefillRodFromQuery(q);
     var fn=q.get('fn'), sn=q.get('sn'), id=q.get('id'), title=q.get('title');
     var type=q.get('type'), opdate=q.get('opdate'), procedure=q.get('procedure');
     var consultant=q.get('consultant');
     var appliance=q.get('appliance'), mucus=q.get('mucus');
     var applList=q.get('appl'), accList=q.get('acc');
-    if(!(fn||sn||id||type||appliance||applList||accList||mucus!=null)) return false;
+    if(!(fn||sn||id||type||appliance||applList||accList||mucus!=null||q.has('rod'))) return false;
 
     // Patient fields on the letter
     var setFld=function(sel,v){ var el=document.querySelector(sel); if(el&&v!=null&&v!=='') el.value=v; };
@@ -763,6 +786,10 @@
     // …and the same items matched onto the letter's own catalogue, so the
     // wizard's system, appliance and accessory pages open already answered.
     _prefillAppliances(applList, accList);
+    var rodPlan=document.getElementById('planList');
+    if(rodPlan)automaticRodPlan().forEach(function(text){
+      var li=document.createElement('li');li.innerHTML=text;rodPlan.appendChild(li);
+    });
 
     if(typeof autosizePatientFlds==='function') autosizePatientFlds();
     if(typeof updateRibbon==='function') updateRibbon();
@@ -1069,7 +1096,7 @@
       skinRedness:"no",
       mucocutaneousSeparation:"no", mucoSepFrom:"", mucoSepTill:"", mucoSepTreatment:"", mucoSepTreatmentOther:"",
       teaching:"", teachingWith:"",
-      urostomyStents:"no", rodInSitu:"no", rodRemovalDate:"", mucusFistula:"", mucusFistulaLocations:[],
+      urostomyStents:"no", rodInSitu:"no", rodRemovalDate:"", rodRemovedDate:"", rodFromRecord:false, mucusFistula:"", mucusFistulaLocations:[],
       system:"", onePieceIdx:"", onePieceSize:"", onePieceOutlet:"",
       baseplateIdx:"", baseplateSize:"", nextChange:"", nextChangeLater:"", bagIdx:"", bagOutlet:"", bagsShowAll:false,
       accessories:[], fillerFrom:"", fillerTo:"",
@@ -1100,11 +1127,11 @@
     for(var i=0;i<list.length;i++){ if(list[i].v === WZ.subtype) return list[i].label; }
     return "";
   }
-  // Rod is only relevant for loop colostomy, transverse colostomy, and loop ileostomy
+  // Handover supplies the presence; keep the existing care-plan applicability.
   function rodApplies(){
-    if(WZ.type === 'colostomy') return (WZ.subtype === 'transverse' || WZ.subtype === 'loop');
-    if(WZ.type === 'ileostomy') return (WZ.subtype === 'loop');
-    return false;
+    if(!WZ.rodFromRecord||WZ.rodInSitu!=='yes')return false;
+    if(WZ.type==='colostomy')return WZ.subtype==='transverse'||WZ.subtype==='loop';
+    return WZ.type==='ileostomy'&&WZ.subtype==='loop';
   }
   function typeHasSubtype(t){ return t === 'colostomy' || t === 'ileostomy'; }
 
@@ -1228,9 +1255,7 @@
       var caption = WZ.type === 'colostomy' ? wtext('cap_subtypeColostomy') : wtext('cap_subtypeIleostomy');
       return '<p class="wz-cap">'+caption+'</p>'
         + list.map(function(s){
-            var rodTag = ((WZ.type==='colostomy' && (s.v==='transverse'||s.v==='loop')) || (WZ.type==='ileostomy' && s.v==='loop'))
-              ? '<span class="wz-tag">rod option</span>' : '';
-            return '<button class="wz-choice'+(WZ.subtype===s.v?' sel':'')+'" onclick="wzPick(\'subtype\',\''+s.v+'\')">'+_esc(s.label)+rodTag+'</button>';
+            return '<button class="wz-choice'+(WZ.subtype===s.v?' sel':'')+'" onclick="wzPick(\'subtype\',\''+s.v+'\')">'+_esc(s.label)+'</button>';
           }).join('')
         + '<p class="wz-hint" id="wzHint" style="display:none">Please choose a sub-type to continue.</p>';
     }
@@ -1262,12 +1287,6 @@
       html += '<p class="wz-cap">Is the stoma retracted?</p>'
         + '<button class="wz-choice'+(WZ.stomaRetraction==='yes'?' sel':'')+'" onclick="wzSetRetraction(\'yes\')">Yes</button>'
         + '<button class="wz-choice'+(WZ.stomaRetraction==='no'?' sel':'')+'" onclick="wzSetRetraction(\'no\')">No</button>';
-      if(rodApplies()){
-        html += '<label class="wz-check'+(WZ.rodInSitu==='yes'?' sel':'')+'"><input type="checkbox"'+_checked(WZ.rodInSitu)+' onchange="WZ.rodInSitu=this.checked?\'yes\':\'no\'; renderWizard();"> Rod in situ ('+_esc(subtypeLabel())+')</label>';
-        if(WZ.rodInSitu === 'yes'){
-          html += '<div class="wz-field"><label>Expected date of rod removal</label><input type="date" value="'+_esc(WZ.rodRemovalDate)+'" oninput="WZ.rodRemovalDate=this.value"></div>';
-        }
-      }
       if(WZ.type === 'urostomy'){
         html += '<label class="wz-check'+(WZ.urostomyStents==='yes'?' sel':'')+'"><input type="checkbox"'+_checked(WZ.urostomyStents)+' onchange="WZ.urostomyStents=this.checked?\'yes\':\'no\'"> Urostomy stents in situ</label>';
       }
@@ -1432,11 +1451,10 @@
 
   function wzPick(field, val){
     if(field === 'type'){
-      if(WZ.type !== val){ WZ.subtype = ""; WZ.rodInSitu = "no"; WZ.rodRemovalDate = ""; WZ.bagIdx = ""; WZ.bagsShowAll = false; }
+      if(WZ.type !== val){ WZ.subtype = ""; WZ.bagIdx = ""; WZ.bagsShowAll = false; }
       WZ.type = val;
     }
     else if(field === 'subtype'){
-      if(WZ.subtype !== val){ WZ.rodInSitu = "no"; WZ.rodRemovalDate = ""; }
       WZ.subtype = val;
     }
     else if(field === 'system'){
@@ -1777,7 +1795,8 @@
     "common.hair":        "Peristomal hair removal to be done as necessary to prevent folliculitis.",
     "acc.filler":         "Apply a generous amount of filler paste from {from} to {to} o'clock location around the stoma.",
     "acc.mucusFistula":   "<strong>Mucus fistula{location}:</strong> wash the stoma and peristomal skin well and pat dry. Apply a Bactigras/paraffin dressing and cover with a dry dressing. The dressing is to be changed on alternate days.",
-    "plan.rod":           "Rod in situ, due for removal on <strong>{rodDate}</strong>."
+    "plan.rod":           "Rod in situ, due for removal on <strong>{rodDate}</strong>.",
+    "plan.rodRemoved":    "Rod removed on <strong>{rodDate}</strong>."
   };
   // Bullets that are shown in bold in the letter (house style).
   var PLAN_BOLD_KEYS = { "two.uroStentsA":1, "two.rodA":1, "one.uroStentsA":1, "one.rodA":1, "acc.belt":1, "acc.filler":1 };
@@ -1872,10 +1891,7 @@
       b.push(planPhrase("one.removeSpray"));
     }
 
-    if(rod){
-      var rodDateStr = WZ.rodRemovalDate ? _fmtDate(WZ.rodRemovalDate) : "_______________";
-      b.push(planPhrase("plan.rod", { rodDate: rodDateStr }));
-    }
+    b=b.concat(automaticRodPlan());
 
     b.push(planPhrase("common.wash"));
     // Deep convexity flanges come pre-cut, so no aperture-cutting instruction
@@ -2101,7 +2117,7 @@
   var PLAN_PHRASE_GROUPS = [
     ['Two-piece systems', ['two.flangeChange','two.uroStentsA','two.uroStentsB','two.uroNoStents','two.rodA','two.rodB','two.closed','two.drainable','two.default','two.drainableExtra','two.removeOther']],
     ['One-piece systems', ['one.uroStentsA','one.uroStentsB','one.uroNoStents','one.rodA','one.rodB','one.closed','one.drainable','one.default','one.removeSpray']],
-    ['Common & accessories', ['common.wash','common.aperture','acc.barrierWipe','acc.powder','acc.redness','acc.mucoSep','acc.belt','acc.seal','common.hair','acc.filler','acc.mucusFistula','plan.rod']]
+    ['Common & accessories', ['common.wash','common.aperture','acc.barrierWipe','acc.powder','acc.redness','acc.mucoSep','acc.belt','acc.seal','common.hair','acc.filler','acc.mucusFistula','plan.rod','plan.rodRemoved']]
   ];
   function renderPlanPhrasesSection(){
     var html = '<div class="cat-section"><h3>Care-plan bullet wording</h3>'

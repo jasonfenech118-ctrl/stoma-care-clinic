@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (patient ID cards, matching names, booking workspace and stoma forms)'};
+const MANUAL_META={updated:'1 October 2026 (automatic rod details in discharge letters)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -250,7 +250,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#b45309',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
-  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod due complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
+  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod present yes no removal date removed undo discharge letter complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
@@ -258,6 +258,7 @@ const MANUAL_SECTIONS=[
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
       <li><b>Flange due / Rod due</b> chips — colour by urgency; overdue turns red.</li>
+      <li><b>Rod: No · ＋ Rod</b> — press ＋ Rod and save the planned removal date and the stoma it belongs to. The row then shows <b>Rod: Yes</b> and its editable date. Press <b>✓ Rod removed</b> when it is out: today's date is recorded, the reminder stops and the row shows <b>Rod out</b>. <b>Undo</b> asks for confirmation before reverting the removal.</li>
       <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
       <li><b>Complications/ROD</b> button — opens the full complication timeline and the ROD date.</li>
@@ -327,14 +328,15 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'letter',title:'Discharge Letter',icon:'✉️',color:'#4338ca',blurb:'Generate the stoma discharge letter, pre-filled from the record.',pages:[
-  {id:'generate',title:'Create a discharge letter',keywords:'discharge letter print pdf appliance one piece two piece pre filled care plan consultant',html:`
+  {id:'generate',title:'Create a discharge letter',keywords:'discharge letter print pdf appliance one piece two piece pre filled care plan consultant rod present removed removal date automatic wizard',html:`
     ${manWhen('A patient is going home and needs their stoma discharge letter.')}
     ${manSteps([
       `Open the patient and press <b>Discharge letter</b> (available for inpatients).`,
-      `The letter opens with the demographics, stoma type, operation date and the <b>current appliance &amp; accessories</b> already filled in.`,
+      `The letter opens with the demographics, stoma type, operation date and the <b>current appliance &amp; accessories</b> already filled in. The latest saved rod details are read from Handover too.`,
       `Answer the remaining clinical questions (skin, teaching, mucus fistula, etc.), then <b>Save / Print</b> or export to Word.`
     ])}
     ${manNote('auto','⚙️','When the current appliance is known, the letter <b>reflects it directly</b> and skips the one-piece / two-piece question — and for a patient with more than one stoma it keeps <b>every stoma’s</b> appliance instead of collapsing to one.')}
+    ${manNote('auto','⚙️','<b>Rod details are automatic:</b> while a rod is present, the letter inserts its planned removal date. After <b>Rod removed</b> is saved in Handover, it inserts the actual removal date and removes in-situ instructions. No rod means no rod paragraph. The wizard has no rod questions. If Handover changes after the letter opens, reopen the letter to use the latest saved details.')}
   `}
 ]},
 
@@ -379,13 +381,14 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
-  {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge date dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
+  {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
         ['🏥','Handover archived at 4 pm','A read-only snapshot of the ward sheet is saved automatically every day and kept for reference.','Handover › Archived'],
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
+        ['✉️','Rod details in discharge letters','The letter reads the latest saved Handover rod state when it opens: the planned removal date while present, or the actual date after Rod removed. No rod paragraph is added for a patient with no rod, and the wizard skips rod questions.','Handover / Discharge Letter'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],
         ['🔄','Latest handover appliance','All nurses see the saved appliance per present stoma. Other open handovers update automatically, with a check every 30 seconds and on returning to the page. Refreshes wait while you edit. Closed stomas and earlier selections remain in history.','Handover'],
