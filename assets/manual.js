@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026'};
+const MANUAL_META={updated:'1 October 2026 (monthly reversal totals)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -332,13 +332,14 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'audit',title:'Audit & Reports',icon:'📊',color:'#c0392b',blurb:'The numbers: charts, annual report, map, audits, DNTU policy.',pages:[
-  {id:'reports',title:'Reports, Charts & Annual Report',keywords:'reports charts annual report metrics numbers statistics compare formation reversals',html:`
+  {id:'reports',title:'Reports, Charts & Annual Report',keywords:'reports charts annual report metrics numbers statistics compare formation reversals month closure dates report year cohort',html:`
     ${manMap('audit')}
     <ul class="man-ul">
       <li>${manBtn('📊 Reports & Charts','#e3e8f1','#1a2e4a')} — headline charts (follow-up due months, booked vs available, and more).</li>
       <li>${manBtn('📄 Annual Report','#e2eefb','#155e9c')} — the yearly figures: stoma formations &amp; reversals by month, discharges, deaths. Tap a number to see the exact patients behind it.</li>
       <li>${manBtn('📈 Data Analysis','#efe7fb','#5b3aa8')} — deeper breakdowns.</li>
     </ul>
+    ${manNote('tip','ℹ️','The <b>Reversals</b> tile under <b>Sitings &amp; surgery</b> counts stomas formed during the selected report year and reversed during the selected period. For example, a stoma formed in July and reversed in September counts in September. The tile, comparison chart and patient list use the same dates. The <b>Stoma formation and reversals by month</b> table also includes reversals of stomas formed in earlier years, so it can have a larger total.')}
     ${manNote('auto','⚙️','The report boxes and the patient lists behind them are <b>reconciled</b> — the number you see and the list you open always match.')}
   `},
   {id:'more',title:'Map, Clinic Audit, OT Audit, DNTU',keywords:'map locality clinic audit ot audit overtime dntu policy did not turn up',html:`

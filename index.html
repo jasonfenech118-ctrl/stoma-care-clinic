@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-353"/>
-<script src="assets/manual.js?v=2026.10.01-353"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-354"/>
+<script src="assets/manual.js?v=2026.10.01-354"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3296,7 +3296,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-353';
+const APP_BUILD='2026.10.01-354';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10959,8 +10959,9 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
         const g=daStomaGroup(s.type);
         if(g==='Colostomy'){stColo++;stFormed++;} else if(g==='Ileostomy'){stIleo++;stFormed++;} else if(g==='Urostomy'){stUro++;stFormed++;}
       });}catch(e){}
-      // Formed and reversed inside the same period, counted once per closure.
-      try{stRevNew+=metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).size;}catch(e){}
+      // Formed in the report year and reversed in the selected period. A
+      // September reversal need not have been formed in September too.
+      try{stRevNew+=metricNewReversalDates(p,year,inRange).size;}catch(e){}
     });
     reversalsInPeriod=rev; gozoInPeriod=gozo; deathsInPeriod=death; relocatedInPeriod=relo; deathsNewStomaInPeriod=deathNew; gozoNewStomaInPeriod=gozoNew; relocatedNewInPeriod=reloNew;
     stomasFormedInPeriod=stFormed; colostomiesInPeriod=stColo; ileostomiesInPeriod=stIleo; urostomiesInPeriod=stUro; reversalsNewInPeriod=stRevNew;
@@ -11002,7 +11003,7 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       box('sitings','Sitings',sitingsInPeriod,`new cases sited · ${htmlSafe(periodLabel)}`),
       box('stoma_performed','Stoma Performed',stomaFormedInPeriod,'stoma formed from a siting'),
       box('stoma_not_performed','Stoma Not Performed',noStomaInPeriod,`operation, no stoma formed · ${htmlSafe(periodLabel)}`),
-      box('reversals_new','Reversals',reversalsNewInPeriod,`formed &amp; reversed in ${htmlSafe(periodLabel)}`)
+      box('reversals_new','Reversals',reversalsNewInPeriod,`formed in ${htmlSafe(year)} · reversed in ${htmlSafe(periodLabel)}`)
     ]},
     {title:'Stomas formed by type',cols:4,tiles:[
       box('stomas_formed','Stomas Formed',stomasFormedInPeriod,`new stomas · ${htmlSafe(periodLabel)}`),
@@ -11036,7 +11037,7 @@ const METRIC_LABELS={
   stomas_formed:'Stomas Formed', colostomies:'Colostomies',
   ileostomies:'Ileostomies', urostomies:'Urostomies',
   reversals_colostomy:'Reversal of colostomy', reversals_ileostomy:'Reversal of ileostomy',
-  reversals_new:'Reversals', gozo_new:'Discharged to Gozo',
+  reversals_new:'Reversals of stomas formed that year', gozo_new:'Discharged to Gozo',
   overseas_new:'Relocated Overseas'
 };
 const YEAR_COMPARE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#4a3aa7','#e87ba4','#0d9488','#d1442f','#7c5cff','#c026d3'];
@@ -11109,23 +11110,25 @@ function metricMonthly(key,year,d){
   else if(key==='urostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Urostomy')addByDate(s.formed_date);});}catch(e){}});}
   // Formed this year and reversed this year, placed on the month of the reversal.
   else if(key==='reversals_new'){(d.patients||[]).forEach(p=>{
-    metricNewReversalDates(p,(f,r)=>String(f||'').slice(0,4)===Y&&!!r).forEach((f,r)=>addByDate(r));});}
+    metricNewReversalDates(p,Y,r=>String(r||'').slice(0,4)===Y).forEach((f,r)=>addByDate(r));});}
   // Colostomies / ileostomies reversed, placed on the month of the reversal.
   else if(key==='reversals_colostomy'){(d.patients||[]).forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group==='Colostomy')addByDate(e.date);});});}
   else if(key==='reversals_ileostomy'){(d.patients||[]).forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group==='Ileostomy')addByDate(e.date);});});}
   return arr;
 }
-/* A single closure can be recorded on more than one stoma entry — the stoma on
+/* Reversals of stomas formed in the report year, filtered by reversal date.
+   A month selection limits the reversal date, not the formation month.
+   A single closure can be recorded on more than one stoma entry — the stoma on
    the patient card and an entry in initial_stomas share that operation's date —
    so the same reversal would otherwise be counted and listed twice. Reversals
    are counted once per date, the rule the general reversal count already uses.
    Returns reversal date -> the formation date it was recorded against. */
-function metricNewReversalDates(p,keep){
+function metricNewReversalDates(p,year,keepReversal){
   const out=new Map();
   try{patientStomaList(p).forEach(x=>{
     if(x.kind==='refashion')return;
     if(daStomaGroup(x.type||p.stoma_type)==='Urostomy')return;
-    if(!keep(x.formed_date,x.reversal_date))return;
+    if(String(x.formed_date||'').slice(0,4)!==String(year)||!keepReversal(x.reversal_date))return;
     const k=String(x.reversal_date||'').slice(0,10);
     if(k&&!out.has(k))out.set(k,x.formed_date||null);
   });}catch(e){}
@@ -11173,7 +11176,7 @@ function metricPeriodTotal(key,period,d,monthly){
   if(key==='deaths_new')
     return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
   if(key==='reversals_new')
-    return (d.patients||[]).reduce((n,p)=>n+metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).size,0);
+    return (d.patients||[]).reduce((n,p)=>n+metricNewReversalDates(p,year,inRange).size,0);
   if(key==='gozo')
     return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='gozo_new')
@@ -11245,7 +11248,7 @@ function metricPeriodRecords(key,period,d){
     if(daStomaGroup(p.stoma_type)==='Urostomy')return;
     [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
   if(key==='reversals_new'){pats.forEach(p=>{
-    metricNewReversalDates(p,(f,r)=>inRange(f)&&inRange(r)).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
+    metricNewReversalDates(p,year,inRange).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
   if(key==='reversals_colostomy'||key==='reversals_ileostomy'){
     const want=key==='reversals_colostomy'?'Colostomy':'Ileostomy';
     pats.forEach(p=>{stomaReversalEntries(p).forEach(e=>{if(e.group===want&&inRange(e.date))push(p,e.date,want.toLowerCase()+' reversed');});});
