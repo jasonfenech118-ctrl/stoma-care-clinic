@@ -109,6 +109,15 @@
   .body{min-height:120px;text-align:justify}
   .body p{margin:0 0 10px}
   .body p:last-child{margin-bottom:0}
+  .record-stoma-title{margin-top:18px !important;break-after:avoid}
+  .record-plan-title{list-style:none;margin:16px 0 7px !important;break-after:avoid}
+  .wz-record-card{border:1px solid #d6dde5;border-radius:10px;padding:12px;margin-bottom:12px}
+  .wz-record-card h3{margin:0 0 8px;color:#806018}
+  .wz-record-card p{margin:6px 0;font-size:14px;overflow-wrap:anywhere}
+  .wz-record-missing{color:#92400e;font-weight:600}
+  .wz-record-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+  .wz-record-tab{font:inherit;font-size:13px;text-align:left;cursor:pointer;border:1px solid #d6dde5;border-radius:8px;padding:9px;background:#f7f9fb}
+  .wz-record-tab.sel{background:#f8efd7;border-color:#b78b2b;font-weight:700}
 
   /* ---------- 5. Care plan ---------- */
   .l-plan{margin-top:0}
@@ -323,7 +332,8 @@
     .l-footer{
       position:fixed;left:0;right:0;bottom:6mm;margin:0;padding-top:6px;
     }
-    .l-header,.l-plan,.l-sign,.sec{break-inside:avoid}
+    .l-header,.l-sign{break-inside:avoid}
+    .body p,.plan-list li{break-inside:avoid}
   }
 </style>
 <link rel="stylesheet" href="assets/clinic-visuals.css?v=2" media="screen">
@@ -473,6 +483,7 @@
 
 <!-- Client-side PDF generation for the Send to Email button -->
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="assets/discharge-record.js?v=2026.10.01-362"></script>
 <script>
   // ============================================================
   //  Stoma Discharge Letter — wizard-led appliance workflow
@@ -530,7 +541,7 @@
      letter, so the guided wizard is not also thrown up on top. */
   function _mapStomaType(t){
     t = (t||'').toLowerCase();
-    if(/uro/.test(t))  return 'urostomy';
+    if(/uro|ileal\s*conduit/.test(t))  return 'urostomy';
     if(/ileo/.test(t)) return 'ileostomy';
     if(/colo/.test(t)) return 'colostomy';
     return '';
@@ -623,7 +634,7 @@
   }
   // The register's accessory names in this letter's words.
   var _ACC_ALIAS={
-    'powder':'Stoma powder', 'stoma powder':'Stoma powder',
+    'powder':'Stoma powder', 'stoma powder':'Stoma powder', 'protective stoma powder':'Stoma powder',
     'protective wipes':'Protective skin wipe', 'protective wipe':'Protective skin wipe',
     'stoma seals':'Stoma seal', 'stoma seal':'Stoma seal',
     'stoma belt':'Stoma belt', 'filler paste':'Filler paste',
@@ -1142,6 +1153,8 @@
   }
 
   function stepsForWizard(){
+    if(recordLoadError)return ['recordReview'];
+    if(dischargeRecord)return ['recordReview','recordAssessment','teaching'];
     var head = ["type"];
     if(typeHasSubtype(WZ.type)) head.push("subtype");
     head = head.concat(["patient","surgery","stoma"]);
@@ -1168,6 +1181,8 @@
     return head.concat(tail).concat(["accessories"]);
   }
   function titleForStep(step){
+    if(step==='recordReview')return 'Review recorded stomas';
+    if(step==='recordAssessment')return 'Discharge assessment';
     return wtext('title_' + step) || step;
   }
 
@@ -1244,6 +1259,8 @@
   }
 
   function wzStepHTML(step){
+    if(step==='recordReview')return recordedReviewHTML();
+    if(step==='recordAssessment')return recordedAssessmentHTML();
     if(step === "type"){
       return ['colostomy','ileostomy','urostomy'].map(function(t){
         var lab = t.charAt(0).toUpperCase()+t.slice(1);
@@ -1447,6 +1464,7 @@
     document.getElementById('wzBody').innerHTML = wzStepHTML(step);
     document.getElementById('wzBack').hidden = (wzStep === 0);
     document.getElementById('wzNext').textContent = (wzStep === steps.length - 1) ? 'Finish' : 'Next';
+    document.getElementById('wzNext').disabled = !!recordLoadError;
   }
 
   function wzPick(field, val){
@@ -1675,6 +1693,7 @@
   }
 
   function applyWizard(){
+    if(dischargeRecord){applyRecordedLetter();closeWizard();return;}
     curType = WZ.type || curType;
     curSystem = WZ.system || curSystem;
     var one = CAT.onePiece[parseInt(WZ.onePieceIdx,10)] || null;
@@ -1970,6 +1989,7 @@
   }
   function updateRibbon(){
     var t = document.getElementById('ribbonTitle');
+    if(dischargeRecord){t.textContent='Stoma Discharge Letter — '+recordedStomas.length+' current stoma'+(recordedStomas.length===1?'':'s');return;}
     if(!curType){ t.textContent = "Stoma Discharge Letter"; return; }
     var label = subtypeLabel() || (curType.charAt(0).toUpperCase() + curType.slice(1));
     var sys = curSystem ? (curSystem === "one" ? " (One-piece)" : " (Two-piece)") : "";
@@ -1997,6 +2017,7 @@
 
   function clearForm(){
     if(!confirm('Clear all fields and start a new letter?')) return;
+    clearRecordedLetter();
     document.querySelectorAll('input.fld').forEach(function(i){ if(i.id!=='letterDate') i.value=''; });
     document.querySelectorAll('select.fld').forEach(function(s){ s.selectedIndex = 0; });
     document.querySelector('.body').innerHTML =
@@ -2461,7 +2482,9 @@
       + '.patient{font-weight:bold;text-align:center;}'
       + '.body-txt{text-align:justify;margin-bottom:17pt;}'
       + '.plan-h{font-weight:bold;text-decoration:underline;margin-bottom:17pt;}'
-      + 'ul{margin:0 0 17pt;padding-left:24px;}li{margin:0 0 5px;}'
+      + 'ul{margin:0 0 17pt;padding-left:24px;}li{margin:0 0 5px;break-inside:avoid;}'
+      + 'p{break-inside:avoid;}.record-stoma-title{margin-top:18px;break-after:avoid;}'
+      + '.record-plan-title{list-style:none;margin:16px 0 7px;break-after:avoid;}'
       + ".footer{font-family:'Arial Narrow',sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;margin-top:26px;padding-top:6px;}"
       // Pin the footer to the bottom of the A4 page in the PDF render.
       // Word: a real page footer (mso-element) pins the address block to the
@@ -2657,14 +2680,15 @@
     var bodyEl = document.querySelector('.body');
     var ps = bodyEl ? bodyEl.children : [];
     for(var bi=0; bi<ps.length; bi++){
-      doc += _wp(_domRunsX(ps[bi]), '<w:spacing w:after="' + (bi === ps.length-1 ? 340 : 150) + '"/><w:jc w:val="both"/>');
+      doc += _wp(_domRunsX(ps[bi]), (ps[bi].classList.contains('record-stoma-title')?'<w:keepNext/>':'')+'<w:spacing w:after="' + (bi === ps.length-1 ? 340 : 150) + '"/><w:jc w:val="both"/>');
     }
     doc += _wp(_wrun('Stoma Care Plan:', { b:true, u:true }), GAP);
     var planUl = document.getElementById('planList');
     var lis = planUl ? planUl.children : [];
     for(var li2=0; li2<lis.length; li2++){
       if(!lis[li2].textContent.replace(/\s+/g,' ').trim()) continue;
-      doc += _wp(_domRunsX(lis[li2]), '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="75"/><w:ind w:left="425" w:hanging="212"/>');
+      var heading=lis[li2].classList.contains('record-plan-title');
+      doc += _wp(_domRunsX(lis[li2]), heading?'<w:keepNext/><w:spacing w:before="180" w:after="90"/>':'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="75"/><w:ind w:left="425" w:hanging="212"/>');
     }
     doc += _wp('', '');   // blank line after the plan
     doc += _wp(_mdRunsX(LETTER.closing, {}), GAP);
@@ -2793,7 +2817,7 @@
     if(ul){
       Array.prototype.forEach.call(ul.children, function(li){
         var t = li.textContent.replace(/\s+/g, ' ').trim();
-        if(t) lines.push('- ' + t);
+        if(t) lines.push(li.classList.contains('record-plan-title')?'\n'+t:'- ' + t);
       });
     }
     lines.push('', strip(LETTER.closing) || 'Regards,', '');
@@ -2833,7 +2857,7 @@
           image: { type: 'jpeg', quality: 0.95 },
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css'] }
+          pagebreak: { mode: ['css'], avoid: ['p','li','.lh-tbl'] }
         }).from(doc.body).outputPdf('blob')
           .then(function(blob){ cleanup(); cb(blob); },
                 function(){ cleanup(); fail(); });
@@ -2937,7 +2961,8 @@
   autosizePatientFlds();
   /* The form is always shown. When the record filled the early pages in, the
      wizard simply opens on the first question it could not answer. */
-  if(prefillFromQuery()){ wzStep=_firstUnansweredStep(); renderWizard(); document.getElementById('wizard').classList.add('open'); }
+  if(prefillRecordedLetter())openWizard();
+  else if(prefillFromQuery()){ wzStep=_firstUnansweredStep(); renderWizard(); document.getElementById('wizard').classList.add('open'); }
   else openWizard();
 </script>
 </body>

@@ -20,6 +20,7 @@ function letterSession(params={}){
   const dom=new JSDOM(letter,{url:'https://example.test/discharge-letter.html?'+q,runScripts:'outside-only'});
   dom.window.alert=()=>{};
   dom.window.print=()=>{};
+  dom.window.eval(fs.readFileSync(path.join(root,'assets/discharge-record.js'),'utf8'));
   dom.window.document.querySelectorAll('script:not([src])').forEach(script=>dom.window.eval(script.textContent));
   return {dom,w:dom.window,plan:()=>dom.window.document.getElementById('planList').textContent};
 }
@@ -27,10 +28,13 @@ const patient={id:'patient-1',first_name:'Example',surname:'Patient',stoma_type:
   rod_removal_date:'2026-10-05',rod_removed_date:null,rod_stoma_uid:'base'};
 function appSession(overrides={}){
   const dom=new JSDOM('<body><div id="host"></div><div id="cmp-rod-body"></div></body>');
-  const writes=[],opened=[],alerts=[];
+  const writes=[],opened=[],alerts=[],snapshots=[];
   let reminders=0,refreshes=0;
-  const c=vm.createContext({window:{open:(url,target)=>opened.push({url,target})},document:dom.window.document,
-    URLSearchParams,Map,Date,TODAY:'2026-10-01',APP_BUILD:appBuild,
+  const c=vm.createContext({window:{open:(url,target)=>{
+      const tab={url,target,document:{},location:{},sessionStorage:{setItem:(_key,value)=>snapshots.push(JSON.parse(value))},
+        close(){this.closed=true;}};opened.push(tab);return tab;
+    }},document:dom.window.document,location:{href:'https://example.test/index.html'},crypto:require('node:crypto').webcrypto,
+    URL,URLSearchParams,Map,Date,TODAY:'2026-10-01',APP_BUILD:appBuild,
     clrState:{patient:{...patient}},
     fetchPatientById:async()=>({data:{...patient},error:null}),
     updatePatientTolerant:async(id,patch)=>{writes.push({id,patch});return {error:null,dropped:[]};},
@@ -40,12 +44,16 @@ function appSession(overrides={}){
     fmtShortDate:v=>v,flangeDueMeta:()=>({cls:'soon',note:'Due in 4 days'}),stomasPresentOn:()=>[],
     parseNameList:v=>Array.isArray(v)?v:[],parseEpisodeApplianceRows:ep=>ep.appliances||[],
     composeApplianceSentence:(a,b)=>[...a,...b].join(' and '),
+    fetchAllRows:async()=>({rows:[],error:null}),stomaTimeline:p=>[{uid:'base',type:p.stoma_type}],
+    patientStomaList:p=>[{uid:'base',type:p.stoma_type,kind:'first',number:1,present:true}],
+    stomaApplianceHistory:()=>new Map(),parseComplications:()=>[],APPLIANCE_CATALOGUE:[],
+    applianceStomaUid:row=>row.stoma_uid,
     SB:{from(){const q={select(){return q;},eq(){return q;},order(){return q;},limit(){return q;},
       then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}};return q;}},
     ...overrides});
-  ['dischargeLetterRodData','openDischargeLetterFor','rodChipHTML','markRodRemoved','undoRodRemoved','saveRodDueInline']
+  ['dischargeLetterRodData','dischargeLetterRecord','openDischargeLetterFor','rodChipHTML','markRodRemoved','undoRodRemoved','saveRodDueInline']
     .forEach(name=>vm.runInContext(source(name),c));
-  return {c,dom,writes,opened,alerts,get reminders(){return reminders;},get refreshes(){return refreshes;}};
+  return {c,dom,writes,opened,alerts,snapshots,get reminders(){return reminders;},get refreshes(){return refreshes;}};
 }
 const plain=value=>JSON.parse(JSON.stringify(value));
 
@@ -110,15 +118,17 @@ test('opening a letter reads the latest removal instead of an old patient card',
   const s=appSession({fetchPatientById:async()=>{reads++;return {data:{...patient,rod_removed_date:'2026-10-01'},error:null};}});
   await s.c.openDischargeLetterFor(patient.id);
   assert.equal(reads,1);assert.equal(s.opened.length,1);
-  const q=new URL(s.opened[0].url,'https://example.test/').searchParams;
-  assert.equal(q.get('rod'),'removed');assert.equal(q.get('rodRemoved'),'2026-10-01');
-  assert.equal(q.has('rodDue'),false);assert.equal(q.get('v'),appBuild);
+  const q=new URL(s.opened[0].location.href).searchParams;
+  assert.ok(q.get('record'));assert.equal(q.get('v'),appBuild);
+  assert.equal(q.has('rod'),false);assert.equal(q.has('rodDue'),false);
+  assert.deepEqual(s.snapshots[0].stomas[0].rod,{inSitu:false,removalDate:'',removedDate:'2026-10-01'});
 });
 
 test('a failed latest-record read prevents a letter containing stale rod details',async()=>{
   const s=appSession({fetchPatientById:async()=>({data:null,error:{message:'Offline'}})});
   await s.c.openDischargeLetterFor(patient.id);
-  assert.equal(s.opened.length,0);assert.equal(s.alerts.length,1);
+  assert.equal(s.opened.length,1);assert.equal(s.opened[0].closed,true);
+  assert.equal(s.snapshots.length,0);assert.equal(s.alerts.length,1);
 });
 
 test('handover offers add, remove, or undo according to the saved rod state',()=>{

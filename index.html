@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-361"/>
-<script src="assets/manual.js?v=2026.10.01-361"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-362"/>
+<script src="assets/manual.js?v=2026.10.01-362"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2800,7 +2800,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
           <button class="btn-add" onclick="openDischargeFull()" style="background:#0369a1;">↗ Open full page</button>
         </div>
       </div>
-      <iframe id="discharge-frame" class="discharge-frame" title="Stoma Discharge Letter" data-src="discharge-letter.html?v=2026.10.01-361"></iframe>
+      <iframe id="discharge-frame" class="discharge-frame" title="Stoma Discharge Letter" data-src="discharge-letter.html?v=2026.10.01-362"></iframe>
     </div>
 
     <!-- PATIENT RECORD (opened full-page from the Registry) -->
@@ -3323,7 +3323,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-361';
+const APP_BUILD='2026.10.01-362';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6941,9 +6941,10 @@ async function commitEpisodeAppliances(pending,rows){
   if(!rows.length){closeModal();return;}
   const who=await getCurrentUserForAudit();
   const stamp=TODAY;
+  const changedAt=new Date().toISOString();
   const entries=rows.map(r=>({stoma_uid:r.uid||'',stoma_code:r.code||'',stoma_short:r.short||'',
     stoma_type:r.stoma_type||'',appliances:r.appliances||[],accessories:r.accessories||[],
-    flange_due:r.flange_due||'',changed_on:stamp,changed_by:(who&&who.name)||'',
+    flange_due:r.flange_due||'',changed_on:stamp,changed_at:changedAt,changed_by:(who&&who.name)||'',
     // Where the change was made, so the history says the ward and not just
     // "inpatient" — the patient may move ward before the episode closes.
     ward:pending.ward||'',bed:pending.bed||''}));
@@ -16727,7 +16728,7 @@ function stomaApplianceHistory(pat,records=[],appointments=[]){
   (records||[]).filter(r=>r.kind==='episode').slice()
     .sort((a,b)=>String(a.record_date||a.created_at||'').localeCompare(String(b.record_date||b.created_at||'')))
     .forEach(ep=>parseEpisodeApplianceRows(ep).forEach(row=>push(row,{
-      date:row.changed_on||ep.record_date||null,time:ep.created_at||'',source:'inpatient',
+      date:row.changed_on||ep.record_date||null,time:row.changed_at||ep.updated_at||ep.created_at||'',source:'inpatient',
       ward:row.ward||(ep.is_current&&!ep.discharge_date?pat?.inpatient_ward||'':''),
       by:row.changed_by||'',ref:recCode(ep)})));
   (records||[]).filter(r=>r.kind==='appliance').forEach(r=>push({appliances:r.title},{
@@ -17132,7 +17133,7 @@ function parseEpisodeApplianceRows(e){
   return list.filter(r=>r&&typeof r==='object').map(r=>({
     stoma_uid:r.stoma_uid||'',stoma_code:r.stoma_code||'',stoma_short:r.stoma_short||'',
     stoma_type:r.stoma_type||'',appliances:parseNameList(r.appliances),accessories:parseNameList(r.accessories),
-    flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_by:r.changed_by||'',
+    flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_at:r.changed_at||'',changed_by:r.changed_by||'',
     ward:r.ward||'',bed:r.bed||''}));
 }
 /* Kept for the readmission carry-over, which only needs the latest single set. */
@@ -17580,84 +17581,89 @@ function composeApplianceSentence(appliances,accessories){
   if(accs.length)core+=(core?' and ':'')+humanList(accs.map(a=>a.toLowerCase()));
   return core;
 }
-/* Open the discharge-letter builder for this patient. Their name, surname, ID,
-   stoma type and surgery date are carried across, together with the appliance
-   and accessory from their most recent seen visit, so the letter opens already
-   written in the clinic's own wording. */
+/* A discharge snapshot keeps each current stoma's identity and latest selection.
+   Selecting by stoma (including empty/cleared selections) prevents a newer change
+   on one stoma from dropping another, or resurrecting an older appliance. */
+function dischargeLetterRecord(p,records,appointments){
+  const timeline=stomaTimeline(p);
+  const all=patientStomaList(p).map(s=>{
+    const st=timeline.find(t=>t.uid===s.uid||
+      (!s.uid&&t.origin==='initial'&&t.type===s.type&&t.location===s.location));
+    return {...s,uid:s.uid||(st&&st.uid)||'',type:s.type||(st&&st.type)||''};
+  });
+  const present=all.filter(s=>s.present&&(!s.formed_date||String(s.formed_date).slice(0,10)<=TODAY));
+  const history=stomaApplianceHistory(p,records,appointments);
+  const open=parseComplications(p).filter(c=>c.status!=='resolved');
+  const matches=(c,s)=>!!c.stoma&&[s.uid,s.slot,s.code,String(s.number)].includes(String(c.stoma));
+  const complication=c=>{
+    const events=(c.events||[]).map((event,index)=>({...event,index}))
+      .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||b.index-a.index);
+    const latest=events[0]||{};
+    return {text:c.text,note:latest.note||c.note||'',trend:latest.trend||'',date:latest.date||c.date||''};
+  };
+  const rodData=dischargeLetterRodData(p);
+  const validRodDate=value=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return '';
+    const date=new Date(value+'T00:00:00Z');
+    return !isNaN(date.getTime())&&date.toISOString().slice(0,10)===value?value:'';
+  };
+  const rod={inSitu:rodData.state==='present',
+    removalDate:validRodDate(rodData.due),removedDate:validRodDate(rodData.removed)};
+  // A legacy rod without an ID can be attached only to one eligible loop stoma.
+  const rodEligible=present.filter(s=>/loop|transverse/i.test(s.type)&&/ileo|colo/i.test(s.type));
+  const rodUid=p.rod_stoma_uid?applianceStomaUid({stoma_uid:p.rod_stoma_uid},timeline):
+    (rodEligible.length===1?rodEligible[0].uid:'');
+  const stomas=present.map(s=>{
+    const last=(history.get(s.uid)||[]).find(e=>!e.date||String(e.date).slice(0,10)<=TODAY);
+    const appliances=last?last.appliances:[],accessories=last?last.accessories:[];
+    const items=appliances.map(name=>APPLIANCE_CATALOGUE.find(a=>a.name===name)).filter(Boolean);
+    const system=items.some(a=>a.system==='two')?'two':items.some(a=>a.system==='one')?'one':'';
+    const bag=items.find(a=>a.part==='bag')||items.find(a=>a.system==='one');
+    const comps=open.filter(c=>matches(c,s)||(!c.stoma&&present.length===1));
+    return {uid:s.uid,number:s.number,code:s.code,type:s.type,location:s.location||'',
+      mucusFistula:!!s.mucus_fistula||/mucus\s*fistula/i.test(s.type),
+      operation:s.operation||(s.kind==='initial'?p.procedure_performed:'')||'',
+      operationDate:s.formed_date||'',findings:s.comments||'',
+      appliances,accessories,appliance:composeApplianceSentence(appliances,accessories),
+      system,outlet:bag&&bag.outlet||'',flangeDue:last&&last.flange_due||'',
+      complications:comps.map(complication),rod:s.uid===rodUid?rod:null};
+  });
+  const two=stomas.filter(s=>s.system==='two');
+  if(two.length===1&&Object.prototype.hasOwnProperty.call(p,'flange_due'))two[0].flangeDue=p.flange_due||'';
+  return {version:1,generatedOn:TODAY,
+    patient:{title:/^m/i.test(p.sex||'')?'Mr':/^f/i.test(p.sex||'')?'Ms':'',
+      fname:p.first_name||'',sname:p.surname||'',id:p.id_card||'',consultant:p.consultant||''},
+    stomas,
+    // Unassigned complications are visible once; never guessed onto every stoma.
+    unassignedComplications:open.filter(c=>!present.some(s=>matches(c,s)||(!c.stoma&&present.length===1))&&
+      (!c.stoma||!all.some(s=>matches(c,s)))).map(complication),
+    unassignedRod:!rodUid&&(rod.inSitu||rod.removedDate)?rod:null};
+}
+/* Reserve the tab during the nurse's click, then read fresh, complete records.
+   The snapshot travels in that tab's session storage rather than a long URL. */
 async function openDischargeLetterFor(patientId){
-  // Handover may have changed since the patient card was opened.
-  const{data:p,error}=await fetchPatientById(patientId);
-  if(error||!p){alert('Could not check the latest patient details for the discharge letter. Try again.');return;}
-  const q=new URLSearchParams();
-  q.set('v',APP_BUILD);
-  if(p){
-    const rod=dischargeLetterRodData(p);
-    q.set('rod',rod.state);
-    if(rod.due)q.set('rodDue',rod.due);
-    if(rod.removed)q.set('rodRemoved',rod.removed);
-    if(p.first_name)q.set('fn',p.first_name);
-    if(p.surname)q.set('sn',p.surname);
-    if(p.id_card)q.set('id',p.id_card);
-    const t=/^m/i.test(p.sex||'')?'Mr':(/^f/i.test(p.sex||'')?'Ms':'');
-    if(t)q.set('title',t);
-    if(p.stoma_type)q.set('type',p.stoma_type);
-    if(p.surgery_date)q.set('opdate',p.surgery_date);
-    if(p.procedure_performed)q.set('procedure',p.procedure_performed);
-    if(p.consultant)q.set('consultant',p.consultant);
-    /* A mucus fistula on the record travels with the letter, with its location,
-       so the care plan says how to dress it without anyone being asked. An empty
-       location still counts — it means one fistula whose site is not recorded. */
-    try{
-      const mf=stomasPresentOn(p,TODAY).filter(e=>e.mf||/mucus\s*fistula/i.test(String(e.typeLabel||e.type||'')));
-      if(mf.length)q.set('mucus',mf.map(e=>String(e.location||'').trim()).join('|'));
-    }catch(e){}
-    /* The appliance and accessories in use, taken from whichever is the more
-       recent: what was last set on the ward during an admission, or what was
-       recorded at the last attended appointment. A patient going home straight
-       from the ward has no attended appointment yet, so the ward entry is the
-       only record there is — reading only appointments left the letter blank.
-       Everything set on the same day is taken together, so a patient with a
-       mucus fistula carries both stomas' appliances into the letter. */
-    const byDate=new Map();
-    const take=(date,ap,ac)=>{
-      const a=parseNameList(ap), b=parseNameList(ac).filter(x=>x!=='None');
-      if(!a.length&&!b.length)return;
-      const k=String(date||'');
-      const e=byDate.get(k)||{appliances:[],accessories:[]};
-      a.forEach(n=>{if(!e.appliances.includes(n))e.appliances.push(n);});
-      b.forEach(n=>{if(!e.accessories.includes(n))e.accessories.push(n);});
-      byDate.set(k,e);
-    };
-    try{
-      const{data:eps}=await SB.from('clinical_records')
-        .select('record_date,appliances').eq('patient_id',patientId).eq('kind','episode');
-      (eps||[]).forEach(ep=>parseEpisodeApplianceRows(ep)
-        .forEach(r=>take(r.changed_on||ep.record_date,r.appliances,r.accessories)));
-    }catch(e){}
-    try{
-      const{data:appts}=await SB.from('appointments')
-        .select('appt_date,status,appliances,accessories,stoma_appliances')
-        .eq('patient_id',patientId).eq('status','attended')
-        .order('appt_date',{ascending:false}).limit(5);
-      (appts||[]).forEach(v=>{
-        let rows=v.stoma_appliances; if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(_){rows=null;}}
-        if(Array.isArray(rows)&&rows.length)rows.forEach(r=>take(v.appt_date,r.appliances,r.accessories));
-        else take(v.appt_date,v.appliances,v.accessories);
-      });
-    }catch(e){}
-    const dates=[...byDate.keys()].sort();
-    const last=dates.length?byDate.get(dates[dates.length-1]):null;
-    if(last){
-      const sentence=composeApplianceSentence(last.appliances,last.accessories);
-      if(sentence)q.set('appliance',sentence);
-      // The names as well as the sentence: the letter matches them onto its own
-      // catalogue so its appliance and accessory pages open already answered.
-      if(last.appliances.length)q.set('appl',last.appliances.join('|'));
-      if(last.accessories.length)q.set('acc',last.accessories.join('|'));
-    }
+  const target=window.open('about:blank','_blank');
+  if(!target){alert('Allow pop-ups to open the discharge letter, then try again.');return;}
+  try{
+    target.document.title='Loading discharge letter';
+    const result=await fetchPatientById(patientId);
+    if(result.error||!result.data)throw Error('Could not load the patient record.');
+    const [episodes,appointments]=await Promise.all([
+      fetchAllRows(()=>SB.from('clinical_records').select('*').eq('patient_id',patientId).eq('kind','episode')),
+      fetchAllRows(()=>SB.from('appointments').select('*').eq('patient_id',patientId).eq('status','attended'))
+    ]);
+    if(episodes.error||appointments.error)throw Error('Could not load the current appliances. '+
+      ((episodes.error||appointments.error).message||''));
+    const snapshot=dischargeLetterRecord(result.data,episodes.rows,appointments.rows);
+    if(!snapshot.stomas.length)throw Error('No current stoma is recorded for this patient.');
+    if(target.closed)return;
+    const token=crypto.randomUUID();
+    target.sessionStorage.setItem('stoma-discharge:'+token,JSON.stringify(snapshot));
+    target.location.href=new URL('discharge-letter.html?record='+encodeURIComponent(token)+'&v='+APP_BUILD,location.href).href;
+  }catch(e){
+    target.close();
+    alert('Could not create the discharge letter. '+(e.message||e));
   }
-  const qs=q.toString();
-  window.open('discharge-letter.html'+(qs?'?'+qs:''),'_blank');
 }
 function dischargeLetterRodData(p){
   if(!p||!('rod_removal_date' in p)||!('rod_removed_date' in p))return{state:'unknown',due:'',removed:''};
