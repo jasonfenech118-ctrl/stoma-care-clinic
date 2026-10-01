@@ -33,12 +33,12 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
     if(q.table==='patients')return{rows:patients,error:null};
     return{rows:q.cols==='patient_id,appt_date,status'?future:[],error:null};
   };
-  for(const name of ['monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
+  for(const name of ['monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
   return c;
 }
 const ids=c=>Array.from(c.bookCalState.duePatients,p=>p.id);
 
-test('saving My patients puts the patient in the selected due-month list despite an earlier appointment',async()=>{
+test('saving My patients assigns the selected month but an upcoming booking keeps them out of the booking list',async()=>{
   const p=patient({followup_owner:'Common',followup_due_month:10,followup_year:2026});
   const c=context({patients:[p],future:[booking('2026-10-04')]});
   let added,reload;
@@ -50,7 +50,7 @@ test('saving My patients puts the patient in the selected due-month list despite
   vm.runInContext(source('admSavePatient'),c);
   await c.admSavePatient();await reload;
   assert.equal(added.owner,'Lorraine');assert.equal(added.year,2027);assert.equal(added.month,1);
-  assert.deepEqual(ids(c),['added-patient']);
+  assert.deepEqual(ids(c),[]);
   const reminders=await c.getReminderData();
   assert.deepEqual(Array.from(reminders.all,p=>p.id),['added-patient']);
   assert.equal(reminders.buckets.misbooked.length,0);
@@ -164,9 +164,9 @@ test('a separate earlier appointment cannot mask a later booking that covers the
   const reminders=await c.getReminderData();assert.equal(reminders.all.length,0);assert.equal(reminders.buckets.misbooked.length,0);
 });
 
-test('a booking beyond the grace month keeps the patient available and reports the late booking',async()=>{
+test('a booking outside the due-month window removes the patient from booking while reminders still report it',async()=>{
   const c=context({future:[booking('2026-10-04'),booking('2027-03-07')]});
-  await c.loadBookingCalendar();assert.deepEqual(ids(c),['added-patient']);
+  await c.loadBookingCalendar();assert.deepEqual(ids(c),[]);
   const reminders=await c.getReminderData();assert.equal(reminders.buckets.misbooked.length,1);
   assert.equal(reminders.buckets.misbooked[0].bookedFor,'2027-03-07');
 });
