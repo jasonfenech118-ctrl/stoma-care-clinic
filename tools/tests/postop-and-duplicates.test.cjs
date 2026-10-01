@@ -31,7 +31,8 @@ test('legacy admin appliance rows are not treated as real appointments',()=>{
 });
 
 test('Needs Checking flags two registry rows with the exact same ID card',()=>{
-  const source=sourceBetween('function computeDuplicateGroups(){','function renderDuplicates(){');
+  const source=sourceBetween('function dupNameKey(p){','function importSplitName(')
+    +sourceBetween('function computeDuplicateGroups(){','function renderDuplicates(){');
   const context=vm.createContext({
     duplicateRows:[
       {id:'one',id_card:'25605M',first_name:'Catherine',surname:'Zammit'},

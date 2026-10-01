@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-354"/>
-<script src="assets/manual.js?v=2026.10.01-354"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-355"/>
+<script src="assets/manual.js?v=2026.10.01-355"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3296,7 +3296,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.01-354';
+const APP_BUILD='2026.10.01-355';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10880,6 +10880,10 @@ async function loadReports(){
    and overseas outcomes are counted by status, dated by their own field, the
    status-change date, or — when the whole current year is selected and no date
    was recorded — surfaced there so an undated one is not lost. */
+function reportRequiredRows(result,label){
+  if(result.error)throw new Error(`Could not read ${label}: ${result.error.message||'read failed'}`);
+  return result.rows||[];
+}
 let periodTotalsRequest=0;
 async function renderPeriodTotals(elId,year,month,pats,preAppts){
   // The report can be reloaded (year/month change, live refresh) while an older
@@ -10904,10 +10908,14 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
   if(preAppts){
     appts=month?preAppts.filter(a=>{const t=String(a.appt_date||'').slice(0,10);return t>=start&&t<=end;}):preAppts;
   }else{
-    const{rows:rawAppts}=await fetchAllRows(()=>SB.from('appointments')
+    const result=await fetchAllRows(()=>SB.from('appointments')
       .select('*').gte('appt_date',start).lte('appt_date',end)
       .order('appt_date',{ascending:true}).order('appt_slot',{ascending:true}).order('id'));
-    appts=await enrichAppointments(rawAppts||[]);
+    if(result.error){
+      if(request===periodTotalsRequest)el.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read appointments: '+htmlSafe(result.error.message)+'</div>';
+      return;
+    }
+    appts=await enrichAppointments(result.rows||[]);
   }
   const total=appts.length;
   const attended=appts.filter(a=>a.status==='attended').length;
@@ -10931,7 +10939,7 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
   const isCurFullYear=!month&&Number(year)===curYear;
   const outcomeInPeriod=(dateVal,eff)=>{const d=dateVal||eff;return d?inRange(d):isCurFullYear;};
   try{
-    const{rows:allPats}=pats?{rows:pats}:await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
+    const allPats=pats||reportRequiredRows(await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols))),'patient outcomes');
     const isDead=p=>!!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';
     let rev=0,gozo=0,death=0,relo=0,deathNew=0,gozoNew=0,reloNew=0;
     let stFormed=0,stColo=0,stIleo=0,stUro=0,stRevNew=0;
@@ -10939,14 +10947,13 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       const st=normaliseFollowupStatus(p.followup_status);
       const eff=p.followup_status_effective_date;
       // A urostomy is permanent — never reversed, so left out of the reversal count.
-      try{if(daStomaGroup(p.stoma_type)!=='Urostomy')rev+=[...new Set(stomaEndDates(p))].filter(inRange).length;}catch(e){}
+      rev+=metricReversalDates(p).filter(inRange).length;
       if(st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozo++;
       if(isDead(p)&&inRange(p.deceased_date||eff))death++;
       if(st==='relocated_overseas'&&outcomeInPeriod(p.relocated_overseas_date,eff))relo++;
-      // Deaths where BOTH the stoma was performed and the death fell in this period.
-      if(inRange(p.surgery_date)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
-      // Same idea for Gozo: operated in this period and discharged to Gozo in it.
-      if(inRange(p.surgery_date)&&st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozoNew++;
+      // Selecting an outcome month keeps the report-year operation cohort.
+      if(metricOperatedInYear(p,year)&&isDead(p)&&inRange(p.deceased_date||eff))deathNew++;
+      if(metricOperatedInYear(p,year)&&st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozoNew++;
       // Same anchor for relocations: the stoma has to have been performed in
       // this period too, not in some earlier year.
       if(inRange(p.surgery_date)&&st==='relocated_overseas')reloNew++;
@@ -10967,25 +10974,28 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
     stomasFormedInPeriod=stFormed; colostomiesInPeriod=stColo; ileostomiesInPeriod=stIleo; urostomiesInPeriod=stUro; reversalsNewInPeriod=stRevNew;
   }catch(e){console.warn('Outcome totals failed',e);}
   try{
-    const{rows:eps}=await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode'));
+    const eps=reportRequiredRows(await fetchAllRows(()=>SB.from('clinical_records').select('record_date,kind').eq('kind','episode')),'admissions');
     inpatientsInPeriod=(eps||[]).filter(e=>inRange(e.record_date)).length;
   }catch(e){console.warn('Inpatient total failed',e);}
   let sitingsInPeriod='—', stomaFormedInPeriod='—', noStomaInPeriod='—';
   try{
-    const{rows:ss}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,stoma_formed,surgery_performed,status'));
+    const ss=reportRequiredRows(await fetchAllRows(()=>SB.from('siting_sessions').select('id,session_date,surgery_date,stoma_formed,surgery_performed,status')),'sitings');
     const sited=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&inRange(s.session_date));
     sitingsInPeriod=sited.length;
-    stomaFormedInPeriod=sited.filter(s=>s.stoma_formed===true).length;
+    stomaFormedInPeriod=(ss||[]).filter(s=>String(s.status||'')!=='cancelled'&&s.stoma_formed===true&&inRange(metricSurgeryDate(s))).length;
   }catch(e){console.warn('Siting totals failed',e);}
   try{
-    const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('id,surgery_date'));
+    const ns=reportRequiredRows(await fetchAllRows(()=>SB.from('operations_no_stoma').select('id,surgery_date')),'operations without a stoma');
     noStomaInPeriod=(ns||[]).filter(r=>inRange(r.surgery_date)).length;
   }catch(e){console.warn('No-stoma total failed',e);}
 
   // Each tile is clickable — it opens the multi-year comparison for that metric.
   // Tiles are arranged in four themed groups of four so every row is full and
   // related figures sit together, rather than one ragged wall of boxes.
-  const box=(key,label,value,sub)=>`<div class="kpi kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="openMetricCompare('${key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMetricCompare('${key}');}"><div class="k-label">${htmlSafe(label)}</div><div class="k-value">${value}</div><div class="k-sub">${sub}</div></div>`;
+  const box=(key,label,value,sub)=>{
+    const call=`openMetricCompare('${key}',${Number(year)},'${month||''}')`;
+    return `<div class="kpi kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="${call}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${call};}"><div class="k-label">${htmlSafe(label)}</div><div class="k-value">${value}</div><div class="k-sub">${sub}</div></div>`;
+  };
   const groups=[
     {title:'Appointments',tiles:[
       box('appointments','Appointments Made',total,htmlSafe(periodLabel)),
@@ -11012,8 +11022,8 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       box('urostomies','Urostomies',urostomiesInPeriod,`formed · ${htmlSafe(periodLabel)}`)
     ]},
     {title:'Outcomes',cols:3,tiles:[
-      box('deaths_new','Deaths',deathsNewStomaInPeriod,`operated &amp; died in ${htmlSafe(periodLabel)}`),
-      box('gozo_new','Discharged to Gozo',gozoNewStomaInPeriod,`operated &amp; to Gozo in ${htmlSafe(periodLabel)}`),
+      box('deaths_new','Deaths',deathsNewStomaInPeriod,`operated in ${htmlSafe(year)} · died in ${htmlSafe(periodLabel)}`),
+      box('gozo_new','Discharged to Gozo',gozoNewStomaInPeriod,`operated in ${htmlSafe(year)} · to Gozo in ${htmlSafe(periodLabel)}`),
       box('overseas_new','Relocated Overseas',relocatedNewInPeriod,`operated in ${htmlSafe(periodLabel)} · now overseas`)
     ]}
   ];
@@ -11051,6 +11061,7 @@ function metricPeriodKey(p){return `${p.year}|${p.month||''}`;}
 function metricAddYearOptions(){const now=new Date().getFullYear();let o='';for(let y=now+1;y>=now-30;y--)o+=`<option value="${y}"${y===now?' selected':''}>${y}</option>`;return o;}
 
 let metricCompareState={metric:null,periods:[],data:null,tab:'compare'};
+let metricCompareRequest=0;
 
 async function metricCompareEnsureData(years){
   // The patient, siting, episode and no-stoma tables are clinic-sized and their
@@ -11062,19 +11073,20 @@ async function metricCompareEnsureData(years){
   const d=state.data;
   const minY=Math.min(...years), maxY=Math.max(...years);
   if(!d.apptsSpan||d.apptsSpan[0]>minY||d.apptsSpan[1]<maxY){
-    const{rows}=await fetchAllRows(()=>SB.from('appointments')
-      .select('id,appt_date,status,patient_id')
+    const result=await fetchAllRows(()=>SB.from('appointments')
+      .select('id,appt_date,status,patient_id,appt_slot,assigned_to,bank_staff_id,outcome_recorded_at,stoma_appliances,appliances,accessories')
       .gte('appt_date',`${minY}-01-01`).lte('appt_date',`${maxY}-12-31`).order('id'));
-    d.appts=rows||[]; d.apptsSpan=[minY,maxY];
+    d.appts=reportRequiredRows(result,'appointments').filter(a=>!isLegacyAdminAppliancePlaceholder(a));
+    d.apptsSpan=[minY,maxY];
   }
   if(!d.patients){
-    const{rows}=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
-    d.patients=rows||[]; d.fuType={};
+    d.patients=reportRequiredRows(await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols))),'patients');
+    d.fuType={};
     d.patients.forEach(p=>{d.fuType[p.id]=p.followup_type;});
   }
-  if(!d.sitings){try{const{rows}=await fetchAllRows(()=>SB.from('siting_sessions').select('*'));d.sitings=rows||[];}catch(e){d.sitings=[];}}
-  if(!d.noStoma){try{const{rows:ns}=await fetchAllRows(()=>SB.from('operations_no_stoma').select('*'));d.noStoma=ns||[];}catch(e){d.noStoma=[];}}
-  if(!d.episodes){try{const{rows}=await fetchAllRows(()=>SB.from('clinical_records').select('id,record_date,kind,patient_id').eq('kind','episode'));d.episodes=rows||[];}catch(e){d.episodes=[];}}
+  if(!d.sitings)d.sitings=reportRequiredRows(await fetchAllRows(()=>SB.from('siting_sessions').select('*')),'sitings');
+  if(!d.noStoma)d.noStoma=reportRequiredRows(await fetchAllRows(()=>SB.from('operations_no_stoma').select('*')),'operations without a stoma');
+  if(!d.episodes)d.episodes=reportRequiredRows(await fetchAllRows(()=>SB.from('clinical_records').select('id,record_date,kind,patient_id').eq('kind','episode')),'admissions');
   return d;
 }
 
@@ -11094,14 +11106,14 @@ function metricMonthly(key,year,d){
   else if(key==='followups'){(d.appts||[]).forEach(a=>{if(a.status!=='cancelled'&&d.fuType[a.patient_id]!=='new_case')addByDate(a.appt_date);});}
   else if(key==='unique_patients'){const seen=Array.from({length:12},()=>new Set());(d.appts||[]).forEach(a=>{const i=mi(a.appt_date);if(i>=0&&a.patient_id)seen[i].add(a.patient_id);});for(let i=0;i<12;i++)arr[i]=seen[i].size;}
   else if(key==='sitings'){(d.sitings||[]).forEach(s=>{if(String(s.status||'')!=='cancelled')addByDate(s.session_date);});}
-  else if(key==='stoma_performed'){(d.sitings||[]).forEach(s=>{if(String(s.status||'')!=='cancelled'&&s.stoma_formed===true)addByDate(s.session_date);});}
+  else if(key==='stoma_performed'){(d.sitings||[]).forEach(s=>{if(String(s.status||'')!=='cancelled'&&s.stoma_formed===true)addByDate(metricSurgeryDate(s));});}
   else if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>addByDate(r.surgery_date));}
   else if(key==='inpatients'){(d.episodes||[]).forEach(e=>addByDate(e.record_date));}
-  else if(key==='reversals'){(d.patients||[]).forEach(p=>{try{if(daStomaGroup(p.stoma_type)!=='Urostomy')[...new Set(stomaEndDates(p))].forEach(addByDate);}catch(e){}});}
+  else if(key==='reversals'){(d.patients||[]).forEach(p=>metricReversalDates(p).forEach(addByDate));}
   else if(key==='deaths'){(d.patients||[]).forEach(p=>{if(metricIsDead(p))addByDate(p.deceased_date||p.followup_status_effective_date);});}
-  else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{if(metricIsDead(p)&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.deceased_date||p.followup_status_effective_date);});}
+  else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{if(metricIsDead(p)&&metricOperatedInYear(p,Y))addByDate(p.deceased_date||p.followup_status_effective_date);});}
   else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
-  else if(key==='gozo_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&String(p.surgery_date||'').slice(0,4)===Y)addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
+  else if(key==='gozo_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&metricOperatedInYear(p,Y))addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
   else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.surgery_date);});}
   else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
   else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&['Colostomy','Ileostomy','Urostomy'].indexOf(daStomaGroup(s.type))>=0)addByDate(s.formed_date);});}catch(e){}});}
@@ -11126,24 +11138,25 @@ function metricMonthly(key,year,d){
 function metricNewReversalDates(p,year,keepReversal){
   const out=new Map();
   try{patientStomaList(p).forEach(x=>{
-    if(x.kind==='refashion')return;
-    if(daStomaGroup(x.type||p.stoma_type)==='Urostomy')return;
-    if(String(x.formed_date||'').slice(0,4)!==String(year)||!keepReversal(x.reversal_date))return;
+    let formed=x;
+    while(formed.kind==='refashion'&&formed.fromStoma)formed=formed.fromStoma;
+    if(formed.kind==='refashion')return; // original formation is not known
+    if(daStomaGroup(x.type||formed.type||p.stoma_type)==='Urostomy')return;
+    if(String(formed.formed_date||'').slice(0,4)!==String(year)||!keepReversal(x.reversal_date))return;
     const k=String(x.reversal_date||'').slice(0,10);
-    if(k&&!out.has(k))out.set(k,x.formed_date||null);
+    if(k&&!out.has(k))out.set(k,formed.formed_date||null);
   });}catch(e){}
   return out;
 }
 /* Every colostomy or ileostomy CLOSED on this patient, by the type of the stoma
    that was reversed. Deduped per patient per (type, date) so a single closure
    recorded on more than one stoma entry is counted once. Urostomy is permanent
-   and never reversed, so it is left out. Refashionings remake a stoma rather
-   than close it, so they are not counted, matching the formation side. */
+   and never reversed, so it is left out. A refashioning itself is not a
+   reversal; a later recorded closure of that stoma is. */
 function stomaReversalEntries(p){
   const out=[], seen=new Set();
   try{patientStomaList(p).forEach(x=>{
-    if(x.kind==='refashion')return;
-    const g=daStomaGroup(x.type);
+    const g=daStomaGroup(x.type||(x.kind==='refashion'?(x.fromStoma?.type||p.stoma_type):null));
     if(g!=='Colostomy'&&g!=='Ileostomy')return;
     const rd=String(x.reversal_date||'').slice(0,10);
     if(!rd)return;
@@ -11153,7 +11166,21 @@ function stomaReversalEntries(p){
   });}catch(e){}
   return out;
 }
+// Count closure dates across every stoma, including second and refashioned
+// stomas, without letting the patient's primary type hide another stoma.
+function metricReversalDates(p){
+  const dates=new Set();
+  try{patientStomaList(p).forEach(x=>{
+    const type=x.type||(x.kind==='refashion'?(x.fromStoma?.type||p.stoma_type):null);
+    if(daStomaGroup(type)==='Urostomy')return;
+    const date=String(x.reversal_date||'').slice(0,10);
+    if(date)dates.add(date);
+  });}catch(e){}
+  return [...dates].sort();
+}
 function metricIsDead(p){return !!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';}
+function metricOperatedInYear(p,year){return String(p.surgery_date||'').slice(0,4)===String(year);}
+function metricSurgeryDate(s){return s.surgery_date||s.session_date;}
 /* The total for a period, counted the same way the Annual Report tile counts it
    — so clicking a box always opens on the number that was on the box.
    Most measures are additive and their months sum to the total, but two kinds
@@ -11174,13 +11201,13 @@ function metricPeriodTotal(key,period,d,monthly){
   if(key==='deaths')
     return (d.patients||[]).filter(p=>metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
   if(key==='deaths_new')
-    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
+    return (d.patients||[]).filter(p=>metricOperatedInYear(p,year)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date)).length;
   if(key==='reversals_new')
     return (d.patients||[]).reduce((n,p)=>n+metricNewReversalDates(p,year,inRange).size,0);
   if(key==='gozo')
     return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='gozo_new')
-    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
+    return (d.patients||[]).filter(p=>metricOperatedInYear(p,year)&&normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='overseas_new')
     return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='relocated_overseas').length;
   if(key==='overseas')
@@ -11213,6 +11240,11 @@ function metricPeriodRecords(key,period,d){
   const pats=d.patients||[];
   const byId={};pats.forEach(p=>{byId[String(p.id)]=p;});
   const of=id=>byId[String(id)]||(id?{id}:null);
+  // A siting or no-stoma operation can precede registry entry. Keep its
+  // identity in the list without opening its source ID as a patient ID.
+  const sourcePatient=row=>of(row.patient_id)||{
+    id:null,id_card:row.id_card||null,first_name:row.first_name||null,surname:row.surname||null
+  };
   const st=p=>normaliseFollowupStatus(p.followup_status);
   const out=[];
   const push=(p,date,note)=>{if(p)out.push({p,date:date||null,note:note||''});};
@@ -11228,25 +11260,24 @@ function metricPeriodRecords(key,period,d){
       if(!inRange(a.appt_date))return;
       if(want&&a.status!==want)return;
       if(key==='followups'&&(a.status==='cancelled'||d.fuType[a.patient_id]==='new_case'))return;
-      push(of(a.patient_id),a.appt_date,statusLabel(a.status));
+      push(sourcePatient(a),a.appt_date,statusLabel(a.status));
     });
     return out;
   }
   if(key==='deaths'){pats.forEach(p=>{if(metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
     push(p,p.deceased_date||p.followup_status_effective_date,p.deceased_date?'died':'dated by status change');});return out;}
-  if(key==='deaths_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
+  if(key==='deaths_new'){pats.forEach(p=>{if(metricOperatedInYear(p,year)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
     push(p,p.deceased_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
   if(key==='gozo'){pats.forEach(p=>{if(st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
     push(p,p.discharged_gozo_date||p.followup_status_effective_date,p.discharged_gozo_date?'':'⚠ no discharge date on file');});return out;}
-  if(key==='gozo_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
+  if(key==='gozo_new'){pats.forEach(p=>{if(metricOperatedInYear(p,year)&&st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
     push(p,p.discharged_gozo_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
   if(key==='overseas_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='relocated_overseas')
     push(p,p.surgery_date,'operated · now overseas');});return out;}
   if(key==='overseas'){pats.forEach(p=>{if(st(p)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date))
     push(p,p.relocated_overseas_date||p.followup_status_effective_date,p.relocated_overseas_date?'':'⚠ no date on file');});return out;}
-  if(key==='reversals'){pats.forEach(p=>{try{
-    if(daStomaGroup(p.stoma_type)==='Urostomy')return;
-    [...new Set(stomaEndDates(p))].filter(inRange).forEach(dt=>push(p,dt,'reversed'));}catch(e){}});return out;}
+  if(key==='reversals'){pats.forEach(p=>{
+    metricReversalDates(p).filter(inRange).forEach(dt=>push(p,dt,'reversed'));});return out;}
   if(key==='reversals_new'){pats.forEach(p=>{
     metricNewReversalDates(p,year,inRange).forEach((f,r)=>push(p,r,'formed '+fmtShortDate(f)));});return out;}
   if(key==='reversals_colostomy'||key==='reversals_ileostomy'){
@@ -11263,10 +11294,10 @@ function metricPeriodRecords(key,period,d){
       push(p,x.formed_date,x.type||g||'stoma formed');});}catch(e){}});
     return out;
   }
-  if(key==='inpatients'){(d.episodes||[]).forEach(e=>{if(inRange(e.record_date))push(of(e.patient_id),e.record_date,'admission');});return out;}
-  if(key==='sitings'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&inRange(x.session_date))push(of(x.patient_id),x.session_date,'sited');});return out;}
-  if(key==='stoma_performed'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&x.stoma_formed===true&&inRange(x.session_date))push(of(x.patient_id),x.session_date,'stoma formed');});return out;}
-  if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>{if(inRange(r.surgery_date))push(of(r.patient_id),r.surgery_date,'no stoma formed');});return out;}
+  if(key==='inpatients'){(d.episodes||[]).forEach(e=>{if(inRange(e.record_date))push(sourcePatient(e),e.record_date,'admission');});return out;}
+  if(key==='sitings'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&inRange(x.session_date))push(sourcePatient(x),x.session_date,'sited');});return out;}
+  if(key==='stoma_performed'){(d.sitings||[]).forEach(x=>{if(String(x.status||'')!=='cancelled'&&x.stoma_formed===true&&inRange(metricSurgeryDate(x)))push(sourcePatient(x),metricSurgeryDate(x),x.surgery_date?'stoma formed':'stoma formed · dated by siting');});return out;}
+  if(key==='stoma_not_performed'){(d.noStoma||[]).forEach(r=>{if(inRange(r.surgery_date))push(sourcePatient(r),r.surgery_date,'no stoma formed');});return out;}
   return out;
 }
 // Switch between the "Comparison" (charts) and "Patients" (record list) tabs.
@@ -11309,11 +11340,13 @@ function metricRecordsHTML(key,d){
     </div>`;
   }).join('');
 }
-function openMetricCompare(metricKey){
+function openMetricCompare(metricKey,year,month){
   if(!METRIC_LABELS[metricKey])return;
   metricCompareState.metric=metricKey;
   metricCompareState.tab='compare';   // always open on the comparison view
-  if(!metricCompareState.periods||!metricCompareState.periods.length){
+  if(year!==undefined){
+    metricCompareState.periods=[{year:Number(year),month:month||''}];
+  }else if(!metricCompareState.periods||!metricCompareState.periods.length){
     const y=Number(document.getElementById('annual-year')?.value)||new Date().getFullYear();
     metricCompareState.periods=[{year:y,month:''}];
   }
@@ -11345,6 +11378,7 @@ function metricRemovePeriod(i){
   renderMetricCompare();
 }
 async function renderMetricCompare(){
+  const request=++metricCompareRequest;
   const mb=document.getElementById('mb'); if(!mb)return;
   const key=metricCompareState.metric;
   const label=METRIC_LABELS[key]||'Metric';
@@ -11379,8 +11413,14 @@ async function renderMetricCompare(){
   }
 
   const years=[...new Set(periods.map(p=>p.year))];
-  const d=await metricCompareEnsureData(years);
-  if(metricCompareState.metric!==key)return; // selection changed while loading
+  let d;
+  try{d=await metricCompareEnsureData(years);}catch(e){
+    if(request!==metricCompareRequest||metricCompareState.metric!==key)return;
+    const message='<div class="report-note" style="color:#b91c1c;">'+htmlSafe(e.message||'Could not read report records.')+' Refresh and try again.</div>';
+    ['mc-body','mc-patients'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=message;});
+    return;
+  }
+  if(request!==metricCompareRequest||metricCompareState.metric!==key)return;
   const bodyEl=document.getElementById('mc-body');
   if(!bodyEl)return;
 
@@ -11540,8 +11580,8 @@ async function loadAnnualReport(){
       patients:new Set(mAppts.map(a=>a.patient_id).filter(Boolean)).size};
   });
 
-  let recallCount=0,registered='—';
-  try{const{rows}=await getRecallWorklistRows();recallCount=rows.length;}catch(e){}
+  let recallCount='—',registered='—';
+  try{const result=await getRecallWorklistRows();if(!result.error)recallCount=result.rows.length;}catch(e){}
   try{const{count}=await SB.from('patients').select('id',{count:'exact',head:true});registered=count??'—';}catch(e){}
 
   if(request!==annualReportRequest)return;
@@ -11550,7 +11590,13 @@ async function loadAnnualReport(){
   // One registry read serves both the activity totals and the stoma-formation
   // table, rather than each fetching the whole register for itself.
   let patRows=null;
-  try{const r=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));patRows=r.rows||[];}catch(e){patRows=null;}
+  try{patRows=reportRequiredRows(await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols))),'patients');}
+  catch(e){
+    if(request!==annualReportRequest)return;
+    const message='<div class="report-note" style="color:#b91c1c;">'+htmlSafe(e.message||'Could not read patient records.')+' Refresh and try again.</div>';
+    ['annual-period-totals','annual-stoma-months'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=message;});
+    return;
+  }
   if(request!==annualReportRequest)return;
   renderPeriodTotals('annual-period-totals',year,month,patRows,appts);
   renderStomaFormationTable('annual-stoma-months',year,patRows);
@@ -11558,7 +11604,9 @@ async function loadAnnualReport(){
 function annualKpi(label,value,sub,accent,metricKey){
   // When a metric key is passed the tile becomes clickable and opens the same
   // multi-year / multi-month comparison as the activity totals.
-  const clk=metricKey?` annual-kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="openMetricCompare('${metricKey}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMetricCompare('${metricKey}');}`:'';
+  const year=Number(annualReportData?.year)||new Date().getFullYear();
+  const call=`openMetricCompare('${metricKey}',${year},'')`;
+  const clk=metricKey?` annual-kpi-click" role="button" tabindex="0" title="Click to compare ${htmlSafe(label)} across years" onclick="${call}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${call};}`:'';
   return `<div class="annual-kpi${clk}"${accent?` style="border-top:3px solid ${accent};"`:''}>
     <div class="ak-label">${htmlSafe(label)}</div><div class="ak-value">${htmlSafe(String(value))}</div>
     <div class="ak-sub">${htmlSafe(sub||'')}</div></div>`;
@@ -11628,7 +11676,7 @@ async function renderStomaFormationTable(elId,year,pats){
   el.innerHTML='<div class="report-note">Loading stoma formations…</div>';
   let rows=pats;
   if(!rows){
-    try{const r=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));rows=r.rows||[];}
+    try{rows=reportRequiredRows(await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols))),'stoma formations');}
     catch(e){el.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not read the registry for stoma formations.</div>';return;}
   }
   if(request!==annualStomaRequest)return;
@@ -11691,7 +11739,7 @@ async function renderStomaFormationTable(elId,year,pats){
         ${cell(colTotal('revIleo'),'reversals_ileostomy','',true)}
         <td>${mixBar({Colostomy:colTotal('Colostomy'),Ileostomy:colTotal('Ileostomy'),Urostomy:colTotal('Urostomy'),total:yearTotal})}</td></tr>
     </tbody></table>
-    <div class="report-note">Stomas are counted in the month they were formed, under their type — colostomy, ileostomy or urostomy. Reversals are counted in the month the stoma was closed, under the type reversed; a urostomy is permanent and never reversed. A refashioning remakes an existing stoma, so it is not counted here. <strong>Click any number to see and edit those patients.</strong></div>`;
+    <div class="report-note">Stomas are counted in the month they were formed, under their type — colostomy, ileostomy or urostomy. Reversals are counted in the month the stoma was closed, under the type reversed; a urostomy is permanent and never reversed. A refashioning is not a new formation or reversal; a later recorded closure of that stoma counts as a reversal. <strong>Click any number to see and edit those patients.</strong></div>`;
 }
 function printAnnualReport(){
   if(!annualReportData){alert('The annual report is still loading.');return;}
@@ -20692,13 +20740,16 @@ const DA_SERIES=[
   // A urostomy is permanent, so it is never counted as a reversal — here as
   // everywhere else in the audit.
   {key:'reversals', label:'Reversals',  color:'#7c3aed', dateField:'reversal_date',
-   dateOf:p=>daStomaGroup(p.stoma_type)==='Urostomy'?null:p.reversal_date},
+   datesOf:p=>metricReversalDates(p)},
   // Dated like the Annual Report: the death date, else the date the status was
   // set, so the same death is not counted in one tab and missing from another.
   {key:'deaths',    label:'Deaths',     color:'#c0392b', dateField:'deceased_date',
-   dateOf:p=>p.deceased_date||p.followup_status_effective_date}
+   dateOf:p=>metricIsDead(p)?(p.deceased_date||p.followup_status_effective_date):null}
 ];
-function daDateOf(s,p){return s&&s.dateOf?s.dateOf(p):p[s.dateField];}
+function daDatesOf(s,p){
+  const dates=s.datesOf?s.datesOf(p):[s.dateOf?s.dateOf(p):p[s.dateField]];
+  return [...new Set(dates.filter(Boolean).map(v=>String(v).slice(0,10)))];
+}
 const DA_SEX_COLORS={Female:'#c2410c',Male:'#1d4ed8','Not recorded':'#94a3b8'};
 // Free-text stoma types are inconsistent — "End - Colostomy", "Sigmoid Loop
 // Colestomy", "Urostomy". Group them by the word that matters, and keep the
@@ -20773,9 +20824,9 @@ function daYearRange(){
   const now=new Date().getFullYear();
   if(daYearsBack==='all'){
     let min=now;
-    dataAnalysisRows.forEach(p=>DA_SERIES.forEach(s=>{
-      const y=daYear(daDateOf(s,p)); if(y&&y>=1950&&y<min)min=y;
-    }));
+    dataAnalysisRows.forEach(p=>DA_SERIES.forEach(s=>daDatesOf(s,p).forEach(date=>{
+      const y=daYear(date); if(y&&y>=1950&&y<min)min=y;
+    })));
     return{from:min,to:now};
   }
   return{from:now-(Number(daYearsBack)-1),to:now};
@@ -20831,10 +20882,10 @@ function renderDataAnalysis(){
   const counts={};
   DA_SERIES.forEach(s=>{
     counts[s.key]=years.map(()=>0);
-    rows.forEach(p=>{
-      const y=daYear(daDateOf(s,p));
+    rows.forEach(p=>daDatesOf(s,p).forEach(date=>{
+      const y=daYear(date);
       if(inRange(y))counts[s.key][y-from]++;
-    });
+    }));
   });
   const totals={};DA_SERIES.forEach(s=>{totals[s.key]=counts[s.key].reduce((a,b)=>a+b,0);});
 
@@ -20897,7 +20948,7 @@ function renderDataAnalysis(){
     </div>
     ${patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet, so most panels here are empty. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>'}
     <div class="annual-kpis" data-da-section="kpis">
-      ${annualKpi('New Cases',totals.new_cases,'stomas formed in '+daRangeLabel(),'#0891b2')}
+      ${annualKpi('New Cases',totals.new_cases,'patients first operated in '+daRangeLabel(),'#0891b2')}
       ${annualKpi('Reversals',totals.reversals,'reversed in '+daRangeLabel(),'#7c3aed')}
       ${annualKpi('Deaths',totals.deaths,'died in '+daRangeLabel(),'#c0392b')}
       ${annualKpi('Total Patients',rows.length,'whole registry')}
@@ -20905,7 +20956,7 @@ function renderDataAnalysis(){
     </div>
     <div class="report-grid">
       ${daCard('compare','New cases, reversals and deaths by year',
-        'Tick the series above to compare them. Each patient counts in the year of that event.',
+        'Tick the series above to compare them. New cases use the first surgery date; reversals include every recorded closure date, once per patient per date; deaths require a recorded death outcome. Undated events cannot be assigned to a year.',
         '<div style="height:300px;"><canvas id="da-compare"></canvas></div>',true)}
       ${daCard('stoma','Type of stoma',cohortNote,
         '<div style="height:230px;"><canvas id="da-stoma"></canvas></div>'

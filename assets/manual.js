@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (monthly reversal totals)'};
+const MANUAL_META={updated:'1 October 2026 (report totals and charts)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -332,7 +332,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'audit',title:'Audit & Reports',icon:'📊',color:'#c0392b',blurb:'The numbers: charts, annual report, map, audits, DNTU policy.',pages:[
-  {id:'reports',title:'Reports, Charts & Annual Report',keywords:'reports charts annual report metrics numbers statistics compare formation reversals month closure dates report year cohort',html:`
+  {id:'reports',title:'Reports, Charts & Annual Report',keywords:'reports charts annual report metrics numbers statistics compare formation reversals month closure dates report year cohort deaths gozo sitings admissions totals',html:`
     ${manMap('audit')}
     <ul class="man-ul">
       <li>${manBtn('📊 Reports & Charts','#e3e8f1','#1a2e4a')} — headline charts (follow-up due months, booked vs available, and more).</li>
@@ -340,7 +340,9 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('📈 Data Analysis','#efe7fb','#5b3aa8')} — deeper breakdowns.</li>
     </ul>
     ${manNote('tip','ℹ️','The <b>Reversals</b> tile under <b>Sitings &amp; surgery</b> counts stomas formed during the selected report year and reversed during the selected period. For example, a stoma formed in July and reversed in September counts in September. The tile, comparison chart and patient list use the same dates. The <b>Stoma formation and reversals by month</b> table also includes reversals of stomas formed in earlier years, so it can have a larger total.')}
-    ${manNote('auto','⚙️','The report boxes and the patient lists behind them are <b>reconciled</b> — the number you see and the list you open always match.')}
+    ${manNote('tip','ℹ️','The <b>Deaths</b> and <b>Discharged to Gozo</b> tiles use patients operated on during the selected <b>year</b>, then count the death or discharge in the selected <b>month</b>. Surgery can have taken place earlier in that year. <b>Stoma Performed</b> uses the recorded surgery date; older sitings without that date use the siting date. The patient list identifies that fallback.')}
+    ${manNote('tip','ℹ️','<b>Data Analysis</b> includes dated outcomes from all operation years. It counts every recorded reversal date across the patient’s stomas, once per patient per date, and counts deaths only when a death outcome is recorded. Refashioning itself is not a formation or reversal; a later recorded closure of that stoma is a reversal. Events without dates cannot be placed in a year. <b>New Cases</b> counts patients by their first surgery date; <b>Stomas Formed</b> counts individual new stomas, so these totals may differ.')}
+    ${manNote('auto','⚙️','Opening an activity total starts on the <b>selected year and month</b>. Sitings and operations with no stoma formed stay in the record list even before registry entry. Clinic activity excludes old appliance-only administrative placeholders. Failed reads show unavailable figures or an error, rather than a false zero. <b>Total Patients</b> is the current registry size, not a historical monthly total; unique patients are counted once across the whole selected period.')}
   `},
   {id:'more',title:'Map, Clinic Audit, OT Audit, DNTU',keywords:'map locality clinic audit ot audit overtime dntu policy did not turn up',html:`
     ${manMap('audit')}
@@ -378,7 +380,7 @@ const MANUAL_SECTIONS=[
         ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
         ['✉️','Discharge letter pre-fills','Demographics, stoma type, op date, current appliance/accessories and mucus fistula fill in; the one/two-piece question is skipped when the appliance is known.','Discharge letter'],
         ['🔍','Duplicate detection','Likely duplicate patients are flagged, including name-order-swapped ones.','Registry › Needs Checking'],
-        ['🧮','Reconciled numbers','Every Annual Report figure matches the exact patient list behind it.','Audit & Reports'],
+        ['🧮','Reconciled numbers','Activity totals, charts and record lists use the same dates; opening a total preserves its selected month, and incomplete reads are not shown as zero.','Audit & Reports'],
         ['🔖','Auto codes','Stoma codes (STO-…) and admission references (EP-…) are generated for you.','Registry']
       ].map(a=>`<div class="man-auto"><h4>${a[0]} ${a[1]}</h4><p>${a[2]}</p><span class="man-auto-where">${a[3]}</span></div>`).join('')}
     </div>

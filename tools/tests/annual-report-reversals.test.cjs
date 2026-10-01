@@ -7,7 +7,8 @@ const {JSDOM}=require('jsdom');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));assert.ok(match,name);
-  return html.slice(match.index,html.indexOf('\n}',match.index)+2);
+  const line=html.slice(match.index,html.indexOf('\n',match.index));
+  return line.endsWith('}')?line:html.slice(match.index,html.indexOf('\n}',match.index)+2);
 }
 function context(){
   const dom=new JSDOM('<body><div id="totals"></div></body>');
@@ -18,7 +19,7 @@ function context(){
     SB:{from:()=>({select:async()=>({count:7,error:null})})},fetchAllRows:async()=>({rows:[],error:null})});
   const start=html.indexOf('const DA_STOMA_GROUPS=[');vm.runInContext(html.slice(start,html.indexOf('\n];',start)+3),c);
   for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','patientStomaList','daStomaGroup',
-    'stomaEvents','stomaEndDates','metricNewReversalDates','stomaReversalEntries','metricMonthly','metricIsDead',
+    'stomaEvents','stomaEndDates','metricNewReversalDates','stomaReversalEntries','metricReversalDates','metricMonthly','metricIsDead','metricOperatedInYear','metricSurgeryDate','reportRequiredRows',
     'metricPeriodTotal','metricPeriodRecords','renderPeriodTotals'])vm.runInContext(source(name),c);
   vm.runInContext('let periodTotalsRequest=0;',c);return c;
 }
