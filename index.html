@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-374"/>
-<script src="assets/manual.js?v=2026.10.02-374"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-375"/>
+<script src="assets/manual.js?v=2026.10.02-375"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -399,6 +399,19 @@ body.manual-docked .help-btn{background:#0d7377;border-color:#0d7377;}
 .bell-panel-close{background:none;border:none;color:rgba(255,255,255,.75);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:5px;}
 .bell-panel-close:hover{background:rgba(255,255,255,.14);}
 .bell-panel-body{padding:10px 12px 14px;}
+/* Reminder category tabs — every category is a pill with its count always shown,
+   so nothing is hidden below the scroll. The strip sticks under the panel head. */
+.rem-tabs{position:sticky;top:0;display:flex;gap:5px;overflow-x:auto;padding:8px 2px;margin:-10px -12px 8px;padding-left:12px;padding-right:12px;background:#fff;border-bottom:1px solid var(--border);z-index:1;-webkit-overflow-scrolling:touch;}
+.rem-tab{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--border);border-radius:999px;background:#f4f6f8;color:var(--navy);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
+.rem-tab:hover{background:#eaeef2;}
+.rem-tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+.rem-tab-count{min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;border-radius:9px;background:#dbe3ea;color:var(--navy);font-size:10px;font-weight:800;}
+.rem-tab-count.zero{opacity:.5;}
+.rem-tab.active .rem-tab-count{background:rgba(255,255,255,.26);color:#fff;}
+.rem-tab.urgent{border-color:#eab0ac;}
+.rem-tab.urgent .rem-tab-count{background:var(--red);color:#fff;}
+.rem-tab.urgent.active{background:var(--red);border-color:var(--red);}
+.rem-tab.urgent.active .rem-tab-count{background:#fff;color:var(--red);}
 
 .rem-bucket{margin-bottom:14px;}
 .rem-bucket:last-child{margin-bottom:0;}
@@ -3373,7 +3386,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-374';
+const APP_BUILD='2026.10.02-375';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8946,6 +8959,54 @@ function renderClinicReminderPanelHTML(){
   return pendingReminderSectionHTML(pendingReminderTasks)+datedReminderSectionHTML(datedClinicReminders)+
     `<div class="clinic-reminders-title">Clinical reminders</div>${renderSitingReminderList(sitingReminders.items)}`;
 }
+/* The reminder bell groups everything into tabs, each with a visible count, so no
+   category is hidden below a long scroll and nothing is missed. A tab turns red
+   when it holds something due today or overdue. */
+let reminderActiveTab='';
+function remItemsByCategory(){
+  // A Schedule V item only counts once it is overdue (matches how it renders).
+  const items=(sitingReminders.items||[]).filter(r=>{
+    if(r.kind==='schedule-five'){try{return scheduleFiveWaitingMeta(r).overdue;}catch(e){return true;}}
+    return true;
+  });
+  return {
+    ward:items.filter(r=>r.kind==='rod'||r.kind==='flange'||r.kind==='schedule-five'),
+    reversal:items.filter(r=>r.kind==='reversal'),
+    siting:items.filter(r=>!['rod','flange','schedule-five','reversal'].includes(r.kind))
+  };
+}
+function renderReminderTabs(){
+  const {ward,reversal,siting}=remItemsByCategory();
+  const datedDue=(datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
+  const tasksCount=pendingReminderOpenCount()+datedDue;
+  const isDue=r=>String(r.eff||r.surgery_date||r.session_date||'')<=TODAY;
+  const tabs=[
+    {key:'ward',    label:'🏥 Ward',      count:ward.length,     urgent:ward.some(isDue)},
+    {key:'siting',  label:'📍 Siting',    count:siting.length,   urgent:siting.some(isDue)},
+    {key:'reversal',label:'🔄 Reversals', count:reversal.length, urgent:reversal.some(isDue)},
+    {key:'tasks',   label:'☑ Tasks',      count:tasksCount,      urgent:datedDue>0}
+  ];
+  const byKey=k=>tabs.find(t=>t.key===k);
+  // Keep the user's chosen tab while it still has items; otherwise show the first
+  // urgent non-empty tab, else the first non-empty, else Ward.
+  let active=reminderActiveTab;
+  if(!active||!(byKey(active)&&byKey(active).count))active=(tabs.find(t=>t.urgent&&t.count)||tabs.find(t=>t.count)||tabs[0]).key;
+  const strip=tabs.map(t=>`<button type="button" class="rem-tab${t.key===active?' active':''}${t.urgent?' urgent':''}" aria-pressed="${t.key===active}" onclick="switchReminderTab('${t.key}')">
+    <span class="rem-tab-label">${t.label}</span><span class="rem-tab-count${t.count?'':' zero'}">${t.count}</span></button>`).join('');
+  let content;
+  if(active==='tasks'){
+    content=pendingReminderSectionHTML(pendingReminderTasks)+datedReminderSectionHTML(datedClinicReminders);
+  }else{
+    const list=active==='ward'?ward:active==='reversal'?reversal:siting;
+    content=list.length?renderSitingReminderList(list):'<div class="rem-empty">Nothing in this category right now.</div>';
+  }
+  return `<div class="rem-tabs" role="tablist">${strip}</div><div class="rem-tab-body">${content}</div>`;
+}
+function switchReminderTab(key){
+  reminderActiveTab=key;
+  const bbody=document.getElementById('bell-panel-body');
+  if(bbody)bbody.innerHTML=renderReminderTabs()+(sitingReminders.handoverError?'<div class="rem-empty">Some handover reminders could not be checked. Reopen the bell to retry.</div>':'');
+}
 async function addDatedClinicReminder(){
   const input=document.getElementById('dated-reminder-input');
   const date=document.getElementById('dated-reminder-date');
@@ -9337,7 +9398,7 @@ async function refreshReminders(){
   datedClinicReminders=dated;
   updateReminderBadges(clinicReminderBadgeTotal());
   const bbody=document.getElementById('bell-panel-body');
-  if(bbody)bbody.innerHTML=renderClinicReminderPanelHTML()+(sitingReminders.handoverError?'<div class="rem-empty">Some handover reminders could not be checked. Reopen the bell to retry.</div>':'');
+  if(bbody)bbody.innerHTML=renderReminderTabs()+(sitingReminders.handoverError?'<div class="rem-empty">Some handover reminders could not be checked. Reopen the bell to retry.</div>':'');
   const bsub=document.getElementById('bell-panel-sub');
   if(bsub){
     const parts=[];

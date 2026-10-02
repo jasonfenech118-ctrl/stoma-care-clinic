@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (Add patient warns when a patient is already due another month or booked, and blocks same-month duplicates; My patients for all users; See follow-up history; Review shows current appliance or Before/Modified to)'};
+const MANUAL_META={updated:'2 October 2026 (reminder bell now tabbed — Ward, Siting, Reversals, Tasks, each with a count, so nothing is missed; Add patient duplicate/already-scheduled warnings; My patients for all users)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -276,8 +276,17 @@ const MANUAL_SECTIONS=[
     ${manNote('auto','⚙️','"Awaiting first review" means an appliance has not been set yet — tap the cell to set it. An appliance set before the stoma is even on the registry is kept and shown, and follows the stoma once it is recorded.')}
     ${manNote('auto','⚙️','The handover is shared by all nurses. Saved appliance changes update other open handovers automatically. It also checks every 30 seconds and when you return to the page. Updates wait while you are typing or using a form. If the current appliances cannot be loaded, the sheet shows a message so an older appliance is not presented as current.')}
   `},
-  {id:'reminders',title:'Ward reminders in the bell',keywords:'bell schedule 5 permit left in ward signed collected five days sixth day flange change due today overdue two piece handover green yellow orange dark red daily colour',html:`
+  {id:'reminders',title:'Ward reminders in the bell',keywords:'bell schedule 5 permit left in ward signed collected five days sixth day flange change due today overdue two piece handover green yellow orange dark red daily colour tabs ward siting reversals tasks category count missed nothing',html:`
     <p class="man-lede">The shared bell checks the dates already recorded on the handover and patient record. It does not assign these to a person.</p>
+    ${manH2('🗂','Tabs so nothing is missed')}
+    <p class="man-lede">Open the <b>🔔 bell</b> and every reminder is split into tabs, each with its own <b>count</b> so you can see at a glance what is waiting without scrolling past anything. A tab turns <b>red</b> when it holds something due today or overdue.</p>
+    ${manSteps([
+      `${manBtn('🏥 Ward','#eef2f6','#12304f')} — rod removals, flange changes and overdue Schedule V permits.`,
+      `${manBtn('📍 Siting','#eef2f6','#12304f')} — surgery-day, siting assessments and patients with no surgery date yet.`,
+      `${manBtn('🔄 Reversals','#eef2f6','#12304f')} — reversal surgery that has come round.`,
+      `${manBtn('☑ Tasks','#eef2f6','#12304f')} — your free-text pending tasks and dated reminders (add new ones here).`
+    ])}
+    ${manNote('tip','🔴','The bell opens on the first tab that has something <b>due today or overdue</b>, so the most pressing list shows first. The number on the bell is the total still to action.')}
     <ol class="man-steps">
       <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Its button starts green and changes shade daily, using only the recorded Left in ward date. The overdue bell reminder appears on day six in red, then dark red from day seven. It can remain after discharge.</li>
       <li>Tap <b>Open permit</b> in the bell to set the actual status. <b>Signed</b> or <b>Collected</b> clears the reminder. Without a recorded left date, the app cannot count the days and does not guess.</li>
