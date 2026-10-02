@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (colour-coded work areas; patient record tinted by sex — blue male, pink female; locality in the details box)'};
+const MANUAL_META={updated:'2 October 2026 (handover rod folded into one Complications/ROD button — only for loop stomas and only until recorded; tidier patient-details layout; colour-coded work areas; record tinted by sex — blue male, pink female)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -258,19 +258,19 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#ea580c',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
-  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod present yes no removal date removed undo discharge letter complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
+  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod loop stoma end ileostomy end colostomy urostomy removal date removed discharge letter complications button infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
-      <li><b>Flange due / Rod due</b> chips — colour by urgency; overdue turns red.</li>
-      <li><b>Rod: No · ＋ Rod</b> — press ＋ Rod and save the planned removal date and the stoma it belongs to. The row then shows <b>Rod: Yes</b> and its editable date. Press <b>✓ Rod removed</b> when it is out: today's date is recorded, the reminder stops and the row shows <b>Rod out</b>. <b>Undo</b> asks for confirmation before reverting the removal.</li>
+      <li><b>Flange due</b> chip — colours by urgency; overdue turns red.</li>
       <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
-      <li><b>Complications/ROD</b> button — opens the full complication timeline and the ROD date.</li>
+      <li><b>⚠️ Complications / ROD</b> button — one button opens the full complication timeline and, where a rod applies, the rod's removal date. The rod is <b>not</b> a separate line on the sheet any more — it lives behind this button. The label reads <b>Complications/ROD</b> only while a rod is relevant and not yet recorded; it reads just <b>Complications</b> for an <b>end ileostomy, end colostomy or urostomy</b> (which never have a rod) and once a rod has already been recorded, so you are not asked about it again on a later admission with the same stoma.</li>
     </ul>
+    ${manNote('auto','⚙️','A rod only exists under a <b>loop</b> (or transverse) ileostomy/colostomy. Once you record a rod it stops being offered here; the bell still chases its removal and the printed ward sheet still shows "rod due" until it is out.')}
     ${manNote('auto','⚙️','A note carrying <b>CRE, VRE or "+ve"</b> turns the whole cell <b>bright red</b> so an infection alert can never be missed.')}
     ${manNote('auto','⚙️','"Awaiting first review" means an appliance has not been set yet — tap the cell to set it. An appliance set before the stoma is even on the registry is kept and shown, and follows the stoma once it is recorded.')}
     ${manNote('auto','⚙️','The handover is shared by all nurses. Saved appliance changes update other open handovers automatically. It also checks every 30 seconds and when you return to the page. Updates wait while you are typing or using a form. If the current appliances cannot be loaded, the sheet shows a message so an older appliance is not presented as current.')}

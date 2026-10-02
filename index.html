@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-367"/>
-<script src="assets/manual.js?v=2026.10.02-367"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-368"/>
+<script src="assets/manual.js?v=2026.10.02-368"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -878,6 +878,12 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-next-copy .big{font-size:15px;font-weight:700;color:var(--navy);}
 .psm-next-copy .sub{font-size:11.5px;color:var(--muted);}
 .psm-dgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;}
+/* The patient-details grid flows to the width of its fields instead of a rigid
+   two-up grid, so an odd number of fields never leaves an empty half-cell. Short
+   fields grow to share a row; the full-width rows (locality, address) stay full. */
+.psm-dgrid-flow{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-start;}
+.psm-dgrid-flow .psm-ditem{flex:1 1 180px;}
+.psm-dgrid-flow .psm-ditem.wide{flex:1 1 100%;}
 .psm-ditem{display:grid;gap:2px;min-width:0;}
 .psm-ditem.wide{grid-column:1 / -1;}
 .psm-ditem dt{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);}
@@ -1274,7 +1280,7 @@ table.np tbody tr:hover td{background:#f4fbfa;}
 .clr-form .chk{display:flex;flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--navy);font-size:13px;}
 .clr-form .chk input{width:16px;height:16px;}
 @media(max-width:480px){.clr-form .row2{grid-template-columns:1fr;}}
-@media(max-width:480px){.psm-dgrid{grid-template-columns:1fr;}.psm-next{flex-direction:column;align-items:stretch;}.psm-next .psm-btn{width:100%;}}
+@media(max-width:480px){.psm-dgrid{grid-template-columns:1fr;}.psm-dgrid-flow .psm-ditem{flex:1 1 100%;}.psm-next{flex-direction:column;align-items:stretch;}.psm-next .psm-btn{width:100%;}}
 @media(max-width:480px){
   .psm-head{padding:14px;gap:8px;}.psm-head-main{gap:9px;}.psm-avatar{width:38px;height:38px;}
   .psm-name{font-size:25px;}.psm-id strong{font-size:22px;}.psm-identity-row{gap:10px;}
@@ -3358,7 +3364,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-367';
+const APP_BUILD='2026.10.02-368';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15788,11 +15794,15 @@ async function openComplicationsManager(patientId){
   cmpMgrPatient=pat;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const{rod,rodRemoved,rodStoma}=await rodDatesFor(patientId);
+  // A rod only exists under a loop stoma. Hide the ROD section (and drop it from
+  // the title) for a patient with no rod-capable stoma and no rod on record — an
+  // end ileostomy, end colostomy or urostomy never has one.
+  const showRod=patientHasRodCapableStoma(pat)||!!(rod||rodRemoved);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>⚠️ Complications / ROD</h2>
+  mb.innerHTML=`<h2>⚠️ Complications${showRod?' / ROD':''}</h2>
     <div class="msub"><strong>${htmlSafe(nm)}</strong>${pat.id_card?' · '+htmlSafe(pat.id_card):''} — each is tied to a stoma and kept on a timeline; resolve one when it settles.</div>
     <div id="cmp-mgr-body">${complicationsManagerBodyHTML(pat)}</div>
-    ${rodSectionHTML(pat||{id:patientId},rod,rodRemoved,rodStoma)}
+    ${showRod?rodSectionHTML(pat||{id:patientId},rod,rodRemoved,rodStoma):''}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Done</button></div>`;
   openMo();
 }
@@ -17857,7 +17867,7 @@ async function openPatientRecord(patientId){
       ${missingBlock}
       <div>
         <div class="psm-sec-head"><h3>Patient details</h3><span class="psm-badge">Locked once entered — unlock in Edit patient</span></div>
-        <div class="psm-card"><dl class="psm-dgrid" style="margin:0;">
+        <div class="psm-card"><dl class="psm-dgrid psm-dgrid-flow" style="margin:0;">
           ${dDate('Date of birth',pat.date_of_birth)}
           ${dItem('Telephone',pat.phone_number)}
           <div class="psm-ditem psm-loc-item wide"><dt>Locality</dt>${pat.locality?`<dd class="psm-loc-val">${localityFlagHTML(pat.locality,'small',false)||'<span class="psm-loc-pin">📍</span>'}<span class="psm-loc-name">${htmlSafe(pat.locality)}</span></dd>`:'<dd class="na">Not recorded</dd>'}</div>
@@ -18718,6 +18728,43 @@ function handoverOperationSummary(p){
 /* The open (unresolved) complications, named, with each one's latest trend when
    it is recorded — shown on the handover so the ward sees them at a glance
    instead of having to open the manager. Resolved ones drop off the sheet. */
+/* A stoma rod (a plastic bridge) is only ever placed under a LOOP stoma — a loop
+   or transverse ileostomy/colostomy. An end ileostomy, end colostomy, a urostomy,
+   a mucus fistula or a jejunostomy never has one, so a rod is never offered for
+   them. Same test the discharge letter uses for its rod section. */
+function stomaTypeCanHaveRod(type){
+  const t=String(type||'');
+  return /loop|transverse/i.test(t)&&/ileo|colo/i.test(t);
+}
+/* True when the patient has a PRESENT stoma that could carry a rod (multi-stoma
+   aware: any one present rod-capable stoma is enough). */
+function patientHasRodCapableStoma(p){
+  let list=[];try{list=(typeof patientStomaList==='function')?patientStomaList(p)||[]:[];}catch(e){list=[];}
+  return list.filter(s=>s.present!==false).some(s=>stomaTypeCanHaveRod(s.type));
+}
+/* Should the Handover still OFFER a rod for this patient? Only while a rod-capable
+   stoma is present AND its rod has not been recorded yet. Once a rod is selected
+   (a removal date set) or removed, it is no longer offered — including when a later
+   episode reopens with the same old stoma. A rod recorded against an OLD stoma that
+   is no longer present does not block offering one for a NEW rod-capable stoma. */
+function patientRodApplies(p){
+  if(!patientHasRodCapableStoma(p))return false;
+  if(!(p.rod_removal_date||p.rod_removed_date))return true;      // capable, none recorded yet
+  const rodUid=String(p.rod_stoma_uid||'');
+  if(!rodUid)return false;                                        // legacy single rod — treat as done
+  let list=[];try{list=(typeof patientStomaList==='function')?patientStomaList(p)||[]:[];}catch(e){list=[];}
+  return list.filter(s=>s.present!==false)
+             .some(s=>stomaTypeCanHaveRod(s.type)&&String(s.uid||'')!==rodUid);
+}
+/* The rod is managed through the Complications/ROD button, not an on-screen chip.
+   A pending rod (recorded but not yet removed) still needs to reach the printed
+   ward sheet, so carry it as a hidden element that the print reads. */
+function handoverRodPrintCarrier(p){
+  const due=p&&p.rod_removal_date?String(p.rod_removal_date).slice(0,10):'';
+  const removed=p&&p.rod_removed_date?String(p.rod_removed_date).slice(0,10):'';
+  if(!due||removed)return '';
+  return `<span class="hv-rod-print" data-rodprint="rod due ${htmlSafe(fmtShortDate(due))}" hidden></span>`;
+}
 function handoverComplicationLine(p){
   const open=parseComplications(p).filter(c=>c.status!=='resolved');
   if(!open.length)return '';
@@ -18737,6 +18784,10 @@ function handoverRowHTML(p,cls){
   const cmpCount=comps.length;
   const cmpOpen=comps.filter(c=>c.status!=='resolved').length;
   const cmpLine=handoverComplicationLine(p);
+  // A rod is only offered when a loop stoma is present and its rod is not yet
+  // recorded; the single button then reads "Complications/ROD", otherwise just
+  // "Complications" (end ileostomy, end colostomy, urostomy, or a rod already set).
+  const rodApplies=patientRodApplies(p);
   // Infection alert — a note (or appliance line) carrying CRE, VRE or anything
   // "+ve" turns the Appliance/notes cell bright red so it cannot be missed.
   const infAlert=hvIsInfectionNote(p.inpatient_nurse_notes)||hvIsInfectionNote(applLine);
@@ -18755,9 +18806,9 @@ function handoverRowHTML(p,cls){
             ?htmlSafe(applLine)
             :'<span class="hv-appl-await-txt">🔎 Awaiting first review — tap to set appliance</span>'}</button>
         <input type="text" class="hv-inp hv-note" value="${htmlSafe(p.inpatient_nurse_notes||'')}" placeholder="Notes…"
-          oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${rodChipHTML(p)}
-        ${cmpLine?`<div class="hv-cmp-line" title="Open complications — tap Complications/ROD for the full timeline">⚠️ ${htmlSafe(cmpLine)}</div>`:''}
-        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="Complications timeline (tied to a stoma) and the ROD removal date">⚠️ Complications/ROD${cmpOpen?` (${cmpOpen})`:''}</button>
+          oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${handoverRodPrintCarrier(p)}
+        ${cmpLine?`<div class="hv-cmp-line" title="Open complications — tap the Complications button for the full timeline">⚠️ ${htmlSafe(cmpLine)}</div>`:''}
+        <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="${rodApplies?'Complications timeline (tied to a stoma) and the ROD removal date':'Complications timeline, tied to a stoma'}">⚠️ ${rodApplies?'Complications/ROD':'Complications'}${cmpOpen?` (${cmpOpen})`:''}</button>
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
@@ -20570,13 +20621,11 @@ function printHandover(){
       // The next flange change date prints with the appliance, and is bolded.
       const fd=c.querySelector('.hv-flange-date:not(.hv-rod-date)');
       const fv=fd&&fd.value?('flange due '+fmtShortDate(fd.value)):'';
-      // The rod removal date prints too: "rod due <date>" while pending, or
-      // "rod out <date>" once removed. Both are bolded like the flange note.
-      let rv='';
-      const rd=c.querySelector('.hv-rod-date');
-      if(rd&&rd.value)rv='rod due '+fmtShortDate(rd.value);
-      else{const rdone=c.querySelector('.hv-rod-done .hv-flange-note');
-        if(rdone&&rdone.textContent.trim())rv='rod out '+rdone.textContent.trim();}
+      // A pending rod (recorded, not yet removed) prints "rod due <date>", bolded
+      // like the flange note. It is carried by a hidden element since the rod is no
+      // longer shown as an on-screen chip; a removed rod does not print.
+      const rp=c.querySelector('.hv-rod-print');
+      const rv=rp?String(rp.dataset.rodprint||'').trim():'';
       // Open complications print with the appliance line, bolded, so the ward
       // sheet carries them too. The on-screen warning emoji is dropped — it
       // prints faint on a mono laser — and a plain "Complication:" label stands in.
