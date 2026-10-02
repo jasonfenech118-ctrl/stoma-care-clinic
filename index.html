@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-391"/>
-<script src="assets/manual.js?v=2026.10.02-391"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-392"/>
+<script src="assets/manual.js?v=2026.10.02-392"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2228,6 +2228,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
             <label><input type="checkbox" id="ghost-on-C" checked onchange="setGhostShiftOn('C',this.checked)"/> C</label>
           </span>
           <label>Ghosts first day <input type="date" id="ghost-start" onchange="setGhostStartDate(this.value)"/></label>
+          <label class="ghost-plan-toggle"><input type="checkbox" id="hide-ertr" onchange="setHideErTr(this.checked)"/> Hide Erica &amp; Tracy</label>
           <button type="button" class="jump-clear" onclick="setGhostStartDate(TODAY)">Reset ghosts to today</button>
         </div>
       </div>
@@ -3428,7 +3429,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-391';
+const APP_BUILD='2026.10.02-392';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4153,6 +4154,10 @@ function ghostShiftOn(){
   return {A:true,B:true,C:true};
 }
 function setGhostShiftOn(key,on){const cur=ghostShiftOn();cur[key]=!!on;try{localStorage.setItem('ghost_shift_on',JSON.stringify(cur));}catch(e){}renderRoster();}
+// Optionally hide the real Erica & Tracy rows so the ghost pattern reads cleanly.
+function hideErTrOn(){try{return localStorage.getItem('hide_erica_tracy')==='1';}catch(e){return false;}}
+function setHideErTr(on){try{localStorage.setItem('hide_erica_tracy',on?'1':'0');}catch(e){}renderRoster();}
+function isEricaOrTracy(name){return /erika|erica|tracey|tracy/i.test(name||'');}
 function ghostDayIndex(ds){return Math.floor(new Date(ds+'T00:00:00Z').getTime()/86400000);}
 /* 'work' | 'off' | 'pre' for a 2-on/1-off shift that first works on startDate+idx. */
 function shiftCode(startDate,idx,ds){
@@ -4194,6 +4199,7 @@ async function renderRoster(){
   const gIn=document.getElementById('ghost-start');if(gIn)gIn.value=ghostStartDate();
   const gTog=document.getElementById('ghost-toggle');if(gTog)gTog.checked=ghostShiftsVisible;
   const gOn=ghostShiftOn();['A','B','C'].forEach(k=>{const el=document.getElementById('ghost-on-'+k);if(el)el.checked=gOn[k];});
+  const hEl=document.getElementById('hide-ertr');if(hEl)hEl.checked=hideErTrOn();
   document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
 
   const s1=`${y}-${String(m+1).padStart(2,'0')}-01`;
@@ -4251,7 +4257,9 @@ async function renderRoster(){
   html+=`<tr class="sr"><td colspan="${days+2}">Core Staff</td></tr>`;
 
   let ghostsPlaced=false;
+  const hideET=hideErTrOn();
   for(const st of staffList){
+    if(hideET&&isEricaOrTracy(st.full_name)){continue;}   // visual hide for planning only
     html+=`<tr><td class="td-name">${htmlSafe(st.full_name)}${isProvisionalStaff(st.full_name)?'<span class="prov-chip">provisional</span>':''}</td><td class="td-role">${htmlSafe(st.role||'')}</td>`;
     for(let d=1;d<=days;d++){
       const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();

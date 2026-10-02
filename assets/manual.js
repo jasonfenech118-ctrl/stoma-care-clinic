@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C sit directly below Lorraine, with the real Erica and Tracy rows below them; added per-shift A/B/C tick-boxes to show one or any combination)'};
+const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C below Lorraine with real Erica and Tracy below; per-shift A/B/C tick-boxes, plus a Hide Erica & Tracy toggle)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -385,7 +385,8 @@ const MANUAL_SECTIONS=[
       `<b>Shift A / B / C</b> each work <b>2 days on, 1 day off</b>, starting <b>one day after the last</b>, so between them every day is covered.`,
       `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide them all.`,
       `Use the <b>Shifts: A · B · C</b> tick-boxes in the same box to choose which ghost rows show — tick just one to isolate a single shift, or any combination. Each shift keeps its own staggered pattern whichever you show.`,
-      `Because the ghosts sit below Lorraine and above Erica and Tracy, you can read their ideal <b>D / off</b> pattern straight against those real rows to judge where a new nurse best fits.`
+      `Because the ghosts sit below Lorraine and above Erica and Tracy, you can read their ideal <b>D / off</b> pattern straight against those real rows to judge where a new nurse best fits.`,
+      `Tick <b>Hide Erica &amp; Tracy</b> to drop those two real rows out of view while you study the ghost pattern — it is a display-only hide (their real rosters are untouched); untick it to bring them back.`
     ])}
     ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost" so they are never mistaken for real roster rows — nothing you do here changes any real staff member.')}
   `},
