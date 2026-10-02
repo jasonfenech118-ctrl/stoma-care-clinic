@@ -8,8 +8,12 @@ the individual source-page details.
 
 - Main gallery: [Flags of local councils of Malta](https://commons.wikimedia.org/wiki/Flags_of_local_councils_of_Malta)
 - Kalkara: [Flag of Kalkara (2009-)](https://commons.wikimedia.org/wiki/File:Flag_of_Kalkara_(2009-).svg), a CC0 current flag that was added after the main gallery.
-- Paola: intentionally not included. The source gallery marks its current flag
-  as copyrighted and no licensed current replacement was available.
+- Paola (Raħal Ġdid): now registered in the flag map pointing at the Wikimedia
+  Commons file `Flag of Paola, Malta.svg`, so the live app loads it from Commons
+  in the viewer's browser. No local copy is committed here because the source
+  gallery marks the current Paola flag as copyrighted and no freely-licensed
+  replacement was available; to serve it locally like the others, drop a
+  `paola.svg` into this folder and it will be used first automatically.
 
 Retain this attribution and the individual source links if the flag assets are
 reused elsewhere.
