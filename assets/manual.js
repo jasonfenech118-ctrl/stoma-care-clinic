@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (handover rod folded into one Complications/ROD button — only for loop stomas and only until recorded; tidier patient-details layout; colour-coded work areas; record tinted by sex — blue male, pink female)'};
+const MANUAL_META={updated:'2 October 2026 (Follow-up Planning cards open "See follow-up history"; Complete-visit Review shows the current appliance or Before/Modified to; handover Complications/ROD button; colour-coded work areas; record tinted by sex — blue male, pink female)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -205,9 +205,10 @@ const MANUAL_SECTIONS=[
       `<b>Follow-up</b> — choose the next follow-up owner and due month.`,
       `<b>Review</b> — check the summary (it shows the last follow-up date and outcome) and save.`
     ])}
+    ${manNote('auto','🩹','The Review’s <b>Appliance &amp; accessories</b> card shows the patient’s <b>current appliance</b> — never "None recorded" when one is on file. If you changed it during the visit it reads <b>Before …</b> / <b>Modified to …</b> so the change is clear at a glance.')}
     ${manNote('auto','⚙️','The next <b>follow-up due month is worked out for you</b>, and the patient is added to the booking worklist. Booking an appointment on/after their due date takes them off it automatically.')}
   `},
-  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient saved appliances details assignment selected nurse month appointment alphabetical first name surname print scroll scrollbar keyboard last follow up history select to book ID card prominent same name matching names colour color',html:`
+  {id:'planning',title:'Follow-up Planning',keywords:'follow up planning due months booking worklist owner overdue awaiting booking my patients add patient saved appliances details assignment selected nurse month appointment alphabetical first name surname print scroll scrollbar keyboard last follow up history see follow-up history previous follow-ups booked appointments rebook ID card prominent same name matching names colour color',html:`
     ${manMap('appointments')}
     ${manWhen('To see who is due and book them in.')}
     ${manSteps([
@@ -217,7 +218,7 @@ const MANUAL_SECTIONS=[
       `Scroll the <b>Due this month</b> patient column with its own right-hand scrollbar, mouse wheel or a vertical swipe. Its heading and the calendar stay in view. You can also focus the list and use the arrow keys or Page Up / Page Down. Your place in the list is kept when selecting a patient or opening a calendar day; choosing a different nurse, month or list starts at the top.`,
       `Each patient card shows their <b>last follow-up appointment date and outcome</b> in place of the surgery date; <b>Print patient list</b> shows the same information. Click the card or the patient’s name to open their full follow-up history and current booking status.`,
       `The <b>ID card number</b> has its own large, bold badge beneath the name. If patients in the current list share both a first name and surname but have different ID card numbers, their cards use subtly different backgrounds and show <b>Same name — check ID card</b>. This also applies to <b>Flexible &amp; DNTU</b>. Selecting a card keeps the usual selection highlight.`,
-      `To book, drag the patient onto an available day or slot. Alternatively, press <b>Select to book</b>, open a clinic day and press a free time slot.`,
+      `Each card has a ${manBtn('🗂 See follow-up history','#edf1f5','#12304f')} button that opens the patient’s <b>previous follow-ups</b> and, separately, any <b>booked appointments</b>, with a <b>Rebook</b> button. To book, drag the patient onto an available day or slot, or open their follow-up history and press <b>Rebook</b>.`,
       `In <b>My patients</b>, press <b>Add patient</b>, enter the ID card and press <b>Find</b>. Check the patient, then press <b>Add to list</b>. Saved appliances from ward and clinic records appear automatically; no stoma choice, appliance selection or complication review is required to assign the patient.`,
       `Saving a patient in <b>My patients</b> assigns the selected nurse and due month. The patient appears in <b>Due this month</b> when they have no upcoming booked appointment.`
     ])}

@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-368"/>
-<script src="assets/manual.js?v=2026.10.02-368"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-372"/>
+<script src="assets/manual.js?v=2026.10.02-372"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1865,6 +1865,9 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .bc-history-link:hover{text-decoration:underline;}
 .bc-last-followup{margin-top:6px;font-size:11px;line-height:1.5;color:var(--muted);}
 .bc-select-btn{margin-top:8px;border:1px solid #b7ddd9;border-radius:7px;background:#e8f5f4;color:var(--teal);padding:5px 8px;font:inherit;font-size:11px;font-weight:700;cursor:pointer;}
+/* The "See follow-up history" action is a neutral, full-width button (it opens
+   the history + bookings view, it does not book), distinct from a booking tint. */
+.bc-history-btn{margin-top:8px;display:block;width:100%;border-color:#d4dde7;background:#edf1f5;color:var(--navy);}
 .history-section-title{margin:18px 0 8px;font-size:15px;color:var(--navy);}
 /* Scroll the patient cards independently; keep the heading and calendar in view. */
 @media screen{
@@ -3370,7 +3373,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-371';
+const APP_BUILD='2026.10.02-372';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6260,6 +6263,14 @@ async function esFillSummaryExtras(p,comps,appt){
   }
   const parts=[...appNames,...accNames.filter(n=>n&&n!=='None')].filter(Boolean);
   ael.textContent=parts.length?parts.join(', '):'None recorded';
+  // Remember the appliance the patient was ON before this visit (the current
+  // appliance, resolved from the saved appointment or an earlier record — not from
+  // this visit's unsaved picker), so the Review step can show the current appliance
+  // or a "Before … / Modified to …" change. Only captured on a fresh open, before
+  // the picker has recorded anything.
+  if(esState&&String(esState.apptId)===String((appt&&appt.id)||'')&&!(esResume&&esResume.rows&&esResume.rows.length)){
+    esState.baselineAppliance={app:appNames.slice(),acc:accNames.filter(n=>n&&n!=='None')};
+  }
 }
 /* ── The Edit-appointment stepper (Attendance → Clinical review → Follow-up).
    It reorders the existing fields into panes shown one at a time; every field
@@ -6481,16 +6492,42 @@ function esRenderReview(){
   // (None must be ticked if none were used), so there is always a value here.
   const appChoice=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
   let appNames=[],accNames=[];
-  if(esResume&&esResume.rows&&esResume.rows.length){
+  const recordedThisVisit=!!(esResume&&esResume.rows&&esResume.rows.length);
+  if(recordedThisVisit){
     appNames=[...new Set(esResume.rows.flatMap(r=>r.appliances||[]))].filter(Boolean);
     accNames=[...new Set(esResume.rows.flatMap(r=>r.accessories||[]))].filter(Boolean);
   }
   const accShown=accNames.filter(n=>n&&n!=='None');
+  // The appliance the patient was on BEFORE this visit, captured when the modal
+  // opened (falls back to the summary header text if the capture has not landed).
+  const base=(esState&&esState.baselineAppliance)||{app:[],acc:[]};
+  const baseApp=(base.app||[]).filter(Boolean);
+  const baseAcc=(base.acc||[]).filter(n=>n&&n!=='None');
+  const joinAA=(a,ac)=>[...a,...ac].filter(Boolean).join(', ');
+  let baseStr=joinAA(baseApp,baseAcc);
+  if(!baseStr){const hv=(document.getElementById('es-summary-appliance')?.textContent||'').trim();
+    if(hv&&!['None recorded','…','—',''].includes(hv))baseStr=hv;}
+  const newStr=joinAA(appNames,accShown);
+  const sameList=(x,y)=>x.length===y.length&&x.every(v=>y.includes(v));
+  const changed=recordedThisVisit&&!!newStr&&!!baseStr&&!(sameList(appNames,baseApp)&&sameList(accShown,baseAcc));
   const appLines=[];
-  const choiceLabel={unchanged:'Continued with current appliance & accessories',changed:'Appliance / accessories updated',first:'Appliance & accessories recorded'}[appChoice];
-  if(choiceLabel)appLines.push({html:`<div style="font-size:11.5px;color:#92600c;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">${htmlSafe(choiceLabel)}</div>`});
-  appLines.push(boldVal('Appliance:',appNames.length?appNames.join(', '):(appChoice==='unchanged'?'unchanged':'None recorded')));
-  appLines.push(boldVal('Accessories:',accShown.length?accShown.join(', '):'None'));
+  if(changed){
+    // An appliance / accessory change was made in this visit: show what it was
+    // before and what it was modified to.
+    appLines.push({html:`<div style="font-size:11.5px;color:#92600c;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Appliance / accessories changed</div>`});
+    appLines.push(boldVal('Before:',baseStr));
+    appLines.push(boldVal('Modified to:',newStr));
+  }else{
+    // No change (or it matches): show the current appliance in use rather than
+    // "None recorded". Prefer anything re-recorded this visit, else the baseline.
+    const curApp=recordedThisVisit&&appNames.length?appNames:baseApp;
+    const curAcc=recordedThisVisit&&accShown.length?accShown:baseAcc;
+    const curAppStr=curApp.length?curApp.join(', '):(baseStr||'None recorded');
+    const choiceLabel={unchanged:'Continued with current appliance & accessories',changed:'Appliance / accessories updated',first:'Appliance & accessories recorded'}[appChoice];
+    if(choiceLabel)appLines.push({html:`<div style="font-size:11.5px;color:#92600c;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">${htmlSafe(choiceLabel)}</div>`});
+    appLines.push(boldVal('Appliance:',curAppStr));
+    appLines.push(boldVal('Accessories:',curAcc.length?curAcc.join(', '):'None'));
+  }
   const nextTxt=radioLabel('of-next');
   const monthVisible=document.getElementById('of-month-fg')?.style.display!=='none';
   const dueTxt=monthVisible?('Due: '+selText('of-month')):'';
@@ -8309,7 +8346,7 @@ function bcListHTML(){
     return `<div class="bc-head"><h4>${title}</h4></div><div class="report-note">${flex?'✅ No “according to availability” or 1–2 DNTU patients to book for this nurse.':'✅ No patients due to book for this nurse and month.'}</div>`;
   const sameNameTones=bcSameNameTones(list);
   return `<div class="bc-head"><h4>${title} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
-    ${flex?'<div class="bc-pickhint">Set to “according to clinic availability”, or missed 1–2 appointments. Press Select to book, then choose a free slot.</div>':''}
+    ${flex?'<div class="bc-pickhint">Set to “according to clinic availability”, or missed 1–2 appointments. Drag a card onto a free slot to book, or open a patient’s follow-up history to rebook.</div>':''}
     <div class="bc-list-scroll" tabindex="0" role="region" aria-label="${title} patient list">
     ${list.map(p=>{
       const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
@@ -8328,7 +8365,7 @@ function bcListHTML(){
         ${sameNameTone!==undefined?'<div class="bc-name-note">Same name — check ID card</div>':''}
         <div class="bc-meta">${htmlSafe(meta)}</div>
         <div class="bc-last-followup"><strong>Last follow-up:</strong> ${htmlSafe(lastLabel)}</div>
-        <button type="button" class="bc-select-btn" aria-pressed="${selected}" aria-label="Select ${htmlSafe(nm)}, ID card ${htmlSafe(cardNumber)}, to book" onclick="bcSelectPatient('${jsSafe(p.id)}')">${selected?'Selected to book':'Select to book'}</button></div>`;
+        <button type="button" class="bc-select-btn bc-history-btn" aria-label="See follow-up history and bookings for ${htmlSafe(nm)}, ID card ${htmlSafe(cardNumber)}" onclick="openFollowupHistory('${jsSafe(p.id)}')">🗂 See follow-up history</button></div>`;
     }).join('')}</div>`;
 }
 function bcOpenDay(ds){bookCalState.dayOpen=ds;renderBookingCalendar();}
