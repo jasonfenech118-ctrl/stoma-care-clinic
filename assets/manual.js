@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (ghost shift planning on the Monthly Roster — three fictitious nurses, 2 on 1 off, to plan a new nurse start date; roster-only, linked to nothing)'};
+const MANUAL_META={updated:'2 October 2026 (roster shift-planning view now names Jacqueline, Jason and Lorraine — Tracy and Erica excluded; visual only, 2 on 1 off)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -380,9 +380,9 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
     ${manH2('🧪','Plan a new nurse — ghost shifts')}
-    <p class="man-lede">On the Monthly Roster you can lay out <b>three fictitious "ghost" nurses</b> — <b>Shift A, B and C</b> — to plan when a new nurse should start. They are a <b>planning aid only</b>: not real staff, saved nowhere, and linked to nothing else (no appointments, capacity, follow-ups or attendance).</p>
+    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> for <b>Jacqueline, Jason and Lorraine</b> to see when a new nurse should start. (<b>Tracy and Erica are not included.</b>) It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
     ${manSteps([
-      `They work a <b>2 days on, 1 day off</b> cycle, each starting <b>one day after the last</b>, so between them every day is covered.`,
+      `The three work a <b>2 days on, 1 day off</b> cycle, each starting <b>one day after the last</b>, so between them every day is covered.`,
       `Set the <b>First working day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date (each shift's own start is shown). Use <b>Reset to today</b> to start again, or untick <b>Show on roster</b> to hide them.`,
       `The <b>Coverage</b> row under them shows how many of the three are on duty each day (green with a number) — so you can read off exactly from which date coverage is complete, and which start date a real new nurse needs.`
     ])}
