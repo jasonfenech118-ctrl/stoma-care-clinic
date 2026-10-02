@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (SAMOC wards ONC 1/2, HEMA, RAINBOW, PALLIATIVE now in the admit ward dropdown as a SAMOC group, violet on the handover)'};
+const MANUAL_META={updated:'2 October 2026 (ghost shift planning on the Monthly Roster — three fictitious nurses, 2 on 1 off, to plan a new nurse start date; roster-only, linked to nothing)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -373,12 +373,20 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'calendar',title:'Roster & Attendance',icon:'📅',color:'#7c3aed',blurb:'Monthly roster, daily attendance and change of duty.',pages:[
-  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule',html:`
+  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule ghost nurse plan new nurse shift a b c coverage 2 on 1 off start date',html:`
     ${manMap('calendar')}
     <ul class="man-ul">
       <li>${manBtn('🗓 Monthly Roster','#efe7fb','#5b3aa8')} — the staff rota for the month.</li>
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
+    ${manH2('🧪','Plan a new nurse — ghost shifts')}
+    <p class="man-lede">On the Monthly Roster you can lay out <b>three fictitious "ghost" nurses</b> — <b>Shift A, B and C</b> — to plan when a new nurse should start. They are a <b>planning aid only</b>: not real staff, saved nowhere, and linked to nothing else (no appointments, capacity, follow-ups or attendance).</p>
+    ${manSteps([
+      `They work a <b>2 days on, 1 day off</b> cycle, each starting <b>one day after the last</b>, so between them every day is covered.`,
+      `Set the <b>First working day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date (each shift's own start is shown). Use <b>Reset to today</b> to start again, or untick <b>Show on roster</b> to hide them.`,
+      `The <b>Coverage</b> row under them shows how many of the three are on duty each day (green with a number) — so you can read off exactly from which date coverage is complete, and which start date a real new nurse needs.`
+    ])}
+    ${manNote('tip','👻','The ghost rows are tinted violet and tagged "ghost" so they never get mistaken for real roster rows. Nothing you do here changes any real staff member.')}
   `},
   {id:'attendance',title:'Daily Attendance & Records',keywords:'daily attendance sign in present records history',html:`
     ${manMap('calendar')}
