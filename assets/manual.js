@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C sit directly below Lorraine, with the real Erica and Tracy rows below them; the separate Tracy planner and Coverage row were removed)'};
+const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C sit directly below Lorraine, with the real Erica and Tracy rows below them; added per-shift A/B/C tick-boxes to show one or any combination)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -383,7 +383,8 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> to see when a new nurse should start. The three ghost rows — <b>Shift A, Shift B and Shift C</b> — sit <b>directly below Lorraine</b> on the roster, so the real Erica and Tracy rows fall just below them. They are fictitious shifts whose <b>2 days on, 1 day off</b> pattern only <i>models the rotation of Jacqueline, Jason and Lorraine</i>; no real nurse is renamed. It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
     ${manSteps([
       `<b>Shift A / B / C</b> each work <b>2 days on, 1 day off</b>, starting <b>one day after the last</b>, so between them every day is covered.`,
-      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide them.`,
+      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide them all.`,
+      `Use the <b>Shifts: A · B · C</b> tick-boxes in the same box to choose which ghost rows show — tick just one to isolate a single shift, or any combination. Each shift keeps its own staggered pattern whichever you show.`,
       `Because the ghosts sit below Lorraine and above Erica and Tracy, you can read their ideal <b>D / off</b> pattern straight against those real rows to judge where a new nurse best fits.`
     ])}
     ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost" so they are never mistaken for real roster rows — nothing you do here changes any real staff member.')}

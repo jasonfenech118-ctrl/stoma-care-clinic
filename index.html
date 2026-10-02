@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-390"/>
-<script src="assets/manual.js?v=2026.10.02-390"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-391"/>
+<script src="assets/manual.js?v=2026.10.02-391"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -107,6 +107,8 @@ tr.ghost-row td.td-name{color:#5b21b6;font-weight:800;}
 .ghost-plan-row strong{color:#5b21b6;}
 .ghost-plan-row label{display:inline-flex;align-items:center;gap:6px;}
 .ghost-plan-row input[type=date]{border:1px solid #c9b8ef;border-radius:7px;padding:4px 8px;font:inherit;color:#4b3b7a;}
+.ghost-pick{display:inline-flex;align-items:center;gap:10px;padding:3px 10px;border:1px solid #d9cef3;border-radius:999px;background:#fff;font-weight:700;color:#5b21b6;}
+.ghost-pick label{display:inline-flex;align-items:center;gap:4px;font-weight:700;}
 
 /* OT/TIL BARS */
 .ot-bar{background:white;border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
@@ -2220,6 +2222,11 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
         <div class="ghost-plan-row">
           <strong>🧪 Plan a new nurse — ghost shifts</strong>
           <label class="ghost-plan-toggle"><input type="checkbox" id="ghost-toggle" checked onchange="toggleGhostShifts(this.checked)"/> Show on roster</label>
+          <span class="ghost-pick">Shifts:
+            <label><input type="checkbox" id="ghost-on-A" checked onchange="setGhostShiftOn('A',this.checked)"/> A</label>
+            <label><input type="checkbox" id="ghost-on-B" checked onchange="setGhostShiftOn('B',this.checked)"/> B</label>
+            <label><input type="checkbox" id="ghost-on-C" checked onchange="setGhostShiftOn('C',this.checked)"/> C</label>
+          </span>
           <label>Ghosts first day <input type="date" id="ghost-start" onchange="setGhostStartDate(this.value)"/></label>
           <button type="button" class="jump-clear" onclick="setGhostStartDate(TODAY)">Reset ghosts to today</button>
         </div>
@@ -3421,7 +3428,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-390';
+const APP_BUILD='2026.10.02-391';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4140,6 +4147,12 @@ function ghostStartDate(){
 }
 function setGhostStartDate(v){try{localStorage.setItem('ghost_shift_start',v||'');}catch(e){}renderRoster();}
 function toggleGhostShifts(on){ghostShiftsVisible=!!on;renderRoster();}
+// Which of Shift A/B/C are shown — tick one to isolate it, or any combination.
+function ghostShiftOn(){
+  try{const v=JSON.parse(localStorage.getItem('ghost_shift_on')||'null');if(v&&typeof v==='object')return {A:v.A!==false,B:v.B!==false,C:v.C!==false};}catch(e){}
+  return {A:true,B:true,C:true};
+}
+function setGhostShiftOn(key,on){const cur=ghostShiftOn();cur[key]=!!on;try{localStorage.setItem('ghost_shift_on',JSON.stringify(cur));}catch(e){}renderRoster();}
 function ghostDayIndex(ds){return Math.floor(new Date(ds+'T00:00:00Z').getTime()/86400000);}
 /* 'work' | 'off' | 'pre' for a 2-on/1-off shift that first works on startDate+idx. */
 function shiftCode(startDate,idx,ds){
@@ -4167,8 +4180,10 @@ function ghostPlanRow(y,m,days,{name,role,chipTag,chipCls,codeFor,extraCls}){
 // Just the three fictitious Shift A / B / C rows — injected below Lorraine.
 function renderGhostShiftRows(y,m,days){
   if(!ghostShiftsVisible)return '';
+  const on=ghostShiftOn();
   let html='';
   GHOST_SHIFTS.forEach((g,idx)=>{
+    if(!on[g.key])return;   // idx stays stable so each shift keeps its stagger
     html+=ghostPlanRow(y,m,days,{name:g.label,role:'2 on · 1 off',chipTag:'ghost',codeFor:ds=>ghostCode(idx,ds)});
   });
   return html;
@@ -4178,6 +4193,7 @@ async function renderRoster(){
   // Reflect the saved ghost start date / visibility on the controls each render.
   const gIn=document.getElementById('ghost-start');if(gIn)gIn.value=ghostStartDate();
   const gTog=document.getElementById('ghost-toggle');if(gTog)gTog.checked=ghostShiftsVisible;
+  const gOn=ghostShiftOn();['A','B','C'].forEach(k=>{const el=document.getElementById('ghost-on-'+k);if(el)el.checked=gOn[k];});
   document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
 
   const s1=`${y}-${String(m+1).padStart(2,'0')}-01`;
