@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-373"/>
-<script src="assets/manual.js?v=2026.10.02-373"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-374"/>
+<script src="assets/manual.js?v=2026.10.02-374"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3373,7 +3373,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-373';
+const APP_BUILD='2026.10.02-374';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10114,7 +10114,7 @@ async function openFollowupHistory(patientId){
    Clinical data is read for the summary, never rewritten by this dialog.
    The local list is private to this browser; the allocation is shared. */
 const ADMIN_WORKLIST_KEY='admin_worklist_v2';
-let admFormPatient=null, admFormSelection=null, admFormLookupVersion=0, admFormBusy=false;
+let admFormPatient=null, admFormSelection=null, admFormLookupVersion=0, admFormBusy=false, admFormSchedule=null;
 function adminWorklistLoad(){
   try{const v=JSON.parse(localStorage.getItem(ADMIN_WORKLIST_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}
 }
@@ -10291,27 +10291,57 @@ async function admRenderPatientForm(pat){
   const ownerLine=String(newOwner)===String(owner)
     ? `Follow-up owner: <strong>${htmlSafe(owner)}</strong>`
     : `Follow-up owner: <strong>${htmlSafe(owner)}</strong> → <strong>${htmlSafe(newOwner)}</strong>`;
+  // What this patient is ALREADY scheduled for, so the nurse is never adding a
+  // patient to an earlier month without knowing they are already due later / booked.
+  const curDueM=Number(pat.followup_due_month)||0, curDueY=Number(pat.followup_year)||0;
+  const hasDue=curDueM>=1&&curDueM<=12;
+  const dueText=hasDue?`${followupMonthName(curDueM)}${curDueY?' '+curDueY:''}`:'';
+  const sameMonthAsSel=hasDue&&Number(sel.month)===curDueM&&Number(sel.year)===curDueY;
+  admFormSchedule={hasDue,dueM:curDueM,dueY:curDueY,dueText,sameMonthAsSel,dueOwner:owner,bookings:[],loaded:false};
   body.innerHTML=`
     <div style="background:#f1f5f9;border-radius:10px;padding:10px 12px;margin:12px 0;">
       <div style="font-weight:800;font-size:16px;">${htmlSafe(nm)}</div>
       <div style="font-size:12px;color:#52677b;">${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')} · ${ownerLine}</div>
     </div>
+    <div id="adm-sched-note">${admScheduleNoteHTML(admFormSchedule)}</div>
     <div class="edit-seen-section">Saved appliances &amp; accessories</div>
     <div id="adm-saved-appliances"><div class="report-note">Loading saved appliances…</div></div>
     <div class="registry-lookup-note">No clinical details need to be entered again. To change them later, open <strong>Patient record</strong> from your list.</div>
     <div id="adm-save-note" class="pf-step-err" hidden role="alert"></div>
     <div class="mact"><button class="btn-cancel" type="button" onclick="closeModal()">Cancel</button><button class="btn-save" type="button" id="adm-save-btn" onclick="admSavePatient()">Add to list</button></div>`;
   const summary=document.getElementById('adm-saved-appliances');
+  const today=new Date().toISOString().slice(0,10);
   try{
     const results=await Promise.allSettled([
       SB.from('clinical_records').select('*').eq('patient_id',pat.id).order('record_date',{ascending:false}),
-      SB.from('appointments').select('*').eq('patient_id',pat.id).eq('status','attended').order('appt_date',{ascending:false})
+      SB.from('appointments').select('*').eq('patient_id',pat.id).eq('status','attended').order('appt_date',{ascending:false}),
+      SB.from('appointments').select('*').eq('patient_id',pat.id).eq('status','booked').gte('appt_date',today).order('appt_date',{ascending:true})
     ]);
     if(admFormPatient!==pat||document.getElementById('adm-form-body')!==body)return;
-    const failed=results.some(r=>r.status!=='fulfilled'||r.value.error);
-    const data=results.map(r=>r.status==='fulfilled'&&!r.value.error?r.value.data||[]:[]);
-    summary.innerHTML=admSavedAppliancesHTML(pat,data[0],data[1])+(failed?'<div class="report-note">Some saved appliance records could not be loaded. You can still add this patient to the list.</div>':'');
+    const failed=results[0].status!=='fulfilled'||results[0].value.error||results[1].status!=='fulfilled'||results[1].value.error;
+    const val=i=>results[i].status==='fulfilled'&&!results[i].value.error?results[i].value.data||[]:[];
+    summary.innerHTML=admSavedAppliancesHTML(pat,val(0),val(1))+(failed?'<div class="report-note">Some saved appliance records could not be loaded. You can still add this patient to the list.</div>':'');
+    // Record any upcoming booked appointment and refresh the "already scheduled" note.
+    const booked=await enrichAppointments(val(2)).catch(()=>val(2));
+    admFormSchedule.bookings=(booked||[]).map(a=>({date:a.appt_date,slot:String(a.appt_slot||'').slice(0,5),
+      who:a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'')}));
+    admFormSchedule.loaded=true;
+    const sn=document.getElementById('adm-sched-note');if(sn)sn.innerHTML=admScheduleNoteHTML(admFormSchedule);
   }catch(error){if(admFormPatient===pat&&document.getElementById('adm-form-body')===body)summary.innerHTML='<div class="report-note">Saved appliances could not be loaded. You can still add this patient to the list.</div>';}
+}
+/* The amber "already scheduled" banner inside the Add-patient form: shows the due
+   month the patient already has and any upcoming booked appointment, so the nurse
+   does not unknowingly move their slot earlier. Nothing shows when they are clear. */
+function admScheduleNoteHTML(s){
+  if(!s)return '';
+  const bits=[];
+  if(s.hasDue)bits.push(`already due <strong>${htmlSafe(s.dueText)}</strong>${s.dueOwner?` (${htmlSafe(s.dueOwner)})`:''}`);
+  (s.bookings||[]).forEach(b=>bits.push(`already booked <strong>${htmlSafe(fmtShortDate(b.date))}${b.slot?' · '+htmlSafe(b.slot):''}</strong>${b.who?` (${htmlSafe(b.who)})`:''}`));
+  if(!bits.length){
+    return s.loaded?'<div class="registry-lookup-note" style="background:#e6f7ec;border-color:#9ad3b0;color:#0a5e33;">✓ Not currently on another due month or booked appointment.</div>':'';
+  }
+  return `<div class="registry-lookup-note" style="background:#fff6dc;border:1px solid #efdaa3;color:#765117;">
+    ⚠ <strong>${htmlSafe(`${admFormPatient?.first_name||''} ${admFormPatient?.surname||''}`.trim()||'This patient')}</strong> is ${bits.join(' · ')}. Adding to this month moves their due month — check this is intended.</div>`;
 }
 /* Assignment writes only the nurse and due month. Saved clinical information,
    appointment appliances and complications are left on their original records. */
@@ -10335,6 +10365,19 @@ async function admSavePatient(){
       const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'This patient';
       if(note){note.hidden=false;note.textContent=`${nm} is already on the ${owner||'Common'} · ${followupMonthName(month)} ${year} list — not added again.`;}
       return;
+    }
+    // Already scheduled elsewhere? Warn before moving their slot earlier — the
+    // patient keeps a single due month, so adding them here moves it. The nurse
+    // confirms so they do not book earlier than planned without realising.
+    const movesDue=admFormSchedule&&admFormSchedule.hasDue&&!(Number(admFormSchedule.dueM)===Number(month)&&Number(admFormSchedule.dueY)===Number(year));
+    const hasBooking=admFormSchedule&&admFormSchedule.bookings&&admFormSchedule.bookings.length;
+    if(movesDue||hasBooking){
+      const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'This patient';
+      const parts=[];
+      if(movesDue)parts.push(`already due ${admFormSchedule.dueText}`);
+      (hasBooking?admFormSchedule.bookings:[]).forEach(b=>parts.push(`already booked ${fmtShortDate(b.date)}${b.slot?' '+b.slot:''}`));
+      const ok=window.confirm(`${nm} is ${parts.join(' and ')}.\n\nAdd them to ${followupMonthName(month)} ${year} anyway? This moves their due month — you may be booking earlier than planned.`);
+      if(!ok){admFormBusy=false;btn.disabled=false;btn.textContent='Add to list';if(idInput)idInput.disabled=false;return;}
     }
     const alloc={followup_due_month:Number(month),followup_year:Number(year)};
     if(owner&&owner!=='All Patients')alloc.followup_owner=owner;
