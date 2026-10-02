@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghosts are Shift A/B/C modelling Jacqueline, Jason and Lorraine; new Tracy row to plan her start date; Coverage at the very bottom; Overtime stacked below core staff; Erica excluded)'};
+const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C sit directly below Lorraine, with the real Erica and Tracy rows below them; the separate Tracy planner and Coverage row were removed)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -380,14 +380,13 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
     ${manH2('🧪','Plan a new nurse — ghost shifts')}
-    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> to see when a new nurse should start. The three ghost rows are called <b>Shift A, Shift B and Shift C</b> — fictitious shifts whose <b>2 days on, 1 day off</b> pattern only <i>models the rotation of Jacqueline, Jason and Lorraine</i>; no real nurse is renamed. It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
+    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> to see when a new nurse should start. The three ghost rows — <b>Shift A, Shift B and Shift C</b> — sit <b>directly below Lorraine</b> on the roster, so the real Erica and Tracy rows fall just below them. They are fictitious shifts whose <b>2 days on, 1 day off</b> pattern only <i>models the rotation of Jacqueline, Jason and Lorraine</i>; no real nurse is renamed. It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
     ${manSteps([
       `<b>Shift A / B / C</b> each work <b>2 days on, 1 day off</b>, starting <b>one day after the last</b>, so between them every day is covered.`,
-      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide the whole block.`,
-      `The <b>Tracy</b> row (tinted orange, tagged "plan") proposes Tracy's new roster on the same cycle. Slide <b>Tracy starts</b> to the day you want to try — her row redraws so you can find the ideal date for her to begin and fill the gaps.`,
-      `The <b>Coverage</b> row at the very bottom shows how many of <b>Shift A/B/C + Tracy</b> are on duty each day (green with a number; red 0 = a gap) — so you can read off exactly from which date coverage is complete.`
+      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide them.`,
+      `Because the ghosts sit below Lorraine and above Erica and Tracy, you can read their ideal <b>D / off</b> pattern straight against those real rows to judge where a new nurse best fits.`
     ])}
-    ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost"; the Tracy row is tinted orange and tagged "plan". None of them are real roster rows and nothing you do here changes any real staff member. Erica is deliberately left out of the pattern (she is temporary core staff).')}
+    ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost" so they are never mistaken for real roster rows — nothing you do here changes any real staff member.')}
   `},
   {id:'attendance',title:'Daily Attendance & Records',keywords:'daily attendance sign in present records history',html:`
     ${manMap('calendar')}
