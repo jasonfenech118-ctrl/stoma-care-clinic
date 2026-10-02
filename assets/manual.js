@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (SAMOC wards: ONC 1, ONC 2, Hema, Rainbow (paediatric), Palliative — all in SAMOC violet, sorted after Mater Dei)'};
+const MANUAL_META={updated:'2 October 2026 (SAMOC wards ONC 1/2, HEMA, RAINBOW, PALLIATIVE now in the admit ward dropdown as a SAMOC group, violet on the handover)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -265,7 +265,7 @@ const MANUAL_SECTIONS=[
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
     ${manH2('🎨','Ward colours and the walking order')}
     <p class="man-lede">Type the <b>ward</b> (it is forced to CAPITALS) and the cell takes the <b>colour of that ward's foyer / block</b> — Orange, Red, Brown, Yellow, Green and Blue foyers, Blocks A, B and C each their own colour, so the sheet reads like the colour plan on the wall. The rows then <b>sort in walking order</b>: across the foyers left-to-right, then each foyer's <b>floors from the top down</b>, then by bed number.</p>
-    ${manNote('auto','🏥','<b>SAMOC — the Sir Anthony Mamo Oncology Centre</b> (across the road from Mater Dei) is included as its own hospital, in its own violet colour, listed <b>after all the Mater Dei wards</b>, with the full centre name shown beneath the ward. Its wards are recognised by name: <b>ONC 1</b>, <b>ONC 2</b>, <b>Hema</b>, <b>Rainbow</b> (paediatric) and <b>Palliative</b> (longer spellings such as Oncology 1 / 2, Haematology and Palliative Care work too, as does anything starting SAMOC / SAMOK). All of them show in the <b>SAMOC violet</b>.')}
+    ${manNote('auto','🏥','<b>SAMOC — the Sir Anthony Mamo Oncology Centre</b> (across the road from Mater Dei) is included as its own hospital, in its own violet colour, listed <b>after all the Mater Dei wards</b>, with the full centre name shown beneath the ward. Its wards — <b>ONC 1</b>, <b>ONC 2</b>, <b>HEMA</b>, <b>RAINBOW</b> (paediatric) and <b>PALLIATIVE</b> — are a <b>SAMOC group in the ward dropdown</b> when you admit a patient, and show in <b>SAMOC violet</b> on the handover. Longer spellings (Oncology 1 / 2, Haematology, Palliative Care) and anything starting SAMOC / SAMOK are recognised too.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
