@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-377"/>
-<script src="assets/manual.js?v=2026.10.02-377"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-378"/>
+<script src="assets/manual.js?v=2026.10.02-378"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1590,6 +1590,8 @@ td.hv-inf .hv-appl-empty{color:#ffe3e3;}
 .hv-inp{width:100%;min-width:90px;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:12.5px;font-family:inherit;color:var(--navy);background:#fff;}
 .hv-inp:focus{outline:none;border-color:var(--teal);}
 .hv-ward{font-weight:800;text-transform:uppercase;}
+/* The readable hospital name under a separate-hospital ward acronym (e.g. SAMOC). */
+.hv-ward-hosp{margin-top:3px;font-size:9.5px;font-weight:800;line-height:1.2;color:#5b21b6;text-transform:none;letter-spacing:.1px;}
 /* Click to move a document on: not done, left in the ward, signed. The colour
    is the point — a ward list is read across a room. */
 .hs-btn{display:inline-flex;align-items:center;gap:5px;width:100%;justify-content:center;border-radius:8px;padding:7px 8px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer;border:1.5px solid transparent;line-height:1.2;text-align:center;}
@@ -3400,7 +3402,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-377';
+const APP_BUILD='2026.10.02-378';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18734,8 +18736,15 @@ const WARD_BLOCK_COLOURS={
   BLOCKA:{label:'Block A',      bar:'#0e7490', tint:'#d7eef4'},
   BLOCKB:{label:'Block B',      bar:'#4338ca', tint:'#e2e4fb'},
   BLOCKC:{label:'Block C',      bar:'#be185d', tint:'#fbd8e8'},
-  SAMOC: {label:'SAMOC · Oncology Centre', bar:'#7c3aed', tint:'#ece3fb'}
+  SAMOC: {label:'SAMOC · Oncology Centre', bar:'#7c3aed', tint:'#ece3fb', hospital:'Sir Anthony Mamo Oncology Centre'}
 };
+/* A readable hospital name to show under the ward when the acronym belongs to a
+   SEPARATE hospital (e.g. SAMOC) — so a typed acronym reads as its hospital, not a
+   cryptic code. Mater Dei wards (the default) carry no extra label. */
+function wardHospitalLabel(ward){
+  const c=WARD_BLOCK_COLOURS[wardBlockOf(ward)];
+  return (c&&c.hospital)||'';
+}
 function wardBlockOf(ward){
   const w=String(ward||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   if(WARD_MAP[w])return WARD_MAP[w].b;
@@ -18759,6 +18768,11 @@ function recolourWardCell(input){
   const w=td.querySelector('.hv-ward')?.value||'';
   td.setAttribute('style',wardBlockStyle(w));
   td.title=wardBlockTitle(w);
+  // Show / update / remove the hospital caption (e.g. SAMOC) as the ward is typed.
+  const hosp=wardHospitalLabel(w);
+  let cap=td.querySelector('.hv-ward-hosp');
+  if(hosp){ if(!cap){cap=document.createElement('div');cap.className='hv-ward-hosp';td.appendChild(cap);} cap.textContent=hosp; }
+  else if(cap){cap.remove();}
 }
 function wardRank(ward){
   const w=String(ward||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -19017,7 +19031,7 @@ function handoverRowHTML(p,cls){
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="this.value=this.value.toUpperCase();fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim().toUpperCase())"/><span
       class="hv-dash">-</span><input type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
-      oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></div></td>
+      oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></div>${wardHospitalLabel(p.inpatient_ward)?`<div class="hv-ward-hosp">${htmlSafe(wardHospitalLabel(p.inpatient_ward))}</div>`:''}</td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong></td>
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
