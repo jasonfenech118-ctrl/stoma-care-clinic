@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-375"/>
-<script src="assets/manual.js?v=2026.10.02-375"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-376"/>
+<script src="assets/manual.js?v=2026.10.02-376"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2029,7 +2029,10 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
   #page-staff-audit .followup-toolbar{padding:16px 20px;gap:12px;border-radius:14px;box-shadow:none;border-color:#d5e0e8;}
   #page-staff-audit .followup-toolbar label{font-size:12px;color:#52677b;}
   #page-staff-audit .followup-toolbar select{min-height:40px;background:#f6f9fb;border:1px solid #ccdbe4;font-size:14px;border-radius:8px;}
-  #page-staff-audit #followup-month{color:#16384b;font-size:14px;border:1px solid #ccdbe4;}
+  /* The Due Month selector is the key control here, so it is highlighted — a bold
+     red pill with a soft glow — to make it obvious and easy to find. */
+  #page-staff-audit #followup-month{color:#b91c1c;font-size:15px;font-weight:800;background:#fff1f1;border:2px solid #dc2626;border-radius:9px;padding:7px 14px;box-shadow:0 0 0 3px rgba(220,38,38,.14);}
+  #page-staff-audit .fu-month-label{color:#b91c1c;font-weight:800;}
   #page-staff-audit .srow{gap:12px;margin:18px 0;}
   #page-staff-audit .sbox{border:1px solid #d5e0e8;border-radius:14px;box-shadow:none;padding:18px 20px;background:#fff;}
   #page-staff-audit .sbox .sl{font-size:11px;letter-spacing:.7px;color:#52677b;}
@@ -2105,6 +2108,9 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
     </div>
     <button class="help-btn" id="help-btn" onclick="toggleManualDock()" title="User manual" aria-label="Open the user manual">❓</button>
     <div class="bell-wrap">
+      <button class="bell-btn" id="task-btn" onclick="event.stopPropagation();toggleTaskInputPanel()" title="Add a to-do or dated reminder" aria-label="Add a to-do or dated reminder">📝<span class="bell-badge" id="task-badge">0</span></button>
+    </div>
+    <div class="bell-wrap">
       <button class="bell-btn" id="bell-btn" onclick="event.stopPropagation();toggleReminderPanel()" title="Clinic reminders" aria-label="Clinic reminders">🔔<span class="bell-badge" id="bell-badge">0</span></button>
     </div>
     <button class="btn-so" onclick="doLogout()">Sign Out</button>
@@ -2117,6 +2123,14 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
       <button class="bell-panel-close" onclick="closeReminderPanel()" aria-label="Close">✕</button>
     </div>
     <div class="bell-panel-body" id="bell-panel-body"><div class="rem-empty">Loading reminders…</div></div>
+  </div>
+  <!-- TO-DO / DATED-REMINDER INPUT PANEL (its own 📝 button next to the bell) -->
+  <div class="bell-panel" id="task-input-panel" onclick="event.stopPropagation();">
+    <div class="bell-panel-head">
+      <div><strong>📝 To-do &amp; reminders</strong><span class="bell-panel-sub">Add a task or a dated reminder — they show in the 🔔 bell</span></div>
+      <button class="bell-panel-close" onclick="closeTaskInputPanel()" aria-label="Close">✕</button>
+    </div>
+    <div class="bell-panel-body" id="task-input-body"><div class="rem-empty">Loading…</div></div>
   </div>
   <!-- PRIMARY NAV (four areas) and the SUB-NAV for the open area.
        Both rows are rendered from TAB_GROUPS so there is one place to edit. -->
@@ -3386,7 +3400,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-375';
+const APP_BUILD='2026.10.02-376';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8995,7 +9009,8 @@ function renderReminderTabs(){
     <span class="rem-tab-label">${t.label}</span><span class="rem-tab-count${t.count?'':' zero'}">${t.count}</span></button>`).join('');
   let content;
   if(active==='tasks'){
-    content=pendingReminderSectionHTML(pendingReminderTasks)+datedReminderSectionHTML(datedClinicReminders);
+    content=pendingReminderSectionHTML(pendingReminderTasks,false)+datedReminderSectionHTML(datedClinicReminders,false)+
+      '<div class="registry-lookup-note" style="margin-top:4px;">Add a task or dated reminder with the <strong>📝</strong> button next to the bell.</div>';
   }else{
     const list=active==='ward'?ward:active==='reversal'?reversal:siting;
     content=list.length?renderSitingReminderList(list):'<div class="rem-empty">Nothing in this category right now.</div>';
@@ -9397,8 +9412,18 @@ async function refreshReminders(){
   pendingReminderTasks=pending;
   datedClinicReminders=dated;
   updateReminderBadges(clinicReminderBadgeTotal());
+  // The 📝 input button carries its own count: open to-do tasks + dated reminders due.
+  const taskBadge=document.getElementById('task-badge');
+  if(taskBadge){
+    const open=pendingReminderOpenCount()+(datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
+    taskBadge.textContent=open;taskBadge.style.display=open?'':'none';
+    document.getElementById('task-btn')?.classList.toggle('has-alerts',open>0);
+  }
   const bbody=document.getElementById('bell-panel-body');
   if(bbody)bbody.innerHTML=renderReminderTabs()+(sitingReminders.handoverError?'<div class="rem-empty">Some handover reminders could not be checked. Reopen the bell to retry.</div>':'');
+  // Keep the input panel's lists in step when it is open.
+  const tbody=document.getElementById('task-input-body');
+  if(tbody&&document.getElementById('task-input-panel')?.classList.contains('open'))tbody.innerHTML=renderTaskInputPanelBody();
   const bsub=document.getElementById('bell-panel-sub');
   if(bsub){
     const parts=[];
@@ -9442,12 +9467,35 @@ function toggleReminderPanel(){
   if(!panel)return;
   const open=panel.classList.contains('open');
   if(open){panel.classList.remove('open');return;}
+  closeTaskInputPanel();
   panel.classList.add('open');
   refreshReminders();
 }
 function closeReminderPanel(){document.getElementById('bell-panel')?.classList.remove('open');}
+/* The to-do / dated-reminder INPUT panel, opened by its own 📝 button. The bell
+   just displays the items; adding is done here (so the inputs are never buried in
+   a tab). Both panels are mutually exclusive. */
+function renderTaskInputPanelBody(){
+  return pendingReminderSectionHTML(pendingReminderTasks,true)+datedReminderSectionHTML(datedClinicReminders,true)+
+    '<div class="registry-lookup-note" style="margin-top:4px;">These appear in the 🔔 bell under <strong>☑ Tasks</strong>, with the due ones counted on the bell.</div>';
+}
+function toggleTaskInputPanel(){
+  const panel=document.getElementById('task-input-panel');
+  if(!panel)return;
+  const open=panel.classList.contains('open');
+  if(open){panel.classList.remove('open');return;}
+  closeReminderPanel();
+  panel.classList.add('open');
+  const body=document.getElementById('task-input-body');
+  if(body)body.innerHTML=renderTaskInputPanelBody();
+  refreshReminders();
+  setTimeout(()=>document.getElementById('pending-reminder-input')?.focus(),60);
+}
+function closeTaskInputPanel(){document.getElementById('task-input-panel')?.classList.remove('open');}
 document.addEventListener('click',e=>{
-  if(!e.target.closest('#bell-panel')&&!e.target.closest('.bell-wrap'))closeReminderPanel();
+  if(!e.target.closest('#bell-panel')&&!e.target.closest('#task-input-panel')&&!e.target.closest('.bell-wrap')){
+    closeReminderPanel();closeTaskInputPanel();
+  }
 });
 // Booking straight from a reminder — the patient is already on file, so the
 // rebooking card opens pre-filled and no ID card has to be typed again.

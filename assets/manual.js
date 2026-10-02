@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (reminder bell now tabbed — Ward, Siting, Reversals, Tasks, each with a count, so nothing is missed; Add patient duplicate/already-scheduled warnings; My patients for all users)'};
+const MANUAL_META={updated:'2 October 2026 (separate 📝 button for adding to-dos / dated reminders next to the bell; tabbed reminder bell; highlighted Due Month selector; Add patient duplicate & already-scheduled warnings)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -48,6 +48,7 @@ const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
   {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
     ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
+    ${manNote('tip','🔔','Top-right you also have the <b>📝 button</b> (add a to-do or dated reminder) and the <b>🔔 bell</b> (every reminder, in tabs with counts). Both carry a number when something needs attention.')}
     ${manWhen('Your first time in the app, or when you cannot find a page.')}
     ${manH2('🧭','The six work areas')}
     <p class="man-lede">The tabs along the top run in the order the day is worked, and <b>each area has its own colour</b> — the name is written in that colour and the open area is underlined in it, so you always know where you are. Tap an area to open it, then use the row of <b>sub-tabs</b> underneath to reach each page.</p>
@@ -284,9 +285,16 @@ const MANUAL_SECTIONS=[
       `${manBtn('🏥 Ward','#eef2f6','#12304f')} — rod removals, flange changes and overdue Schedule V permits.`,
       `${manBtn('📍 Siting','#eef2f6','#12304f')} — surgery-day, siting assessments and patients with no surgery date yet.`,
       `${manBtn('🔄 Reversals','#eef2f6','#12304f')} — reversal surgery that has come round.`,
-      `${manBtn('☑ Tasks','#eef2f6','#12304f')} — your free-text pending tasks and dated reminders (add new ones here).`
+      `${manBtn('☑ Tasks','#eef2f6','#12304f')} — your free-text pending tasks and dated reminders (view and tick them off here).`
     ])}
     ${manNote('tip','🔴','The bell opens on the first tab that has something <b>due today or overdue</b>, so the most pressing list shows first. The number on the bell is the total still to action.')}
+    ${manH2('📝','Adding a to-do or dated reminder')}
+    <p class="man-lede">Use the <b>📝 button next to the bell</b> to add things — it opens a small panel with two boxes:</p>
+    ${manSteps([
+      `<b>Pending task</b> — type anything that is outstanding and press <b>Add</b>. It stays until someone ticks it off (and remains until the next day so it is not lost).`,
+      `<b>Reminder with a date</b> — type the reminder, pick a date and press <b>Add</b>. It becomes <b>due</b> on that date and shows <b>Overdue</b> after it.`
+    ])}
+    ${manNote('auto','🔔','Anything you add here appears in the 🔔 bell under <b>☑ Tasks</b>, and the due ones are counted on both the 📝 button and the bell — so the input is separate but nothing is hidden.')}
     <ol class="man-steps">
       <li>Mark a Schedule V permit <b>Left in ward</b> on the handover. Its button starts green and changes shade daily, using only the recorded Left in ward date. The overdue bell reminder appears on day six in red, then dark red from day seven. It can remain after discharge.</li>
       <li>Tap <b>Open permit</b> in the bell to set the actual status. <b>Signed</b> or <b>Collected</b> clears the reminder. Without a recorded left date, the app cannot count the days and does not guess.</li>
