@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-372"/>
-<script src="assets/manual.js?v=2026.10.02-372"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-373"/>
+<script src="assets/manual.js?v=2026.10.02-373"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2389,7 +2389,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
       <div class="card" id="admin-worklist-card" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
           <div class="card-title" style="margin-bottom:0;">My patients
-            <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Administrator only · assigns the patient to the selected nurse &amp; month · <span id="admin-worklist-count"></span></span></div>
+            <span style="display:block;margin-top:6px;font-weight:500;color:#52677b;font-size:12px;">Assigns the patient to the selected nurse &amp; month · <span id="admin-worklist-count"></span></span></div>
           <button class="btn-add" onclick="openAdminPatientForm()" style="padding:7px 14px;">＋ Add patient</button>
         </div>
         <div id="admin-wl-avail" style="margin-bottom:10px;"></div>
@@ -3373,7 +3373,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-372';
+const APP_BUILD='2026.10.02-373';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10147,7 +10147,8 @@ function adminCurrentSelection(){
 function renderAdminWorklist(){
   const card=document.getElementById('admin-worklist-card');
   if(!card)return;
-  if(!IS_ADMIN){card.style.display='none';return;}
+  // The "My patients" / Add patient feature is available to every user (it just
+  // assigns a patient to the selected nurse & month and updates the lists).
   card.style.display='';
   const {owner,year,month}=adminCurrentSelection();
   renderAdminAvailability(owner,year,month);
@@ -10322,6 +10323,19 @@ async function admSavePatient(){
   const note=document.getElementById('adm-save-note');if(note)note.hidden=true;
   try{
     const {owner,year,month}=admFormSelection||adminCurrentSelection();
+    // No duplicates: refuse if this patient is already on the current list — either
+    // added to "My patients" for this nurse & month, or already showing in the
+    // Due-this-month booking list. Match on the record id, with the ID card as a
+    // fallback, so the same person cannot be added twice.
+    const samePatient=x=>String(x.id)===String(pat.id)||(!!pat.id_card&&String(x.id_card||'').trim().toUpperCase()===String(pat.id_card).trim().toUpperCase());
+    const onMyList=adminWorklistLoad().some(x=>samePatient(x)&&String(x.owner)===String(owner)&&Number(x.year)===Number(year)&&Number(x.month)===Number(month));
+    const onDueList=Array.isArray(bookCalState.duePatients)&&bookCalState.duePatients.some(samePatient);
+    if(onMyList||onDueList){
+      admFormBusy=false;btn.disabled=false;btn.textContent='Add to list';if(idInput)idInput.disabled=false;
+      const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'This patient';
+      if(note){note.hidden=false;note.textContent=`${nm} is already on the ${owner||'Common'} · ${followupMonthName(month)} ${year} list — not added again.`;}
+      return;
+    }
     const alloc={followup_due_month:Number(month),followup_year:Number(year)};
     if(owner&&owner!=='All Patients')alloc.followup_owner=owner;
     const{error}=await updatePatientTolerant(pat.id,alloc);
