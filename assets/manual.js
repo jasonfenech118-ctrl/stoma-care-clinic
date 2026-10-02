@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 October 2026 (one patient identity row with name and ID together)'};
+const MANUAL_META={updated:'2 October 2026 (+ve infection prints highlighted; locality in the details box)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -318,13 +318,14 @@ const MANUAL_SECTIONS=[
     </ul>
     ${manNote('auto','⚙️','The handover is <b>archived automatically at 4&nbsp;pm every day</b>, and kept for reference. You can also press "Capture now".')}
   `},
-  {id:'print',title:'Print the handover',keywords:'print handover pdf ward sheet paper letter a4 complications',html:`
+  {id:'print',title:'Print the handover',keywords:'print handover pdf ward sheet paper letter a4 complications infection cre vre +ve positive isolation',html:`
     ${manMap('handover')}
     ${manSteps([
       `On the Handover page press <b>Print / PDF</b>.`,
       `The whole ward list is fitted onto one A4 landscape sheet, with the ward-block shading and the legend (DL = discharge letter, S5 = Schedule 5 permit).`
     ])}
-    ${manNote('auto','⚙️','Open <b>complications now print</b> with the appliance line, in bold, labelled "Complication:". The flange-due and rod-due notes are bolded too.')}
+    ${manNote('auto','⚙️','A patient who is <b>+ve with anything</b> (CRE, VRE, OXA 48 +ve …) prints with the marker <b>bold, red and underlined</b> and a red bar on the cell, so the infection shows on the ward copy — even on a black-and-white printer.')}
+    ${manNote('auto','⚙️','Open <b>complications also print</b> with the appliance line, in bold, labelled "Complication:". The flange-due and rod-due notes are bolded too.')}
   `}
 ]},
 

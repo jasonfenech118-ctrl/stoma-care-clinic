@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.01-364"/>
-<script src="assets/manual.js?v=2026.10.01-364"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-366"/>
+<script src="assets/manual.js?v=2026.10.02-366"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3354,7 +3354,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-365';
+const APP_BUILD='2026.10.02-366';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20520,6 +20520,9 @@ function printHandover(){
   const box={'':'☐','done':'✔','signed':'✔','in_ward':'■','collected':'▉'};
   // Bold the "flange due …" and "rod due/out …" notes the way the ward sheet does.
   const notes=t=>htmlSafe(t)
+    // An infection marker — "<organism> +ve", or CRE/VRE — prints bold, red and
+    // underlined so it is never missed on the ward sheet, even on a mono printer.
+    .replace(/\b([\w][\w \/.-]{0,18}?\+\s?ve)\b/ig,'<span class="pinf">$1</span>')
     .replace(/(flange due[^,;·]*)/ig,'<b>$1</b>')
     .replace(/(rod (?:due|out)[^,;·]*)/ig,'<b>$1</b>')
     .replace(/(Complication:.*)$/i,'<b>$1</b>');
@@ -20573,9 +20576,13 @@ function printHandover(){
     const s5v=val(6);
     const s5Mark=s5v==='signed'?'':(box[s5v]||'☐');
     const s5Body=docDate(6)||(s5v==='signed'?'Signed':'');
+    // Flag the whole appliance cell when the patient is +ve with anything, so the
+    // infection shows on the printed sheet the way the red cell does on screen.
+    const appText=applianceNote();
+    const inf=hvIsInfectionNote(appText);
     return `<tr class="${cls}">
       <td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
-      <td>${htmlSafe(txt(2))}</td><td>${htmlSafe(txt(3))}</td><td class="capp">${notes(applianceNote())}</td>
+      <td>${htmlSafe(txt(2))}</td><td>${htmlSafe(txt(3))}</td><td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
       <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`;
   }).join('');
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
@@ -20620,6 +20627,10 @@ function printHandover(){
     td.cbx{text-align:center;font-size:calc(var(--fs) + 9px);font-weight:700;line-height:1;}
     td.cbx .cbx-d{font-size:calc(var(--fs) - 2px);font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
     td.capp b{font-weight:800;}
+    /* Infection alert on the printout: a red bar + tint on the cell and the +ve
+       marker bold/underlined, so it carries to a black-and-white ward copy. */
+    .pinf{font-weight:800;color:#b10000;text-decoration:underline;}
+    td.capp-inf{border-left:4px solid #c40000;background:#ffe3e3!important;}
     /* Widths live in the colgroup above; these classes carry the other styling. */
     tbody tr.wg-odd td{background:#cfcfcf;}
     tbody tr.wg-even td{background:#fff;}
