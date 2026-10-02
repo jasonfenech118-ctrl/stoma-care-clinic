@@ -3427,7 +3427,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-386';
+const APP_BUILD='2026.10.02-387';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4275,22 +4275,8 @@ async function renderRoster(){
     html+='</tr>';
   }
 
-  // OT rows
-  if(bd&&bd.length>0){
-    html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
-    const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
-    for(const[name,dates] of Object.entries(byS)){
-      html+=`<tr><td class="td-name">${name}</td><td class="td-role">OT Nurse</td>`;
-      for(let d=1;d<=days;d++){
-        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
-        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
-        const e=dates[ds];
-        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
-        html+=`<td class="${tdCls}">${e?`<div class="dchip dc-OT" title="07:00–${e.shift_end?.slice(0,5)}">OT</div>`:`<div class="dchip dc-O" style="cursor:default;">·</div>`}</td>`;
-      }
-      html+='</tr>';
-    }
-  }
+  // The Overtime Staff section is rendered AFTER the shift-planning / coverage rows
+  // (built below into otHtml, appended at the end).
 
   // TIL rows — core staff TIL is shown in the main Core Staff row, so this section only shows extra/non-core TIL.
   const rosterTILRows=[...otherTILLeave,...bankTilData];
@@ -4312,6 +4298,23 @@ async function renderRoster(){
   }
 
   html+=renderGhostShiftRows(y,m,days);
+
+  // OT rows — placed at the bottom, after the shift-planning coverage row.
+  if(bd&&bd.length>0){
+    html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
+    const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
+    for(const[name,dates] of Object.entries(byS)){
+      html+=`<tr><td class="td-name">${name}</td><td class="td-role">OT Nurse</td>`;
+      for(let d=1;d<=days;d++){
+        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+        const e=dates[ds];
+        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+        html+=`<td class="${tdCls}">${e?`<div class="dchip dc-OT" title="07:00–${e.shift_end?.slice(0,5)}">OT</div>`:`<div class="dchip dc-O" style="cursor:default;">·</div>`}</td>`;
+      }
+      html+='</tr>';
+    }
+  }
   html+='</tbody>';
   document.getElementById('rt').innerHTML=html;
 
