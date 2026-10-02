@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (separate 📝 button for adding to-dos / dated reminders next to the bell; tabbed reminder bell; highlighted Due Month selector; Add patient duplicate & already-scheduled warnings)'};
+const MANUAL_META={updated:'2 October 2026 (handover wards: added SAMOC oncology hospital with its own colour sorted after Mater Dei, and distinct colours for Blocks A/B/C; 📝 to-do button next to the bell; tabbed reminder bell; highlighted Due Month)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -260,9 +260,12 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#ea580c',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
-  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod loop stoma end ileostomy end colostomy urostomy removal date removed discharge letter complications button infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
+  {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod loop stoma end ileostomy end colostomy urostomy removal date removed discharge letter complications button infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour foyer block level floor walking order samoc oncology mamo hospital sort',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
+    ${manH2('🎨','Ward colours and the walking order')}
+    <p class="man-lede">Type the <b>ward</b> (it is forced to CAPITALS) and the cell takes the <b>colour of that ward's foyer / block</b> — Orange, Red, Brown, Yellow, Green and Blue foyers, Blocks A, B and C each their own colour, so the sheet reads like the colour plan on the wall. The rows then <b>sort in walking order</b>: across the foyers left-to-right, then each foyer's <b>floors from the top down</b>, then by bed number.</p>
+    ${manNote('auto','🏥','<b>SAMOC — the Sir Anthony Mamo Oncology Centre</b> (across the road from Mater Dei) is included as its own hospital, in its own violet colour, listed <b>after all the Mater Dei wards</b>. Type <b>SAMOC</b> (any ward starting SAMOC / SAMOK is recognised) — add a level after it, e.g. <b>SAMOC 2</b>, and it sorts by that level.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>

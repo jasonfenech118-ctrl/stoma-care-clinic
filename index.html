@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-376"/>
-<script src="assets/manual.js?v=2026.10.02-376"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-377"/>
+<script src="assets/manual.js?v=2026.10.02-377"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3400,7 +3400,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-376';
+const APP_BUILD='2026.10.02-377';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18684,7 +18684,7 @@ function openHandoverInNewTab(){
    is on. The sheet is then walked across the plan from left to right — Orange,
    Red, Brown, Yellow, Green, Blue, then Blocks A, B and C — taking each foyer's
    own floors from the top down before moving to the next one. */
-const WARD_BLOCKS=['ORANGE','RED','BROWN','YELLOW','GREEN','BLUE','BLOCKA','BLOCKB','BLOCKC'];
+const WARD_BLOCKS=['ORANGE','RED','BROWN','YELLOW','GREEN','BLUE','BLOCKA','BLOCKB','BLOCKC','SAMOC'];
 const WARD_MAP={
   // Orange Foyer (D0)
   MAU1:{b:'ORANGE',l:0},  MAU2:{b:'ORANGE',l:0},
@@ -18710,7 +18710,12 @@ const WARD_MAP={
   GYN:{b:'BLUE',l:1},     GYNAECOLOGY:{b:'BLUE',l:1}, GYNAEWARD:{b:'BLUE',l:1},
   NPICU:{b:'BLUE',l:0},   SHDU:{b:'BLUE',l:-1},
   // Blocks A and C
-  MIU4:{b:'BLOCKA',l:0},  MIU3:{b:'BLOCKC',l:0}
+  MIU4:{b:'BLOCKA',l:0},  MIU3:{b:'BLOCKC',l:0},
+  // Sir Anthony Mamo Oncology Centre (SAMOC) — a separate hospital across the road
+  // from Mater Dei, so it sits as its own block at the end of the walk. Any ward a
+  // nurse types starting SAMOC / SAMOK is recognised (see wardBlockOf); these are
+  // the known entries, by level. Give me the SAMOC ward names and levels to add more.
+  SAMOC:{b:'SAMOC',l:0},  SAMOK:{b:'SAMOC',l:0}
   /* Not on the ward plan yet: SSU. It sorts after everything that is placed,
      until a foyer and floor are given for it. */
 };
@@ -18726,13 +18731,16 @@ const WARD_BLOCK_COLOURS={
   YELLOW:{label:'Yellow foyer', bar:'#e0b100', tint:'#fdf3cf'},
   GREEN: {label:'Green foyer',  bar:'#1f8a4c', tint:'#dcf1e4'},
   BLUE:  {label:'Blue foyer',   bar:'#1f5fbf', tint:'#dde8fa'},
-  BLOCKA:{label:'Block A',      bar:'#6b7280', tint:'#e8eaed'},
-  BLOCKB:{label:'Block B',      bar:'#6b7280', tint:'#e8eaed'},
-  BLOCKC:{label:'Block C',      bar:'#6b7280', tint:'#e8eaed'}
+  BLOCKA:{label:'Block A',      bar:'#0e7490', tint:'#d7eef4'},
+  BLOCKB:{label:'Block B',      bar:'#4338ca', tint:'#e2e4fb'},
+  BLOCKC:{label:'Block C',      bar:'#be185d', tint:'#fbd8e8'},
+  SAMOC: {label:'SAMOC · Oncology Centre', bar:'#7c3aed', tint:'#ece3fb'}
 };
 function wardBlockOf(ward){
   const w=String(ward||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  return (WARD_MAP[w]&&WARD_MAP[w].b)||'';
+  if(WARD_MAP[w])return WARD_MAP[w].b;
+  if(/^SAMO[CK]/.test(w))return 'SAMOC';   // any ward at the SAMOC oncology hospital
+  return '';
 }
 // The ward cell's own colour. A ward with no place on the plan gets none, the
 // same way it takes no place in the walking order.
@@ -18757,8 +18765,11 @@ function wardRank(ward){
   const m=WARD_MAP[w];
   // Left to right across the plan first, then that foyer's floors from the top
   // down. A ward with no place on the plan sorts after everything that has one.
-  if(!m)return 99999;
-  return WARD_BLOCKS.indexOf(m.b)*100+(9-m.l);
+  if(m)return WARD_BLOCKS.indexOf(m.b)*100+(9-m.l);
+  // A SAMOC ward not listed explicitly still sorts into the SAMOC block. If the
+  // nurse writes a level after it (e.g. SAMOC 2), use it; otherwise level 0.
+  if(/^SAMO[CK]/.test(w)){const lv=(w.match(/(\d+)$/)||[])[1];return WARD_BLOCKS.indexOf('SAMOC')*100+(9-(lv?Number(lv):0));}
+  return 99999;
 }
 // The bed's number, so beds run 1, 2, 10 rather than 1, 10, 2. Beds with no
 // number sort after the numbered ones.
