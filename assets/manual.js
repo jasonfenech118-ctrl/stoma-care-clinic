@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (+ve infection prints highlighted; locality in the details box)'};
+const MANUAL_META={updated:'2 October 2026 (colour-coded work areas; patient record tinted by sex — blue male, pink female; locality in the details box)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -50,14 +50,14 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
     ${manWhen('Your first time in the app, or when you cannot find a page.')}
     ${manH2('🧭','The six work areas')}
-    <p class="man-lede">The coloured tabs along the top run in the order the day is worked. Tap an area to open it, then use the row of <b>sub-tabs</b> underneath to reach each page.</p>
+    <p class="man-lede">The tabs along the top run in the order the day is worked, and <b>each area has its own colour</b> — the name is written in that colour and the open area is underlined in it, so you always know where you are. Tap an area to open it, then use the row of <b>sub-tabs</b> underneath to reach each page.</p>
     ${manSteps([
-      `${manBtn('📅 Clinic Calendar','#efe7fb','#5b3aa8')} — the roster, daily attendance and change of duty.`,
-      `${manBtn('🕘 Appointments','#e6f0f8','#22608f')} — the daily clinic list and follow-up planning.`,
-      `${manBtn('📍 Siting','#efe7fb','#5b3aa8')} — pre-operative stoma siting.`,
-      `${manBtn('🏥 Handover','#fdf0e1','#b45309')} — the inpatient ward sheet.`,
-      `${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} — every patient and their record.`,
-      `${manBtn('📊 Audit & Reports','#fdeceb','#c0392b')} — the numbers, charts and annual report.`
+      `${manBtn('📅 Clinic Calendar','#efe7fb','#6d28d9')} <b>(violet)</b> — the roster, daily attendance and change of duty.`,
+      `${manBtn('🕘 Appointments','#e6effd','#1d4ed8')} <b>(blue)</b> — the daily clinic list and follow-up planning.`,
+      `${manBtn('📍 Siting','#e0f3f7','#0b6b7a')} <b>(cyan)</b> — pre-operative stoma siting.`,
+      `${manBtn('🏥 Handover','#fdece0','#c2410c')} <b>(orange)</b> — the inpatient ward sheet.`,
+      `${manBtn('👥 Registry','#e3f6ea','#15803d')} <b>(green)</b> — every patient and their record.`,
+      `${manBtn('📊 Audit & Reports','#fdeaea','#b91c1c')} <b>(red)</b> — the numbers, charts and annual report.`
     ])}
     ${manNote('tip','📌','On a phone, tap the menu button (top-left) to open the same list as a drawer.')}
     ${manH2('🔢','Which version am I on?')}
@@ -78,7 +78,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'registry',title:'Registry & Patients',icon:'👥',color:'#0891b2',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
+{id:'registry',title:'Registry & Patients',icon:'👥',color:'#16a34a',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
   {id:'add',title:'Add a new patient',keywords:'add patient new register demographics id card create',html:`
     ${manMap('patients')}
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
@@ -90,13 +90,13 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','You do not type a stoma code — the app generates <b>STO-…</b> for each stoma and <b>EP-…</b> for each admission automatically.')}
   `},
-  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview name surname prominent identity ID card number badge mobile stomas outcome reversal closure button appointments episodes edit input missing stoma details patient demographics unlock save single card golden title appliance history discharge current closed colours purple black blue teal missing date',html:`
+  {id:'record',title:'Open a patient record',keywords:'open patient record registry search find overview name surname prominent identity ID card number badge mobile stomas outcome reversal closure button appointments episodes edit input missing stoma details patient demographics unlock save single card golden title appliance history discharge current closed colours purple black blue teal missing date sex gender male female pink tint background colour coded locality flag',html:`
     ${manMap('patients')}
     ${manWhen('To view or change anything about one patient.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
-      `The top of every record tab shows the patient's <b>name and surname beside their ID card number</b> in one row. The ID has a compact dark badge with consistent text and spacing. These appear once in the header; <b>Patient details</b> starts with date of birth and sex. Long names wrap within their space, and an absent ID is shown as <b>Not recorded</b>.`,
+      `The top of every record tab shows the patient's <b>name and surname beside their ID card number</b> in one row. The ID has a compact dark badge with consistent text and spacing. These appear once in the header; <b>Patient details</b> starts with date of birth and telephone. There is no separate <b>Sex</b> field — the whole record is tinted by sex instead (see below). Long names wrap within their space, and an absent ID is shown as <b>Not recorded</b>.`,
       `Use <b>Edit patient</b> to open patient details. Press ${manBtn('Input / edit stoma details','#fff6d8','#7a4b00')} to open the present stoma, or start the new-stoma form when none is present. When no stoma type has been recorded, this is the main action; you can go straight to the stoma without re-entering demographics.`,
       `In <b>Stomas &amp; operation</b>, each stoma appears once, on its own card with a bold golden title, stoma code, surgery date, discharge date and operation and findings. Select the card heading to edit that stoma. Tabs inside the stoma form take you directly to another stoma.`,
       `The latest recorded appliances and accessories sit underneath that stoma's details. Expand <b>Appliance history</b> for its dated ward and clinic changes. Use <b>Current</b> or <b>Closed</b> to view the relevant stomas when there is more than one.`
@@ -110,6 +110,13 @@ const MANUAL_SECTIONS=[
       <li><b>Appointments</b> — this patient's clinic appointments.</li>
       <li><b>Episodes</b> — their inpatient admissions.</li>
     </ul>
+    ${manH2('🎨','Colour tells you the sex at a glance')}
+    <p class="man-lede">The whole patient record is <b>colour-coded by sex</b> so you can tell it apart at a glance without reading a field:</p>
+    <ul class="man-ul">
+      <li>${manBtn('Male','#dbeafe','#1d4ed8')} — a <b>blue</b> wash across the page, cards and avatar.</li>
+      <li>${manBtn('Female','#fbcfe8','#be185d')} — a <b>pink</b> wash across the page, cards and avatar.</li>
+    </ul>
+    ${manNote('tip','📍','The <b>Locality</b> sits in its own prominent green row in Patient details, with the local council flag (or a neat initials marker when a town has no flag on file).')}
   `},
   {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome revert status undo deceased gozo overseas undated button supersede record surgery confirm yes no cancel date unknown comments replacement',html:`
     ${manMap('patients')}
@@ -166,7 +173,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'appointments',title:'Appointments & Visits',icon:'🕘',color:'#2980b9',blurb:'Book clinics, record outcomes, complete a visit, plan follow-ups.',pages:[
+{id:'appointments',title:'Appointments & Visits',icon:'🕘',color:'#2563eb',blurb:'Book clinics, record outcomes, complete a visit, plan follow-ups.',pages:[
   {id:'daily',title:'The daily clinic list',keywords:'appointments daily clinic book appointment schedule slot',html:`
     ${manMap('appointments')}
     ${manWhen('To see and manage today’s clinic.')}
@@ -230,7 +237,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'siting',title:'Stoma Siting',icon:'📍',color:'#7c3aed',blurb:'Pre-operative siting for patients who do not have a stoma yet.',pages:[
+{id:'siting',title:'Stoma Siting',icon:'📍',color:'#0891b2',blurb:'Pre-operative siting for patients who do not have a stoma yet.',pages:[
   {id:'book',title:'Book a siting session',keywords:'siting session pre operative mark site book new patient before surgery',html:`
     ${manMap('siting')}
     ${manWhen('A patient (often not yet on the registry) needs their stoma site marked before surgery.')}
@@ -250,7 +257,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#b45309',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
+{id:'handover',title:'Handover (Ward)',icon:'🏥',color:'#ea580c',blurb:'The inpatient ward sheet: appliances, dates, complications, discharges.',pages:[
   {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet appliance notes latest Lentell duplicate closed stoma legacy links flange due rod present yes no removal date removed undo discharge letter complications infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
@@ -361,7 +368,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'audit',title:'Audit & Reports',icon:'📊',color:'#c0392b',blurb:'The numbers: charts, annual report, map, audits, DNTU policy.',pages:[
+{id:'audit',title:'Audit & Reports',icon:'📊',color:'#dc2626',blurb:'The numbers: charts, annual report, map, audits, DNTU policy.',pages:[
   {id:'reports',title:'Reports, Charts & Annual Report',keywords:'reports charts annual report metrics numbers statistics compare formation reversals month closure dates report year cohort deaths gozo sitings admissions totals',html:`
     ${manMap('audit')}
     <ul class="man-ul">
