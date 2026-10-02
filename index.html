@@ -3402,7 +3402,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-383';
+const APP_BUILD='2026.10.02-384';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17685,7 +17685,15 @@ async function saveInpatientVisit(){
   let epErr=null;
   if(clrState.available){
     const detail=`Ward ${ward}${bed?', Bed '+bed:''}`;
-    const applianceData={stoma_type:inpatientStomaType(pat),appliances:app,accessories:(w.accessories||[])};
+    // File the appliance as a proper row tied to the patient's present stoma, so an
+    // appliance set during admission is linked and shows on the handover (it used
+    // to be stored without a stoma_uid, so it read as "Appliance not yet selected").
+    let presentStomas=[];
+    try{presentStomas=(stomasPresentOn(pat,admitted)||[]).filter(st=>!st.ended||String(st.ended)>admitted);}catch(e){}
+    const applianceData=(app.length||acc.length)
+      ?[{stoma_uid:presentStomas[0]?.uid||'',stoma_short:presentStomas[0]?.shortLabel||'',
+         stoma_type:inpatientStomaType(pat),appliances:app,accessories:(w.accessories||[]),changed_on:admitted}]
+      :[];
     const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,notes:summary||null,appliances:applianceData};
     try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
     try{base.episode_ref=await nextEpisodeRef();}catch(e){}
@@ -18913,7 +18921,7 @@ function currentApplianceNoteRows(patient,rows){
     // the Registry, saved as "unassigned" — are safe only for the original, sole
     // stoma. Attaching them here means an appliance set early follows the stoma
     // once it is recorded, rather than staying orphaned off the sheet.
-    if(all.length===1&&st.origin!=='refashion'&&st.origin!=='new')candidates=candidates.concat((rows||[]).filter(r=>!applianceStomaUid(r,all)));
+    if((all.length===1||stomas.length===1)&&st.origin!=='refashion'&&st.origin!=='new')candidates=candidates.concat((rows||[]).filter(r=>!applianceStomaUid(r,all)));
     // Select before checking content: a cleared latest selection must not bring
     // the previous bag back onto the handover.
     const best=candidates.reduce((prev,r)=>!prev||String(r.changed_on||'')>=String(prev.changed_on||'')?r:prev,null);
