@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-386"/>
-<script src="assets/manual.js?v=2026.10.02-386"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-388"/>
+<script src="assets/manual.js?v=2026.10.02-388"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -105,7 +105,11 @@ tr.sr-ghost td{background:#ece4fb!important;color:#5b21b6;font-weight:800;}
 tr.ghost-row{background:#faf8ff;}
 tr.ghost-row td.td-name{color:#5b21b6;font-weight:800;}
 tr.ghost-cover td.td-name{color:#15603a;}
+/* Tracy's proposed-roster planning row — distinct from the fictitious ghosts */
+tr.ghost-row.tracy-row{background:#fff5ec;}
+tr.ghost-row.tracy-row td.td-name{color:#9a3412;}
 .ghost-chip{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:999px;background:#ece4fb;color:#6d28d9;font-size:9px;font-weight:800;letter-spacing:.3px;vertical-align:middle;}
+.ghost-chip.tracy-chip{background:#ffedd5;color:#c2410c;}
 .ghost-plan{margin:10px 0;padding:12px 14px;border:1px dashed #b9a7e6;border-radius:12px;background:#f7f4fe;}
 .ghost-plan-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px;color:#4b3b7a;}
 .ghost-plan-row strong{color:#5b21b6;}
@@ -2225,10 +2229,11 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
         <div class="ghost-plan-row">
           <strong>🧪 Plan a new nurse — ghost shifts</strong>
           <label class="ghost-plan-toggle"><input type="checkbox" id="ghost-toggle" checked onchange="toggleGhostShifts(this.checked)"/> Show on roster</label>
-          <label>First working day <input type="date" id="ghost-start" onchange="setGhostStartDate(this.value)"/></label>
-          <button type="button" class="jump-clear" onclick="setGhostStartDate(TODAY)">Reset to today</button>
+          <label>Ghosts first day <input type="date" id="ghost-start" onchange="setGhostStartDate(this.value)"/></label>
+          <label>Tracy starts <input type="date" id="tracy-start" onchange="setTracyStartDate(this.value)"/></label>
+          <button type="button" class="jump-clear" onclick="setGhostStartDate(TODAY)">Reset ghosts to today</button>
         </div>
-        <div class="ghost-plan-note">A visual-only plan for <strong>Jacqueline, Jason and Lorraine</strong> on a <strong>2 days on, 1 day off</strong> cycle, each starting a day after the last so between them every day is covered (see the <strong>Coverage</strong> row). <strong>Tracy and Erica are not included.</strong> This is just a visual on the roster — nothing is saved, it is not daily attendance, and it is linked to nothing else. Change the <strong>first working day</strong> to see from which date a new nurse should start.</div>
+        <div class="ghost-plan-note">A visual-only plan. <strong>Shift A, Shift B and Shift C</strong> are fictitious ghosts on a <strong>2 days on, 1 day off</strong> cycle — the pattern only <em>models the rotation of Jacqueline, Jason and Lorraine</em>; no real nurse is renamed. They start a day after each other so between them every day is covered. The <strong>Tracy</strong> row proposes her new roster on the same cycle — slide <strong>Tracy starts</strong> to find the ideal day for her to begin and fill the gaps. The <strong>Coverage</strong> row at the very bottom counts how many of Shift A/B/C + Tracy are on duty each day. <strong>Erica is left out</strong> (she is temporary core staff). Nothing here is saved, it is not daily attendance, and it is linked to nothing else.</div>
       </div>
       <div class="roster-wrap"><table class="rt" id="rt"></table></div>
       <!-- OT LIST -->
@@ -3427,7 +3432,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-387';
+const APP_BUILD='2026.10.02-388';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4129,55 +4134,74 @@ function clearJumpDate(){
 function changeMonth(dir){curMonth=new Date(curMonth);curMonth.setMonth(curMonth.getMonth()+dir);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
 function goToday(){curMonth=new Date();curMonth.setDate(1);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
 
-/* GHOST SHIFT PLANNING — three fictitious nurses shown ONLY on the Monthly Roster
-   to plan when a new nurse should start. They work a 2-on / 1-off cycle, staggered
-   one day apart so between them every day is covered. They are never saved, never
-   counted as staff, and are linked to nothing else (appointments, capacity, TIL,
+/* GHOST SHIFT PLANNING — three fictitious shifts (Shift A, B, C) shown ONLY on the
+   Monthly Roster to plan when a new nurse should start. They work a 2-on / 1-off
+   cycle, staggered one day apart so between them every day is covered. The pattern
+   only MODELS the rotation of Jacqueline, Jason and Lorraine — the rows stay the
+   fictitious "Shift A/B/C"; no real nurse is renamed. A separate Tracy planning row
+   lets us try an ideal start date for Tracy's new roster. Erica (temporary core
+   staff) is deliberately left out of the pattern. Nothing here is ever saved,
+   counted as staff, or linked to anything else (appointments, capacity, TIL,
    follow-ups). Pure client-side planning aid. */
-// The three nurses this planning view considers (Tracy and Erica are not included).
-const GHOST_SHIFTS=[{key:'A',label:'Jacqueline'},{key:'B',label:'Jason'},{key:'C',label:'Lorraine'}];
+// Fictitious shift labels — the 2-on/1-off pattern models Jacqueline, Jason &
+// Lorraine's rotation but the rows themselves stay Shift A / B / C.
+const GHOST_SHIFTS=[{key:'A',label:'Shift A'},{key:'B',label:'Shift B'},{key:'C',label:'Shift C'}];
 let ghostShiftsVisible=true;
 function ghostStartDate(){
   try{const v=localStorage.getItem('ghost_shift_start');if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))return v;}catch(e){}
   return TODAY;
 }
 function setGhostStartDate(v){try{localStorage.setItem('ghost_shift_start',v||'');}catch(e){}renderRoster();}
+// Tracy's planning row has its OWN start date so we can slide it to the ideal day.
+function tracyStartDate(){
+  try{const v=localStorage.getItem('tracy_shift_start');if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))return v;}catch(e){}
+  return ghostStartDate();
+}
+function setTracyStartDate(v){try{localStorage.setItem('tracy_shift_start',v||'');}catch(e){}renderRoster();}
 function toggleGhostShifts(on){ghostShiftsVisible=!!on;renderRoster();}
 function ghostDayIndex(ds){return Math.floor(new Date(ds+'T00:00:00Z').getTime()/86400000);}
-/* 'work' | 'off' | 'pre' for ghost shift idx (0,1,2) on date ds. Each shift's first
-   working day is the start date plus its index (so they stagger a day apart). */
-function ghostCode(idx,ds){
-  const anchor=ghostDayIndex(ghostStartDate())+idx;
+/* 'work' | 'off' | 'pre' for a 2-on/1-off shift that first works on startDate+idx. */
+function shiftCode(startDate,idx,ds){
+  const anchor=ghostDayIndex(startDate)+idx;
   const off=ghostDayIndex(ds)-anchor;
   if(off<0)return 'pre';
   return (off%3===2)?'off':'work';   // day, day, off — repeat
 }
+function ghostCode(idx,ds){return shiftCode(ghostStartDate(),idx,ds);}
+// One planning row (ghost Shift A/B/C or the Tracy row).
+function ghostPlanRow(y,m,days,{name,role,chipTag,chipCls,codeFor,extraCls}){
+  let html=`<tr class="ghost-row ${extraCls||''}"><td class="td-name">${htmlSafe(name)}${chipTag?`<span class="ghost-chip ${chipCls||''}">${htmlSafe(chipTag)}</span>`:''}</td><td class="td-role">${htmlSafe(role)}</td>`;
+  for(let d=1;d<=days;d++){
+    const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+    const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+    const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+    const gc=codeFor(ds);
+    const chip=gc==='work'?'<div class="dchip dc-D" title="Working">D</div>'
+      :gc==='off'?'<div class="dchip dc-ghostoff" title="Off">off</div>'
+      :'<div class="dchip dc-O" style="cursor:default;" title="Before start date">·</div>';
+    html+=`<td class="${tdCls}">${chip}</td>`;
+  }
+  return html+'</tr>';
+}
 function renderGhostShiftRows(y,m,days){
   if(!ghostShiftsVisible)return '';
-  let html=`<tr class="sr sr-ghost"><td colspan="${days+2}">🧪 Shift planning — visual only (Jacqueline · Jason · Lorraine on a 2-on/1-off rotation; Tracy &amp; Erica not included · start ${htmlSafe(fmtShortDate(ghostStartDate()))})</td></tr>`;
+  let html=`<tr class="sr sr-ghost"><td colspan="${days+2}">🧪 Shift planning — visual only · Shift A/B/C on a 2-on/1-off rotation (modelled on Jacqueline · Jason · Lorraine) · Tracy row = ideal start for her new roster · Erica not included · ghosts start ${htmlSafe(fmtShortDate(ghostStartDate()))}, Tracy ${htmlSafe(fmtShortDate(tracyStartDate()))}</td></tr>`;
+  // Fictitious Shift A / B / C.
   GHOST_SHIFTS.forEach((g,idx)=>{
-    html+=`<tr class="ghost-row"><td class="td-name">${htmlSafe(g.label)}<span class="ghost-chip">ghost</span></td><td class="td-role">2 on · 1 off</td>`;
-    for(let d=1;d<=days;d++){
-      const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
-      const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
-      const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
-      const gc=ghostCode(idx,ds);
-      const chip=gc==='work'?'<div class="dchip dc-D" title="Working">D</div>'
-        :gc==='off'?'<div class="dchip dc-ghostoff" title="Off">off</div>'
-        :'<div class="dchip dc-O" style="cursor:default;" title="Before start date">·</div>';
-      html+=`<td class="${tdCls}">${chip}</td>`;
-    }
-    html+='</tr>';
+    html+=ghostPlanRow(y,m,days,{name:g.label,role:'2 on · 1 off',chipTag:'ghost',codeFor:ds=>ghostCode(idx,ds)});
   });
-  // A coverage row so it is obvious every day is covered (and which would not be).
+  // Tracy's proposed new roster — her own start date so the ideal day can be found.
+  html+=ghostPlanRow(y,m,days,{name:'Tracy',role:'proposed roster',chipTag:'plan',chipCls:'tracy-chip',extraCls:'tracy-row',codeFor:ds=>shiftCode(tracyStartDate(),0,ds)});
+  // Coverage row — ALWAYS at the very bottom, below Tracy. Counts Shift A/B/C + Tracy.
   html+=`<tr class="ghost-row ghost-cover"><td class="td-name">Coverage</td><td class="td-role">on duty</td>`;
   for(let d=1;d<=days;d++){
     const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
     const isSel=selectedJumpDate&&ds===selectedJumpDate,isT=ds===TODAY;
     const tdCls=isSel?'td-sel':isT?'td-today':'';
-    const started=GHOST_SHIFTS.some((g,idx)=>ghostCode(idx,ds)!=='pre');
-    const n=GHOST_SHIFTS.reduce((a,g,idx)=>a+(ghostCode(idx,ds)==='work'?1:0),0);
-    const chip=!started?'<div class="dchip dc-O">·</div>':`<div class="dchip ${n===0?'dc-cover0':'dc-coverN'}" title="${n} of 3 on duty">${n}</div>`;
+    const codes=[...GHOST_SHIFTS.map((g,idx)=>ghostCode(idx,ds)),shiftCode(tracyStartDate(),0,ds)];
+    const started=codes.some(c=>c!=='pre');
+    const n=codes.reduce((a,c)=>a+(c==='work'?1:0),0);
+    const chip=!started?'<div class="dchip dc-O">·</div>':`<div class="dchip ${n===0?'dc-cover0':'dc-coverN'}" title="${n} of ${codes.length} on duty">${n}</div>`;
     html+=`<td class="${tdCls}">${chip}</td>`;
   }
   html+='</tr>';
@@ -4187,6 +4211,7 @@ async function renderRoster(){
   const y=curMonth.getFullYear(),m=curMonth.getMonth(),days=dim(y,m);
   // Reflect the saved ghost start date / visibility on the controls each render.
   const gIn=document.getElementById('ghost-start');if(gIn)gIn.value=ghostStartDate();
+  const tIn=document.getElementById('tracy-start');if(tIn)tIn.value=tracyStartDate();
   const gTog=document.getElementById('ghost-toggle');if(gTog)gTog.checked=ghostShiftsVisible;
   document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
 
@@ -4275,8 +4300,22 @@ async function renderRoster(){
     html+='</tr>';
   }
 
-  // The Overtime Staff section is rendered AFTER the shift-planning / coverage rows
-  // (built below into otHtml, appended at the end).
+  // Overtime Staff — stacked directly below the Core Staff block (below Lorraine).
+  if(bd&&bd.length>0){
+    html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
+    const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
+    for(const[name,dates] of Object.entries(byS)){
+      html+=`<tr><td class="td-name">${name}</td><td class="td-role">OT Nurse</td>`;
+      for(let d=1;d<=days;d++){
+        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
+        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
+        const e=dates[ds];
+        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
+        html+=`<td class="${tdCls}">${e?`<div class="dchip dc-OT" title="07:00–${e.shift_end?.slice(0,5)}">OT</div>`:`<div class="dchip dc-O" style="cursor:default;">·</div>`}</td>`;
+      }
+      html+='</tr>';
+    }
+  }
 
   // TIL rows — core staff TIL is shown in the main Core Staff row, so this section only shows extra/non-core TIL.
   const rosterTILRows=[...otherTILLeave,...bankTilData];
@@ -4297,24 +4336,8 @@ async function renderRoster(){
     }
   }
 
+  // Shift-planning block (Shift A/B/C → Tracy → Coverage) is ALWAYS the very bottom.
   html+=renderGhostShiftRows(y,m,days);
-
-  // OT rows — placed at the bottom, after the shift-planning coverage row.
-  if(bd&&bd.length>0){
-    html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
-    const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
-    for(const[name,dates] of Object.entries(byS)){
-      html+=`<tr><td class="td-name">${name}</td><td class="td-role">OT Nurse</td>`;
-      for(let d=1;d<=days;d++){
-        const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
-        const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
-        const e=dates[ds];
-        const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
-        html+=`<td class="${tdCls}">${e?`<div class="dchip dc-OT" title="07:00–${e.shift_end?.slice(0,5)}">OT</div>`:`<div class="dchip dc-O" style="cursor:default;">·</div>`}</td>`;
-      }
-      html+='</tr>';
-    }
-  }
   html+='</tbody>';
   document.getElementById('rt').innerHTML=html;
 

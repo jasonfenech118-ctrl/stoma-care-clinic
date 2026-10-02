@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (roster shift-planning view now names Jacqueline, Jason and Lorraine — Tracy and Erica excluded; visual only, 2 on 1 off)'};
+const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghosts are Shift A/B/C modelling Jacqueline, Jason and Lorraine; new Tracy row to plan her start date; Coverage at the very bottom; Overtime stacked below core staff; Erica excluded)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -373,20 +373,21 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'calendar',title:'Roster & Attendance',icon:'📅',color:'#7c3aed',blurb:'Monthly roster, daily attendance and change of duty.',pages:[
-  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule ghost nurse plan new nurse shift a b c coverage 2 on 1 off start date',html:`
+  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule ghost nurse plan new nurse shift a b c tracy coverage overtime 2 on 1 off start date',html:`
     ${manMap('calendar')}
     <ul class="man-ul">
       <li>${manBtn('🗓 Monthly Roster','#efe7fb','#5b3aa8')} — the staff rota for the month.</li>
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
     ${manH2('🧪','Plan a new nurse — ghost shifts')}
-    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> for <b>Jacqueline, Jason and Lorraine</b> to see when a new nurse should start. (<b>Tracy and Erica are not included.</b>) It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
+    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> to see when a new nurse should start. The three ghost rows are called <b>Shift A, Shift B and Shift C</b> — fictitious shifts whose <b>2 days on, 1 day off</b> pattern only <i>models the rotation of Jacqueline, Jason and Lorraine</i>; no real nurse is renamed. It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
     ${manSteps([
-      `The three work a <b>2 days on, 1 day off</b> cycle, each starting <b>one day after the last</b>, so between them every day is covered.`,
-      `Set the <b>First working day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date (each shift's own start is shown). Use <b>Reset to today</b> to start again, or untick <b>Show on roster</b> to hide them.`,
-      `The <b>Coverage</b> row under them shows how many of the three are on duty each day (green with a number) — so you can read off exactly from which date coverage is complete, and which start date a real new nurse needs.`
+      `<b>Shift A / B / C</b> each work <b>2 days on, 1 day off</b>, starting <b>one day after the last</b>, so between them every day is covered.`,
+      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide the whole block.`,
+      `The <b>Tracy</b> row (tinted orange, tagged "plan") proposes Tracy's new roster on the same cycle. Slide <b>Tracy starts</b> to the day you want to try — her row redraws so you can find the ideal date for her to begin and fill the gaps.`,
+      `The <b>Coverage</b> row at the very bottom shows how many of <b>Shift A/B/C + Tracy</b> are on duty each day (green with a number; red 0 = a gap) — so you can read off exactly from which date coverage is complete.`
     ])}
-    ${manNote('tip','👻','The ghost rows are tinted violet and tagged "ghost" so they never get mistaken for real roster rows. Nothing you do here changes any real staff member.')}
+    ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost"; the Tracy row is tinted orange and tagged "plan". None of them are real roster rows and nothing you do here changes any real staff member. Erica is deliberately left out of the pattern (she is temporary core staff).')}
   `},
   {id:'attendance',title:'Daily Attendance & Records',keywords:'daily attendance sign in present records history',html:`
     ${manMap('calendar')}
