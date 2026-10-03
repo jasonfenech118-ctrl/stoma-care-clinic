@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.02-392"/>
-<script src="assets/manual.js?v=2026.10.02-392"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.03-393"/>
+<script src="assets/manual.js?v=2026.10.03-393"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3429,7 +3429,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.02-392';
+const APP_BUILD='2026.10.03-393';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12717,7 +12717,9 @@ function renderPatientDirectory(){
     }
     return true;
   }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
-  const incompleteCount=rows.filter(patientIsIncomplete).length;
+  // Count only the rows that actually carry the amber stripe, so the tally
+  // matches what is on screen (closed/finalised records are not flagged).
+  const incompleteCount=rows.filter(p=>patientIsIncomplete(p)&&!isClosedFollowupStatus(p.status)).length;
   if(countEl)countEl.innerHTML=`${rows.length} of ${patientDirectoryRows.length-(pdShowArchived?0:archivedCount)} patient${patientDirectoryRows.length!==1?'s':''}`
     +(incompleteCount?` · ${incompleteCount} incomplete`:'')
     +(archivedCount?` · <a href="#" onclick="event.preventDefault();togglePdArchived()" style="color:var(--teal);font-weight:700;">${pdShowArchived?'hide':'show'} ${archivedCount} archived</a>`:'');
@@ -12746,7 +12748,10 @@ function renderPatientDirectory(){
     // Deceased reads black, reversed purple, Gozo blue, overseas teal.
     const rowCls={deceased:'pd-row-deceased',reversed:'pd-row-reversed',
                   discharged_gozo:'pd-row-gozo',relocated_overseas:'pd-row-overseas'}[p.status]||'';
-    const incompleteCls=patientIsIncomplete(p)?' pd-row-incomplete':' pd-row-complete';
+    // A closed record (deceased / reversed) is finalised — it is not nagged as
+    // "incomplete", so its strong outcome colour (black / violet) reads pure
+    // instead of being muddied to brown by the amber wash.
+    const incompleteCls=(patientIsIncomplete(p)&&!isClosedFollowupStatus(p.status))?' pd-row-incomplete':' pd-row-complete';
     // A deceased record is finalised: hide Edit so it is not changed. Correcting a
     // status set in error is done from the record's Outcome tab (Back to follow-up).
     const datesBtn=(patientDatesAvailable&&p.status!=='deceased')?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';

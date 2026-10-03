@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 October 2026 (roster shift planning: ghost Shift A/B/C below Lorraine with real Erica and Tracy below; per-shift A/B/C tick-boxes, plus a Hide Erica & Tracy toggle)'};
+const MANUAL_META={updated:'3 October 2026 (registry: a finalised deceased or reversed record now reads its pure outcome colour — a deceased patient is solid black, not muddied by the amber incomplete stripe)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -118,6 +118,7 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('Female','#fbcfe8','#be185d')} — a <b>pink</b> wash across the page, cards and avatar.</li>
     </ul>
     ${manNote('tip','📍','The <b>Locality</b> sits in its own prominent green row in Patient details, with the local council flag (or a neat initials marker when a town has no flag on file).')}
+    ${manNote('tip','🗂','In the <b>Registry list</b>, each row is coloured by outcome — <b>black</b> for deceased, <b>violet</b> for reversed, <b>blue</b> for Gozo, <b>teal</b> for overseas. An <b>amber left stripe</b> marks a record still missing a required field. A <b>finalised record (deceased or reversed) reads its pure colour</b> and is not given the amber stripe, so a deceased patient shows solid black even if a field was never filled in.')}
   `},
   {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome revert status undo deceased gozo overseas undated button supersede record surgery confirm yes no cancel date unknown comments replacement',html:`
     ${manMap('patients')}
