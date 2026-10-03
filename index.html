@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.03-397"/>
-<script src="assets/manual.js?v=2026.10.03-397"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.03-398"/>
+<script src="assets/manual.js?v=2026.10.03-398"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3465,7 +3465,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.03-397';
+const APP_BUILD='2026.10.03-398';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21813,10 +21813,17 @@ function renderDataAnalysisRegistry(){
   const nowY=new Date().getFullYear();
   const minY=allYears.length?Math.min(...allYears):nowY;
   const maxY=allYears.length?Math.max(...allYears):nowY;
-  if(!daRegFrom||daRegFrom<minY||daRegFrom>maxY)daRegFrom=minY;
-  if(!daRegTo||daRegTo<minY||daRegTo>maxY)daRegTo=maxY;
+  // The chart reacts to where the incomplete records actually are: the default
+  // range is the first and last surgery year that has an incomplete record, so a
+  // handful of very old COMPLETE records no longer stretch it across empty
+  // decades. The pickers still span the full year range for manual exploring.
+  const incYears=incomplete.map(p=>daYear(p.surgery_date)).filter(Boolean);
+  const incMinY=incYears.length?Math.min(...incYears):minY;
+  const incMaxY=incYears.length?Math.max(...incYears):maxY;
+  if(!daRegFrom||daRegFrom<minY||daRegFrom>maxY)daRegFrom=incMinY;
+  if(!daRegTo||daRegTo<minY||daRegTo>maxY)daRegTo=incMaxY;
   if(daRegFrom>daRegTo)daRegFrom=daRegTo;
-  if(!daRegYear||daRegYear<minY||daRegYear>maxY)daRegYear=maxY;
+  if(!daRegYear||daRegYear<minY||daRegYear>maxY)daRegYear=incMaxY;
 
   const years=[];for(let y=daRegFrom;y<=daRegTo;y++)years.push(y);
   // Incomplete records per year (by surgery year), plus an Unknown bucket for

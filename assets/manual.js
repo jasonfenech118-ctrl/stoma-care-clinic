@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (patient record header shows the outcome for every status: a solid colour bar with white wording and an icon — cross (deceased, black), reversal arrow (reversed, violet), ferry (Gozo, blue), plane (overseas, teal), pause (paused, amber), clock (awaiting, slate) — plus a more elaborate portrait; Input / edit stoma details saves the patient details first)'};
+const MANUAL_META={updated:'3 October 2026 (Data Analysis "Incomplete records by year" chart now opens on the years that actually have incomplete records instead of empty early decades; patient record header shows the outcome for every status with a coloured bar, white wording and an icon, plus a more elaborate portrait)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -422,6 +422,7 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','ℹ️','The <b>Deaths</b> and <b>Discharged to Gozo</b> tiles use patients operated on during the selected <b>year</b>, then count the death or discharge in the selected <b>month</b>. Surgery can have taken place earlier in that year. <b>Stoma Performed</b> uses the recorded surgery date; older sitings without that date use the siting date. The patient list identifies that fallback.')}
     ${manNote('tip','ℹ️','<b>Data Analysis</b> includes dated outcomes from all operation years. It counts every recorded reversal date across the patient’s stomas, once per patient per date, and counts deaths only when a death outcome is recorded. Refashioning itself is not a formation or reversal; a later recorded closure of that stoma is a reversal. Events without dates cannot be placed in a year. <b>New Cases</b> counts patients by their first surgery date; <b>Stomas Formed</b> counts individual new stomas, so these totals may differ.')}
     ${manNote('auto','⚙️','Opening an activity total starts on the <b>selected year and month</b>. Sitings and operations with no stoma formed stay in the record list even before registry entry. Clinic activity excludes old appliance-only administrative placeholders. Failed reads show unavailable figures or an error, rather than a false zero. <b>Total Patients</b> is the current registry size, not a historical monthly total; unique patients are counted once across the whole selected period.')}
+    ${manNote('tip','📉','In <b>Data Analysis</b>, the <b>Incomplete records by year</b> chart opens on the <b>years that actually have incomplete records</b> — a few very old complete records no longer stretch it across empty decades. Records with no surgery date sit in the <b>Unknown</b> column. Use the <b>From / to</b> pickers to widen back to any year.')}
   `},
   {id:'more',title:'Map, Clinic Audit, OT Audit, DNTU',keywords:'map locality clinic audit ot audit overtime dntu policy did not turn up',html:`
     ${manMap('audit')}
