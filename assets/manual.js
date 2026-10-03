@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (Data Analysis "Incomplete records by year" chart now opens on the years that actually have incomplete records instead of empty early decades; patient record header shows the outcome for every status with a coloured bar, white wording and an icon, plus a more elaborate portrait)'};
+const MANUAL_META={updated:'3 October 2026 (added the ENT ward — Green block, 1st floor — to the admit dropdown and ward colours; Data Analysis incomplete-by-year chart opens on the years that actually have records; patient record header shows the outcome for every status with a coloured bar, white wording and an icon)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
