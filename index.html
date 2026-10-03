@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.03-393"/>
-<script src="assets/manual.js?v=2026.10.03-393"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.03-394"/>
+<script src="assets/manual.js?v=2026.10.03-394"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3429,7 +3429,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.03-393';
+const APP_BUILD='2026.10.03-394';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14555,7 +14555,13 @@ function revealPatientDetailsSave(){
    tabs when a patient has more than one stoma. */
 async function openCurrentStomaFromPatientDetails(patientId){
   const btn=document.getElementById('pcd-stomabtn');
-  if(btn){btn.disabled=true;btn.textContent='Opening stoma…';}
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  // Save whatever patient details are filled in first, so nothing just typed is
+  // lost when jumping to the stoma form. A still-blank required field does not
+  // block the jump (the stoma can be recorded first); only a real save error does.
+  const saved=await persistPatientDetailsForm(patientId,false);
+  if(!saved.ok){if(btn){btn.disabled=false;btn.textContent='Input / edit stoma details';}return;}
+  if(btn)btn.textContent='Opening stoma…';
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){
     alert('Could not open this patient’s stoma. Try again.');
@@ -14640,10 +14646,18 @@ async function insertPatientTolerant(payload){
   }
   return{data:null,error:{message:'Too many missing columns to save.'},dropped};
 }
-async function savePatientDates(patientId){
+/* Read the patient-details form (pcd- fields) and persist the non-locked edits.
+   requireComplete=true keeps the strict "Save patient details" rule (every
+   required field must be filled); false saves whatever IS filled — used when
+   jumping straight to the stoma form, so nothing just typed is lost even if a
+   required field is still blank. Shows any problem in #pcd-error and returns
+   {ok}. It never navigates or refreshes. */
+async function persistPatientDetailsForm(patientId,requireComplete){
   const val=k=>String(document.getElementById('pcd-'+k)?.value||'').trim();
-  const old=(await fetchPatientById(patientId));
-  if(old.error||!old.data){alert('Could not refresh this patient. Try again.');return;}
+  const err=document.getElementById('pcd-error');
+  const fail=t=>{if(err)err.innerHTML=`<div class="registry-lookup-note error">${t}</div>`;else alert(String(t).replace(/<[^>]+>/g,''));return{ok:false};};
+  const old=await fetchPatientById(patientId);
+  if(old.error||!old.data)return fail('Could not refresh this patient. Try again.');
   const loc=v=>v&&v!=='__add__'?v:null;
   const keys={first:'first_name',surname:'surname',idcard:'id_card',phone:'phone_number',sex:'sex',locality:'locality',address:'address',dob:'date_of_birth',consultant:'consultant'};
   const payload={};
@@ -14654,33 +14668,27 @@ async function savePatientDates(patientId){
     payload[col]=field==='idcard'?normaliseIdCard(val(field)):(field==='locality'||field==='consultant'?loc(val(field)):(val(field)||null));
   }
   const record={...old.data,...payload};
-  const err=document.getElementById('pcd-error');
-  if(!record.id_card){
-    if(err)err.innerHTML='<div class="registry-lookup-note error">An ID card is needed — it is how the patient is matched everywhere else.</div>';
-    return;
+  if(!record.id_card)return fail('An ID card is needed — it is how the patient is matched everywhere else.');
+  if(requireComplete){
+    const miss=[['first_name','First name'],['surname','Surname'],['id_card','ID card'],['sex','Sex'],['locality','Locality'],['date_of_birth','Date of birth'],['consultant','Firm (consultant)']].filter(([k])=>!record[k]).map(([,label])=>label);
+    if(miss.length)return fail(`Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.`);
   }
-  const miss=[['first_name','First name'],['surname','Surname'],['id_card','ID card'],['sex','Sex'],['locality','Locality'],['date_of_birth','Date of birth'],['consultant','Firm (consultant)']].filter(([k])=>!record[k]).map(([,label])=>label);
-  if(miss.length){
-    if(err)err.innerHTML=`<div class="registry-lookup-note error">Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.</div>`;
-    return;
-  }
+  // Nothing was edited (all fields locked / unchanged) — no write needed.
+  if(!Object.keys(payload).length){if(err)err.innerHTML='';return{ok:true,dropped:[],nothing:true};}
   // A second patient must not end up on the same ID card, including an older
   // copy stored with spaces or different letter case.
   const{matches:clashes,error:clashErr}=await findRegistryPatientsByIdCard(record.id_card,patientId);
-  if(clashErr){
-    if(err)err.innerHTML='<div class="registry-lookup-note error">Could not check the registry for another copy of this ID card.</div>';
-    return;
-  }
-  if(clashes.length){
-    if(err)err.innerHTML='<div class="registry-lookup-note error">Another patient already has that ID card.</div>';
-    return;
-  }
+  if(clashErr)return fail('Could not check the registry for another copy of this ID card.');
+  if(clashes.length)return fail('Another patient already has that ID card.');
   const{error,dropped}=await updatePatientTolerant(patientId,payload);
-  if(error){
-    if(err)err.innerHTML=`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`;
-    else alert(patientSaveError(error));
-    return;
-  }
+  if(error)return fail(htmlSafe(patientSaveError(error)));
+  if(err)err.innerHTML='';
+  return{ok:true,dropped:dropped||[]};
+}
+async function savePatientDates(patientId){
+  const res=await persistPatientDetailsForm(patientId,true);
+  if(!res.ok)return;
+  const dropped=res.dropped||[];
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
   const ret=patientEditReturn; patientEditReturn=null;
   if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});

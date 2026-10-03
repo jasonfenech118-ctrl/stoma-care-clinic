@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (registry: a finalised deceased or reversed record now reads its pure outcome colour — a deceased patient is solid black, not muddied by the amber incomplete stripe)'};
+const MANUAL_META={updated:'3 October 2026 (Input / edit stoma details now saves the patient details first so nothing typed is lost; and a finalised deceased/reversed record reads its pure outcome colour — a deceased patient is solid black, not muddied by the amber incomplete stripe)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -98,7 +98,7 @@ const MANUAL_SECTIONS=[
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('👥 Patient Registry','#e0f2f5','#0b6b7a')} and search by name or ID card.`,
       `Tap the patient to open their record. It has tabs: <b>Overview</b>, <b>Stomas &amp; operation</b>, <b>Outcome</b>, <b>Appointments</b> and <b>Episodes</b>.`,
       `The top of every record tab shows the patient's <b>name and surname beside their ID card number</b> in one row. The ID has a compact dark badge with consistent text and spacing. These appear once in the header; <b>Patient details</b> starts with date of birth and telephone. There is no separate <b>Sex</b> field — the whole record is tinted by sex instead (see below). Long names wrap within their space, and an absent ID is shown as <b>Not recorded</b>.`,
-      `Use <b>Edit patient</b> to open patient details. Press ${manBtn('Input / edit stoma details','#fff6d8','#7a4b00')} to open the present stoma, or start the new-stoma form when none is present. When no stoma type has been recorded, this is the main action; you can go straight to the stoma without re-entering demographics.`,
+      `Use <b>Edit patient</b> to open patient details. Press ${manBtn('Input / edit stoma details','#fff6d8','#7a4b00')} to open the present stoma, or start the new-stoma form when none is present. When no stoma type has been recorded, this is the main action; you can go straight to the stoma without re-entering demographics. <b>Anything you have typed into the patient details is saved first</b>, so a new date of birth, firm, locality or address is never lost on the way to the stoma (a still-blank required field does not stop you — you can fill the stoma in first).`,
       `In <b>Stomas &amp; operation</b>, each stoma appears once, on its own card with a bold golden title, stoma code, surgery date, discharge date and operation and findings. Select the card heading to edit that stoma. Tabs inside the stoma form take you directly to another stoma.`,
       `The latest recorded appliances and accessories sit underneath that stoma's details. Expand <b>Appliance history</b> for its dated ward and clinic changes. Use <b>Current</b> or <b>Closed</b> to view the relevant stomas when there is more than one.`
     ])}
