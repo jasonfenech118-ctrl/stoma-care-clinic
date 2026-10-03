@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (patient record header now shows the outcome: a coloured top bar and an icon — a cross for deceased, ferry for Gozo, plane for overseas, reversal arrow for reversed — plus a more elaborate patient portrait; Input / edit stoma details saves the patient details first)'};
+const MANUAL_META={updated:'3 October 2026 (patient record header shows the outcome for every status: a solid colour bar with white wording and an icon — cross (deceased, black), reversal arrow (reversed, violet), ferry (Gozo, blue), plane (overseas, teal), pause (paused, amber), clock (awaiting, slate) — plus a more elaborate portrait; Input / edit stoma details saves the patient details first)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -124,7 +124,8 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('↩ Reversed','#6d28d9','#ffffff')} — <b>violet</b> bar with a reversal arrow.</li>
       <li>${manBtn('⛴ Discharged to Gozo','#1d4ed8','#ffffff')} — <b>blue</b> bar with a ferry.</li>
       <li>${manBtn('✈ Relocated overseas','#0f766e','#ffffff')} — <b>teal</b> bar with a plane.</li>
-      <li>${manBtn('⏸ Paused / awaiting','#b45309','#ffffff')} — <b>amber</b> bar with a pause mark.</li>
+      <li>${manBtn('⏸ Paused','#b45309','#ffffff')} — <b>amber</b> bar with a pause mark.</li>
+      <li>${manBtn('🕗 Awaiting feedback','#475569','#ffffff')} — <b>slate</b> bar with a clock.</li>
     </ul>
     ${manNote('tip','📍','The <b>Locality</b> sits in its own prominent green row in Patient details, with the local council flag (or a neat initials marker when a town has no flag on file).')}
     ${manNote('tip','🗂','In the <b>Registry list</b>, each row is coloured by outcome — <b>black</b> for deceased, <b>violet</b> for reversed, <b>blue</b> for Gozo, <b>teal</b> for overseas. An <b>amber left stripe</b> marks a record still missing a required field. A <b>finalised record (deceased or reversed) reads its pure colour</b> and is not given the amber stripe, so a deceased patient shows solid black even if a field was never filled in.')}
