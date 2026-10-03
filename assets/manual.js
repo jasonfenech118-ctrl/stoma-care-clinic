@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (Input / edit stoma details now saves the patient details first so nothing typed is lost; and a finalised deceased/reversed record reads its pure outcome colour — a deceased patient is solid black, not muddied by the amber incomplete stripe)'};
+const MANUAL_META={updated:'3 October 2026 (patient record header now shows the outcome: a coloured top bar and an icon — a cross for deceased, ferry for Gozo, plane for overseas, reversal arrow for reversed — plus a more elaborate patient portrait; Input / edit stoma details saves the patient details first)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -116,6 +116,15 @@ const MANUAL_SECTIONS=[
     <ul class="man-ul">
       <li>${manBtn('Male','#dbeafe','#1d4ed8')} — a <b>blue</b> wash across the page, cards and avatar.</li>
       <li>${manBtn('Female','#fbcfe8','#be185d')} — a <b>pink</b> wash across the page, cards and avatar.</li>
+    </ul>
+    ${manH2('🎗','The top bar also shows the outcome')}
+    <p class="man-lede">When a patient is no longer in plain follow-up, the <b>header bar turns the outcome colour</b> and shows a matching icon (on the portrait and beside the status), while the rest of the page keeps the sex wash:</p>
+    <ul class="man-ul">
+      <li>${manBtn('✝ Deceased','#1a1a1a','#ffffff')} — <b>black</b> bar with a cross.</li>
+      <li>${manBtn('↩ Reversed','#6d28d9','#ffffff')} — <b>violet</b> bar with a reversal arrow.</li>
+      <li>${manBtn('⛴ Discharged to Gozo','#1d4ed8','#ffffff')} — <b>blue</b> bar with a ferry.</li>
+      <li>${manBtn('✈ Relocated overseas','#0f766e','#ffffff')} — <b>teal</b> bar with a plane.</li>
+      <li>${manBtn('⏸ Paused / awaiting','#b45309','#ffffff')} — <b>amber</b> bar with a pause mark.</li>
     </ul>
     ${manNote('tip','📍','The <b>Locality</b> sits in its own prominent green row in Patient details, with the local council flag (or a neat initials marker when a town has no flag on file).')}
     ${manNote('tip','🗂','In the <b>Registry list</b>, each row is coloured by outcome — <b>black</b> for deceased, <b>violet</b> for reversed, <b>blue</b> for Gozo, <b>teal</b> for overseas. An <b>amber left stripe</b> marks a record still missing a required field. A <b>finalised record (deceased or reversed) reads its pure colour</b> and is not given the amber stripe, so a deceased patient shows solid black even if a field was never filled in.')}
