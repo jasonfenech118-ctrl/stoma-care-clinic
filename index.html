@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-410"/>
-<script src="assets/manual.js?v=2026.10.04-410"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-411"/>
+<script src="assets/manual.js?v=2026.10.04-411"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1189,6 +1189,14 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
   padding:6px 11px;border-radius:999px;border:1.5px solid #d8b4fe;background:#faf5ff;color:#6b21a8;}
 .np-abroad-toggle:hover{background:#f3e8ff;}
 .np-abroad-toggle.on{background:#7c3aed;border-color:#7c3aed;color:#fff;}
+/* Add Patient: "where was the stoma formed?" — two selectable options that send
+   the patient to the MDH register or the Operated-abroad list. */
+.pf-where{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.pf-where-opt{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1.5px solid var(--border);
+  border-radius:10px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--navy);line-height:1.4;}
+.pf-where-opt input{margin-top:2px;flex:none;}
+.pf-where-opt:has(input:checked){border-color:#0d7377;background:#f2fbfa;}
+.pf-where-abroad:has(input:checked){border-color:#16a34a;background:#f0fdf4;color:#14532d;}
 .np-op-first{color:var(--navy);}
 .np-firsttag{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
   color:#0d7377;background:#e9f7f5;border:1px solid #bfe6e2;border-radius:999px;padding:1px 6px;margin-right:6px;vertical-align:1px;}
@@ -3475,7 +3483,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-410';
+const APP_BUILD='2026.10.04-411';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12706,8 +12714,8 @@ function startAbroadAddNew(idCard){
   setTimeout(()=>{
     const idEl=document.getElementById('ap-idcard');
     if(idEl){idEl.value=normaliseIdCard(idCard||'');}
-    const ab=document.getElementById('ap-abroad');
-    if(ab)ab.checked=true;
+    const abroadRadio=document.getElementById('ap-where-abroad');
+    if(abroadRadio)abroadRadio.checked=true;
     document.getElementById('ap-first')?.focus();
   },80);
 }
@@ -14039,7 +14047,11 @@ function patientFormHTML(p,prefix){
       <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"${lk('address')}/></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
     <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
-    ${prefix==='ap'?`<div class="fg" style="grid-column:1 / -1;"><label class="pf-abroad-lbl"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''}/> <span>Operated abroad — stoma formed at another hospital / outside Malta (kept out of the MDH operative count)</span></label></div>`:''}
+    ${prefix==='ap'?`<div class="fg" style="grid-column:1 / -1;"><label>Where was the stoma formed? *</label>
+      <div class="pf-where" id="${prefix}-where">
+        <label class="pf-where-opt"><input type="radio" name="${prefix}-where" id="${prefix}-where-mdh" value="mdh"${p?.operated_abroad?'':' checked'}/> <span>🏥 At Mater Dei (MDH) — lists in the New Patients register</span></label>
+        <label class="pf-where-opt pf-where-abroad"><input type="radio" name="${prefix}-where" id="${prefix}-where-abroad" value="abroad"${p?.operated_abroad?' checked':''}/> <span>🌍 Abroad / another hospital — lists under “Operated abroad”, not the MDH count</span></label>
+      </div></div>`:''}
   </div>
   </div>
 
@@ -14660,11 +14672,11 @@ function readPatientForm(prefix){
   // A proposed reversal date is only kept while the patient is still eligible
   // for one — being reversed, dying, or moving away clears the plan.
   out.proposed_reversal_date=canPlanReversal(out)?(val('proprev')||null):null;
-  // Only the Add Patient form carries the "operated abroad" tick, so the field is
-  // touched only when that control is present — a form without it (editing
-  // demographics, siting) never overwrites the flag already on the record.
-  const abEl=document.getElementById(`${prefix}-abroad`);
-  if(abEl)out.operated_abroad=!!abEl.checked;
+  // Only the Add Patient form carries the "where was the stoma formed?" choice, so
+  // the field is touched only when that control is present — a form without it
+  // (editing demographics, siting) never overwrites the flag already on the record.
+  const whereAbroad=document.getElementById(`${prefix}-where-abroad`);
+  if(whereAbroad)out.operated_abroad=!!whereAbroad.checked;
   return out;
 }
 // Turn a save failure into something a nurse can act on.
