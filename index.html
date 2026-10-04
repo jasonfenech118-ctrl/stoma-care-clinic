@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-414"/>
-<script src="assets/manual.js?v=2026.10.04-414"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-415"/>
+<script src="assets/manual.js?v=2026.10.04-415"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -947,6 +947,8 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-page.psm-abroad{box-shadow:0 0 0 3px #16a34a, 0 0 0 7px #bbf7d0;}
 .psm-chip-abroad{display:inline-flex;align-items:center;gap:5px;background:#16a34a;color:#fff;
   border:1px solid #15803d;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap;}
+.psm-chip-abroad-loc{display:inline-flex;align-items:center;background:#f0fdf4;color:#15803d;
+  border:1px solid #bbf7d0;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;}
 /* Record-header OUTCOME treatment: the top bar is coloured to match the patient's
    outcome (deceased black, reversed violet, Gozo blue, overseas teal, paused amber)
    with a matching icon badge on the portrait. The page body stays sex-tinted. */
@@ -1196,6 +1198,9 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
   border-radius:10px;background:#fff;cursor:pointer;font-size:13px;font-weight:600;color:var(--navy);line-height:1.4;}
 .pf-where-opt input{margin-top:2px;flex:none;}
 .pf-where-abroad:has(input:checked){border-color:#16a34a;background:#f0fdf4;color:#14532d;}
+.pf-outside-extra{display:grid;grid-template-columns:1fr 1fr;gap:12px;grid-column:1 / -1;margin-top:8px;}
+.pf-outside-extra[hidden]{display:none;}
+.np-outside-loc{margin-top:5px;font-size:11.5px;font-weight:700;color:#15803d;}
 .np-op-first{color:var(--navy);}
 .np-firsttag{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
   color:#0d7377;background:#e9f7f5;border:1px solid #bfe6e2;border-radius:999px;padding:1px 6px;margin-right:6px;vertical-align:1px;}
@@ -3482,7 +3487,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-414';
+const APP_BUILD='2026.10.04-415';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12284,7 +12289,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad';
+const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -12418,7 +12423,9 @@ function patientFormationRows(p){
   const base={id:p.id,id_card:p.id_card,first_name:p.first_name,surname:p.surname,
               address:p.address,locality:p.locality,phone_number:p.phone_number,
               consultant:p.consultant,status:derivedFollowupStatus(p),
-              operated_abroad:!!p.operated_abroad};
+              operated_abroad:!!p.operated_abroad,
+              operated_abroad_hospital:p.operated_abroad_hospital||null,
+              operated_abroad_country:p.operated_abroad_country||null};
   const rowOf=(s,extra)=>({...base,
     address:s.row_address||base.address, phone_number:s.row_phone||base.phone_number,
     consultant:s.row_consultant||base.consultant, refashions:[], ...extra});
@@ -12593,6 +12600,9 @@ function renderNewPatients(){
           // When the row carries refashionings, flag the first operation as the
           // original so the stacked lines read clearly top (latest) to bottom.
           const firstTag=hasRef?'<span class="np-firsttag">first stoma</span>':'';
+          // Where an outside-MDH operation was performed, shown under the operation.
+          const outLoc=r.operated_abroad?[r.operated_abroad_hospital,r.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', '):'';
+          const outLocLine=outLoc?`<div class="np-outside-loc">🌍 ${htmlSafe(outLoc)}</div>`:'';
           return `<tr class="${rowCls}${hasRef?' np-has-ref':''}${r.operated_abroad?' np-abroad-row':''}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
             <td class="np-id">${t(r.id_card)}</td>
             <td class="np-name">${htmlSafe(nm)}${chip}${abroadChip}</td>
@@ -12600,14 +12610,20 @@ function renderNewPatients(){
             <td>${t(r.phone_number)}</td>
             <td>${t(r.consultant)}</td>
             <td class="np-date">${r.date?htmlSafe(fmtShortDate(r.date)):dash}</td>
-            <td>${refOps}<div class="np-op-first">${firstTag}${t(opPerformed)}</div></td>
+            <td>${refOps}<div class="np-op-first">${firstTag}${t(opPerformed)}</div>${outLocLine}</td>
             <td>${t(r.stoma_type)}</td>
             <td>${t(opComment)}</td></tr>`;
         }).join('')}</tbody>
       </table></div>`;
   }).join('');
 }
-// The "Operated abroad" toggle: reveal / hide the abroad-formed stomas.
+// Show the optional hospital / country fields only while "Operated Outside MDH"
+// is ticked on the patient form.
+function toggleOutsideExtra(prefix){
+  const box=document.getElementById(`${prefix}-outside-extra`);
+  if(box)box.hidden=!document.getElementById(`${prefix}-abroad`)?.checked;
+}
+// The "Operated Outside MDH" toggle: reveal / hide the outside-MDH stomas.
 function toggleNpAbroad(){
   npShowAbroad=!npShowAbroad;
   const btn=document.getElementById('np-abroad-toggle');
@@ -12629,6 +12645,8 @@ function openAbroadQuickAdd(){
     <div id="ab-note" class="registry-lookup-note" style="margin:2px 0 8px;">Enter an ID card, then press Enter or tab out to look the patient up.</div>
     <div id="ab-found" hidden>
       <div class="fg"><label>Date operated (outside MDH) *</label><input type="date" id="ab-date"/></div>
+      <div class="fg"><label>Hospital <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-hospital" placeholder="where the operation was performed"/></div>
+      <div class="fg"><label>Country <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-country" placeholder="e.g. Italy"/></div>
       <div class="fg"><label>Stoma type <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-stoma" placeholder="e.g. End colostomy"/></div>
       <div class="fg"><label>Operation performed <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-op" placeholder="as recorded at the other hospital"/></div>
     </div>
@@ -12678,6 +12696,8 @@ async function abroadLookup(){
   if(note){note.className='registry-lookup-note';note.innerHTML=`Found <strong>${htmlSafe(nm)}</strong> (${htmlSafe(p.id_card||id)}).${htmlSafe(already)}`;}
   if(found)found.hidden=false;
   const dEl=document.getElementById('ab-date'); if(dEl&&!dEl.value)dEl.value=p.surgery_date||'';
+  const hEl=document.getElementById('ab-hospital'); if(hEl&&!hEl.value)hEl.value=p.operated_abroad_hospital||'';
+  const cEl=document.getElementById('ab-country'); if(cEl&&!cEl.value)cEl.value=p.operated_abroad_country||'';
   const sEl=document.getElementById('ab-stoma'); if(sEl&&!sEl.value)sEl.value=p.stoma_type||'';
   const oEl=document.getElementById('ab-op'); if(oEl&&!oEl.value)oEl.value=p.procedure_performed||'';
   idEl.dataset.patientId=pat.id;
@@ -12691,6 +12711,8 @@ async function saveAbroadForExisting(){
   const date=document.getElementById('ab-date')?.value||'';
   if(!date){if(note){note.className='registry-lookup-note error';note.textContent='Add the date the patient was operated (outside MDH).';}return;}
   const payload={operated_abroad:true,surgery_date:date};
+  payload.operated_abroad_hospital=document.getElementById('ab-hospital')?.value.trim()||null;
+  payload.operated_abroad_country=document.getElementById('ab-country')?.value.trim()||null;
   const stoma=document.getElementById('ab-stoma')?.value.trim(); if(stoma)payload.stoma_type=stoma;
   const op=document.getElementById('ab-op')?.value.trim(); if(op)payload.procedure_performed=op;
   if(note){note.className='registry-lookup-note';note.textContent='Saving…';}
@@ -14047,7 +14069,11 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
     <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
     ${(prefix==='ap'||prefix==='pcd')?`<div class="fg" style="grid-column:1 / -1;">
-      <label class="pf-where-opt pf-where-abroad"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''}/> <span>🌍 Operated Outside MDH — stoma formed at another hospital, not Mater Dei (abroad or elsewhere). Leave it unticked for an operation done at Mater Dei (MDH). Ticking it moves the patient to the “Operated Outside MDH” list (and off the MDH register).</span></label>
+      <label class="pf-where-opt pf-where-abroad"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''} onchange="toggleOutsideExtra('${prefix}')"/> <span>🌍 Operated Outside MDH — stoma formed at another hospital, not Mater Dei (abroad or elsewhere). Leave it unticked for an operation done at Mater Dei (MDH). Ticking it moves the patient to the “Operated Outside MDH” list (and off the MDH register).</span></label>
+      <div class="pf-outside-extra" id="${prefix}-outside-extra"${p?.operated_abroad?'':' hidden'}>
+        <div class="fg"><label>Hospital <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="${prefix}-outside-hospital" value="${v('operated_abroad_hospital')}" placeholder="where the operation was performed"/></div>
+        <div class="fg"><label>Country <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="${prefix}-outside-country" value="${v('operated_abroad_country')}" placeholder="e.g. Italy"/></div>
+      </div>
       </div>`:''}
   </div>
   </div>
@@ -14669,12 +14695,18 @@ function readPatientForm(prefix){
   // A proposed reversal date is only kept while the patient is still eligible
   // for one — being reversed, dying, or moving away clears the plan.
   out.proposed_reversal_date=canPlanReversal(out)?(val('proprev')||null):null;
-  // Only the Add Patient form carries the "operated abroad" tick, so the field is
-  // touched only when that control is present — a form without it (editing
-  // demographics, siting) never overwrites the flag already on the record.
-  // Unticked means the operation was done at Mater Dei.
+  // Only the Add Patient form carries the "operated outside MDH" tick, so the
+  // fields are touched only when that control is present — a form without it
+  // (editing demographics, siting) never overwrites what is already on the
+  // record. Unticked means the operation was done at Mater Dei, and the optional
+  // hospital / country are cleared.
   const abEl=document.getElementById(`${prefix}-abroad`);
-  if(abEl)out.operated_abroad=!!abEl.checked;
+  if(abEl){
+    const on=!!abEl.checked;
+    out.operated_abroad=on;
+    out.operated_abroad_hospital=on?(document.getElementById(`${prefix}-outside-hospital`)?.value.trim()||null):null;
+    out.operated_abroad_country=on?(document.getElementById(`${prefix}-outside-country`)?.value.trim()||null):null;
+  }
   return out;
 }
 // Turn a save failure into something a nurse can act on.
@@ -14868,11 +14900,19 @@ async function persistPatientDetailsForm(patientId,requireComplete){
     const miss=[['first_name','First name'],['surname','Surname'],['id_card','ID card'],['sex','Sex'],['locality','Locality'],['date_of_birth','Date of birth'],['consultant','Firm (consultant)']].filter(([k])=>!record[k]).map(([,label])=>label);
     if(miss.length)return fail(`Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.`);
   }
-  // The "operated abroad" tick moves the patient between the MDH register and the
-  // Operated-abroad list. It is written only when it actually changed, so flipping
-  // just this tick still saves, and leaving it alone never forces a needless write.
+  // The "operated outside MDH" tick moves the patient between the MDH register and
+  // the Operated-Outside-MDH list, with an optional hospital / country. Each is
+  // written only when it actually changed, so flipping just the tick still saves,
+  // and leaving it alone never forces a needless write.
   const abEl=document.getElementById('pcd-abroad');
-  if(abEl && !!abEl.checked !== !!old.data.operated_abroad)payload.operated_abroad=!!abEl.checked;
+  if(abEl){
+    const on=!!abEl.checked;
+    const hosp=on?(document.getElementById('pcd-outside-hospital')?.value.trim()||null):null;
+    const country=on?(document.getElementById('pcd-outside-country')?.value.trim()||null):null;
+    if(on!==!!old.data.operated_abroad)payload.operated_abroad=on;
+    if((hosp||null)!==(old.data.operated_abroad_hospital||null))payload.operated_abroad_hospital=hosp;
+    if((country||null)!==(old.data.operated_abroad_country||null))payload.operated_abroad_country=country;
+  }
   // Nothing was edited (all fields locked / unchanged) — no write needed.
   if(!Object.keys(payload).length){if(err)err.innerHTML='';return{ok:true,dropped:[],nothing:true};}
   // A second patient must not end up on the same ID card, including an older
@@ -18409,7 +18449,7 @@ async function openPatientRecord(patientId){
             <span class="psm-id${pat.id_card?'':' is-missing'}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>
           </div>
           ${demo?`<span class="psm-sub">${demo}</span>`:''}
-          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>`:''}</span>
+          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
         </div>
       </div>
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
