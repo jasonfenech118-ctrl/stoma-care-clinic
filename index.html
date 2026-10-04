@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-412"/>
-<script src="assets/manual.js?v=2026.10.04-412"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-413"/>
+<script src="assets/manual.js?v=2026.10.04-413"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3482,7 +3482,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-412';
+const APP_BUILD='2026.10.04-413';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14046,8 +14046,8 @@ function patientFormHTML(p,prefix){
       <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"${lk('address')}/></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
     <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
-    ${prefix==='ap'?`<div class="fg" style="grid-column:1 / -1;">
-      <label class="pf-where-opt pf-where-abroad"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''}/> <span>🌍 Operated abroad — stoma formed at another hospital / outside Malta. Leave it unticked for an operation done at Mater Dei (MDH).</span></label>
+    ${(prefix==='ap'||prefix==='pcd')?`<div class="fg" style="grid-column:1 / -1;">
+      <label class="pf-where-opt pf-where-abroad"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''}/> <span>🌍 Operated abroad — stoma formed at another hospital / outside Malta. Leave it unticked for an operation done at Mater Dei (MDH). Ticking it moves the patient to the “Operated abroad” list (and off the MDH register).</span></label>
       </div>`:''}
   </div>
   </div>
@@ -14868,6 +14868,11 @@ async function persistPatientDetailsForm(patientId,requireComplete){
     const miss=[['first_name','First name'],['surname','Surname'],['id_card','ID card'],['sex','Sex'],['locality','Locality'],['date_of_birth','Date of birth'],['consultant','Firm (consultant)']].filter(([k])=>!record[k]).map(([,label])=>label);
     if(miss.length)return fail(`Please fill in the required field${miss.length>1?'s':''}: ${htmlSafe(miss.join(', '))}.`);
   }
+  // The "operated abroad" tick moves the patient between the MDH register and the
+  // Operated-abroad list. It is written only when it actually changed, so flipping
+  // just this tick still saves, and leaving it alone never forces a needless write.
+  const abEl=document.getElementById('pcd-abroad');
+  if(abEl && !!abEl.checked !== !!old.data.operated_abroad)payload.operated_abroad=!!abEl.checked;
   // Nothing was edited (all fields locked / unchanged) — no write needed.
   if(!Object.keys(payload).length){if(err)err.innerHTML='';return{ok:true,dropped:[],nothing:true};}
   // A second patient must not end up on the same ID card, including an older
@@ -14893,6 +14898,7 @@ async function savePatientDates(patientId){
   // whichever registry-style page is active.
   if(document.getElementById('page-patient-record')?.classList.contains('active'))openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
+  if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
