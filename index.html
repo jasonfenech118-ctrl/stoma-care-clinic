@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-406"/>
-<script src="assets/manual.js?v=2026.10.04-406"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-407"/>
+<script src="assets/manual.js?v=2026.10.04-407"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3457,7 +3457,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-406';
+const APP_BUILD='2026.10.04-407';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12521,14 +12521,29 @@ function renderNewPatients(){
              stoma last), carrying its own date and type inline. The Operation Date
              and Stoma Type columns keep the first-performed stoma's values, so the
              patient has a single register entry that reads newest-down-to-first. */
-          const refs=(r.refashions||[]).slice()
-            .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-          const refOps=refs.map(rf=>{
-            const rfOp=String(rf.operation||rf.comments||'').trim();
-            const rfWhen=rf.date?htmlSafe(fmtShortDate(rf.date)):'';
-            const rfType=String(rf.stoma_type||'').trim();
+          /* Two refashionings recorded at the SAME operation (same date + same
+             operation text) are one operation that remade more than one stoma —
+             e.g. an ileostomy and its mucus fistula done together — not a
+             duplicate. Collapse them to a single line and gather the distinct
+             stoma types it produced, dropping any type already named in the
+             operation text so it is not written twice. */
+          const refGroups=new Map(), refs=[];
+          (r.refashions||[]).slice()
+            .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
+            .forEach(rf=>{
+              const op=String(rf.operation||rf.comments||'').trim();
+              const key=String(rf.date||'')+'|'+op.toLowerCase().replace(/\s+/g,' ');
+              let g=refGroups.get(key);
+              if(!g){g={date:rf.date,op,types:[]};refGroups.set(key,g);refs.push(g);}
+              const ty=String(rf.stoma_type||'').trim();
+              if(ty&&!g.types.some(x=>x.toLowerCase()===ty.toLowerCase()))g.types.push(ty);
+            });
+          const refOps=refs.map(g=>{
+            const rfWhen=g.date?htmlSafe(fmtShortDate(g.date)):'';
+            const opl=g.op.toLowerCase();
+            const rfType=g.types.filter(ty=>!opl.includes(ty.toLowerCase())).join('; ');
             return `<div class="np-refline"><span class="np-refbadge">↻ refashioned${rfWhen?' · '+rfWhen:''}</span> `
-              +`${rfOp?htmlSafe(rfOp):dash}${rfType?` <span class="np-reftype">(${htmlSafe(rfType)})</span>`:''}</div>`;
+              +`${g.op?htmlSafe(g.op):dash}${rfType?` <span class="np-reftype">(${htmlSafe(rfType)})</span>`:''}</div>`;
           }).join('');
           const hasRef=refs.length>0;
           const chip=hasRef?'<span class="np-kind np-kind-refashion">refashioned</span>':(KIND_CHIP[r.kind]||'');

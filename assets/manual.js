@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'4 October 2026 (New Patients register now keeps a stoma and its refashionings on ONE row in the month it was first formed — the refashioning folded into the same row, stacked above the first operation with the latest on top — instead of listing each as a separate line, so a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
+const MANUAL_META={updated:'4 October 2026 (New Patients register now keeps a stoma and its refashionings on ONE row in the month it was first formed — the refashioning folded into the same row, stacked above the first operation with the latest on top, and one operation that remade several stomas shown as a single line rather than a duplicate — instead of listing each as a separate line, so a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -182,7 +182,7 @@ const MANUAL_SECTIONS=[
       `${manBtn('📱 Quick Look','#e7e6fb','#3a34a0')} — a fast phone-friendly lookup to check a patient at the bedside.`,
       `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed, grouped by month (newest first). Every <i>new</i> stoma is a line of its own, in the month it was formed.`
     ])}
-    ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is never a line of its own. Each stoma keeps a <b>single register row</b>, in the month it was <i>first</i> formed, and any refashioning is <b>folded into that same row</b>: the refashioning’s operation, date and type stack <b>above</b> the first-performed ones (latest at the very top, the original “first stoma” at the foot). A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — the refashioning shows on the one row of their first formation.')}
+    ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is never a line of its own. Each stoma keeps a <b>single register row</b>, in the month it was <i>first</i> formed, and any refashioning is <b>folded into that same row</b>: the refashioning’s operation, date and type stack <b>above</b> the first-performed ones (latest at the very top, the original “first stoma” at the foot). When <b>one operation remade more than one stoma</b> (e.g. an ileostomy and its mucus fistula together) it shows as a <b>single line</b>, naming the stoma types it produced — not a duplicate. A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — the refashioning shows on the one row of their first formation.')}
   `}
 ]},
 
