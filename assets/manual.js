@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 October 2026 (added the ENT ward — Green block, 1st floor — to the admit dropdown and ward colours; Data Analysis incomplete-by-year chart opens on the years that actually have records; patient record header shows the outcome for every status with a coloured bar, white wording and an icon)'};
+const MANUAL_META={updated:'4 October 2026 (removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -384,22 +384,13 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'calendar',title:'Roster & Attendance',icon:'📅',color:'#7c3aed',blurb:'Monthly roster, daily attendance and change of duty.',pages:[
-  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule ghost nurse plan new nurse shift a b c tracy coverage overtime 2 on 1 off start date',html:`
+  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule tracey galea shift a 2 on 1 off overtime default pattern',html:`
     ${manMap('calendar')}
     <ul class="man-ul">
       <li>${manBtn('🗓 Monthly Roster','#efe7fb','#5b3aa8')} — the staff rota for the month.</li>
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
-    ${manH2('🧪','Plan a new nurse — ghost shifts')}
-    <p class="man-lede">On the Monthly Roster you can lay out a <b>visual-only shift plan</b> to see when a new nurse should start. The three ghost rows — <b>Shift A, Shift B and Shift C</b> — sit <b>directly below Lorraine</b> on the roster, so the real Erica and Tracy rows fall just below them. They are fictitious shifts whose <b>2 days on, 1 day off</b> pattern only <i>models the rotation of Jacqueline, Jason and Lorraine</i>; no real nurse is renamed. It is a <b>visual only</b>: not real staff, saved nowhere, not daily attendance, and linked to nothing else (no appointments, capacity or follow-ups).</p>
-    ${manSteps([
-      `<b>Shift A / B / C</b> each work <b>2 days on, 1 day off</b>, starting <b>one day after the last</b>, so between them every day is covered.`,
-      `Set <b>Ghosts first day</b> in the purple "Plan a new nurse" box above the roster — the three ghost rows redraw from that date. Use <b>Reset ghosts to today</b> to start again, or untick <b>Show on roster</b> to hide them all.`,
-      `Use the <b>Shifts: A · B · C</b> tick-boxes in the same box to choose which ghost rows show — tick just one to isolate a single shift, or any combination. Each shift keeps its own staggered pattern whichever you show.`,
-      `Because the ghosts sit below Lorraine and above Erica and Tracy, you can read their ideal <b>D / off</b> pattern straight against those real rows to judge where a new nurse best fits.`,
-      `Tick <b>Hide Erica &amp; Tracy</b> to drop those two real rows out of view while you study the ghost pattern — it is a display-only hide (their real rosters are untouched); untick it to bring them back.`
-    ])}
-    ${manNote('tip','👻','Shift A/B/C are tinted violet and tagged "ghost" so they are never mistaken for real roster rows — nothing you do here changes any real staff member.')}
+    ${manNote('tip','🗓️','Each nurse has a default rotation that fills the roster automatically; clicking a day cell records an exception over it. <b>Tracey Galea</b> is on <b>Shift A — 2 days on, 1 day off — from 8 October 2026</b>. To bring a nurse in on an off day, use <b>⏰ Add OT Nurse</b> (enter the name, date and the start/finish time) — the overtime shows as <b>OT</b> on that day and in the Overtime list.')}
   `},
   {id:'attendance',title:'Daily Attendance & Records',keywords:'daily attendance sign in present records history',html:`
     ${manMap('calendar')}
