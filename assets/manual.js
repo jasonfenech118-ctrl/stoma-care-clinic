@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'4 October 2026 (New Patients register now tucks a refashioning under the stoma it remade instead of listing it as a new entry — a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
+const MANUAL_META={updated:'4 October 2026 (New Patients register now groups a stoma and its refashionings into one block in the month it was first formed — original stoma at the foot, refashionings stacked above it newest-first — instead of listing each as a new entry, so a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -182,7 +182,7 @@ const MANUAL_SECTIONS=[
       `${manBtn('📱 Quick Look','#e7e6fb','#3a34a0')} — a fast phone-friendly lookup to check a patient at the bedside.`,
       `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed, grouped by month (newest first). Every <i>new</i> stoma is a line of its own, in the month it was formed.`
     ])}
-    ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is not a line of its own. It shows <b>tucked in beneath the stoma it remade</b> (a “↳ refashioned” line), in the month that original stoma was formed. A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — look for the refashioning under their first formation.')}
+    ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is not a line of its own. Each patient’s stoma shows as one block in the month that stoma was <i>first</i> formed: the <b>original (first-performed) stoma sits at the foot of the block</b>, and its refashionings stack <b>above it, latest at the very top</b> (each a “↳ … refashioned” line). A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — look for the refashioning above their first formation.')}
   `}
 ]},
 
@@ -436,7 +436,7 @@ const MANUAL_SECTIONS=[
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],
-        ['↳','Refashioning tucks under its stoma in the register','In New Patients a refashioning is not a new register line. It shows nested under the formation it remade, in that stoma’s month — so a patient whose only recent op was a refashioning does not appear as a fresh entry.','Registry › New Patients'],
+        ['↳','Refashioning groups with its stoma in the register','In New Patients a refashioning is not a new register line. Each stoma is one block in the month it was first formed — the original stoma at the foot, its refashionings stacked above it newest-first — so a patient whose only recent op was a refashioning does not appear as a fresh entry.','Registry › New Patients'],
         ['🔄','Latest handover appliance','All nurses see the saved appliance per present stoma. Other open handovers update automatically, with a check every 30 seconds and on returning to the page. Refreshes wait while you edit. Closed stomas and earlier selections remain in history.','Handover'],
         ['🆕','Unassigned appliance is kept','An appliance set before the stoma is on the registry still shows on the handover, and attaches to the stoma once it is recorded.','Handover'],
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],

@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-404"/>
-<script src="assets/manual.js?v=2026.10.04-404"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-405"/>
+<script src="assets/manual.js?v=2026.10.04-405"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3454,7 +3454,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-404';
+const APP_BUILD='2026.10.04-405';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12512,6 +12512,9 @@ function renderNewPatients(){
           const opText=String(r.operation??'').trim();
           const opPerformed=opText||r.comments;
           const opComment=opText?r.comments:'';
+          // The first-performed stoma is the anchor: it carries the full
+          // details (address, telephone, firm) and always sits at the FOOT of
+          // the patient's block.
           const mainTr=`<tr class="${rowCls}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
             <td class="np-id">${t(r.id_card)}</td>
             <td class="np-name">${htmlSafe(nm)}${KIND_CHIP[r.kind]||''}</td>
@@ -12522,15 +12525,17 @@ function renderNewPatients(){
             <td>${t(opPerformed)}</td>
             <td>${t(r.stoma_type)}</td>
             <td>${t(opComment)}</td></tr>`;
-          // Refashionings of this stoma, tucked in beneath the formation, oldest
-          // first. They are events on the same stoma, not new register entries.
+          // Refashionings of this stoma stack ABOVE the formation, latest at the
+          // very top; the original (first-performed) stoma stays at the bottom.
+          // They are events on the same stoma, not new register entries, so they
+          // repeat only the ID and name to stay tied to the block.
           const subTr=(r.refashions||[]).slice()
-            .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+            .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))
             .map(rf=>{
               const rfOp=String(rf.operation??'').trim();
               return `<tr class="np-sub ${rowCls}" onclick="openPatientRecord('${r.id}')" title="Refashioning of this stoma — opens the same patient">
-                <td class="np-id"></td>
-                <td class="np-name"><span class="np-sub-arrow">↳</span><span class="np-kind np-kind-refashion">refashioned</span></td>
+                <td class="np-id">${t(r.id_card)}</td>
+                <td class="np-name"><span class="np-sub-arrow">↳</span>${htmlSafe(nm)}<span class="np-kind np-kind-refashion">refashioned</span></td>
                 <td class="np-addr"></td>
                 <td></td>
                 <td></td>
@@ -12539,7 +12544,8 @@ function renderNewPatients(){
                 <td>${t(rf.stoma_type)}</td>
                 <td>${t(rfOp?rf.comments:'')}</td></tr>`;
             }).join('');
-          return mainTr+subTr;
+          // Latest refashioning first, original formation last.
+          return subTr+mainTr;
         }).join('')}</tbody>
       </table></div>`;
   }).join('');
