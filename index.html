@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-407"/>
-<script src="assets/manual.js?v=2026.10.04-407"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-408"/>
+<script src="assets/manual.js?v=2026.10.04-408"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1173,6 +1173,16 @@ table.np tr.np-has-ref td.np-id{border-left:3px solid #e9c77d;}
 .np-refbadge{display:inline-block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
   color:#b45309;background:#fffaf0;border:1px solid #fadfae;border-radius:999px;padding:1px 6px;margin-right:5px;vertical-align:1px;}
 .np-reftype{color:#8a7a5c;font-style:italic;}
+.np-kind-abroad{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
+/* Stomas formed abroad read with a faint violet wash and a left accent, so they
+   are plainly not part of MDH's own operative count even when the toggle shows them. */
+table.np tr.np-abroad-row td{background:#faf5ff;}
+table.np tr.np-abroad-row:hover td{background:#f3e8ff;}
+table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
+.np-abroad-toggle{font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+  padding:6px 11px;border-radius:999px;border:1.5px solid #d8b4fe;background:#faf5ff;color:#6b21a8;}
+.np-abroad-toggle:hover{background:#f3e8ff;}
+.np-abroad-toggle.on{background:#7c3aed;border-color:#7c3aed;color:#fff;}
 .np-op-first{color:var(--navy);}
 .np-firsttag{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
   color:#0d7377;background:#e9f7f5;border:1px solid #bfe6e2;border-radius:999px;padding:1px 6px;margin-right:6px;vertical-align:1px;}
@@ -2739,7 +2749,8 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
     <div class="page" id="page-new-patients">
       <div class="phdr">
         <div><h2>🆕 New Patients</h2><p>Every stoma formed, month by month, newest first — the annual register book as it is written</p></div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="openAbroadQuickAdd()" style="background:#7c3aed;">➕ Operated abroad</button>
           <button class="btn-add" onclick="printNewPatients()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadNewPatients()">Refresh</button>
         </div>
@@ -2753,6 +2764,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
           <option value="all">Every stoma formed</option>
           <option value="first">First stoma only — new patients</option>
         </select>
+        <button type="button" class="np-abroad-toggle" id="np-abroad-toggle" aria-pressed="false" onclick="toggleNpAbroad()">🌍 Operated abroad</button>
         <span class="pd-count" id="np-count"></span>
       </div>
       <div id="np-body"><div class="report-note">Loading the register…</div></div>
@@ -3457,7 +3469,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-407';
+const APP_BUILD='2026.10.04-408';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12259,7 +12271,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason';
+const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -12333,6 +12345,9 @@ async function loadPatientDirectory(){
    filter narrows to first stomas only when a plain new-patient list is wanted.
    ------------------------------------------------------------------------- */
 let newPatientRows=[];
+// The New Patients register hides stomas formed abroad by default (they are not
+// MDH's operative workload). The "Operated abroad" toggle flips this.
+let npShowAbroad=false;
 /* The register writes some operations down twice, and the same patient can sit
    in the app under two ID cards that differ only by a letter (421160A / 421160M)
    or a leading zero — a book row and the app's own file for one person. Both
@@ -12389,7 +12404,8 @@ function mergeFormationRows(a,b){
 function patientFormationRows(p){
   const base={id:p.id,id_card:p.id_card,first_name:p.first_name,surname:p.surname,
               address:p.address,locality:p.locality,phone_number:p.phone_number,
-              consultant:p.consultant,status:derivedFollowupStatus(p)};
+              consultant:p.consultant,status:derivedFollowupStatus(p),
+              operated_abroad:!!p.operated_abroad};
   const rowOf=(s,extra)=>({...base,
     address:s.row_address||base.address, phone_number:s.row_phone||base.phone_number,
     consultant:s.row_consultant||base.consultant, refashions:[], ...extra});
@@ -12462,6 +12478,9 @@ function renderNewPatients(){
   const year=document.getElementById('np-year')?.value||'all';
   const kind=document.getElementById('np-kind')?.value||'all';
   const rows=newPatientRows.filter(r=>{
+    // Stomas formed abroad are not MDH's operative workload, so the register
+    // hides them unless the "Operated abroad" toggle is on.
+    if(r.operated_abroad&&!npShowAbroad)return false;
     if(year!=='all'&&String(r.date).slice(0,4)!==year)return false;
     if(kind==='first'&&r.kind!=='first')return false;
     if(terms.length){
@@ -12472,8 +12491,14 @@ function renderNewPatients(){
     }
     return true;
   });
-  if(countEl)countEl.textContent=`${rows.length} stoma${rows.length===1?'':'s'} formed`
-    +(rows.length!==newPatientRows.length?` of ${newPatientRows.length}`:'');
+  if(countEl){
+    const shownMdh=rows.filter(r=>!r.operated_abroad).length;
+    const shownAbroad=rows.length-shownMdh;
+    const hiddenAbroad=npShowAbroad?0:newPatientRows.filter(r=>r.operated_abroad).length;
+    countEl.textContent=`${shownMdh} stoma${shownMdh===1?'':'s'} formed at MDH`
+      +(shownAbroad?` · ${shownAbroad} operated abroad`:'')
+      +(hiddenAbroad?` · ${hiddenAbroad} operated abroad (hidden)`:'');
+  }
   if(!rows.length){
     body.innerHTML=emptyStateHTML('🆕','Nothing in the register for this filter',
       'Change the year or clear the search. A patient joins this page as soon as their stoma has a date of surgery on it.');
@@ -12493,10 +12518,12 @@ function renderNewPatients(){
                    refashion:'<span class="np-kind np-kind-refashion">refashioned</span>',first:''};
   body.innerHTML=months.map(m=>{
     const[y,mo]=m.key.split('-');
+    const bandMdh=m.rows.filter(r=>!r.operated_abroad).length;
+    const bandAbroad=m.rows.length-bandMdh;
     return `<div class="np-month">
         <span class="np-month-name">${htmlSafe(DA_MONTH_NAMES[Number(mo)-1]||'')}</span>
         <span class="np-month-year">${htmlSafe(y)}</span>
-        <span class="np-month-n">${m.rows.length} stoma${m.rows.length===1?'':'s'}</span>
+        <span class="np-month-n">${bandMdh} stoma${bandMdh===1?'':'s'}${bandAbroad?` · ${bandAbroad} abroad`:''}</span>
       </div>
       <div class="np-wrap"><table class="np">
         <thead><tr>
@@ -12547,12 +12574,13 @@ function renderNewPatients(){
           }).join('');
           const hasRef=refs.length>0;
           const chip=hasRef?'<span class="np-kind np-kind-refashion">refashioned</span>':(KIND_CHIP[r.kind]||'');
+          const abroadChip=r.operated_abroad?'<span class="np-kind np-kind-abroad">🌍 abroad</span>':'';
           // When the row carries refashionings, flag the first operation as the
           // original so the stacked lines read clearly top (latest) to bottom.
           const firstTag=hasRef?'<span class="np-firsttag">first stoma</span>':'';
-          return `<tr class="${rowCls}${hasRef?' np-has-ref':''}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
+          return `<tr class="${rowCls}${hasRef?' np-has-ref':''}${r.operated_abroad?' np-abroad-row':''}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
             <td class="np-id">${t(r.id_card)}</td>
-            <td class="np-name">${htmlSafe(nm)}${chip}</td>
+            <td class="np-name">${htmlSafe(nm)}${chip}${abroadChip}</td>
             <td class="np-addr">${t(r.address||r.locality)}</td>
             <td>${t(r.phone_number)}</td>
             <td>${t(r.consultant)}</td>
@@ -12563,6 +12591,117 @@ function renderNewPatients(){
         }).join('')}</tbody>
       </table></div>`;
   }).join('');
+}
+// The "Operated abroad" toggle: reveal / hide the abroad-formed stomas.
+function toggleNpAbroad(){
+  npShowAbroad=!npShowAbroad;
+  const btn=document.getElementById('np-abroad-toggle');
+  if(btn){btn.classList.toggle('on',npShowAbroad);btn.setAttribute('aria-pressed',npShowAbroad?'true':'false');}
+  renderNewPatients();
+}
+/* Quick-add for a patient whose stoma was formed abroad. Type an ID card, the
+   patient's details are looked up from the registry, add the date they were
+   operated, and it flags them operated-abroad so they show under the toggle —
+   without the full Add Patient wizard. An ID card not on file offers to open
+   Add Patient (pre-filled, already ticked "operated abroad"). */
+function openAbroadQuickAdd(){
+  const mb=document.getElementById('mb');
+  if(!mb)return;
+  mb.innerHTML=`<h2>➕ Patient operated abroad</h2>
+    <div class="msub">Type the ID card — the patient's details are found from the registry. Add the date they were operated abroad.</div>
+    <div class="fg"><label>ID card *</label>
+      <input type="text" id="ab-idcard" placeholder="e.g. 404261M" oninput="abroadLookupReset()" onchange="abroadLookup()"/></div>
+    <div id="ab-note" class="registry-lookup-note" style="margin:2px 0 8px;">Enter an ID card, then press Enter or tab out to look the patient up.</div>
+    <div id="ab-found" hidden>
+      <div class="fg"><label>Date operated abroad *</label><input type="date" id="ab-date"/></div>
+      <div class="fg"><label>Stoma type <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-stoma" placeholder="e.g. End colostomy"/></div>
+      <div class="fg"><label>Operation performed <span style="font-weight:400;color:var(--muted);">(optional)</span></label><input type="text" id="ab-op" placeholder="as recorded abroad"/></div>
+    </div>
+    <div class="mact">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="ab-save" onclick="abroadLookup()">Look up</button>
+    </div>`;
+  openMo();
+  setTimeout(()=>document.getElementById('ab-idcard')?.focus(),50);
+}
+function abroadLookupReset(){
+  // Typing a different ID card clears a previous match so Save can't apply to it.
+  const note=document.getElementById('ab-note'), found=document.getElementById('ab-found'), save=document.getElementById('ab-save');
+  const idEl=document.getElementById('ab-idcard');
+  if(idEl)delete idEl.dataset.patientId;
+  if(found)found.hidden=true;
+  if(save){save.textContent='Look up';save.setAttribute('onclick','abroadLookup()');}
+  if(note){note.className='registry-lookup-note';note.textContent='Enter an ID card, then press Enter or tab out to look the patient up.';}
+}
+async function abroadLookup(){
+  const idEl=document.getElementById('ab-idcard');
+  const note=document.getElementById('ab-note');
+  const found=document.getElementById('ab-found');
+  const save=document.getElementById('ab-save');
+  if(!idEl)return;
+  const id=normaliseIdCard(idEl.value);
+  idEl.value=id;
+  if(!id){if(note){note.className='registry-lookup-note error';note.textContent='Enter an ID card first.';}return;}
+  if(note){note.className='registry-lookup-note';note.textContent='Checking the registry…';}
+  const{matches,error}=await findRegistryPatientsByIdCard(id);
+  if(error){if(note){note.className='registry-lookup-note error';note.textContent='Could not check the registry. Try again.';}return;}
+  const pat=matches[0];
+  if(!pat){
+    // Not found — offer to add this patient via Add Patient, pre-flagged abroad.
+    if(found)found.hidden=true;
+    if(note){note.className='registry-lookup-note';
+      note.innerHTML=`<strong>${htmlSafe(id)}</strong> is not in the registry. Do you want to add this patient?
+        <button class="ncb-btn" style="background:#7c3aed;color:#fff;margin-left:8px;" onclick="startAbroadAddNew('${htmlSafe(id)}')">Yes, add patient</button>`;}
+    if(save){save.textContent='Look up';save.setAttribute('onclick','abroadLookup()');}
+    return;
+  }
+  // Found — pull up the full record to pre-fill the operation date if it has one.
+  const full=await fetchPatientById(pat.id);
+  const p=full.data||pat;
+  const nm=`${pat.surname||''} ${pat.first_name||''}`.trim()||'this patient';
+  const already=p.operated_abroad?' This patient is already marked operated abroad — saving updates the details.':'';
+  if(note){note.className='registry-lookup-note';note.innerHTML=`Found <strong>${htmlSafe(nm)}</strong> (${htmlSafe(p.id_card||id)}).${htmlSafe(already)}`;}
+  if(found)found.hidden=false;
+  const dEl=document.getElementById('ab-date'); if(dEl&&!dEl.value)dEl.value=p.surgery_date||'';
+  const sEl=document.getElementById('ab-stoma'); if(sEl&&!sEl.value)sEl.value=p.stoma_type||'';
+  const oEl=document.getElementById('ab-op'); if(oEl&&!oEl.value)oEl.value=p.procedure_performed||'';
+  idEl.dataset.patientId=pat.id;
+  if(save){save.textContent='Save to register';save.setAttribute('onclick','saveAbroadForExisting()');}
+}
+async function saveAbroadForExisting(){
+  const idEl=document.getElementById('ab-idcard');
+  const note=document.getElementById('ab-note');
+  const pid=idEl?.dataset.patientId;
+  if(!pid){abroadLookup();return;}
+  const date=document.getElementById('ab-date')?.value||'';
+  if(!date){if(note){note.className='registry-lookup-note error';note.textContent='Add the date the patient was operated abroad.';}return;}
+  const payload={operated_abroad:true,surgery_date:date};
+  const stoma=document.getElementById('ab-stoma')?.value.trim(); if(stoma)payload.stoma_type=stoma;
+  const op=document.getElementById('ab-op')?.value.trim(); if(op)payload.procedure_performed=op;
+  if(note){note.className='registry-lookup-note';note.textContent='Saving…';}
+  const{error,dropped}=await updatePatientTolerant(pid,payload);
+  if(error){if(note){note.className='registry-lookup-note error';note.textContent=patientSaveError(error);}return;}
+  if(dropped&&dropped.includes('operated_abroad')){
+    alert('Saved the date, but the "operated abroad" flag was not stored — the operated_abroad column is not in the database yet.\n\nRun sql/add-operated-abroad.sql once in Supabase, then mark this patient again.');
+  }
+  closeModal();
+  npShowAbroad=true;
+  const btn=document.getElementById('np-abroad-toggle');
+  if(btn){btn.classList.add('on');btn.setAttribute('aria-pressed','true');}
+  loadNewPatients();
+}
+// Not found → open Add Patient, pre-filled with the ID card and already ticked
+// "operated abroad", so saving there records them as an abroad patient.
+function startAbroadAddNew(idCard){
+  closeModal();
+  switchTab('add-patient');
+  setTimeout(()=>{
+    const idEl=document.getElementById('ap-idcard');
+    if(idEl){idEl.value=normaliseIdCard(idCard||'');}
+    const ab=document.getElementById('ap-abroad');
+    if(ab)ab.checked=true;
+    document.getElementById('ap-first')?.focus();
+  },80);
 }
 /* The page prints as the book reads: the month bands stay, and a month is kept
    off a page break where the paper allows it. */
@@ -13892,6 +14031,7 @@ function patientFormHTML(p,prefix){
       <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"${lk('address')}/></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
     <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
+    ${prefix==='ap'?`<div class="fg" style="grid-column:1 / -1;"><label class="pf-abroad-lbl"><input type="checkbox" id="${prefix}-abroad"${p?.operated_abroad?' checked':''}/> <span>Operated abroad — stoma formed at another hospital / outside Malta (kept out of the MDH operative count)</span></label></div>`:''}
   </div>
   </div>
 
@@ -14512,6 +14652,11 @@ function readPatientForm(prefix){
   // A proposed reversal date is only kept while the patient is still eligible
   // for one — being reversed, dying, or moving away clears the plan.
   out.proposed_reversal_date=canPlanReversal(out)?(val('proprev')||null):null;
+  // Only the Add Patient form carries the "operated abroad" tick, so the field is
+  // touched only when that control is present — a form without it (editing
+  // demographics, siting) never overwrites the flag already on the record.
+  const abEl=document.getElementById(`${prefix}-abroad`);
+  if(abEl)out.operated_abroad=!!abEl.checked;
   return out;
 }
 // Turn a save failure into something a nurse can act on.

@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'4 October 2026 (New Patients register now keeps a stoma and its refashionings on ONE row in the month it was first formed — the refashioning folded into the same row, stacked above the first operation with the latest on top, and one operation that remade several stomas shown as a single line rather than a duplicate — instead of listing each as a separate line, so a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
+const MANUAL_META={updated:'4 October 2026 (New Patients register gained an "Operated abroad" toggle and a quick-add — type an ID card, the patient is found, add the date operated abroad, and they are flagged operated-abroad; abroad stomas are hidden by default and kept out of the MDH operative count. Also keeps a stoma and its refashionings on ONE row in the month it was first formed — the refashioning folded into the same row, stacked above the first operation with the latest on top, and one operation that remade several stomas shown as a single line rather than a duplicate — instead of listing each as a separate line, so a patient whose only recent op was a refashioning no longer shows as a fresh line; removed the ghost shift-planning rows from the roster; Tracey Galea now runs Shift A — 2 days on, 1 day off — from 8 October; the ENT ward is in the admit dropdown and ward colours; patient record header shows the outcome for every status with a coloured bar and icon)'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -176,13 +176,21 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The app flags likely duplicates for you, including <b>name-order-swapped</b> ones (surname/first name entered the wrong way round).')}
   `},
-  {id:'quicklook',title:'Quick Look & New Patients',keywords:'quick look phone lookup new patients recent register refashioning refashioned nested first stoma month',html:`
+  {id:'quicklook',title:'Quick Look & New Patients',keywords:'quick look phone lookup new patients recent register refashioning refashioned nested first stoma month abroad operated overseas another hospital toggle add',html:`
     ${manMap('patients')}
     ${manSteps([
       `${manBtn('📱 Quick Look','#e7e6fb','#3a34a0')} — a fast phone-friendly lookup to check a patient at the bedside.`,
       `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed, grouped by month (newest first). Every <i>new</i> stoma is a line of its own, in the month it was formed.`
     ])}
     ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is never a line of its own. Each stoma keeps a <b>single register row</b>, in the month it was <i>first</i> formed, and any refashioning is <b>folded into that same row</b>: the refashioning’s operation, date and type stack <b>above</b> the first-performed ones (latest at the very top, the original “first stoma” at the foot). When <b>one operation remade more than one stoma</b> (e.g. an ileostomy and its mucus fistula together) it shows as a <b>single line</b>, naming the stoma types it produced — not a duplicate. A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — the refashioning shows on the one row of their first formation.')}
+    ${manH2('🌍','Stomas formed abroad')}
+    <p class="man-lede">The register counts <b>MDH’s</b> operations, so a stoma formed at another hospital / outside Malta is kept out of the count by default.</p>
+    ${manSteps([
+      `${manBtn('🌍 Operated abroad','#faf5ff','#6b21a8')} (toggle, in the filter row) — off by default; turn it on to show the abroad patients too, each tagged ${manBtn('🌍 abroad','#f3e8ff','#6b21a8')}. The “stomas formed at MDH” count stays MDH-only; abroad ones are counted separately.`,
+      `${manBtn('➕ Operated abroad','#f3e8ff','#6b21a8')} (top of the page) — the quick way to add one: type the <b>ID card</b>, the patient’s details are found from the registry, add the <b>date they were operated abroad</b>, and Save. They appear under the toggle, tagged abroad.`,
+      `If the ID card is <b>not</b> in the registry, it asks <i>“add this patient?”</i> — Yes opens ${manBtn('➕ Add Patient','#e7f7ef','#1c8f5f')} pre-filled with the ID card and the <b>“Operated abroad”</b> tick already on.`
+    ])}
+    ${manNote('tip','💡','You can also tick <b>“Operated abroad”</b> on the Add Patient form directly, on the patient page. The flag needs the one-off <code>sql/add-operated-abroad.sql</code> migration — until it is run the tick will not save and the app says so.')}
   `}
 ]},
 
@@ -437,6 +445,7 @@ const MANUAL_SECTIONS=[
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],
         ['↻','Refashioning folds into its stoma’s row','In New Patients a refashioning is not a new register line. Each stoma keeps one row in the month it was first formed, with any refashioning folded into that same row — stacked above the first operation, latest on top — so a patient whose only recent op was a refashioning does not appear as a fresh entry.','Registry › New Patients'],
+        ['🌍','Stomas formed abroad kept out of the count','In New Patients a patient marked “operated abroad” is hidden by default and left out of the MDH operative count. The “Operated abroad” toggle shows them, tagged “abroad”, counted separately.','Registry › New Patients'],
         ['🔄','Latest handover appliance','All nurses see the saved appliance per present stoma. Other open handovers update automatically, with a check every 30 seconds and on returning to the page. Refreshes wait while you edit. Closed stomas and earlier selections remain in history.','Handover'],
         ['🆕','Unassigned appliance is kept','An appliance set before the stoma is on the registry still shows on the handover, and attaches to the stoma once it is recorded.','Handover'],
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
