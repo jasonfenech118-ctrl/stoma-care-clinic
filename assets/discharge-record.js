@@ -9,6 +9,13 @@ function recordedStomaLabel(stoma){
   return 'Stoma '+stoma.number+' — '+(stoma.mucusFistula?'Mucus fistula':(stoma.type||'Type not recorded'))+
     (stoma.location?' ('+stoma.location+')':'');
 }
+// The heading used on the LETTER itself (body stoma title and care-plan title):
+// the type and location only, without the "Stoma N — " number prefix. The wizard
+// tabs still use recordedStomaLabel so numbering helps navigation there.
+function recordedStomaHeading(stoma){
+  return (stoma.mucusFistula?'Mucus fistula':(stoma.type||'Type not recorded'))+
+    (stoma.location?' ('+stoma.location+')':'');
+}
 function recordedComplicationText(c){
   var text=String(c.text||'');
   if(c.note)text+=' — '+c.note;
@@ -170,7 +177,7 @@ function applyRecordedLetter(){
   var body=[],plans=[];
   recordedStomas.forEach(function(state,index){
     withRecordedStoma(index,function(){
-      var s=state.record,label=recordedStomaLabel(s),typeWord=s.mucusFistula?'mucus fistula':
+      var s=state.record,label=recordedStomaHeading(s),typeWord=s.mucusFistula?'mucus fistula':
         (subtypeLabel()||s.type||'stoma').toLowerCase();
       var procedure=WZ.procedure||'[procedure]';
       var vars={who:((WZ.title?WZ.title+' ':'')+WZ.sname).trim()||'[Patient]',
