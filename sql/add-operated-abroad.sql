@@ -1,11 +1,12 @@
 -- ============================================================================
--- "Operated abroad" flag for the New Patients register.
+-- "Operated Outside MDH" flag for the New Patients register.
 --
 -- WHAT IT DOES
---   Adds one column, patients.operated_abroad, so a stoma formed at another
---   hospital / outside Malta can be marked as such. The New Patients register
---   then keeps those out of MDH's operative count by default, showing them only
---   when the "Operated abroad" toggle is on (tagged "🌍 abroad").
+--   Adds one column, patients.operated_abroad (kept as the column name; the UI
+--   label is "Operated Outside MDH"), so a stoma formed at another hospital —
+--   abroad or elsewhere, not Mater Dei — can be marked as such. The New Patients
+--   register then keeps those out of MDH's operative count by default, showing
+--   them only when the "Operated Outside MDH" toggle is on (tagged "🌍 outside MDH").
 --
 -- WHY IT IS SAFE
 --   • IF NOT EXISTS — running it twice does nothing the second time.
