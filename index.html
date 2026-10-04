@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-409"/>
-<script src="assets/manual.js?v=2026.10.04-409"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-410"/>
+<script src="assets/manual.js?v=2026.10.04-410"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3475,7 +3475,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-409';
+const APP_BUILD='2026.10.04-410';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12484,9 +12484,10 @@ function renderNewPatients(){
   const year=document.getElementById('np-year')?.value||'all';
   const kind=document.getElementById('np-kind')?.value||'all';
   const rows=newPatientRows.filter(r=>{
-    // Stomas formed abroad are not MDH's operative workload, so the register
-    // hides them unless the "Operated abroad" toggle is on.
-    if(r.operated_abroad&&!npShowAbroad)return false;
+    /* The "Operated abroad" toggle switches the whole view: off (default) shows
+       only MDH-formed stomas; on shows ONLY the ones formed abroad. */
+    if(npShowAbroad){if(!r.operated_abroad)return false;}
+    else{if(r.operated_abroad)return false;}
     if(year!=='all'&&String(r.date).slice(0,4)!==year)return false;
     if(kind==='first'&&r.kind!=='first')return false;
     if(terms.length){
@@ -12498,16 +12499,18 @@ function renderNewPatients(){
     return true;
   });
   if(countEl){
-    const shownMdh=rows.filter(r=>!r.operated_abroad).length;
-    const shownAbroad=rows.length-shownMdh;
-    const hiddenAbroad=npShowAbroad?0:newPatientRows.filter(r=>r.operated_abroad).length;
-    countEl.textContent=`${shownMdh} stoma${shownMdh===1?'':'s'} formed at MDH`
-      +(shownAbroad?` · ${shownAbroad} operated abroad`:'')
-      +(hiddenAbroad?` · ${hiddenAbroad} operated abroad (hidden)`:'');
+    const totalAbroad=newPatientRows.filter(r=>r.operated_abroad).length;
+    countEl.textContent=npShowAbroad
+      ? `${rows.length} operated abroad`
+      : `${rows.length} stoma${rows.length===1?'':'s'} formed at MDH`
+        +(totalAbroad?` · ${totalAbroad} operated abroad (toggle to view)`:'');
   }
   if(!rows.length){
-    body.innerHTML=emptyStateHTML('🆕','Nothing in the register for this filter',
-      'Change the year or clear the search. A patient joins this page as soon as their stoma has a date of surgery on it.');
+    body.innerHTML=npShowAbroad
+      ? emptyStateHTML('🌍','No patients operated abroad for this filter',
+          'Nobody is marked operated abroad here yet. Use “➕ Operated abroad” to add one, or turn the toggle off to see the MDH register.')
+      : emptyStateHTML('🆕','Nothing in the register for this filter',
+          'Change the year or clear the search. A patient joins this page as soon as their stoma has a date of surgery on it.');
     return;
   }
   // Group into months, newest first. The rows are already in date order, so the
@@ -12524,12 +12527,11 @@ function renderNewPatients(){
                    refashion:'<span class="np-kind np-kind-refashion">refashioned</span>',first:''};
   body.innerHTML=months.map(m=>{
     const[y,mo]=m.key.split('-');
-    const bandMdh=m.rows.filter(r=>!r.operated_abroad).length;
-    const bandAbroad=m.rows.length-bandMdh;
+    const bandN=m.rows.length;
     return `<div class="np-month">
         <span class="np-month-name">${htmlSafe(DA_MONTH_NAMES[Number(mo)-1]||'')}</span>
         <span class="np-month-year">${htmlSafe(y)}</span>
-        <span class="np-month-n">${bandMdh} stoma${bandMdh===1?'':'s'}${bandAbroad?` · ${bandAbroad} abroad`:''}</span>
+        <span class="np-month-n">${bandN} ${npShowAbroad?`operated abroad`:`stoma${bandN===1?'':'s'}`}</span>
       </div>
       <div class="np-wrap"><table class="np">
         <thead><tr>
