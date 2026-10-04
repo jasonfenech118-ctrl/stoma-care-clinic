@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-400"/>
-<script src="assets/manual.js?v=2026.10.04-400"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-404"/>
+<script src="assets/manual.js?v=2026.10.04-404"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1164,10 +1164,20 @@ table.np tbody tr:hover td{background:#f4fbfa;}
   border-radius:999px;padding:2px 7px;vertical-align:middle;}
 .np-kind-later{background:#eef7ff;color:#0369a1;border:1px solid #bcdcff;}
 .np-kind-refashion{background:#fffaf0;color:#b45309;border:1px solid #fadfae;}
+/* A refashioning is not a stoma of its own — it remakes one already on file — so
+   it sits as a tucked-in line under the formation it belongs to, never as its own
+   register entry. */
+table.np tr.np-sub td{background:#fcfbf7;color:#6b5b3e;border-bottom:1px solid #eef1f4;
+  border-top:1px dashed #f0e6cf;}
+table.np tr.np-sub:hover td{background:#faf4e6;}
+table.np tr.np-sub td.np-id{border-left:3px solid #e9c77d;}
+.np-sub-arrow{color:#b45309;font-weight:800;margin-right:6px;}
+.np-sub .np-date{font-weight:600;}
 @media print{
   .np-month{break-inside:avoid;}
   .np-wrap{overflow:visible;border:none;}
   table.np{min-width:0;font-size:10px;}
+  table.np tr.np-sub td{background:#faf6ec !important;color:#6b5b3e;}
 }
 /* ---- patient wizard --------------------------------------------------------
    The register form is filled in three passes — who the patient is, the stoma
@@ -3444,7 +3454,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-403';
+const APP_BUILD='2026.10.04-404';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12333,16 +12343,6 @@ function formationDupKey(r){
   const name=String(`${r.surname||''} ${r.first_name||''}`).toLowerCase().replace(/[^a-z]/g,'');
   return (digits||name||Math.random())+'|'+String(r.date||'');
 }
-// The fuller of two rows for the same operation is the one worth keeping — the
-// one that names the stoma type, the address and the longer operation text.
-function formationRowScore(r){
-  let s=0;
-  if(r.stoma_type&&r.stoma_type!=='—')s+=8;
-  if(r.address)s+=4;
-  if(r.consultant)s+=2;
-  if(r.comments)s+=1;
-  return s+Math.min(20,String(r.operation||'').length/20);
-}
 function dedupeFormationRows(rows){
   const best=new Map();
   rows.forEach(r=>{
@@ -12351,14 +12351,13 @@ function dedupeFormationRows(rows){
   });
   return [...best.values()];
 }
-/* Two rows with the same patient + date are the ONE operation written in two
-   places — e.g. a refashioning typed into the main (first) operation fields AND
-   recorded as a refashioning, which leaves one row with the operation text but no
-   label and another with the "refashioned" label but a blank operation. Merge
-   them so nothing is lost: keep the fuller operation text, stoma type and
-   comments, and the refashioning / later-stoma label over a plain first row. */
+/* Two rows with the same patient + date are the ONE formation written in two
+   places — the book line and the app's own file for one person, often under
+   two ID cards that differ only by a letter. Merge them so nothing is lost:
+   keep the fuller operation text, stoma type and comments, and gather every
+   refashioning attached to either so the nested list under the row is complete. */
 function mergeFormationRows(a,b){
-  const kindRank={first:0,later:1,refashion:2};
+  const kindRank={first:0,later:1};
   const fuller=(x,y)=>String(y||'').trim().length>String(x||'').trim().length?y:x;
   return {...a,...b,
     kind:(kindRank[b.kind]||0)>=(kindRank[a.kind]||0)?b.kind:a.kind,
@@ -12368,37 +12367,64 @@ function mergeFormationRows(a,b){
     comments:fuller(a.comments,b.comments),
     address:a.address||b.address,
     consultant:a.consultant||b.consultant,
-    phone_number:a.phone_number||b.phone_number};
+    phone_number:a.phone_number||b.phone_number,
+    refashions:[...(a.refashions||[]),...(b.refashions||[])]};
 }
-// Every stoma formation on one patient, oldest first, as register rows.
+/* Every NEW stoma formation on one patient, oldest first, as register rows.
+
+   A refashioning is NOT a new stoma — it remakes one the patient already has —
+   so it is never a register entry of its own. It is attached to the formation
+   row of the stoma it remade (that row's `refashions` list) and shown tucked in
+   beneath it. A patient whose only recent operation was a refashioning of an old
+   stoma therefore does not surface as a fresh entry: the refashioning sits under
+   the original formation, in whatever month that formation was.
+
+   Where a stoma carries the address, telephone or firm written against its own
+   row of the register book, those are used in preference to the ones on the
+   patient — the book writes them afresh at every operation, so using the row's
+   own values keeps this page a copy of the book rather than a summary of it. */
 function patientFormationRows(p){
-  const out=[];
   const base={id:p.id,id_card:p.id_card,first_name:p.first_name,surname:p.surname,
               address:p.address,locality:p.locality,phone_number:p.phone_number,
               consultant:p.consultant,status:derivedFollowupStatus(p)};
-  if(p.surgery_date||p.stoma_type)
-    out.push({...base,kind:'first',date:p.surgery_date||null,stoma_type:p.stoma_type||null,
-      operation:p.procedure_performed||null,comments:p.findings||null});
-  /* A refashioning and a later stoma both record their operation in one
-     "operation and findings" field, so it stands in the Operation column and
-     the Comments column is left to the patient-level findings it does not
-     have.
-
-     Where a stoma carries the address, telephone or firm written against its
-     own row of the register book, those are used in preference to the ones on
-     the patient. The patient record keeps one of each — where they live now —
-     but the book writes them afresh at every operation, so a patient who moved
-     house between two stomas has two different addresses in it. Using the
-     row's own values is what makes this page a copy of the book rather than a
-     summary of it. */
   const rowOf=(s,extra)=>({...base,
     address:s.row_address||base.address, phone_number:s.row_phone||base.phone_number,
-    consultant:s.row_consultant||base.consultant, ...extra});
-  parseRefashionings(p).forEach(r=>out.push(rowOf(r,{kind:'refashion',date:r.formed_date||null,
-    stoma_type:r.type||null,operation:r.row_operation||r.findings||null,comments:r.row_comments||null})));
-  parseStomas(p).forEach(s=>out.push(rowOf(s,{kind:'later',date:s.formed_date||null,
-    stoma_type:s.type||null,operation:s.row_operation||s.findings||null,comments:s.row_comments||null})));
-  return out.filter(r=>r.date);
+    consultant:s.row_consultant||base.consultant, refashions:[], ...extra});
+  const rows=[], byUid=new Map();
+  const add=(uid,row)=>{row._uid=uid;row.refashions=row.refashions||[];rows.push(row);byUid.set(uid,row);};
+  if(p.surgery_date||p.stoma_type)
+    add('base',{...base,kind:'first',date:p.surgery_date||null,stoma_type:p.stoma_type||null,
+      operation:p.procedure_performed||null,comments:p.findings||null,refashions:[]});
+  parseStomas(p).forEach((s,i)=>add(s.uid||('new:'+(s.formed_date||('#'+i))),
+    rowOf(s,{kind:'later',date:s.formed_date||null,
+      stoma_type:s.type||null,operation:s.row_operation||s.findings||null,comments:s.row_comments||null})));
+
+  /* Hang each refashioning off the formation it descends from. Follow its
+     "which stoma was refashioned" link back through any earlier refashionings
+     until it lands on a real formation (the first stoma or a later one). When it
+     names nothing we can resolve, fall back to the most recent stoma formed on or
+     before the refashioning — the one it would have remade — and failing that the
+     earliest formation on file. A patient with no formation at all to host it is
+     simply not in this register (the refashioning still shows on their record). */
+  const refs=parseRefashionings(p);
+  const refByUid=new Map();
+  refs.forEach(r=>{if(r.uid)refByUid.set(r.uid,r);});
+  const formUids=new Set(byUid.keys());
+  const byDate=rows.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  refs.forEach(r=>{
+    let cur=String(r.target_uid||''), seen=new Set();
+    while(cur&&!formUids.has(cur)&&!seen.has(cur)){seen.add(cur);const nx=refByUid.get(cur);cur=nx?String(nx.target_uid||''):'';}
+    let host=formUids.has(cur)?byUid.get(cur):null;
+    if(!host){
+      const d=String(r.formed_date||'9999-99-99');
+      for(let j=byDate.length-1;j>=0;j--){if(String(byDate[j].date||'9999-99-99')<=d){host=byDate[j];break;}}
+      if(!host)host=byDate[0]||rows[0]||null;
+    }
+    if(host)host.refashions.push({date:r.formed_date||null,
+      operation:r.row_operation||r.findings||null,stoma_type:r.type||null,
+      comments:r.row_comments||r.reversal_notes||null});
+  });
+  return rows.filter(r=>r.date);
 }
 async function loadNewPatients(){
   const body=document.getElementById('np-body');
@@ -12437,7 +12463,8 @@ function renderNewPatients(){
     if(kind==='first'&&r.kind!=='first')return false;
     if(terms.length){
       const hay=fixText(`${r.first_name||''} ${r.surname||''} ${r.id_card||''} ${r.phone_number||''} `
-        +`${r.address||''} ${r.locality||''} ${r.consultant||''} ${r.operation||''} ${r.stoma_type||''} ${r.comments||''}`).toLowerCase();
+        +`${r.address||''} ${r.locality||''} ${r.consultant||''} ${r.operation||''} ${r.stoma_type||''} ${r.comments||''} `
+        +(r.refashions||[]).map(rf=>`${rf.operation||''} ${rf.stoma_type||''} ${rf.comments||''}`).join(' ')).toLowerCase();
       if(!terms.every(t=>hay.includes(t)))return false;
     }
     return true;
@@ -12485,7 +12512,7 @@ function renderNewPatients(){
           const opText=String(r.operation??'').trim();
           const opPerformed=opText||r.comments;
           const opComment=opText?r.comments:'';
-          return `<tr class="${rowCls}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
+          const mainTr=`<tr class="${rowCls}" onclick="openPatientRecord('${r.id}')" title="Open this patient's record">
             <td class="np-id">${t(r.id_card)}</td>
             <td class="np-name">${htmlSafe(nm)}${KIND_CHIP[r.kind]||''}</td>
             <td class="np-addr">${t(r.address||r.locality)}</td>
@@ -12495,6 +12522,24 @@ function renderNewPatients(){
             <td>${t(opPerformed)}</td>
             <td>${t(r.stoma_type)}</td>
             <td>${t(opComment)}</td></tr>`;
+          // Refashionings of this stoma, tucked in beneath the formation, oldest
+          // first. They are events on the same stoma, not new register entries.
+          const subTr=(r.refashions||[]).slice()
+            .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+            .map(rf=>{
+              const rfOp=String(rf.operation??'').trim();
+              return `<tr class="np-sub ${rowCls}" onclick="openPatientRecord('${r.id}')" title="Refashioning of this stoma — opens the same patient">
+                <td class="np-id"></td>
+                <td class="np-name"><span class="np-sub-arrow">↳</span><span class="np-kind np-kind-refashion">refashioned</span></td>
+                <td class="np-addr"></td>
+                <td></td>
+                <td></td>
+                <td class="np-date">${rf.date?htmlSafe(fmtShortDate(rf.date)):dash}</td>
+                <td>${t(rfOp||rf.comments)}</td>
+                <td>${t(rf.stoma_type)}</td>
+                <td>${t(rfOp?rf.comments:'')}</td></tr>`;
+            }).join('');
+          return mainTr+subTr;
         }).join('')}</tbody>
       </table></div>`;
   }).join('');
@@ -12523,6 +12568,8 @@ function printNewPatients(){
     tr{break-inside:avoid;} .np-id{font-family:monospace;} .np-name{font-weight:bold;}
     .np-kind{font-size:7.5px;text-transform:uppercase;border:1px solid #cfd8e3;border-radius:8px;padding:1px 4px;margin-left:4px;}
     .np-dash{color:#b6bec7;}
+    tr.np-sub td{background:#faf6ec;color:#6b5b3e;}
+    .np-sub-arrow{color:#b45309;font-weight:bold;margin-right:4px;}
     @page{size:A4 landscape;margin:10mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   </style></head><body><h1>${htmlSafe(title)}</h1>${body.innerHTML}</body></html>`);
   w.document.close();
