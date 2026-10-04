@@ -3444,7 +3444,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.04-401';
+const APP_BUILD='2026.10.04-403';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12347,9 +12347,28 @@ function dedupeFormationRows(rows){
   const best=new Map();
   rows.forEach(r=>{
     const k=formationDupKey(r), cur=best.get(k);
-    if(!cur||formationRowScore(r)>formationRowScore(cur))best.set(k,r);
+    best.set(k,cur?mergeFormationRows(cur,r):{...r});
   });
   return [...best.values()];
+}
+/* Two rows with the same patient + date are the ONE operation written in two
+   places — e.g. a refashioning typed into the main (first) operation fields AND
+   recorded as a refashioning, which leaves one row with the operation text but no
+   label and another with the "refashioned" label but a blank operation. Merge
+   them so nothing is lost: keep the fuller operation text, stoma type and
+   comments, and the refashioning / later-stoma label over a plain first row. */
+function mergeFormationRows(a,b){
+  const kindRank={first:0,later:1,refashion:2};
+  const fuller=(x,y)=>String(y||'').trim().length>String(x||'').trim().length?y:x;
+  return {...a,...b,
+    kind:(kindRank[b.kind]||0)>=(kindRank[a.kind]||0)?b.kind:a.kind,
+    date:a.date||b.date,
+    stoma_type:fuller(a.stoma_type,b.stoma_type),
+    operation:fuller(a.operation,b.operation),
+    comments:fuller(a.comments,b.comments),
+    address:a.address||b.address,
+    consultant:a.consultant||b.consultant,
+    phone_number:a.phone_number||b.phone_number};
 }
 // Every stoma formation on one patient, oldest first, as register rows.
 function patientFormationRows(p){
