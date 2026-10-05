@@ -16,7 +16,8 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
   const elements={'bookcal-root':{innerHTML:''},'followup-year':{value:'2027'},'followup-month':{value:'1'},'adm-save-btn':{disabled:false,textContent:'Save'}};
   const c=vm.createContext({
     TODAY:'2026-09-30',Date,Map,Set,selectedFollowupOwner:owner,
-    admFormBusy:false,admFormSelection:null,admFormLookupVersion:0,
+    admFormBusy:false,admFormSelection:null,admFormLookupVersion:0,admFormSchedule:null,
+    window:{confirm:()=>true},localStorage:{getItem:()=>null},
     LATE_BOOKING_GRACE_MONTHS:1,PLAN_MONTHS_AHEAD:12,
     REMINDER_BUCKETS:['overdue','current','next','nodue','misbooked'].map(key=>({key})),
     bookCalState:{},staffList:[{id:'nurse'}],
@@ -33,7 +34,8 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
     if(q.table==='patients')return{rows:patients,error:null};
     return{rows:q.cols==='patient_id,appt_date,status'?future:[],error:null};
   };
-  for(const name of ['monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
+  vm.runInContext("const ADMIN_WORKLIST_KEY='admin_worklist_v2';",c);
+  for(const name of ['adminWorklistLoad','followupMonthName','monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
   return c;
 }
 const ids=c=>Array.from(c.bookCalState.duePatients,p=>p.id);
@@ -94,12 +96,12 @@ test('repeated Add to list taps save once and keep the nurse and month shown in 
 
 function savedRecordContext({records=[],appointments=[]}={}){
   const c=context(),dom=new JSDOM('<body><div id="adm-find-note"></div><div id="adm-form-body"></div></body>');
-  c.document=dom.window.document;c.admFormSelection={owner:'Jason',year:2027,month:1};
+  c.document=dom.window.document;c.admFormSelection={owner:'Jason',year:2027,month:1};c.enrichAppointments=async rows=>rows;
   c.parseNameList=v=>Array.isArray(v)?v:(v?[v]:[]);c.prettyStomaType=s=>s;c.fmtShortDate=s=>s;c.STOMA_KINDS={};c.fixText=s=>s;c.recCode=()=>'';
   c.stomaShortType=s=>s;c.stomaQuadrant=()=>'';c.initialStomaCode=s=>s;
-  c.SB={from(table){return{select(){return this;},eq(){return this;},order(){return this;},then(resolve){resolve({data:table==='clinical_records'?records:appointments,error:null});}};}};
+  c.SB={from(table){const filters=[];return{select(){return this;},eq(key,value){filters.push(r=>r[key]===value);return this;},gte(key,value){filters.push(r=>r[key]>=value);return this;},order(){return this;},then(resolve){const rows=table==='clinical_records'?records:appointments;resolve({data:rows.filter(r=>filters.every(f=>f({...r,patient_id:r.patient_id||'added-patient'}))),error:null});}};}};
   vm.runInContext("const _normType=t=>String(t||'').trim().toLowerCase();",c);
-  for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','patientStomaList','stomaTimeline','applianceStomaUid','parseEpisodeApplianceRows','stomaApplianceHistory','stomaTitle','appliancePillsHTML','admSavedAppliancesHTML','admRenderPatientForm','admBeginPatientLookup','admLoadPatientById'])vm.runInContext(source(name),c);
+  for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','patientStomaList','stomaTimeline','applianceStomaUid','parseEpisodeApplianceRows','stomaApplianceHistory','stomaTitle','appliancePillsHTML','admSavedAppliancesHTML','admScheduleNoteHTML','admRenderPatientForm','admBeginPatientLookup','admLoadPatientById'])vm.runInContext(source(name),c);
   return c;
 }
 const stomaPatient=extra=>patient({stoma_type:'End colostomy',surgery_date:'2026-01-01',initial_stomas:[],extra_stomas:[],extra_refashionings:[],stoma_operation_history:[],...extra});
@@ -133,7 +135,7 @@ test('a slower earlier patient lookup cannot replace the patient now selected',a
 
 test('assignment remains available when saved appliance reads fail',async()=>{
   const c=savedRecordContext();
-  c.SB={from(){return{select(){return this;},eq(){return this;},order(){return this;},then(resolve){resolve({data:null,error:{message:'Unavailable'}});}};}};
+  c.SB={from(){return{select(){return this;},eq(){return this;},gte(){return this;},order(){return this;},then(resolve){resolve({data:null,error:{message:'Unavailable'}});}};}};
   await c.admRenderPatientForm(stomaPatient());
   assert.equal(c.document.getElementById('adm-save-btn').disabled,false);
   assert.match(c.document.getElementById('adm-saved-appliances').textContent,/You can still add this patient/);
@@ -141,7 +143,7 @@ test('assignment remains available when saved appliance reads fail',async()=>{
 
 test('a slower appliance summary cannot replace the details of another patient',async()=>{
   const c=savedRecordContext(),pending=[];
-  c.SB={from(table){return{select(){return this;},eq(key,value){if(key==='patient_id')this.patientId=value;return this;},order(){return this;},then(resolve){
+  c.SB={from(table){return{select(){return this;},eq(key,value){if(key==='patient_id')this.patientId=value;return this;},gte(){return this;},order(){return this;},then(resolve){
     const result={data:table==='clinical_records'?[{kind:'episode',record_date:'2026-09-28',appliances:[{stoma_uid:'base',appliances:[this.patientId+' pouch'],changed_on:'2026-09-28'}]}]:[],error:null};
     if(this.patientId==='first')pending.push(()=>resolve(result));else resolve(result);
   }};}};
@@ -191,4 +193,35 @@ test('due-month boundaries retain the following grace month across years and lea
   assert.equal(c.bookingDateForDueMonth(['2027-02-01'],202612),'');
   assert.equal(c.bookingDateForDueMonth(['2028-02-29'],202801),'2028-02-29');
   assert.equal(c.bookingDateForDueMonth(['2028-03-01'],202801),'');
+});
+
+test('delayed booking enrichment cannot write an earlier patient into the current scheduling banner',async()=>{
+  const c=savedRecordContext();let releaseFirst,startFirst;
+  const started=new Promise(resolve=>startFirst=resolve);let call=0;
+  c.enrichAppointments=()=>++call===1?new Promise(resolve=>{releaseFirst=resolve;startFirst();}):Promise.resolve([{appt_date:'2027-01-20',appt_slot:'10:00',staff:{full_name:'Second nurse'}}]);
+  const first=c.admRenderPatientForm(stomaPatient({id:'first',first_name:'First'}));await started;
+  await c.admRenderPatientForm(stomaPatient({id:'second',first_name:'Second'}));
+  releaseFirst([{appt_date:'2027-02-10',appt_slot:'09:00',staff:{full_name:'First nurse'}}]);await first;
+  assert.equal(c.admFormPatient.id,'second');assert.equal(c.admFormSchedule.bookings[0].date,'2027-01-20');
+  const banner=c.document.getElementById('adm-sched-note').textContent;assert.match(banner,/Second nurse/);assert.doesNotMatch(banner,/First nurse|2027-02-10/);
+});
+
+test('duplicate list entries and matching ID cards are refused before allocation is written',async()=>{
+  for(const dueList of [false,true]){
+    const c=context(),note={hidden:true,textContent:''};const get=c.document.getElementById;
+    c.document.getElementById=id=>id==='adm-save-note'?note:get(id);
+    c.admFormPatient=patient({id_card:'123M'});c.admFormSelection={owner:'Jason',year:2027,month:1};
+    if(dueList)c.bookCalState.duePatients=[{id:'other-db-id',id_card:' 123m '}];
+    else c.localStorage.getItem=()=>JSON.stringify([{id:'added-patient',owner:'Jason',year:2027,month:1}]);
+    c.updatePatientTolerant=async()=>assert.fail('Duplicate must not write');c.closeModal=()=>assert.fail('Keep the explanation open');
+    vm.runInContext(source('admSavePatient'),c);await c.admSavePatient();assert.match(note.textContent,/already on/);assert.equal(c.admFormBusy,false);
+  }
+});
+
+test('declining an existing due-month move keeps the allocation and list unchanged',async()=>{
+  const c=context();c.admFormPatient=patient();c.admFormSelection={owner:'Jason',year:2027,month:1};
+  c.admFormSchedule={hasDue:true,dueM:2,dueY:2027,dueText:'February 2027',bookings:[]};
+  c.window.confirm=message=>{assert.match(message,/February 2027/);return false;};
+  c.updatePatientTolerant=async()=>assert.fail('Declined move must not write');c.closeModal=()=>assert.fail('Declined move keeps the form open');
+  vm.runInContext(source('admSavePatient'),c);await c.admSavePatient();assert.equal(c.admFormBusy,false);assert.equal(c.document.getElementById('adm-save-btn').disabled,false);
 });

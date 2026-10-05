@@ -16,13 +16,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
-<script src="assets/dntu-workflow.js?v=2026.09.27-318"></script>
+<script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-435"/>
-<script src="assets/manual.js?v=2026.10.06-435"></script>
+<script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-436"/>
+<script src="assets/manual.js?v=2026.10.06-436"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.05-434"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-435"></script>
 <style>
@@ -3605,7 +3605,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-435';
+const APP_BUILD='2026.10.06-436';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10630,7 +10630,8 @@ async function admRenderPatientForm(pat){
   const hasDue=curDueM>=1&&curDueM<=12;
   const dueText=hasDue?`${followupMonthName(curDueM)}${curDueY?' '+curDueY:''}`:'';
   const sameMonthAsSel=hasDue&&Number(sel.month)===curDueM&&Number(sel.year)===curDueY;
-  admFormSchedule={hasDue,dueM:curDueM,dueY:curDueY,dueText,sameMonthAsSel,dueOwner:owner,bookings:[],loaded:false};
+  const schedule={hasDue,dueM:curDueM,dueY:curDueY,dueText,sameMonthAsSel,dueOwner:owner,bookings:[],loaded:false};
+  admFormSchedule=schedule;
   body.innerHTML=`
     <div style="background:#f1f5f9;border-radius:10px;padding:10px 12px;margin:12px 0;">
       ${patientIdentity}
@@ -10655,10 +10656,11 @@ async function admRenderPatientForm(pat){
     summary.innerHTML=admSavedAppliancesHTML(pat,val(0),val(1))+(failed?'<div class="report-note">Some saved appliance records could not be loaded. You can still add this patient to the list.</div>':'');
     // Record any upcoming booked appointment and refresh the "already scheduled" note.
     const booked=await enrichAppointments(val(2)).catch(()=>val(2));
-    admFormSchedule.bookings=(booked||[]).map(a=>({date:a.appt_date,slot:String(a.appt_slot||'').slice(0,5),
+    if(admFormPatient!==pat||admFormSchedule!==schedule||document.getElementById('adm-form-body')!==body)return;
+    schedule.bookings=(booked||[]).map(a=>({date:a.appt_date,slot:String(a.appt_slot||'').slice(0,5),
       who:a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'')}));
-    admFormSchedule.loaded=true;
-    const sn=document.getElementById('adm-sched-note');if(sn)sn.innerHTML=admScheduleNoteHTML(admFormSchedule);
+    schedule.loaded=true;
+    const sn=document.getElementById('adm-sched-note');if(sn)sn.innerHTML=admScheduleNoteHTML(schedule);
   }catch(error){if(admFormPatient===pat&&document.getElementById('adm-form-body')===body)summary.innerHTML='<div class="report-note">Saved appliances could not be loaded. You can still add this patient to the list.</div>';}
 }
 /* The amber "already scheduled" banner inside the Add-patient form: shows the due
@@ -13230,9 +13232,7 @@ function normaliseLocality(v){
 /*
    Local-council flags used wherever the app has a dedicated locality view.
    The files are kept locally for dependable clinic use, while each flag links
-   back to its Commons source page.  Paola is deliberately absent: its current
-   flag is marked copyrighted in the source gallery and no licensed current
-   replacement was available. */
+   back to its Commons source page. */
 const LOCALITY_FLAG_TITLES=Object.freeze({
   'Attard':'Flag_of_Attard.svg','Balzan':'Flag_of_Balzan.svg','Birgu (Vittoriosa)':'Flag_of_Birgu.svg',
   'Birkirkara':'Flag_of_Birkirkara.svg','Birżebbuġa':'Flag of Birżebbuġa.svg','Bormla (Cospicua)':'Flag_of_Cospicua_(Bormla).svg',
@@ -13258,7 +13258,7 @@ function localityFlagFileName(name){
     .toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'.svg';
 }
 /* A generated fallback "flag" — the town's initials on the app teal — shown when
-   a locality has no licensed council flag on file (e.g. Paola) or its image cannot
+   a locality has no council flag on file or its image cannot
    load. It is a data-URI SVG, so it needs no file and no network, and a locality
    marker is never blank. */
 function localityInitials(name){

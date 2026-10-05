@@ -96,7 +96,9 @@ function dntuRenderForm(){
   const s=dntuNurseState;if(!s)return;
   const c=dntuFormContext(s);
   const already=!c.record;
-  const willPause=c.target>=3&&!isClosedFollowupStatus(s.p.followup_status);
+  let preview;
+  try{preview=dntuBuildSavePlan(s,null);}catch(e){/* Incomplete dates stay editable. */}
+  const willPause=preview?preview.pause:c.target>=3&&!isClosedFollowupStatus(s.p.followup_status);
   const p=s.p,name=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
   const pastRows=(s.pastEvents||[]).map((d,i)=>`<div class="dw-past-row">
       <div class="fg dw-full"><label for="dw-past-${i}">Previous DNTU event date *</label>
@@ -121,7 +123,7 @@ function dntuRenderForm(){
       <button type="button" class="dw-addbtn" onclick="dntuAddPastEvent()">＋ Add a previous DNTU event</button>
     </section>
     ${c.sequence.length?`<details class="dw-recorded"><summary>View recorded missed appointments (${c.sequence.length})</summary><ul>${c.sequence.map(a=>`<li>${htmlSafe(dntuWhen(a.appt_date,a.appt_slot))}</li>`).join('')}</ul></details>`:''}
-    <div class="dw-summary" role="status"><strong>When you save</strong><p>${htmlSafe(actionSummary)}</p>${c.past.length?`<p>${c.past.length} previous DNTU event${c.past.length===1?'':'s'} will also be added.</p>`:''}${willPause?'<p id="dw-pause-note">Three or more DNTUs in a row: follow-up will be paused.</p>':(c.record?'<p>The follow-up due month will be set according to clinic availability.</p>':'')}</div>
+    <div class="dw-summary" role="status"><strong>When you save</strong><p>${htmlSafe(actionSummary)}</p>${c.past.length?`<p>${c.past.length} previous DNTU event${c.past.length===1?'':'s'} will also be added.</p>`:''}${willPause?'<p id="dw-pause-note">Three or more DNTUs in a row: follow-up will be paused.</p>':((preview?.willSchedule||(!preview&&c.record))?'<p>The follow-up due month will be set according to clinic availability.</p>':'')}</div>
     <div class="dw-error" id="dw-error" role="alert" hidden></div>
     <div class="mact"><button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button><button type="button" id="dw-save" class="btn-save" onclick="saveDntuNurseForm()">${already?(c.past.length?'Save previous DNTU events':'Save changes'):`Save as ${dntuOrdinal(c.target)} DNTU`}</button></div>`;
 }
@@ -141,7 +143,7 @@ function dntuBuildSavePlan(s,resolved){
   if(record&&s.date>TODAY)throw new Error('This appointment is in the future, so it cannot be marked as missed yet.');
   if(record&&s.history.some(a=>String(a.id)!==String(s.appt.id)&&dntuEventKey(a)===dntuEventKey(c.current)))throw new Error('This patient already has an appointment at that date and time. Open that appointment to record its outcome.');
   const rows=[];let lastKey='';
-  const cleaned=(s.pastEvents||[]).filter(Boolean);
+  const cleaned=s.pastEvents||[];
   for(let i=0;i<cleaned.length;i++){
     const d=cleaned[i];
     if(!validDate(d))throw new Error(`Enter a valid date for previous DNTU event ${i+1}.`);
@@ -150,7 +152,7 @@ function dntuBuildSavePlan(s,resolved){
     const draft={appt_date:d,appt_slot:DNTU_PAST_SLOT};
     const key=dntuEventKey(draft);
     if(lastKey&&key<=lastKey)throw new Error('Enter the previous DNTU events in date order, oldest first, with no two on the same day.');
-    if(s.history.some(a=>dntuEventKey(a)===key))throw new Error('A DNTU is already recorded on one of these dates. Open that record to correct its outcome.');
+    if(s.history.some(a=>a.appt_date===d))throw new Error('An appointment is already recorded on one of these dates. Open that record to correct its outcome.');
     rows.push({patient_id:s.appt.patient_id,appt_date:d,appt_slot:DNTU_PAST_SLOT,status:'did_not_attend'});
     lastKey=key;
   }
@@ -159,14 +161,17 @@ function dntuBuildSavePlan(s,resolved){
   if(dntuSequence(sequenceRows).length!==c.target)throw new Error('A Seen appointment breaks this run of misses. Check the previous dates.');
   const streak=dntuSequence(projected).length;
   const pause=streak>=3&&!isClosedFollowupStatus(s.p.followup_status);
-  const patientUpdate={followup_owner:s.owner};
+  const laterOutcome=s.history.some(a=>String(a.id)!==String(s.appt.id)&&a.status!=='booked'&&a.status!=='cancelled'&&dntuEventKey(a)>dntuEventKey(c.current));
+  const willSchedule=record&&!pause&&!laterOutcome&&!isClosedFollowupStatus(s.p.followup_status);
+  const patientUpdate={};
+  if(s.owner!==(s.p.followup_owner||'Common'))patientUpdate.followup_owner=s.owner;
   if(pause)patientUpdate.followup_status='paused';
-  else if(record&&resolved&&resolved.month){
+  else if(willSchedule&&resolved&&resolved.month){
     patientUpdate.followup_due_month=Number(resolved.month);
     patientUpdate.followup_year=Number(resolved.year);
     patientUpdate.followup_flexible=true;
   }
-  return {rows,current:record?{status:'did_not_attend',appt_date:s.date,appt_slot:s.slot}:null,patientUpdate,streak,pause};
+  return {rows,current:record?{status:'did_not_attend',appt_date:s.date,appt_slot:s.slot}:null,patientUpdate:Object.keys(patientUpdate).length?patientUpdate:null,streak,pause,willSchedule};
 }
 function dntuFormError(message){
   const e=document.getElementById('dw-error');
@@ -184,18 +189,21 @@ async function dntuResolveDueMonth(s){
 async function saveDntuNurseForm(){
   const s=dntuNurseState;if(!s||s.saving)return;
   dntuRememberFields();
-  const c=dntuFormContext(s);
-  const willPause=c.target>=3&&!isClosedFollowupStatus(s.p.followup_status);
-  // Only a fresh DNTU that will not pause takes an automatic due month.
-  let resolved=null;
-  if(c.record&&!willPause){try{resolved=await dntuResolveDueMonth(s);}catch(e){resolved=null;}}
-  let plan;
-  try{plan=dntuBuildSavePlan(s,resolved);}catch(e){dntuFormError(e.message);return;}
+  // Lock before availability is read: rapid taps must share one save.
   s.saving=true;
   document.querySelectorAll('#mb input,#mb select,#mb button').forEach(e=>e.disabled=true);
   const button=document.getElementById('dw-save');if(button)button.textContent='Saving…';
   let historySaved=false,currentSaved=false;
   try{
+    let plan=dntuBuildSavePlan(s,null);
+    if(plan.willSchedule){
+      const resolved=await dntuResolveDueMonth(s);
+      if(!resolved?.month)throw new Error('Could not determine the follow-up month. Please try again.');
+      plan=dntuBuildSavePlan(s,resolved);
+    }
+    // Keep the original follow-up patch when an appointment saved successfully
+    // but its patient update failed. Retrying must not lose the automatic month.
+    if(s.pendingFollowupPatch)plan.patientUpdate={...s.pendingFollowupPatch,...plan.patientUpdate};
     const fresh=await dntuLoadHistory(s.appt.patient_id);
     if(dntuHistoryFingerprint(fresh)!==dntuHistoryFingerprint(s.history))throw new Error('The appointment history has changed. Close and reopen this form to review the latest count.');
     const user=await getCurrentUserForAudit();
@@ -231,8 +239,10 @@ async function saveDntuNurseForm(){
         const{followup_flexible,...rest}=plan.patientUpdate;
         up=await SB.from('patients').update(rest).eq('id',s.appt.patient_id);
       }
-      if(up.error){s.followupPending=true;throw new Error('The DNTU record was saved, but follow-up could not be updated: '+up.error.message);}
+      if(up.error){s.followupPending=true;s.pendingFollowupPatch={...plan.patientUpdate};throw new Error('The DNTU record was saved, but follow-up could not be updated: '+up.error.message);}
       s.followupPending=false;
+      delete s.pendingFollowupPatch;
+      Object.assign(s.p,plan.patientUpdate);
     }
     closeModal();refreshAppointmentViews();
   }catch(e){

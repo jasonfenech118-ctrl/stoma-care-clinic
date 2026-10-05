@@ -24,7 +24,14 @@
     {value: 'present', label: 'Present'},
     {value: 'absent', label: 'Absent'}
   ];
-  const STATUS_LABELS = Object.fromEntries(STATUS_OPTIONS.map(option => [option.value, option.label]));
+  // Earlier sheets used these statuses. Keep their saved meaning and show the
+  // existing selection without adding extra choices to new attendance rows.
+  const LEGACY_STATUS_LABELS = {
+    late: 'Present (recorded late)',
+    left_early: 'Present (recorded early departure)',
+    off_leave: 'Off / leave (recorded)'
+  };
+  const STATUS_LABELS = {...Object.fromEntries(STATUS_OPTIONS.map(option => [option.value, option.label])), ...LEGACY_STATUS_LABELS};
   const LEAVE_CODES = new Set(['sick_leave', 'maternity_leave', 'study_leave', 'annual_leave', 'public_holiday']);
   // A person the roster shows as not working today (off, or on any leave).
   function isPlannedOff(row) {
@@ -312,7 +319,10 @@
   }
 
   function statusOptions(selected) {
-    return STATUS_OPTIONS.map(option =>
+    const options = LEGACY_STATUS_LABELS[selected]
+      ? [...STATUS_OPTIONS, {value: selected, label: LEGACY_STATUS_LABELS[selected]}]
+      : STATUS_OPTIONS;
+    return options.map(option =>
       '<option value="' + option.value + '"' +
       (option.value === selected ? ' selected' : '') + '>' +
       escape(option.label) + '</option>'
@@ -353,9 +363,9 @@
   function countsFromRows(rows) {
     const counts = {total: rows.length, present: 0, absent: 0, off: 0, pending: 0};
     rows.forEach(row => {
-      if (row.attendance_status === 'present') counts.present++;
+      if (['present', 'late', 'left_early'].includes(row.attendance_status)) counts.present++;
       else if (row.attendance_status === 'absent') counts.absent++;
-      else if (isPlannedOff(row)) counts.off++;   // rostered off / on leave — no mark needed
+      else if (row.attendance_status === 'off_leave' || isPlannedOff(row)) counts.off++;   // rostered off / on leave — no mark needed
       else counts.pending++;                       // rostered on duty, not yet marked
     });
     return counts;
@@ -625,9 +635,9 @@
       }
       const group = groups.get(row.attendance_date);
       group.rows++;
-      if (row.attendance_status === 'present') group.present++;
+      if (['present', 'late', 'left_early'].includes(row.attendance_status)) group.present++;
       else if (row.attendance_status === 'absent') group.absent++;
-      else if (isPlannedOff(row)) group.off++;
+      else if (row.attendance_status === 'off_leave' || isPlannedOff(row)) group.off++;
       else group.pending++;
       const stamp = row.updated_at || row.created_at || '';
       if (stamp > group.last_saved) group.last_saved = stamp;

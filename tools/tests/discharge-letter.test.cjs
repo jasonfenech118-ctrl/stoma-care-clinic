@@ -198,13 +198,13 @@ test('multiple stomas and complications survive Word HTML, DOCX and email-text e
   const s=snapshot();s.stomas[1].complications.push({text:'<img src=x onerror=alert(1)>',note:'Saved text & details'});
   const {w,d}=page(s);assert.equal(d.querySelector('.body img'),null);
   for(const exportText of [w.buildLetterHTML(),w.buildLetterText()]){
-    assert.match(exportText,/Stoma 1|Stoma 2|Stoma 3/);assert.match(exportText,/Lentell|Dansac|Urostomy bag/);
+    for(const label of ['Loop ileostomy','End colostomy','Urostomy','RIF','LIF','RLQ','Lentell','Dansac','Urostomy bag'])assert.ok(exportText.includes(label),label);
     assert.match(exportText,/Mucocutaneous separation/);
   }
   const blob=w.buildLetterDocx();
   const bytes=await new Promise((resolve,reject)=>{const r=new w.FileReader();r.onload=()=>resolve(Buffer.from(r.result));r.onerror=reject;r.readAsArrayBuffer(blob);});
   const xml=bytes.toString('utf8');
-  for(const label of ['Stoma 1','Stoma 2','Stoma 3','Lentell','Dansac','Urostomy bag','Mucocutaneous separation'])assert.ok(xml.includes(label),label);
+  for(const label of ['Loop ileostomy','End colostomy','Urostomy','RIF','LIF','RLQ','Lentell','Dansac','Urostomy bag','Mucocutaneous separation'])assert.ok(xml.includes(label),label);
   assert.ok(xml.includes('<w:keepNext/>'));assert.match(w.buildLetterHTML(),/&lt;img src=x onerror=alert\(1\)&gt;/);
 });
 test('standalone/legacy query letters retain their manual wizard and Clear removes recorded mode',()=>{

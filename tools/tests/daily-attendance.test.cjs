@@ -83,7 +83,9 @@
     for (const date of ['2026-09-16', '2026-09-17', '2026-09-18']) {
       const result = app().api.buildPlannedRows({...data, date, roster: [], bank: []}, regular);
       assert.equal(result[0].planned_code, 'annual_leave');
-      assert.equal(result[0].attendance_status, 'off_leave');
+      assert.equal(result[0].attendance_status, 'not_recorded');
+      assert.equal(result[0].working, false);
+      assert.equal(app().api.countsFromRows(result).off, 1);
     }
   });
 
@@ -154,7 +156,8 @@
     const merged = api.mergeSavedRows(current, saved);
     assert.equal(merged.length, 2);
     const alice = merged.find(row => row.person_key === 'staff:a');
-    assert.equal(alice.name, 'Alice Archived');
+    assert.equal(alice.name, 'Alice');
+    assert.equal(alice.role, 'Nurse');
     assert.equal(alice.attendance_status, 'late');
     assert.equal(alice.time_in, '07:15');
     assert.equal(alice.is_new, false);
@@ -170,7 +173,7 @@
       {attendance_status: 'off_leave'},
       {attendance_status: 'not_recorded'}
     ]);
-    assert.deepEqual(counts, {total: 6, present: 1, late: 1, early: 1, absent: 1, off: 1, pending: 1});
+    assert.deepEqual(JSON.parse(JSON.stringify(counts)), {total: 6, present: 3, absent: 1, off: 1, pending: 1});
   });
 
   test('record archive aggregates dates independently and newest first', () => {
@@ -181,7 +184,7 @@
     ]);
     assert.equal(groups.length, 2);
     assert.equal(groups[0].date, day);
-    assert.equal(groups[0].attention, 1);
+    assert.equal(groups[0].present, 1);
     assert.equal(groups[0].pending, 1);
     assert.equal(groups[0].last_saved, '2026-09-17T09:00:00Z');
   });
@@ -273,6 +276,7 @@
       daily_attendance: [{
         person_key: 'staff:a', attendance_date: day, staff_name: 'Alice',
         staff_role: 'Nurse', planned_code: 'working', planned_duty: 'Day duty',
+        planned_source: 'Usual rota', planned_hours: '', roster_notes: '',
         attendance_status: 'present', time_in: '07:00:00', time_out: '13:00:00'
       }]
     }));
@@ -291,5 +295,39 @@
     }));
     assert.match(elements['da-results'].innerHTML, /add-daily-attendance\.sql/);
     assert.match(elements['da-autosave'].textContent, /Database setup required/);
+  });
+
+  test('a roster refresh preserves every saved legacy status, time and remark in the upsert', async () => {
+    for (const status of ['late','left_early','off_leave']) {
+      const {api, elements} = app();
+      elements['da-date'].value = day;
+      elements['da-date'].dataset.initialized = 'true';
+      const db = database();
+      await api.load(options(db, {
+        staff: [nurse('a', 'Alice')],
+        roster: [{staff_id:'a', roster_date:day, status:'off', notes:'Changed duty'}],
+        daily_attendance: [{person_key:'staff:a', attendance_date:day, staff_name:'Alice',
+          planned_code:'working', planned_duty:'Day duty', planned_source:'Usual rota',
+          attendance_status:status, time_in:'07:15:00', time_out:'13:00:00', remarks:'Saved remark'}]
+      }));
+      assert.equal(db.upserts.length, 1);
+      const saved = db.upserts[0].payload[0];
+      assert.equal(saved.planned_code, 'off');assert.equal(saved.attendance_status, status);
+      assert.equal(saved.time_in, '07:15');assert.equal(saved.time_out, '13:00');assert.equal(saved.remarks, 'Saved remark');
+      assert.ok(elements['da-results'].innerHTML.includes('value="'+status+'" selected'));
+    }
+  });
+
+  test('new attendance rows keep three choices while legacy rows retain only their existing extra selection', () => {
+    const {JSDOM} = require('jsdom');const api=app().api;
+    const current=planned({staff:[nurse('a','Alice')]});
+    for (const status of ['not_recorded','late','left_early','off_leave']) {
+      const dom=new JSDOM(api.renderSheet([{...current[0],attendance_status:status}]));
+      const select=dom.window.document.querySelector('select');
+      assert.equal(select.value,status);
+      assert.deepEqual(Array.from(select.options,o=>o.value),status==='not_recorded'
+        ? ['not_recorded','present','absent'] : ['not_recorded','present','absent',status]);
+      dom.window.close();
+    }
   });
 })();

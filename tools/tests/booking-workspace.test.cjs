@@ -80,7 +80,8 @@ test('both booking lists render prominent escaped ID badges and keep matching-na
     assert.match(cards,/class="bc-list-pat sel bc-name-tone-1" data-id="b"/);
     assert.equal((cards.match(/Same name — check ID card/g)||[]).length,2);
     assert.match(cards,/<strong>&lt;300M&gt;<\/strong>/);assert.doesNotMatch(cards,/<strong><300M>/);
-    assert.match(cards,/aria-label="Select Alex Example, ID card 200M, to book"/);
+    assert.match(cards,/aria-label="Open follow-up history and bookings for Alex Example, ID card 200M"/);
+    assert.match(cards,/onclick="openFollowupHistory\(/);
   }
 });
 
