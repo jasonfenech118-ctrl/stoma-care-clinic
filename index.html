@@ -3602,7 +3602,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-430';
+const APP_BUILD='2026.10.05-431';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19186,11 +19186,10 @@ function handoverReversedGone(p){
   return dates.some(d=>String(d)<=TODAY)||recorded
     ||(!dates.length&&normaliseFollowupStatus(p.followup_status)==='reversed');
 }
-/* A patient who has died is no longer on the ward, so they come off the handover
-   the moment they are marked deceased — by a recorded date of death or a deceased
-   follow-up status. */
+/* Death takes precedence over every planned operation, including when it is
+   recorded alongside an earlier reversal or another follow-up outcome. */
 function handoverDeceased(p){
-  return !!(p&&(p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased'));
+  return patientIsDeceased(p);
 }
 /* Everyone who should drop off the handover on their own: a fully reversed
    patient or a deceased one. */
@@ -19860,7 +19859,10 @@ async function handoverAwaitingSitings(){
       return sd&&sd<=TODAY&&s.surgery_performed!==true;
     }).sort((a,b)=>String(a.surgery_date).localeCompare(String(b.surgery_date))
       ||String(a.surname||'').localeCompare(String(b.surname||'')));
-    return await attachPatientProfilesByIdCard(rows);
+    const profiles=await attachPatientProfilesByIdCard(rows);
+    // A stale siting or surgery date must not bring a deceased or fully
+    // reversed patient back onto handover after the inpatient row is removed.
+    return profiles.filter(p=>!handoverShouldAutoLeave(p));
   }catch(e){return [];}
 }
 /* Registry patients with a proposed reversal date that has come round, and who
