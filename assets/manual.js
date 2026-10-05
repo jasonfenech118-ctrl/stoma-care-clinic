@@ -121,13 +121,13 @@ const MANUAL_SECTIONS=[
     </ul>
     ${manNote('tip','👤','Every patient record automatically shows the illustrated male or female avatar from the saved Sex field. Mater Dei patients use the normal <b>blue or pink</b> portrait. A patient marked <b>Operated Outside MDH</b> uses the matching <b>green</b> portrait together with the green page outline and status badge. If Sex is not recorded, the neutral patient icon remains visible.')}
     ${manH2('👤','One patient avatar across the platform')}
-    <p class="man-lede">The same portrait now follows the patient through <b>Registry</b>, <b>New Patients</b>, <b>Quick Look</b>, <b>Appointments</b>, <b>Appointment Outcomes</b>, <b>DNTU</b>, <b>Handover</b>, <b>Siting</b>, <b>Postop Discharges</b> and patient pop-ups. The face and its base colour identify the patient; a separate coloured ring and small clinical symbol show a special current status.</p>
+    <p class="man-lede">The same avatar follows the patient through <b>Registry</b>, <b>New Patients</b>, <b>Quick Look</b>, <b>Appointments</b>, <b>Appointment Outcomes</b>, <b>DNTU</b>, <b>Handover</b>, <b>Siting</b>, <b>Postop Discharges</b> and patient pop-ups. Living patients keep their portrait and base colour; a separate coloured ring and small clinical symbol show a special current status. A deceased patient instead uses a clear black <b>skull avatar</b>.</p>
     <ul class="man-ul">
-      <li><b>Black cross</b> — deceased.</li><li><b>Violet reversal arrow</b> — reversed / closed.</li>
+      <li><b>Black skull avatar</b> — deceased.</li><li><b>Violet reversal arrow</b> — reversed / closed.</li>
       <li><b>Blue ferry</b> — discharged to Gozo.</li><li><b>Teal plane</b> — relocated overseas.</li>
       <li><b>Amber pause</b> — follow-up paused.</li><li><b>Slate clock</b> — awaiting feedback.</li>
     </ul>
-    ${manNote('tip','🎨','Status never replaces identity: a male or female keeps the correct portrait, an outside-MDH patient keeps the green portrait, and the status ring sits around it. Patients whose sex is not recorded keep the neutral icon. Locality flags are separate and are not changed by the avatar system.')}
+    ${manNote('tip','🎨','For living patients, status never replaces identity: a male or female keeps the correct portrait, an outside-MDH patient keeps the green portrait, and the status ring sits around it. The deceased status is the deliberate exception and always uses the black skull avatar. Patients whose sex is not recorded keep the neutral icon. Locality flags are separate and are not changed by the avatar system.')}
     ${manNote('tip','🔎','Patient-page wording uses larger, darker text. Key clinical labels such as <b>Surgery</b>, <b>Location</b>, <b>Discharged</b>, <b>Operation &amp; findings</b> and <b>Appliances &amp; accessories</b> are bold so the record is easier to scan.')}
     ${manH2('🎗','The top bar also shows the outcome')}
     <p class="man-lede">When a patient is no longer in plain follow-up, the <b>header bar turns the outcome colour</b> and shows a matching icon (on the portrait and beside the status), while the rest of the page keeps the sex wash:</p>
