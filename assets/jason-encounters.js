@@ -7,7 +7,7 @@
   const OUTPUTS=['Liquid','Gas','Nil','Semi-formed stools','Blood','Hemorrhagic fluid','Serous fluid'];
   const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
   const ORGANISMS=['CRE','VRE','MRSA','C. difficile','ESBL','Other'];
-  const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Stoma nurse','Physiotherapist','Social worker'];
+  const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
   const REFERRAL_STATUS=['Needed','Requested','Referred','Seen','Completed','Declined'];
   let ctx=null,request=0;
   const latestByPatient=new Map();
