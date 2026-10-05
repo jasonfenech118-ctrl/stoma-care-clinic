@@ -4,7 +4,7 @@ function source(name){const m=html.match(new RegExp('(?:async )?function '+name+
 function context(){
  const dom=new JSDOM('<body><div id="mo"></div><div id="mb"></div></body>');
  const c=vm.createContext({document:dom.window.document,TODAY:'2026-09-25',Date,console,htmlSafe:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'),fmtShortDate:s=>s,prettyStomaType:s=>s,initialStomaCode:s=>'ID-'+s,newStomaUid:()=> 'draft-uid',sexModalClass:()=>'',openMo:()=>{},confirm:()=>true,closeModalGuarded:()=>{},normaliseFollowupStatus:s=>s||'active',patientIsDeceased:p=>!!p.deceased_date,shortApplianceList:a=>a||[],stomaShortType:t=>t,stomaQuadrant:()=>'',collectStomaTargetsFromPatient:()=>[],stomaTypeOptions:t=>`<option>${t||'End colostomy'}</option>`,stomaLocOptions:t=>`<option>${t||'Existing location'}</option>`});
- for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','stomaEvents','stomaEndDates','hasStomaNow','everReversedDates','patientEverReversed','reversedBeforeDeath','derivedFollowupStatus','rawExtraStatuses','patientIsDeceased','followupStatusText','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation','persistStomaOperation','openCurrentStomaFromPatientDetails','revealPatientDetailsSave','outcomeRevertTargets','revertStomaClosureHistory','revertedLegacyClosureDates','buildOutcomeRevertPatch'])vm.runInContext(source(name),c);
+ for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','stomaOperationFingerprint','patientStomaList','stomaTimeline','stomasPresentOn','stomaEvents','stomaEndDates','hasStomaNow','everReversedDates','patientEverReversed','reversedBeforeDeath','derivedFollowupStatus','rawExtraStatuses','patientIsDeceased','followupStatusText','buildStomaOperationPatch','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows','handoverApplianceRowText','handoverStomaLine','handoverOperationSummary','previousStomaRecords','stomaRecordsFor','operationTargetLabel','openStomaOperation','changeStomaOperationTarget','changeStomaOperationKind','readStomaOperation','stomaOperationError','reviewStomaOperation','backStomaOperation','saveStomaOperation','persistStomaOperation','persistPatientDetailsForm','openCurrentStomaFromPatientDetails','revealPatientDetailsSave','outcomeRevertTargets','revertStomaClosureHistory','revertedLegacyClosureDates','buildOutcomeRevertPatch'])vm.runInContext(source(name),c);
  vm.runInContext('let stomaOperationCtx=null;let PF_STOMA_TARGETS=[];let modalCloseGuard=null;let patientEditReturn=null;',c);
  return c;
 }
@@ -387,9 +387,9 @@ test('patient details shortcut opens the present stoma and starts a new one when
  const c=context();let opened=null;
  c.openStomaModal=async(id,slot)=>{opened=['current',id,slot];};
  c.openStomaOperation=async(id,kind)=>{opened=['operation',id,kind];};
- c.fetchPatientById=async()=>({data:patient(),error:null});
+ c.fetchPatientById=async()=>({data:{...patient(),id_card:'0000000M'},error:null});
  await c.openCurrentStomaFromPatientDetails('p1');assert.deepEqual(Array.from(opened),['current','p1','base']);
- c.fetchPatientById=async()=>({data:{id:'p1',initial_stomas:[],extra_stomas:[],extra_refashionings:[],stoma_operation_history:[]},error:null});
+ c.fetchPatientById=async()=>({data:{id:'p1',id_card:'0000000M',initial_stomas:[],extra_stomas:[],extra_refashionings:[],stoma_operation_history:[]},error:null});
  await c.openCurrentStomaFromPatientDetails('p1');assert.deepEqual(Array.from(opened),['operation','p1','new']);
 });
 test('saving patient details updates demographics without writing stoma history',async()=>{

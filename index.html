@@ -3579,7 +3579,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-428';
+const APP_BUILD='2026.10.05-429';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15889,7 +15889,7 @@ async function afterStomaSaved(patientId){
   if(document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
-  if(document.getElementById('hv-body'))loadHandover();
+  if(document.getElementById('hv-body'))await loadHandover();
 }
 /* The clickable list of every stoma, for the patient record. */
 /* The rod line shown on the stoma its rod is tied to (rod_stoma_uid). Shows the
@@ -19146,16 +19146,22 @@ function loadDischargeLetters(){
   if(f&&!f.getAttribute('src'))f.setAttribute('src',f.dataset.src);
 }
 function openDischargeFull(){window.open('discharge-letter.html?v='+APP_BUILD,'_blank');}
-/* True when an inpatient's stoma has been reversed and none is left — the most
-   recent stoma is ended on or before today, with no new or refashioned stoma
-   still present. Such a patient has nothing to hand over about, so they leave
-   the stoma handover on their own. A future-dated reversal (not done yet) or a
-   patient who still carries a stoma does not qualify. */
+/* Use every stoma's current state, including a closure with an unknown date.
+   A remaining stoma keeps the patient on handover even when a different stoma
+   was reversed. Future-dated closures have not happened yet. */
 function handoverReversedGone(p){
-  if(hasStomaNow(p))return false;
-  const ends=stomaEndDates(p);
-  if(!ends.length)return false;
-  return String(ends[ends.length-1])<=TODAY;
+  if(!p)return false;
+  const stomas=patientStomaList(p);
+  if(stomas.some(s=>{
+    if(s.formed_date&&String(s.formed_date)>TODAY)return false;
+    return s.present||(s.reversal_date&&String(s.reversal_date)>TODAY)
+      ||(s.superseded_date&&String(s.superseded_date)>TODAY);
+  }))return false;
+  const dates=everReversedDates(p);
+  const recorded=stomaOperationHistory(p).some(e=>!e.reverted_at&&(!e.date||String(e.date)<=TODAY)
+    &&(e.affected||[]).some(a=>a.state==='reversed'));
+  return dates.some(d=>String(d)<=TODAY)||recorded
+    ||(!dates.length&&normaliseFollowupStatus(p.followup_status)==='reversed');
 }
 /* A patient who has died is no longer on the ward, so they come off the handover
    the moment they are marked deceased — by a recorded date of death or a deceased
@@ -19212,12 +19218,11 @@ async function loadHandover(){
     for(let i=0;i<missingIds.length;i+=100){
       try{
         const{data:extra}=await SB.from('patients').select(cols).in('id',missingIds.slice(i,i+100));
-        // Pull back only patients who genuinely still belong on the ward. Someone
-        // who should auto-leave (fully reversed, or deceased) is NOT pulled back —
-        // they are cleared below and their episode is closed, so they stay gone.
+        // Include closed patients in the cleanup below too, even if their ward
+        // flag was already cleared while their episode remained open.
+        baseRows=baseRows.concat(extra||[]);
         const keep=(extra||[]).filter(p=>!handoverShouldAutoLeave(p));
         if(keep.length){
-          baseRows=baseRows.concat(keep);
           try{await Promise.all(keep.map(p=>SB.from('patients').update({is_inpatient:true}).eq('id',p.id)));}catch(e){}
         }
       }catch(e){}
@@ -19751,13 +19756,13 @@ async function handoverAwaitingReversals(onSheetIds){
   try{
     // lte on a null date matches nothing, so patients with no plan drop out here.
     const{data,error}=await SB.from('patients')
-      .select('id,first_name,surname,id_card,sex,operated_abroad,consultant,stoma_type,followup_status,extra_statuses,deceased_date,reversal_date,proposed_reversal_date')
+      .select('*')
       .lte('proposed_reversal_date',TODAY);
     // Before the column exists there is simply nothing to show.
     if(error)return [];
     const on=new Set(onSheetIds||[]);
     return (data||[])
-      .filter(p=>p.proposed_reversal_date&&!on.has(p.id)&&canPlanReversal(p))
+      .filter(p=>p.proposed_reversal_date&&!on.has(p.id)&&!handoverShouldAutoLeave(p)&&canPlanReversal(p))
       .sort((a,b)=>String(a.proposed_reversal_date).localeCompare(String(b.proposed_reversal_date))
         ||String(a.surname||'').localeCompare(String(b.surname||'')));
   }catch(e){return [];}
@@ -19770,13 +19775,15 @@ async function handoverAwaitingSurgery(shownIds){
   try{
     // lte on a null date matches nothing, so patients with no date drop out here.
     const{data,error}=await SB.from('patients')
-      .select('id,first_name,surname,id_card,sex,operated_abroad,consultant,stoma_type,followup_status,extra_statuses,deceased_date,reversal_date,upcoming_surgery_date')
+      // The complete stoma state is needed: status alone cannot distinguish a
+      // fully reversed patient from one who still has another current stoma.
+      .select('*')
       .lte('upcoming_surgery_date',TODAY);
     // Before the column exists there is simply nothing to show.
     if(error)return [];
     const shown=new Set(shownIds||[]);
     return (data||[])
-      .filter(p=>p.upcoming_surgery_date&&!shown.has(p.id)&&!handoverDeceased(p))
+      .filter(p=>p.upcoming_surgery_date&&!shown.has(p.id)&&!handoverShouldAutoLeave(p))
       .sort((a,b)=>String(a.upcoming_surgery_date).localeCompare(String(b.upcoming_surgery_date))
         ||String(a.surname||'').localeCompare(String(b.surname||'')));
   }catch(e){return [];}
