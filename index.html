@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.04-415"/>
-<script src="assets/manual.js?v=2026.10.04-415"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-417"/>
+<script src="assets/manual.js?v=2026.10.05-417"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -949,6 +949,27 @@ body.qli-standalone #ql-install-btn{display:none;}
   border:1px solid #15803d;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap;}
 .psm-chip-abroad-loc{display:inline-flex;align-items:center;background:#f0fdf4;color:#15803d;
   border:1px solid #bbf7d0;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;}
+/* Surgery snapshot — the list of a patient's surgeries, newest first, each a
+   button opening its read-only detail. */
+.psm-surg-list{display:flex;flex-direction:column;gap:6px;}
+.psm-surg-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  font-family:inherit;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.psm-surg-row:hover{border-color:var(--teal);background:#f2fbfa;}
+.psm-surg-date{flex:0 0 auto;font-weight:800;color:var(--navy);font-size:13px;white-space:nowrap;}
+.psm-surg-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.psm-surg-type{font-size:12.5px;font-weight:700;color:#0d7377;}
+.psm-surg-op{font-size:11.5px;color:#64748b;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.psm-surg-ended{font-weight:700;color:#7c3aed;font-size:11px;}
+.psm-surg-go{flex:0 0 auto;color:var(--muted);font-size:20px;font-weight:700;}
+/* Read-only surgery detail modal. */
+.surg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:6px 0 14px;}
+.surg-item dt{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:800;margin-bottom:2px;}
+.surg-item dd{margin:0;font-size:13.5px;font-weight:700;color:var(--navy);}
+.surg-item .na{color:var(--muted);font-weight:500;font-style:italic;}
+.surg-sec{margin-top:12px;}
+.surg-sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin-bottom:6px;}
+.surg-op{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13.5px;color:var(--navy);line-height:1.5;}
+.surg-op .na{color:var(--muted);font-style:italic;}
 /* Record-header OUTCOME treatment: the top bar is coloured to match the patient's
    outcome (deceased black, reversed violet, Gozo blue, overseas teal, paused amber)
    with a matching icon badge on the portrait. The page body stays sex-tinted. */
@@ -3487,7 +3508,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-416';
+const APP_BUILD='2026.10.05-417';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18371,6 +18392,69 @@ function dischargeLetterRodData(p){
   const due=String(p.rod_removal_date||'').slice(0,10),removed=String(p.rod_removed_date||'').slice(0,10);
   return{state:removed?'removed':due?'present':'none',due:removed?'':due,removed};
 }
+/* The surgery snapshot on the Overview tab: every surgery the patient has had,
+   newest first, each a button that opens its read-only detail. A surgery is a
+   stoma formation on the timeline — the first stoma, a later one, or a
+   refashioning — carrying its own date, type and operation. */
+function surgerySnapshotHTML(p){
+  const stomas=stomaTimeline(p);
+  if(!stomas.length)return '<div class="clr-empty" style="padding:10px;">No surgery recorded yet — add it in Edit patient → Stomas &amp; operation.</div>';
+  const rows=stomas.slice().sort((a,b)=>String(b.formed||'0000-00-00').localeCompare(String(a.formed||'0000-00-00')));
+  return `<div class="psm-surg-list">`+rows.map(s=>{
+    const date=s.formed?fmtShortDate(s.formed):'Date not recorded';
+    const op=String(s.uid==='base'?(patientOperationText(p)||s.findings||''):(s.findings||'')).trim();
+    const ended=s.ended?`<span class="psm-surg-ended">${htmlSafe(plStomaState(s))}</span>`:'';
+    return `<button type="button" class="psm-surg-row" onclick="openSurgeryDetail('${jsSafe(p.id)}','${jsSafe(s.uid||'')}')" title="Open this surgery (read only)">
+      <span class="psm-surg-date">${htmlSafe(date)}</span>
+      <span class="psm-surg-main"><span class="psm-surg-type">${htmlSafe(s.code||'')} · ${htmlSafe(s.typeLabel||s.type||'Stoma')} ${ended}</span>${op?`<span class="psm-surg-op">${htmlSafe(op)}</span>`:''}</span>
+      <span class="psm-surg-go">›</span>
+    </button>`;
+  }).join('')+`</div>`;
+}
+/* Read-only detail for one surgery: the type of surgery performed and every
+   appliance & accessory recorded for that stoma, from clinic visits and ward
+   episodes. Opened from the surgery snapshot; it changes nothing. */
+async function openSurgeryDetail(patientId,stomaUid){
+  const mb=document.getElementById('mb');
+  if(mb)mb.innerHTML='<div class="report-note">Loading surgery…</div>';
+  openMo();
+  let pat=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
+  if(!pat){const r=await fetchPatientById(patientId);pat=r.data;}
+  if(!pat){if(mb)mb.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load this surgery.</div>';return;}
+  let appts=[],episodes=[];
+  try{
+    const[aRes,eRes]=await Promise.all([
+      SB.from('appointments').select('*').eq('patient_id',patientId).order('appt_date',{ascending:false}),
+      SB.from('clinical_records').select('record_date,appliances').eq('patient_id',patientId).eq('kind','episode').order('record_date',{ascending:false})
+    ]);
+    const raw=aRes.data||[];
+    appts=raw.length?await enrichAppointments(raw):[];
+    episodes=eRes.error?[]:(eRes.data||[]);
+  }catch(e){}
+  const all=stomaTimeline(pat);
+  const stoma=all.find(s=>String(s.uid)===String(stomaUid))||null;
+  if(!stoma){if(mb)mb.innerHTML='<div class="report-note">That surgery is no longer on the record.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  const history=plCollectApplianceHistory(pat,appts,episodes);
+  const records=plAppliancesForStoma(history,stoma,all.length);
+  const op=stoma.uid==='base'?(patientOperationText(pat)||stoma.findings||''):(stoma.findings||'');
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  if(!mb)return;
+  mb.innerHTML=`<h2>🔎 Surgery — ${htmlSafe(stoma.formed?fmtShortDate(stoma.formed):'date not recorded')}</h2>
+    <div class="msub">${htmlSafe(nm)} · ${htmlSafe(stoma.code||'')} ${htmlSafe(stoma.typeLabel||stoma.type||'Stoma')} — read only</div>
+    <div class="surg-detail">
+      <dl class="surg-grid">
+        <div class="surg-item"><dt>Surgery date</dt><dd>${stoma.formed?htmlSafe(fmtShortDate(stoma.formed)):'<span class="na">Not recorded</span>'}</dd></div>
+        <div class="surg-item"><dt>Stoma</dt><dd>${htmlSafe(stoma.typeLabel||stoma.type||'Not recorded')}</dd></div>
+        <div class="surg-item"><dt>Location</dt><dd>${stoma.location?htmlSafe(stoma.location):'<span class="na">Not recorded</span>'}</dd></div>
+        <div class="surg-item"><dt>State</dt><dd>${htmlSafe(plStomaState(stoma))}</dd></div>
+      </dl>
+      <div class="surg-sec"><div class="surg-sec-h">Type of surgery performed</div>
+        <div class="surg-op">${op?htmlSafe(op):'<span class="na">Not recorded</span>'}</div></div>
+      <div class="surg-sec"><div class="surg-sec-h">Appliances &amp; accessories used</div>
+        ${records.length?records.map(plApplianceRecordHTML).join(''):'<div class="pl-empty">No appliance has been recorded for this stoma.</div>'}</div>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+}
 async function openPatientRecord(patientId){
   const host=document.getElementById('page-patient-record');
   const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Registry</button></div>';
@@ -18469,6 +18553,8 @@ async function openPatientRecord(patientId){
       ${missingBlock}
       <div class="psm-ov-cols">
       <div>
+        <div class="psm-sec-head"><h3>Surgery snapshot</h3><span class="psm-badge">Newest first · tap a surgery for details</span></div>
+        <div class="psm-card" style="padding:8px;">${surgerySnapshotHTML(pat)}</div>
         <div class="psm-sec-head"><h3>Patient details</h3><span class="psm-badge">Locked once entered — unlock in Edit patient</span></div>
         <div class="psm-card"><dl class="psm-dgrid psm-dgrid-flow" style="margin:0;">
           ${dDate('Date of birth',pat.date_of_birth)}
