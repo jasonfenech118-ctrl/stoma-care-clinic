@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-428"/>
-<script src="assets/manual.js?v=2026.10.05-428"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-430"/>
+<script src="assets/manual.js?v=2026.10.05-430"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1645,6 +1645,23 @@ td.hv-inf{background:#ff2b2b!important;}
 td.hv-inf .hv-appl{background:#ff2b2b;color:#fff;border-color:#c40000;font-weight:800;}
 td.hv-inf .hv-inp,td.hv-inf .hv-note{background:#fff;color:#b00000;font-weight:800;border-color:#c40000;}
 td.hv-inf .hv-appl-empty{color:#ffe3e3;}
+/* Jason-only Encounter: the Appliance+notes cell reads green once an encounter is
+   saved today. Infection red above keeps winning (it is !important). */
+td.hv-appl-cell.hv-encountered{background:#dcfce7;}
+td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;}
+.hv-enc-btn{align-self:flex-start;margin-top:6px;padding:5px 10px;font-size:11px;background:#e6f4f1;color:#0d7377;}
+.hv-enc-btn.is-done{background:#16a34a;color:#fff;}
+/* Encounter modal — the stoma assessment and nursing report, with earlier
+   encounters this admission listed read-only beneath. */
+.enc-sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin-bottom:6px;}
+.enc-ta{width:100%;box-sizing:border-box;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px;line-height:1.5;color:var(--navy);resize:vertical;}
+.enc-ta:focus{outline:none;border-color:var(--teal);}
+.enc-prev{margin-top:16px;border-top:1px solid var(--border);padding-top:12px;}
+.enc-card{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+.enc-card-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+.enc-card-by{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600;}
+.enc-card-sec{font-size:13px;color:var(--navy);line-height:1.5;margin-top:4px;white-space:pre-wrap;}
+.enc-card-lbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:800;}
 /* The picked appliance and the typed note always sit one above the other, on
    the phone card as well as in the desktop grid. */
 .hv-applwrap{display:flex;flex-direction:column;align-items:stretch;}
@@ -3129,6 +3146,12 @@ let followupPatients=[];
 // and used to show the admin-only private worklist in Follow-up Planning. It
 // only hides UI — it is not a security boundary.
 let IS_ADMIN=false;
+// The ward Encounter feature (stoma assessment + nursing report) is Jason-only,
+// so it rides on the same sign-in check. It only hides UI — not a security boundary.
+function isEncounterUser(){return !!IS_ADMIN;}
+// Patient ids with an encounter saved TODAY — their handover Appliance+notes cell
+// reads green. Rebuilt on every handover load (for the Encounter user only).
+let hvEncounteredToday=new Set();
 const FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
 const FOLLOWUP_OWNER_FILTERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];
 const AUTO_AVAILABILITY_VALUE='auto_availability';
@@ -3579,7 +3602,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-429';
+const APP_BUILD='2026.10.05-430';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19283,6 +19306,17 @@ async function loadHandover(){
   const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('')
     +revDue.map(handoverReversalRowHTML).join('')
     +surgDue.map(handoverSurgeryRowHTML).join('');
+  // Jason-only: which on-ward patients have an encounter saved TODAY, so their
+  // Appliance+notes cell reads green. Degrades quietly if the table is absent.
+  hvEncounteredToday=new Set();
+  if(isEncounterUser()&&rows.length){
+    try{
+      const ids=rows.map(p=>String(p.id));
+      const{data:encs}=await SB.from('encounters').select('patient_id').eq('encounter_date',TODAY).in('patient_id',ids);
+      (encs||[]).forEach(e=>{if(e&&e.patient_id!=null)hvEncounteredToday.add(String(e.patient_id));});
+    }catch(e){}
+    if(version!==handoverLoadVersion)return;
+  }
   // One shade per ward, flipping at each new ward — the same blocks the print uses.
   let pw=null,wg=0;
   const trs=rows.map(p=>{
@@ -19685,6 +19719,82 @@ function handoverComplicationLine(p){
     return `${c.text}${trend}`;
   }).filter(Boolean).join(' · ');
 }
+/* ── Ward Encounter (Jason only) ──────────────────────────────────────────────
+   A stoma assessment and a nursing report tied to the patient's CURRENT inpatient
+   episode. Each save is a new encounter row with its own id; one saved today turns
+   the handover Appliance+notes cell green. The structured assessment fields are
+   pending — the box is free text for now and stored under assessment.notes. */
+let encounterCtx=null;
+function encounterCardHTML(e){
+  if(!e)return'';
+  const when=e.encounter_date?fmtShortDate(e.encounter_date):(e.created_at?fmtShortDate(String(e.created_at).slice(0,10)):'');
+  const by=e.created_by_name||e.created_by_email||'';
+  let assess='';try{const a=typeof e.assessment==='string'?JSON.parse(e.assessment):e.assessment;assess=a&&a.notes?String(a.notes):'';}catch(_){assess='';}
+  const rep=String(e.nursing_report||'');
+  return `<div class="enc-card">
+    <div class="enc-card-head"><strong>${htmlSafe(when)}</strong>${by?`<span class="enc-card-by">${htmlSafe(by)}</span>`:''}</div>
+    ${assess?`<div class="enc-card-sec"><span class="enc-card-lbl">Assessment</span>${htmlSafe(assess)}</div>`:''}
+    ${rep?`<div class="enc-card-sec"><span class="enc-card-lbl">Nursing report</span>${htmlSafe(rep)}</div>`:''}
+    ${!assess&&!rep?'<div class="clr-empty">No text recorded.</div>':''}</div>`;
+}
+async function openEncounter(patientId){
+  if(!isEncounterUser())return;
+  const mb=document.getElementById('mb');
+  if(mb){mb.className='mb mb-wide';mb.innerHTML='<div class="report-note">Loading encounter…</div>';}
+  openMo();
+  const{data:pat,error}=await fetchPatientById(patientId);
+  if(error||!pat){if(mb)mb.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not open this patient.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  // The admission this encounter belongs to — open one if somehow missing.
+  let ep=await currentInpatientEpisode(patientId);
+  if(!ep){try{const made=await createInpatientEpisodeFor(patientId,TODAY);ep=made&&made.data?made.data:null;}catch(e){}}
+  const episodeId=ep?String(ep.id):'';
+  const episodeRef=ep&&ep.episode_ref?String(ep.episode_ref):'';
+  let prev=[];
+  if(episodeId){try{const{data}=await SB.from('encounters').select('*').eq('episode_id',episodeId).order('created_at',{ascending:false});prev=data||[];}catch(e){}}
+  encounterCtx={patientId:String(patientId),episodeId,episodeRef};
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const ward=[pat.inpatient_ward,pat.inpatient_bed].filter(Boolean).join(' · ');
+  if(!mb)return;
+  mb.className='mb mb-wide'+sexModalClass(pat);
+  mb.innerHTML=`<h2>📝 Encounter — ${htmlSafe(nm)}</h2>
+    <div class="msub"><span class="pf-sc-id">${htmlSafe(pat.id_card||'No ID')}</span>${ward?` · ${htmlSafe(ward)}`:''} · ${htmlSafe(fmtShortDate(TODAY))}${episodeRef?` · episode ${htmlSafe(episodeRef)}`:(episodeId?' · current admission':'')}</div>
+    <div class="enc-form">
+      <div class="enc-sec-h">Stoma assessment</div>
+      <div class="ap-hint" style="margin:0 0 6px;">Interim free-text box — your structured assessment fields will be built here once you send them.</div>
+      <textarea id="enc-assessment" class="enc-ta" rows="6" placeholder="Stoma assessment…"></textarea>
+      <div class="enc-sec-h" style="margin-top:14px;">Nursing report</div>
+      <textarea id="enc-report" class="enc-ta" rows="7" placeholder="Nursing report…"></textarea>
+    </div>
+    ${prev.length?`<div class="enc-prev"><div class="enc-sec-h">Earlier encounters this admission (${prev.length})</div>${prev.map(encounterCardHTML).join('')}</div>`:''}
+    <div id="enc-error"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button class="btn-save" id="enc-save" onclick="saveEncounter()">Save encounter</button></div>`;
+}
+async function saveEncounter(){
+  if(!encounterCtx)return;
+  const err=document.getElementById('enc-error');
+  const say=h=>{if(err)err.innerHTML=h;};
+  const assessment=String(document.getElementById('enc-assessment')?.value||'').trim();
+  const report=String(document.getElementById('enc-report')?.value||'').trim();
+  if(!assessment&&!report){say('<div class="registry-lookup-note error">Write the stoma assessment or the nursing report before saving.</div>');return;}
+  const btn=document.getElementById('enc-save'); if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const who=await getCurrentUserForAudit();
+  const payload={patient_id:String(encounterCtx.patientId),
+    episode_id:encounterCtx.episodeId||null,episode_ref:encounterCtx.episodeRef||null,
+    encounter_date:TODAY,assessment:{notes:assessment},nursing_report:report||null,
+    created_by_email:(who&&who.email)||null,created_by_name:(who&&who.name)||null};
+  const{error}=await SB.from('encounters').insert(payload);
+  if(error){
+    if(btn){btn.disabled=false;btn.textContent='Save encounter';}
+    const msg=String(error.message||'');
+    if(/encounters/i.test(msg)&&/(does not exist|schema cache|find the table)/i.test(msg))
+      say('<div class="registry-lookup-note error">The encounters table is not in the database yet. Run <strong>sql/add-encounters.sql</strong> once in Supabase, then save again.</div>');
+    else say(`<div class="registry-lookup-note error">Could not save the encounter: ${htmlSafe(msg)}</div>`);
+    return;
+  }
+  closeModal();
+  if(document.getElementById('hv-body'))loadHandover();
+}
 function handoverRowHTML(p,cls){
   // The appliance line and the "flange due" chip are shown side by side, so the
   // date is stripped from the appliance text (rawAppl) and left to the chip
@@ -19702,6 +19812,9 @@ function handoverRowHTML(p,cls){
   // Infection alert — a note (or appliance line) carrying CRE, VRE or anything
   // "+ve" turns the Appliance/notes cell bright red so it cannot be missed.
   const infAlert=hvIsInfectionNote(p.inpatient_nurse_notes)||hvIsInfectionNote(applLine);
+  // Jason-only encounter: the cell goes green once an encounter is saved today.
+  const encUser=isEncounterUser();
+  const encDone=encUser&&hvEncounteredToday.has(String(p.id));
   return `<tr class="${cls||''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="this.value=this.value.toUpperCase();fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim().toUpperCase())"/><span
@@ -19710,7 +19823,7 @@ function handoverRowHTML(p,cls){
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
     <td data-label="Surname"><span class="patient-name-avatar" style="gap:7px;">${patientAvatarHTML(p,'xs')}<strong>${htmlSafe(p.surname||'')}</strong></span></td>
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
-    <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}">
+    <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}${encDone?' hv-encountered':''}">
       <div class="hv-applwrap">
         <button type="button" class="hv-appl${applLine?'':' hv-appl-await'}" data-appliance="${htmlSafe(applLine)}"
           title="${applLine?'Set appliance':'Awaiting first review — tap to set the appliance once the patient is seen'}" onclick="openHandoverAppliance('${p.id}')">${applLine
@@ -19720,6 +19833,7 @@ function handoverRowHTML(p,cls){
           oninput="hvNoteInput(this)" onchange="saveHandoverField('${p.id}','inpatient_nurse_notes',this.value.trim())"/>${flangeDueChipHTML(p,rawAppl)}${handoverRodPrintCarrier(p)}
         ${cmpLine?`<div class="hv-cmp-line" title="Open complications — tap the Complications button for the full timeline">⚠️ ${htmlSafe(cmpLine)}</div>`:''}
         <button type="button" class="ncb-btn hv-cmp-btn" style="background:#fdf0e1;color:#b45309;" onclick="openComplicationsManager('${p.id}')" title="${rodApplies?'Complications timeline (tied to a stoma) and the ROD removal date':'Complications timeline, tied to a stoma'}">⚠️ ${rodApplies?'Complications/ROD':'Complications'}${cmpOpen?` (${cmpOpen})`:''}</button>
+        ${encUser?`<button type="button" class="ncb-btn hv-enc-btn${encDone?' is-done':''}" onclick="openEncounter('${p.id}')" title="Stoma assessment & nursing report for this admission">📝 Encounter${encDone?' ✓':''}</button>`:''}
       </div></td>
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
