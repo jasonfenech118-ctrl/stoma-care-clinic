@@ -15,7 +15,7 @@ function source(name){
 }
 const copy=value=>JSON.parse(JSON.stringify(value));
 function database(patients){
-  const db={patients:copy(patients),clinical_records:patients.map(p=>({id:'ep-'+p.id,patient_id:p.id,
+  const db={patients:copy(patients),siting_sessions:[],clinical_records:patients.map(p=>({id:'ep-'+p.id,patient_id:p.id,
     kind:'episode',is_current:true,discharge_date:null})),writes:[]};
   db.client={from(table){
     const filters=[];let cols='*',patch=null;
@@ -40,9 +40,9 @@ function context(db=database([])){
     FOLLOWUP_STATUSES:['active','awaiting_feedback','paused','relocated_overseas','discharged_gozo','reversed','deceased'],
     FOLLOWUP_STATUS_ALIASES:{reversal:'reversed'},NO_REVERSAL_PLAN_STATUSES:['reversed','deceased','relocated_overseas','discharged_gozo'],
     initialStomaCode:s=>s,fmtShortDate:s=>s,fmtLabel:s=>s,htmlSafe:s=>String(s??''),
-    handoverByWard:()=>0,normaliseIdCard:s=>s,
-    attachHandoverApplianceLines:async()=>{},handoverAwaitingSitings:async()=>[],
-    handoverAwaitingRowHTML:()=>'',handoverReversalRowHTML:p=>`<tr><td>REVERSAL ${p.surname}</td></tr>`,
+    handoverByWard:()=>0,normaliseIdCard:s=>s,isEncounterUser:()=>false,
+    attachHandoverApplianceLines:async()=>{},fetchPatientsSelect:build=>build('*'),
+    handoverAwaitingRowHTML:p=>`<tr><td>SITING ${p.surname}</td></tr>`,handoverReversalRowHTML:p=>`<tr><td>REVERSAL ${p.surname}</td></tr>`,
     handoverSurgeryRowHTML:p=>`<tr><td>SURGERY ${p.surname}</td></tr>`,
     handoverRowHTML:p=>`<tr><td>INPATIENT ${p.surname}</td></tr>`,
     emptyStateHTML:()=>'<p>Nobody is on the ward right now</p>',fitAllWardBed(){},handoverIsPhone:()=>false,applyHandoverLocks(){},
@@ -51,7 +51,8 @@ function context(db=database([])){
   for(const name of ['normaliseFollowupStatus','rawExtraStatuses','patientIsDeceased','parseExtraStatuses','canPlanReversal',
     'parseInitialStomas','parseRefashionings','parseStomas','stomaOperationHistory','patientStomaList',
     'stomaEvents','stomaEndDates','hasStomaNow','everReversedDates','handoverReversedGone','handoverDeceased',
-    'handoverShouldAutoLeave','missingColumnFromError','loadHandover','handoverAwaitingSurgery','handoverAwaitingReversals','afterStomaSaved'])
+    'handoverShouldAutoLeave','missingColumnFromError','loadHandover','attachPatientProfilesByIdCard','handoverAwaitingSitings',
+    'handoverAwaitingSurgery','handoverAwaitingReversals','afterStomaSaved'])
     vm.runInContext(source(name),c);
   return {c,db,body:dom.window.document.getElementById('hv-body')};
 }
@@ -132,6 +133,55 @@ test('all planned-surgery queries read current stomas and exclude closed patient
 test('a stale reversal plan with a confirmed unknown-date closure stays off the awaiting-reversal list',async()=>{
   const {c}=context(database([closedUnknown({followup_status:'active',proposed_reversal_date:'2026-10-05'})]));
   assert.equal((await c.handoverAwaitingReversals([])).length,0);
+});
+
+test('deceased patients never reappear from siting or a planned reversal, irrespective of where death is recorded',async()=>{
+  for(const marker of [
+    {deceased_date:'2026-10-04'},
+    {followup_status:'deceased'},
+    {extra_statuses:['deceased']},
+    {extra_statuses:'["deceased"]'},
+    {followup_status:'reversed',reversal_date:'2026-10-01',extra_statuses:['deceased']}
+  ]){
+    const p=patient({id_card:'0000001M',proposed_reversal_date:'2026-10-10',...marker}),db=database([p]);
+    db.siting_sessions=[{id:'siting-1',id_card:p.id_card,surname:p.surname,status:'booked',surgery_date:'2026-10-05',surgery_performed:false}];
+    const {c,body}=context(db);assert.equal(c.handoverDeceased(p),true);await c.loadHandover();
+    assert.doesNotMatch(body.textContent,/Example/);assert.equal(db.clinical_records[0].is_current,false);
+    c.TODAY='2026-10-10';await c.loadHandover();assert.doesNotMatch(body.textContent,/Example/);
+    assert.equal((await c.handoverAwaitingSitings()).length,0);
+    assert.equal((await c.handoverAwaitingSurgery([])).length,0);
+    assert.equal((await c.handoverAwaitingReversals([])).length,0);
+    assert.equal(db.patients[0].proposed_reversal_date,'2026-10-10');
+    assert.deepEqual(db.patients[0].extra_statuses,p.extra_statuses);
+  }
+});
+
+test('an early completed reversal stays hidden before, on and after the stipulated surgery date',async()=>{
+  for(const p of [patient({id_card:'0000001M',reversal_date:'2026-10-02',proposed_reversal_date:'2026-10-07'}),
+    closedUnknown({id_card:'0000001M',followup_status:'active',proposed_reversal_date:'2026-10-07'})]){
+    const db=database([p]);
+    db.siting_sessions=[{id:'siting-1',id_card:p.id_card,surname:p.surname,status:'seen',surgery_date:'2026-10-07',surgery_performed:false}];
+    const {c,body}=context(db);
+    for(const date of ['2026-10-05','2026-10-07','2026-10-08']){
+      c.TODAY=date;await c.loadHandover();assert.doesNotMatch(body.textContent,/Example/);
+      assert.equal((await c.handoverAwaitingReversals([])).length,0);
+      assert.equal((await c.handoverAwaitingSurgery([])).length,0);
+      assert.equal((await c.handoverAwaitingSitings()).length,0);
+    }
+    assert.equal(db.patients[0].proposed_reversal_date,'2026-10-07');
+  }
+});
+
+test('awaiting surgery keeps an unregistered patient and a patient with a remaining current stoma',async()=>{
+  const p=patient({id_card:'0000001M',is_inpatient:false,reversal_date:'2026-10-02',initial_stomas:[{uid:'second',type:'End ileostomy'}]}),db=database([p]);
+  db.siting_sessions=[
+    {id:'siting-1',id_card:p.id_card,surname:p.surname,status:'seen',surgery_date:'2026-10-05'},
+    {id:'siting-2',id_card:'0000002M',surname:'Unregistered',status:'booked',surgery_date:'2026-10-05'}
+  ];
+  const {c}=context(db);
+  const rows=await c.handoverAwaitingSitings();
+  assert.deepEqual(Array.from(rows,r=>r.id),['siting-1','siting-2']);
+  assert.equal(rows[0]._registry_patient_id,p.id);
 });
 
 test('the post-save refresh completes before the save workflow returns',async()=>{

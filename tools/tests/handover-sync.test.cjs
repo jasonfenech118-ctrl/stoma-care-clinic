@@ -65,7 +65,7 @@ function session(db,name='Nurse A'){
     fmtShortDate:v=>v,fmtLabel:v=>v,parseComplications:()=>[],hvIsInfectionNote:()=>false,
     wardBlockStyle:()=>'',wardBlockTitle:()=>'',wardHospitalLabel:()=>'',patientAvatarHTML:()=>'',
     patientRodApplies:()=>false,handoverRodPrintCarrier:()=>'',flangeDueChipHTML:()=>'',rodChipHTML:()=>'',handoverDocButtonHTML:()=>'',
-    handoverShouldAutoLeave:()=>false,handoverByWard:()=>0,normaliseIdCard:v=>v,
+    handoverShouldAutoLeave:()=>false,handoverByWard:()=>0,normaliseIdCard:v=>v,isEncounterUser:()=>false,
     handoverAwaitingSitings:async()=>[],handoverAwaitingReversals:async()=>[],handoverAwaitingSurgery:async()=>[],
     handoverAwaitingRowHTML:()=>'',handoverReversalRowHTML:()=>'',handoverSurgeryRowHTML:()=>'',
     fitAllWardBed(){},handoverIsPhone:()=>false,applyHandoverLocks(){},missingColumnFromError:()=>null,
