@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-419"/>
-<script src="assets/manual.js?v=2026.10.05-419"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-420"/>
+<script src="assets/manual.js?v=2026.10.05-420"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3515,7 +3515,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-419';
+const APP_BUILD='2026.10.05-420';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18447,6 +18447,14 @@ async function openSurgeryDetail(patientId,stomaUid){
   const all=stomaTimeline(pat);
   const stoma=all.find(s=>String(s.uid)===String(stomaUid))||null;
   if(!stoma){if(mb)mb.innerHTML='<div class="report-note">That surgery is no longer on the record.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  // Map the timeline stoma to its editable slot so the Edit button opens the
+  // right stoma form — by its own id, else by kind + surgery date.
+  const psl=patientStomaList(pat);
+  let slot='';
+  if(stoma.uid){const m=psl.find(s=>String(s.uid||'')===String(stoma.uid));if(m)slot=m.slot;}
+  if(!slot){const kindMap={base:'first',initial:'initial',refashion:'refashion',new:'later'};
+    const m=psl.find(s=>s.kind===kindMap[stoma.origin]&&String(s.formed_date||'')===String(stoma.formed||''));
+    if(m)slot=m.slot;}
   const history=plCollectApplianceHistory(pat,appts,episodes);
   const records=plAppliancesForStoma(history,stoma,all.length);
   const op=stoma.uid==='base'?(patientOperationText(pat)||stoma.findings||''):(stoma.findings||'');
@@ -18466,7 +18474,7 @@ async function openSurgeryDetail(patientId,stomaUid){
       <div class="surg-sec"><div class="surg-sec-h">Appliances &amp; accessories used</div>
         ${records.length?records.map(plApplianceRecordHTML).join(''):'<div class="pl-empty">No appliance has been recorded for this stoma.</div>'}</div>
     </div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>${slot?`<button class="btn-save" onclick="openStomaModal('${jsSafe(patientId)}','${jsSafe(slot)}')">✏️ Edit this surgery</button>`:''}</div>`;
 }
 async function openPatientRecord(patientId){
   const host=document.getElementById('page-patient-record');
