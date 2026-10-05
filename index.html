@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-420"/>
-<script src="assets/manual.js?v=2026.10.05-420"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-421"/>
+<script src="assets/manual.js?v=2026.10.05-421"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -857,6 +857,9 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-head-main{display:flex;align-items:flex-start;gap:14px;min-width:0;flex:1;}
 .psm-avatar{width:52px;height:52px;border-radius:50%;background:#e7f6f4;color:var(--teal);display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
 .psm-avatar svg{width:22px;height:22px;}
+.psm-avatar.psm-avatar-illustrated{background:transparent;overflow:hidden;
+  box-shadow:0 2px 7px rgba(21,128,61,.22);}
+.psm-avatar.psm-avatar-illustrated img{display:block;width:100%;height:100%;object-fit:cover;}
 .psm-head-copy{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1;}
 .psm-name{font-size:30px;font-weight:900;color:var(--navy);line-height:1.2;overflow-wrap:anywhere;min-width:0;}
 .psm-identity-row{display:flex;align-items:baseline;gap:14px;min-width:0;}
@@ -3515,7 +3518,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-420';
+const APP_BUILD='2026.10.05-421';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14757,8 +14760,17 @@ async function fetchPatientById(patientId){
   const{data,error}=await fetchPatientsSelect(cols=>SB.from('patients').select(cols).eq('id',patientId).maybeSingle());
   return{data,error};
 }
-// Tints the patient modal by sex: warm yellow for male, pink for female.
+// Tints the patient modal by sex: blue for male, pink for female.
 function sexModalClass(pat){return pat?.sex==='Male'?' sex-male':pat?.sex==='Female'?' sex-female':'';}
+/* Patients operated outside MDH get the richer green portrait requested for
+   that status. The saved sex chooses the matching illustration automatically;
+   an absent or unrecognised value safely keeps the existing neutral icon. */
+function patientHeaderAvatarHTML(pat){
+  const sex=String(pat?.sex||'').trim().toLowerCase();
+  const asset=sex==='male'?'assets/patient-avatar-male.png':sex==='female'?'assets/patient-avatar-female.png':'';
+  if(!pat?.operated_abroad||!asset)return `<div class="psm-avatar">${psmIc('portrait')}</div>`;
+  return `<div class="psm-avatar psm-avatar-illustrated"><img src="${asset}?v=${APP_BUILD}" alt="" aria-hidden="true" decoding="async"/></div>`;
+}
 /* ---- edit an existing patient ---- */
 let patientEditReturn=null;
 /* When the details form is opened from the Complete-visit modal, save (and
@@ -18545,7 +18557,7 @@ async function openPatientRecord(patientId){
     <header class="psm-head${oc.isOutcome?` psm-oc psm-oc-${oc.status}`:''}">
       <div class="psm-head-main">
         <div class="psm-avatar-wrap">
-          <div class="psm-avatar">${psmIc('portrait')}</div>
+          ${patientHeaderAvatarHTML(pat)}
           ${oc.icon?`<span class="psm-oc-badge psm-oc-badge-${oc.status}" title="${htmlSafe(outText)}">${psmIc(oc.icon)}</span>`:''}
         </div>
         <div class="psm-head-copy">
