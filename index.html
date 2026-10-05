@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-418"/>
-<script src="assets/manual.js?v=2026.10.05-418"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.05-419"/>
+<script src="assets/manual.js?v=2026.10.05-419"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -949,13 +949,16 @@ body.qli-standalone #ql-install-btn{display:none;}
   border:1px solid #15803d;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:800;white-space:nowrap;}
 .psm-chip-abroad-loc{display:inline-flex;align-items:center;background:#f0fdf4;color:#15803d;
   border:1px solid #bbf7d0;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;}
-/* Surgery snapshot — a card directly under the name header listing a patient's
-   surgeries, newest first, each a button opening its read-only detail. */
+/* Surgery snapshot — a collapsible card directly under the name header listing a
+   patient's surgeries, newest first, each a button opening its read-only detail. */
 .psm-surg-snapshot{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;}
-.psm-surg-snap-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px;}
+.psm-surg-snap-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer;list-style:none;user-select:none;}
+.psm-surg-snap-head::-webkit-details-marker{display:none;}
 .psm-surg-snap-title{font-size:14px;font-weight:800;color:var(--navy);}
 .psm-surg-snap-sub{font-size:11px;color:var(--muted);font-weight:600;}
-.psm-surg-list{display:flex;flex-direction:column;gap:6px;}
+.psm-surg-chev{margin-left:auto;color:var(--muted);font-size:20px;font-weight:800;line-height:1;transition:transform .15s ease;}
+.psm-surg-snapshot[open] .psm-surg-chev{transform:rotate(90deg);}
+.psm-surg-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
 .psm-surg-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
   font-family:inherit;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
 .psm-surg-row:hover{border-color:var(--teal);background:#f2fbfa;}
@@ -3512,7 +3515,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.05-418';
+const APP_BUILD='2026.10.05-419';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18402,18 +18405,24 @@ function dischargeLetterRodData(p){
    refashioning — carrying its own date, type and operation. */
 function surgerySnapshotHTML(p){
   const stomas=stomaTimeline(p);
-  if(!stomas.length)return '<div class="clr-empty" style="padding:10px;">No surgery recorded yet — add it in Edit patient → Stomas &amp; operation.</div>';
+  const n=stomas.length;
+  const head=`<summary class="psm-surg-snap-head">
+      <span class="psm-surg-snap-title">🔪 Surgery snapshot</span>
+      <span class="psm-surg-snap-sub">${n?`${n} ${n===1?'surgery':'surgeries'} · tap to open`:'none recorded'}</span>
+      <span class="psm-surg-chev">›</span></summary>`;
+  if(!n)return `<details class="psm-surg-snapshot">${head}<div class="clr-empty" style="padding:10px;margin-top:9px;">No surgery recorded yet — add it in Edit patient → Stomas &amp; operation.</div></details>`;
   const rows=stomas.slice().sort((a,b)=>String(b.formed||'0000-00-00').localeCompare(String(a.formed||'0000-00-00')));
-  return `<div class="psm-surg-list">`+rows.map(s=>{
+  const list=`<div class="psm-surg-list">`+rows.map(s=>{
     const date=s.formed?fmtShortDate(s.formed):'Date not recorded';
     const op=String(s.uid==='base'?(patientOperationText(p)||s.findings||''):(s.findings||'')).trim();
     const ended=s.ended?`<span class="psm-surg-ended">${htmlSafe(plStomaState(s))}</span>`:'';
     return `<button type="button" class="psm-surg-row" onclick="openSurgeryDetail('${jsSafe(p.id)}','${jsSafe(s.uid||'')}')" title="Open this surgery (read only)">
       <span class="psm-surg-date">${htmlSafe(date)}</span>
-      <span class="psm-surg-main"><span class="psm-surg-type">${htmlSafe(s.code||'')} · ${htmlSafe(s.typeLabel||s.type||'Stoma')} ${ended}</span>${op?`<span class="psm-surg-op">${htmlSafe(op)}</span>`:''}</span>
+      <span class="psm-surg-main"><span class="psm-surg-type">${htmlSafe(s.typeLabel||s.type||'Stoma')} ${ended}</span>${op?`<span class="psm-surg-op">${htmlSafe(op)}</span>`:''}</span>
       <span class="psm-surg-go">›</span>
     </button>`;
   }).join('')+`</div>`;
+  return `<details class="psm-surg-snapshot">${head}${list}</details>`;
 }
 /* Read-only detail for one surgery: the type of surgery performed and every
    appliance & accessory recorded for that stoma, from clinic visits and ward
@@ -18444,7 +18453,7 @@ async function openSurgeryDetail(patientId,stomaUid){
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   if(!mb)return;
   mb.innerHTML=`<h2>🔎 Surgery — ${htmlSafe(stoma.formed?fmtShortDate(stoma.formed):'date not recorded')}</h2>
-    <div class="msub">${htmlSafe(nm)} · ${htmlSafe(stoma.code||'')} ${htmlSafe(stoma.typeLabel||stoma.type||'Stoma')} — read only</div>
+    <div class="msub">${htmlSafe(nm)} · ${htmlSafe(stoma.typeLabel||stoma.type||'Stoma')} — read only</div>
     <div class="surg-detail">
       <dl class="surg-grid">
         <div class="surg-item"><dt>Surgery date</dt><dd>${stoma.formed?htmlSafe(fmtShortDate(stoma.formed)):'<span class="na">Not recorded</span>'}</dd></div>
@@ -18543,10 +18552,7 @@ async function openPatientRecord(patientId){
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
     </header>
 
-    <div class="psm-surg-snapshot">
-      <div class="psm-surg-snap-head"><span class="psm-surg-snap-title">🔪 Surgery snapshot</span><span class="psm-surg-snap-sub">newest first · tap a surgery for its operation &amp; appliances</span></div>
-      ${surgerySnapshotHTML(pat)}
-    </div>
+    ${surgerySnapshotHTML(pat)}
 
     <nav class="psm-tabs">
       <button class="psm-tab active" id="psm-tab-demographics" onclick="switchPatientPanel('demographics')">${psmIc('user')} Overview</button>
