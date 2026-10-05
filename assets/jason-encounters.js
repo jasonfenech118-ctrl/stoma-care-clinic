@@ -85,9 +85,16 @@
     });
   }
   function infectionSeed(p){
-    const text=String(p.inpatient_nurse_notes||''),org=ORGANISMS.find(o=>text.toLowerCase().includes(o.toLowerCase()))||'';
-    const status=INFECTION_STATUS.find(v=>v!=='Recorded'&&text.toLowerCase().includes(v.toLowerCase()));
-    return {status:status||(org?'Recorded':'Not recorded'),organism:org};
+    const text=String(p.inpatient_nurse_notes||'').trim(),value=text.replace(/^Infection status:\s*/i,'');
+    const status=INFECTION_STATUS.find(v=>v.toLowerCase()===value.toLowerCase());
+    if(status)return {status,organism:''};
+    const parts=text.split(/\s*·\s*/),organism=ORGANISMS.find(o=>o.toLowerCase()===parts[0]?.toLowerCase());
+    const recorded=INFECTION_STATUS.find(v=>v.toLowerCase()===parts[1]?.toLowerCase());
+    if(parts.length===2&&organism&&recorded)return {status:recorded,organism};
+    // Legacy ward notes can mention an organism, but unrelated words such as
+    // "secretion" must never be treated as CRE or as an infection assessment.
+    const org=ORGANISMS.filter(o=>o!=='Other').find(o=>new RegExp('\\b'+o.replaceAll('.','\\.')+'\\b','i').test(text))||'';
+    return {status:org?'Recorded':'Not recorded',organism:org};
   }
   function seed(p,ep,date){
     const stomas=stomaSeed(p,ep,date);
