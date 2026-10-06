@@ -39,10 +39,10 @@ test('idle encounter survives a clinical broadcast and the 30-second handover po
 });
 
 test('blurring written notes and returning focus keeps the exact draft and never asks to discard it',async t=>{
- const s=await ready(t),state=s.w.JasonEncounters.state,notes=s.w.document.getElementById('jenc-notes');
+ const s=await ready(t),state=s.w.JasonEncounters.state,notes=s.w.document.getElementById('jenc-notes-0');
  notes.value='Unfinished observations.\nKeep this wording.';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));notes.focus();
  s.broadcast('patients');await s.drain();notes.blur();s.w.dispatchEvent(new s.w.Event('focus'));s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));await s.drain();
- assertOpen(s,state);assert.equal(s.w.document.getElementById('jenc-notes').value,'Unfinished observations.\nKeep this wording.');assert.equal(s.confirms(),0);assert.equal(s.w.fixture.calls.length,0);
+ assertOpen(s,state);assert.equal(s.w.document.getElementById('jenc-notes-0').value,'Unfinished observations.\nKeep this wording.');assert.equal(s.confirms(),0);assert.equal(s.w.fixture.calls.length,0);
 });
 
 test('broadcast received while encounter data is loading cannot return to handover',async t=>{
@@ -55,7 +55,7 @@ test('broadcast received while encounter data is loading cannot return to handov
 });
 
 test('saved encounter and History stay open across reconnect and visibility refreshes',async t=>{
- const s=await ready(t);const notes=s.w.document.getElementById('jenc-notes');notes.value='Saved assessment.';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));await s.w.JasonEncounters.save();
+ const s=await ready(t);const notes=s.w.document.getElementById('jenc-notes-0');notes.value='Saved assessment.';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));await s.w.JasonEncounters.save();
  s.broadcast('clinical_records');await s.drain();assertOpen(s,s.w.JasonEncounters.state);assert.equal(s.w.JasonEncounters.state.editable,false);
  s.w.document.querySelector('[data-action="history"]').click();const state=s.w.JasonEncounters.state;s.w.document.dispatchEvent(new s.w.Event('visibilitychange'));await s.drain();
  assertOpen(s,state);assert.equal(state.mode,'history');assert.equal(s.w.document.querySelectorAll('[data-action="view"]').length,1);
@@ -68,7 +68,7 @@ test('Back refreshes handover and queued broadcasts resume after leaving the enc
 });
 
 test('an explicit tab change still confirms unsaved changes and can be cancelled',async t=>{
- const s=await ready(t),state=s.w.JasonEncounters.state,notes=s.w.document.getElementById('jenc-notes');notes.value='Draft';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ const s=await ready(t),state=s.w.JasonEncounters.state,notes=s.w.document.getElementById('jenc-notes-0');notes.value='Draft';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));
  let asks=0;s.w.confirm=()=>{asks++;return false;};s.w.switchTab('patients');assertOpen(s,state);assert.equal(asks,1);
  s.w.confirm=()=>{asks++;return true;};s.w.switchTab('patients');assert.equal(s.w.JasonEncounters.state,null);assert.deepEqual(active(s.w),['page-patients']);assert.equal(asks,2);
 });
@@ -76,7 +76,7 @@ test('an explicit tab change still confirms unsaved changes and can be cancelled
 test('a broadcast during an in-flight save neither navigates away nor interrupts the saved encounter',async t=>{
  const s=await ready(t);let release,reached;const started=new Promise(resolve=>reached=resolve),rpc=s.w.SB.rpc;
  s.w.SB.rpc=async(...args)=>{reached();await new Promise(resolve=>release=resolve);return rpc(...args);};
- const notes=s.w.document.getElementById('jenc-notes');notes.value='Ready to save';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));
+ const notes=s.w.document.getElementById('jenc-notes-0');notes.value='Ready to save';notes.dispatchEvent(new s.w.Event('input',{bubbles:true}));
  const state=s.w.JasonEncounters.state,saving=s.w.JasonEncounters.save();await started;s.broadcast('clinical_records');await s.drain();assertOpen(s,state);assert.equal(state.saving,true);
  release();await saving;assertOpen(s,state);assert.equal(state.record.assessment.versions.length,1);assert.equal(s.w.fixture.calls.length,1);assert.equal(s.confirms(),0);
 });

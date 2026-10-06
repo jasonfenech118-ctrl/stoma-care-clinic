@@ -28,6 +28,21 @@
       report:e.nursing_report||'',legacy_assessment:copy(a)}];
   }
   function currentVersion(e){return versions(e).slice(-1)[0];}
+  // Stomas are shown by type ("End Ileostomy"), never by S-number; two of the
+  // same type are told apart as (1) and (2).
+  const titleCase=x=>String(x||'Stoma').replace(/(^|[\s\-\/(])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
+  // ENC-<ID card>-<DDMMYY>. There is one encounter per patient per day: later
+  // changes that day become V2, V3 of the same code. Two same-day records saved
+  // before that rule are told apart with -2.
+  function encounterCode(rec,patient,rows){
+    const id=String(patient?.id_card||'').replace(/\s+/g,'').toUpperCase()||'NOID';
+    const day=String(rec?.encounter_date||rec?.created_at||'').slice(0,10),[y,m,d]=day.split('-');
+    const twins=list(rows).filter(r=>String(r.encounter_date||r.created_at||'').slice(0,10)===day)
+      .sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
+    const n=twins.findIndex(r=>String(r.id)===String(rec?.id));
+    return 'ENC-'+id+(y&&m&&d?'-'+d+m+y.slice(2):'')+(n>0?'-'+(n+1):'');
+  }
+  function stomaName(s,all){const t=titleCase(s?.type),twins=list(all).filter(x=>titleCase(x.type)===t);return twins.length>1?t+' ('+(twins.indexOf(s)+1)+')':t;}
   function nilExclusive(values,changed){return changed==='Nil'?['Nil']:values.filter(v=>v!=='Nil');}
   function diffHTML(before,after,removed=false){
     before=String(before||'');after=String(after||'');if(before===after)return esc(after);
@@ -46,8 +61,8 @@
     }return out;
   }
   function report(s){
-    const lines=[];
-    list(s.stomas).filter(x=>list(s.scope).includes(x.uid)).forEach(x=>{
+    const lines=[],stomas=list(s.stomas);
+    stomas.forEach(x=>{
       const parts=[];if(x.colour)parts.push('colour / appearance: '+x.colour.toLowerCase());
       if(x.output?.length)parts.push('function / output: '+x.output.join(', '));
       if(x.appliances?.length)parts.push('appliance: '+x.appliances.join(', '));
@@ -55,7 +70,9 @@
       if(x.flange_due)parts.push('flange due: '+x.flange_due);
       list(x.complications).filter(c=>c.text).forEach(c=>parts.push(c.text+': '+(c.status==='resolved'?'resolved':'active')));
       if(x.rod?.status&&x.rod.status!=='Not recorded')parts.push('rod: '+x.rod.status.toLowerCase()+(x.rod.due?' (planned removal '+x.rod.due+')':'')+(x.rod.removed?' (removed '+x.rod.removed+')':''));
-      lines.push((x.number||'Stoma')+' — '+x.type+': '+(parts.join('; ')||'No assessment recorded')+'.');
+      const name=stomaName(x,stomas);
+      lines.push(name+' — '+(parts.join('; ')||'No assessment recorded')+'.');
+      if(String(x.notes||'').trim())lines.push(name+' notes: '+x.notes);
     });
     if(s.infection?.status&&s.infection.status!=='Not recorded')lines.push('Infection status: '+[s.infection.organism,s.infection.status].filter(Boolean).join(' · ')+'.');
     list(s.referrals).filter(r=>r.profession).forEach(r=>lines.push(r.profession+': '+r.status.toLowerCase()+'.'));
@@ -78,7 +95,7 @@
       const own=comps.filter(c=>c.stoma_uid===s.uid||c.stoma===legacy?.slot||c.stoma===String(legacy?.number)||(!c.stoma&&all.length===1));
       const rodOwn=p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&all.length===1);
       return {uid:s.uid,number,type:s.typeLabel||s.type||'Stoma',short:s.shortLabel||s.short||'',legacy_ref:legacy?.slot||String(legacy?.number||''),
-        colour:'',output:[],system,baseplate:flange,pouch,appliances:copy(ap),accessories:copy(ac),flange_due:row?.flange_due||'',
+        colour:'',output:[],notes:'',system,baseplate:flange,pouch,appliances:copy(ap),accessories:copy(ac),flange_due:row?.flange_due||'',
         complications:own.map(c=>({id:c.id,text:c.text,status:c.status})),
         rod:{status:rodOwn?(p.rod_removed_date?'Removed':p.rod_removal_date?'In place':'Not recorded'):'Not recorded',
           due:rodOwn?(p.rod_removal_date||''):'',removed:rodOwn?(p.rod_removed_date||''):''}};
@@ -116,7 +133,7 @@
   async function back(){if(!canLeave())return;const pos=ctx?.returnScroll||0,pid=ctx?.patient.id,origin=ctx?.returnPage||'page-handover';dismiss(true);document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     if(origin==='page-patient-record'&&typeof openPatientRecord==='function')await openPatientRecord(pid);
     else{document.getElementById('page-handover')?.classList.add('active');await loadHandover();}window.scrollTo(0,pos);}
-  async function open(pid){
+  async function open(pid,recordId=null){
     if(!enabled())return;const {data,error:authError}=await SB.auth.getUser();if(authError||!isJason(data?.user))return;
     if(ctx&&!canLeave())return;
     const token=++request,returnScroll=window.scrollY,returnPage=ctx?.returnPage||document.querySelector('.main > .page.active')?.id||'page-handover';ctx=null;
@@ -134,14 +151,20 @@
       const ep=openEpisode||episodes.find(e=>rows.some(r=>String(r.episode_id)===String(e.id)));
       if(!ep)throw new Error('There are no saved encounters or open inpatient episodes. Open an inpatient visit from the patient record first.');
       ctx={patient:p,episode:ep,episodes,rows,who:{email:data.user.email,name:signedName({email:data.user.email})},returnScroll,returnPage,mode:'form',historyFilter:String(ep.id),compare:true,openSections:new Set()};
-      if(openEpisode)newEncounter(true);else{ctx.mode='history';ctx.editable=false;ctx.historyFilter='all';render();}
+      const todays=openEpisode&&rows.find(r=>String(r.episode_id)===String(openEpisode.id)&&String(r.encounter_date||'').slice(0,10)===TODAY);
+      if(recordId&&rows.some(r=>String(r.id)===String(recordId)))selectRecord(recordId);
+      else if(todays){
+        // Today's encounter is already saved: reopening it continues that record.
+        selectRecord(todays.id,null,true);
+        ctx.message='Today’s encounter '+encounterCode(todays,p,rows)+' is already saved — your changes will be saved as V'+(ctx.expectedVersion+1)+'.';render();
+      }else if(openEpisode)newEncounter(true);else{ctx.mode='history';ctx.editable=false;ctx.historyFilter='all';render();}
     }catch(e){if(token!==request)return;page.innerHTML='<div class="jenc-card"><h2>Encounters</h2><p>'+esc(e.message)+'</p><button class="jenc-btn" data-action="back">Back to handover</button></div>';}
   }
   function newEncounter(force=false){
     if(!ctx||(!force&&!canLeave()))return;
     const ep=ctx.episodes.find(e=>e.is_current&&!e.discharge_date);if(!ep)return error('This inpatient episode has closed. Open a saved encounter from History.');
-    ctx.episode=ep;ctx.record=null;ctx.viewVersion=null;ctx.editable=true;ctx.mode='form';ctx.expectedVersion=0;ctx.comparison=null;ctx.openSections=new Set();
-    ctx.draft=seed(ctx.patient,ep,TODAY);ctx.baseline=copy(ctx.draft);ctx.active=ctx.draft.stomas[0]?.uid||'';ctx.message='';render();
+    ctx.episode=ep;ctx.record=null;ctx.viewVersion=null;ctx.editable=true;ctx.mode='form';ctx.expectedVersion=0;ctx.comparison=null;ctx.comparisonReport=null;ctx.openSections=new Set();
+    ctx.draft=seed(ctx.patient,ep,TODAY);ctx.baseline=copy(ctx.draft);ctx.message='';render();
   }
   function selectRecord(id,index=null,edit=false){
     if(!ctx||!canLeave())return;const rec=ctx.rows.find(r=>String(r.id)===String(id));if(!rec)return;
@@ -149,8 +172,13 @@
     const ep=ctx.episodes.find(e=>String(e.id)===String(rec.episode_id));if(!ep)return error('The linked episode could not be loaded.');
     ctx.episode=ep;ctx.record=rec;ctx.viewVersion=v;ctx.expectedVersion=vs.slice(-1)[0].version;ctx.editable=edit;ctx.mode='form';ctx.openSections=new Set();ctx.message='';
     ctx.draft=copy(v.snapshot);if(!ctx.draft.stomas?.length){const legacy=seed(ctx.patient,ep,String(rec.encounter_date));ctx.draft={...legacy,notes:v.snapshot.notes||''};}
-    ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(vs.indexOf(v)>0?copy(vs[vs.indexOf(v)-1].snapshot):null);
-    ctx.active=ctx.draft.stomas[0]?.uid||'';render();
+    // Every stoma is assessed on one screen, so an encounter always covers them all.
+    ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
+    const idx=vs.indexOf(v);
+    ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
+    // A saved version is compared with the report as it was saved, not re-worded.
+    ctx.comparisonReport=!edit&&idx>0?String(vs[idx-1].report||''):null;
+    render();
   }
   function oldStoma(uid){return ctx?.comparison?.stomas?.find(s=>s.uid===uid);}
   function attrs(kind,field,extra=''){return 'data-kind="'+kind+'" data-field="'+field+'" '+extra;}
@@ -181,9 +209,9 @@
     let compBody=list(s.complications).map((c,i)=>{
       const o=old?.complications?.find(v=>v.id===c.id),ref=extra+' data-index="'+i+'"';
       const choices=complicationCatalogue.filter(v=>v.active!==false&&(v.scope==='all'||v.scope===complicationScopeForStoma(s.type))).map(v=>v.name);
-      return '<div class="jenc-comp">'+select('Complication',c.text,choices,'comp','text',ref,o?.text)+select('Status',c.status,[['open','Active'],['resolved','Resolved']],'comp','status',ref,o?.status)+(ctx.editable?'<button class="jenc-remove" data-action="remove-comp" data-index="'+i+'" aria-label="Remove this complication from the encounter">×</button>':'')+'</div>';
+      return '<div class="jenc-comp">'+select('Complication',c.text,choices,'comp','text',ref,o?.text)+select('Status',c.status,[['open','Active'],['resolved','Resolved']],'comp','status',ref,o?.status)+(ctx.editable?'<button class="jenc-remove" data-action="remove-comp" '+extra+' data-index="'+i+'" aria-label="Remove this complication from the encounter">×</button>':'')+'</div>';
     }).join('');
-    if(ctx.editable)compBody+='<button class="jenc-btn" data-action="add-comp">+ Add complication</button>';
+    if(ctx.editable)compBody+='<button class="jenc-btn" data-action="add-comp" '+extra+'>+ Add complication</button>';
     const rodCapable=stomaTypeCanHaveRod(s.type),oldRemoved=s.rod.status==='Removed'&&!ctx.record;
     if(rodCapable&&!oldRemoved){compBody+='<h4>Rod</h4><div class="jenc-fields">'+select('Rod status',s.rod.status,['Not recorded','In place','Removed'],'rod','status',extra,old?.rod?.status);
       if(s.rod.status==='In place')compBody+=select('Planned removal date',s.rod.due,Array.from({length:31},(_,i)=>dateAddStr(TODAY,i)),'rod','due',extra,old?.rod?.due);
@@ -193,11 +221,10 @@
       const rod=x?.rod;return complications+(rodCapable&&rod?.status&&rod.status!=='Not recorded'?'\nRod: '+rod.status+(rod.status==='In place'&&rod.due?' · removal '+rod.due:rod.status==='Removed'&&rod.removed?' · '+rod.removed:''):'');
     };
     const compSummary=ctx.compare&&ctx.comparison?diffHTML(careSummary(old),careSummary(s),true):esc(careSummary(s));
-    const identity='<div class="jenc-stoma-context"><strong>'+esc(s.number+' · '+s.type)+'</strong></div>';
     return {
       review:'<div class="jenc-fields">'+select('Colour / appearance',s.colour,COLOURS,'stoma','colour',extra,old?.colour)+multi('Function / output',s.output,OUTPUTS,'stoma','output',extra,old?.output||[])+'</div>'+
         accordion('complications:'+s.uid,'Complications'+(rodCapable?' & rod':''),compSummary,compBody),
-      appliances:identity+accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
+      appliances:accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
     };
   }
   function render(){
@@ -207,10 +234,10 @@
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
-      page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e);return '<article class="jenc-history-card"><h3>Encounter '+esc(String(e.id).slice(0,8))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><p>'+esc(v.report||report(v.snapshot)||'No report recorded')+'</p><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
+      page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e);return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><p>'+esc(v.report||report(v.snapshot)||'No report recorded')+'</p><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
     }
-    const d=ctx.draft,s=d.stomas.find(v=>v.uid===ctx.active),n=ctx.expectedVersion;
-    const versionBar=rec?'<div class="jenc-version"><strong>Encounter '+esc(String(rec.id).slice(0,8))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong><div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
+    const d=ctx.draft,n=ctx.expectedVersion;
+    const versionBar=rec?'<div class="jenc-version"><strong>'+esc(encounterCode(rec,p,ctx.rows))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong><div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
     const inf=d.infection||{status:'Not recorded',organism:''};
     const infectionText=x=>[x?.organism,x?.status||'Not recorded'].filter(Boolean).join(' · ');
     const infectionSummary=ctx.compare&&ctx.comparison?diffHTML(infectionText(ctx.comparison.infection),infectionText(inf),true):esc(infectionText(inf));
@@ -218,31 +245,41 @@
     const referrals=list(d.referrals).map((r,i)=>{const previous=list(ctx.comparison?.referrals),old=r.id?previous.find(v=>v.id===r.id):previous.find(v=>!v.id&&v.profession===r.profession)||previous[i];
       return '<div class="jenc-referral">'+select('Profession',r.profession,PROFESSIONS,'referral','profession','data-index="'+i+'"',old?.profession)+select('Status',r.status,REFERRAL_STATUS,'referral','status','data-index="'+i+'"',old?.status)+(ctx.editable?'<button class="jenc-remove" data-action="remove-referral" data-index="'+i+'" aria-label="Remove this referral from the encounter">×</button>':'')+'</div>';
     }).join('');
-    const scopeChoices=d.stomas.map(v=>v.uid);
-    const scopeControl=multi('Notes / report apply to',d.scope,scopeChoices,'global','scope','',ctx.comparison?.scope||d.scope);
-    const panels=s?stomaHTML(s):null;
+    // One column per stoma, side by side, so nothing is hidden behind a tab.
+    const panels=d.stomas.map(v=>({stoma:v,name:stomaName(v,d.stomas),...stomaHTML(v)}));
+    const grid=cols=>'<div class="jenc-stoma-grid" style="--jenc-cols:'+Math.min(Math.max(panels.length,1),3)+'">'+cols+'</div>';
+    const column=(name,body)=>'<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(name)+'</h4>'+body+'</div>';
+    const noteBox=(key,label,value,id)=>'<div class="jenc-note-col"><label class="jenc-notes-label" for="'+id+'">'+esc(label)+'</label><div class="jenc-notebox"><div class="jenc-note-mirror" aria-hidden="true"></div><textarea id="'+id+'" data-note="'+esc(key)+'" aria-label="'+esc(label)+'" placeholder="Write your observations, care provided or patient concerns…"'+(ctx.editable?'':' readonly')+'>'+esc(value||'')+'</textarea></div><div class="jenc-note-diff jenc-previous"></div></div>';
+    // Older encounters kept one set of notes for the whole episode; they still show.
+    const generalNotes=!panels.length||String(d.notes||'').trim()||String(ctx.comparison?.notes||'').trim();
+    const notesHTML=(panels.length?grid(panels.map((x,i)=>noteBox(x.stoma.uid,x.name+' — clinical notes',x.stoma.notes,'jenc-notes-'+i)).join('')):'')+
+      (generalNotes?noteBox('',panels.length?'General notes':'Clinical notes',d.notes,'jenc-notes'):'');
     const heading=(number,title,id,badge='')=>'<h3 class="jenc-step-heading" id="'+id+'"><span class="jenc-step-number" aria-hidden="true">'+number+'</span>'+title+(badge?'<span class="jenc-state">'+badge+'</span>':'')+'</h3>';
-    const tabs='<div class="jenc-tabs" aria-label="Choose stoma">'+d.stomas.map(v=>'<button class="'+(v.uid===ctx.active?'active':'')+'" data-action="stoma" data-uid="'+esc(v.uid)+'" aria-pressed="'+(v.uid===ctx.active)+'">'+esc(v.number+' · '+v.type)+'</button>').join('')+'</div>';
-    const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,'Stoma review','jenc-review-heading')+tabs+(panels?panels.review:'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
-    const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels?panels.appliances:'<p>Record the stoma details before choosing its appliance setup.</p>')+'</section>';
-    const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+'<div class="jenc-notes-layout">'+scopeControl+'<div><label class="jenc-notes-label" for="jenc-notes">Clinical notes</label><div class="jenc-notebox"><div class="jenc-note-mirror" id="jenc-note-mirror" aria-hidden="true"></div><textarea id="jenc-notes" aria-label="Clinical notes" placeholder="Write your observations, care provided or patient concerns…"'+(ctx.editable?'':' readonly')+'>'+esc(d.notes||'')+'</textarea></div><div id="jenc-note-diff" class="jenc-previous"></div><div class="jenc-meta">Saved with this episode and the selected stomas.</div></div></div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
+    const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
+    const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+'</section>';
+    const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','This episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
     page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':'<button class="jenc-btn primary" data-action="edit">Edit this encounter</button><button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
-    // Display stoma numbers/types to people while keeping stable uids as values.
-    page.querySelectorAll('[data-kind="global"][data-field="scope"]').forEach(box=>{const st=d.stomas.find(v=>v.uid===box.value);if(st)box.parentNode.lastChild.textContent=st.number+' · '+st.type;});
-    const scopeSummary=page.querySelector('[data-kind="global"][data-field="scope"]')?.closest('details')?.querySelector('summary');
-    if(scopeSummary)scopeSummary.innerHTML=d.stomas.filter(v=>d.scope.includes(v.uid)).map(v=>ctx.compare&&ctx.comparison&&!list(ctx.comparison.scope).includes(v.uid)?'<span class="jenc-change">'+esc(v.number)+'</span>':esc(v.number)).join(', ')||'Choose stomas';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
-    const ta=document.getElementById('jenc-notes');ta.addEventListener('scroll',()=>{const mirror=document.getElementById('jenc-note-mirror');mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;});refreshReport();
+    page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
   }
   function refreshReport(){
-    if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,notes=String(ctx.draft.notes||'');
-    const mirror=document.getElementById('jenc-note-mirror');if(mirror)mirror.innerHTML=(ctx.compare&&old?diffHTML(old.notes,notes):esc(notes))+'\n';
-    const diff=document.getElementById('jenc-note-diff');if(diff)diff.innerHTML=ctx.compare&&old&&!same(old.notes,notes)?'Changes: '+diffHTML(old.notes,notes,true):'';
-    const r=document.getElementById('jenc-report');if(r){const now=ctx.record&&!ctx.editable&&ctx.viewVersion?.report?ctx.viewVersion.report:report(ctx.draft);r.innerHTML=ctx.compare&&old?diffHTML(report(old),now,true):esc(now);}
+    if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,showDiff=!!(ctx.compare&&old);
+    document.querySelectorAll('#page-jason-encounters textarea[data-note]').forEach(ta=>{
+      const key=ta.dataset.note,box=ta.closest('.jenc-note-col');
+      const notes=String((key?ctx.draft.stomas.find(x=>x.uid===key)?.notes:ctx.draft.notes)||'');
+      const before=String((key?list(old?.stomas).find(x=>x.uid===key)?.notes:old?.notes)||'');
+      const mirror=box?.querySelector('.jenc-note-mirror');if(mirror)mirror.innerHTML=(showDiff?diffHTML(before,notes):esc(notes))+'\n';
+      const diff=box?.querySelector('.jenc-note-diff');if(diff)diff.innerHTML=showDiff&&before!==notes?'Changes: '+diffHTML(before,notes,true):'';
+    });
+    const r=document.getElementById('jenc-report');if(r){const now=ctx.record&&!ctx.editable&&ctx.viewVersion?.report?ctx.viewVersion.report:report(ctx.draft);
+      const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.innerHTML=showDiff?diffHTML(was,now,true):esc(now);}
   }
-  function input(e){if(!ctx?.editable)return;if(e.target.id==='jenc-notes'){ctx.draft.notes=e.target.value;refreshReport();}}
+  function input(e){
+    if(!ctx?.editable)return;const key=e.target.dataset?.note;if(e.target.tagName!=='TEXTAREA'||key===undefined)return;
+    if(key)(ctx.draft.stomas.find(x=>x.uid===key)||{}).notes=e.target.value;else ctx.draft.notes=e.target.value;refreshReport();
+  }
   function change(e){
     if(!ctx)return;const el=e.target,kind=el.dataset.kind,field=el.dataset.field;
     if(kind==='compare'){ctx.compare=el.checked;render();return;}
@@ -253,7 +290,7 @@
     if(kind==='global')obj=ctx.draft;
     if(kind==='infection')obj=ctx.draft.infection;
     if(kind==='referral')obj=ctx.draft.referrals[Number(el.dataset.index)];
-    const st=ctx.draft.stomas.find(s=>s.uid===(el.dataset.uid||ctx.active));
+    const st=ctx.draft.stomas.find(s=>s.uid===el.dataset.uid);
     if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
     if(el.type==='checkbox'){
       let v=list(obj[field]).filter(x=>x!==el.value);if(el.checked)v.push(el.value);
@@ -268,7 +305,6 @@
       st.appliances=[st.system==='two'?st.baseplate:'',st.pouch].filter(Boolean);
     }
     if(kind==='rod'&&field==='status'){if(el.value==='Removed'){st.rod.removed=TODAY;}else if(el.value==='Not recorded'){st.rod.due='';st.rod.removed='';}else st.rod.removed='';}
-    if(st&&['stoma','rod','comp'].includes(kind)&&!ctx.draft.scope.includes(st.uid))ctx.draft.scope.push(st.uid);
     const menu=el.closest('details.jenc-multi');render();
     if(menu){const next=document.querySelector('[data-kind="'+kind+'"][data-field="'+field+'"]'+(el.dataset.uid?'[data-uid="'+el.dataset.uid+'"]':''));if(next)next.closest('details').open=true;}
   }
@@ -281,12 +317,11 @@
     if(action==='version'){selectRecord(ctx.record.id,Number(btn.dataset.index));return;}
     if(action==='edit'){selectRecord(ctx.record.id,null,true);return;}
     if(action==='cancel'){if(!canLeave())return;if(ctx.record){ctx.editable=false;selectRecord(ctx.record.id);}else await back();return;}
-    if(action==='stoma'){ctx.active=btn.dataset.uid;render();return;}
     if(action==='print'){window.print();return;}
     if(!ctx.editable)return;
-    const st=ctx.draft.stomas.find(s=>s.uid===ctx.active);
-    if(action==='add-comp'){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
-    if(action==='remove-comp'){st.complications.splice(Number(btn.dataset.index),1);render();}
+    const st=ctx.draft.stomas.find(s=>s.uid===btn.dataset.uid);
+    if(action==='add-comp'&&st){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
+    if(action==='remove-comp'&&st){st.complications.splice(Number(btn.dataset.index),1);render();}
     if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',status:'Needed'});render();}
     if(action==='remove-referral'){ctx.draft.referrals.splice(Number(btn.dataset.index),1);render();}
     if(action==='save')await save();
@@ -316,7 +351,7 @@
   async function save(){
     if(!ctx?.editable||ctx.saving||!enabled())return;
     if(!dirty())return error(ctx.record?'There are no changes to save.':'Record a finding, care change, referral or clinical note before saving.');
-    if(!ctx.draft.scope.length||ctx.draft.scope.some(uid=>!ctx.draft.stomas.some(s=>s.uid===uid)))return error('Choose the stoma or stomas covered by this encounter.');
+    if(!ctx.draft.scope.length||ctx.draft.scope.some(uid=>!ctx.draft.stomas.some(s=>s.uid===uid)))return error('Record the patient’s stoma in the patient record before saving an encounter.');
     if(ctx.draft.stomas.some(s=>s.complications.some(c=>!c.text)))return error('Choose a complication or remove the empty row.');
     if(ctx.draft.referrals.some(r=>!r.profession||!r.status))return error('Choose the profession and status for each referral.');
     let updates;try{updates=impact();}catch(e){return error(e.message);}
@@ -338,7 +373,7 @@
       if(ctx!==savedCtx)return;
       if(results[0].status==='fulfilled'&&results[0].value.data)ctx.patient=results[0].value.data;
       if(results[1].status==='fulfilled'&&results[1].value.data)ctx.episodes=results[1].value.data;
-      selectRecord(data.id);ctx.message='Encounter saved · V'+currentVersion(data).version+'.';render();
+      selectRecord(data.id);ctx.message='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.';render();
       hvEncounteredToday.add(String(ctx.patient.id));latestByPatient.set(String(ctx.patient.id),data);
       if(typeof refreshReminders==='function')Promise.resolve(refreshReminders()).catch(()=>{});
     }catch(e){if(ctx===savedCtx){ctx.saving=false;render();error(e.message+' Your changes remain on this screen.');}}
@@ -359,7 +394,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;

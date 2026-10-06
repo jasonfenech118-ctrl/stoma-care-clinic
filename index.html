@@ -21,10 +21,10 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-443"/>
-<script src="assets/manual.js?v=2026.10.06-443"></script>
-<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-439"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-443"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-444"/>
+<script src="assets/manual.js?v=2026.10.06-444"></script>
+<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-444"/>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-444"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1093,6 +1093,14 @@ body.qli-standalone #ql-install-btn{display:none;}
 .clr-chev.open{transform:rotate(90deg);}
 .clr-list{border-top:1px solid var(--border);padding:6px 14px 10px;display:grid;gap:8px;}
 .clr-rec{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.clr-enc{margin:-2px 0 6px 14px;padding:8px 10px;border-left:3px solid #9fd3cf;background:#f6fbfb;border-radius:0 8px 8px 0;display:grid;gap:5px;}
+.clr-enc-head{font-size:12px;font-weight:800;color:#0d4f5a;display:flex;align-items:center;gap:6px;}
+.clr-enc-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;text-align:left;border:1px solid #d6e9e8;background:#fff;border-radius:7px;padding:7px 9px;font:inherit;font-size:12px;color:#1a2e4a;cursor:pointer;}
+.clr-enc-row:hover{border-color:#0d7377;background:#f0f9f8;}
+.clr-enc-row .clr-code{margin-left:0;}
+.clr-enc-v{font-size:10.5px;font-weight:800;background:#0d7377;color:#fff;border-radius:5px;padding:1px 6px;}
+.clr-enc-meta{color:#5a6b7b;}
+.clr-enc-open{margin-left:auto;font-weight:700;color:#0d7377;}
 .clr-rec:last-child{border-bottom:0;}
 .clr-rec-copy{display:grid;gap:2px;min-width:0;}
 .clr-rec-title{font-size:13px;font-weight:700;color:var(--navy);}
@@ -3629,7 +3637,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-443';
+const APP_BUILD='2026.10.06-444';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17782,6 +17790,27 @@ function clrMetaHTML(r){
 /* The Episodes category — every inpatient visit, oldest reference first, each
    expandable to its detail. Split out of the old combined Clinical panel so it
    can stand on its own Episodes tab. */
+/* Jason's encounters for this patient, listed under the episode they belong to. */
+async function fetchPatientEncounters(patientId){
+  if(!isEncounterUser())return [];
+  try{
+    const{data,error}=await SB.from('encounters').select('id,patient_id,episode_id,episode_ref,encounter_date,created_at,created_by_name,assessment,nursing_report')
+      .eq('patient_id',String(patientId)).order('created_at',{ascending:false});
+    return error?[]:(data||[]);
+  }catch(e){return [];}
+}
+function episodeEncountersHTML(ep){
+  const all=clrState.encounters||[],JE=window.JasonEncounters;
+  if(!all.length||!JE||!ep)return '';
+  const mine=all.filter(e=>String(e.episode_id)===String(ep.id))
+    .sort((a,b)=>String(b.encounter_date||'').localeCompare(String(a.encounter_date||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
+  if(!mine.length)return '';
+  const pid=jsSafe(clrState.patient?.id||ep.patient_id);
+  return `<div class="clr-enc"><div class="clr-enc-head">📝 Encounters <span class="clr-count">${mine.length}</span></div>${mine.map(e=>{
+    const v=JE.versions(e).slice(-1)[0];
+    return `<button type="button" class="clr-enc-row" onclick="openEncounter('${pid}','${jsSafe(e.id)}')"><span class="clr-code">${htmlSafe(JE.code(e,clrState.patient,all))}</span><span class="clr-enc-v">V${v?.version||1}</span><span class="clr-enc-meta">${htmlSafe(fmtShortDate(String(e.encounter_date||e.created_at||'').slice(0,10)))}${e.created_by_name?' · '+htmlSafe(e.created_by_name):''}</span><span class="clr-enc-open">Open ›</span></button>`;
+  }).join('')}</div>`;
+}
 function episodeCategoryHTML(meta,open){
   const recs=clrState.rows.filter(r=>r.kind===meta.kind);
   const cur=recs.find(r=>r.is_current)||recs[0];
@@ -17797,7 +17826,7 @@ function episodeCategoryHTML(meta,open){
           ?'<span class="clr-rec-tag">From patient card</span>'
           :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
         <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
-      </div></div>`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
+      </div></div>${meta.kind==='episode'?episodeEncountersHTML(r):''}`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
   return `<div class="clr-cat">
     <button class="clr-cat-head" onclick="toggleClinicalCategory('${meta.kind}')">
       <span class="clr-cat-ic">${psmIc(meta.icon)}</span>
@@ -18732,6 +18761,7 @@ async function openPatientRecord(patientId){
   await loadClinicalRecords(patientId);
   clrState.patient=pat;
   clrState.appts=appts;
+  clrState.encounters=await fetchPatientEncounters(patientId);
   // The patient's pre-operative stoma siting record, if any — linked by the
   // patient id, else matched on the id card (a siting can predate the patient).
   // Read on its own so a missing siting_sessions table never breaks the record.
@@ -19776,8 +19806,8 @@ function handoverComplicationLine(p){
   }).filter(Boolean).join(' · ');
 }
 /* Jason's encounter workspace lives in assets/jason-encounters.js. */
-async function openEncounter(patientId){
-  if(isEncounterUser()&&window.JasonEncounters)return window.JasonEncounters.open(patientId);
+async function openEncounter(patientId,recordId){
+  if(isEncounterUser()&&window.JasonEncounters)return window.JasonEncounters.open(patientId,recordId||null);
 }
 function handoverRowHTML(p,cls){
   // The appliance line and the "flange due" chip are shown side by side, so the
