@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-450"/>
-<script src="assets/manual.js?v=2026.10.06-450"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-451"/>
+<script src="assets/manual.js?v=2026.10.06-451"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-450"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-450"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.06-450"></script>
@@ -3644,7 +3644,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-450';
+const APP_BUILD='2026.10.06-451';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12636,12 +12636,14 @@ async function loadPatientDirectory(){
 
   const ownerSel=document.getElementById('pd-owner');
   if(ownerSel){
-    const owners=[...new Set(patientDirectoryRows.map(p=>p.owner))].sort();
+    // Every follow-up owner is offered, even one with no patients yet (Tracey).
+    const found=[...new Set(patientDirectoryRows.map(p=>p.owner))].filter(o=>!FOLLOWUP_OWNERS.includes(o)).sort();
+    const owners=FOLLOWUP_OWNERS.concat(found);
     const cur=ownerSel.value||'all';
     ownerSel.innerHTML='<option value="all">All owners</option>'+owners.map(o=>`<option value="${htmlSafe(o)}">${htmlSafe(o)}</option>`).join('');
     ownerSel.value=[...ownerSel.options].some(o=>o.value===cur)?cur:'all';
   }
-  renderPatientDirectorySummary();
+  pdSummaryOwner=null;
   renderPatientDirectory();
 }
 /* ── NEW PATIENTS ────────────────────────────────────────────────────────────
@@ -13131,9 +13133,46 @@ async function applyDeceasedStatusFix(){
   await loadPatientDirectory();
   alert(`${done} record${done===1?'':'s'} corrected to deceased`+(failed?` · ${failed} could not be saved`:'')+'.');
 }
-function renderPatientDirectorySummary(){
+/* A nurse's caseload in the Registry: their patients still under follow-up.
+   Reversed, deceased, Gozo and overseas patients are closed records, so they
+   are left out under an owner (choose that status to see them on purpose);
+   "All owners" stays the master list of everyone. */
+const PD_CLOSED_STATUSES=['reversed','deceased','discharged_gozo','relocated_overseas'];
+function pdOwnerCaseload(rows,owner){return (rows||[]).filter(p=>p.owner===owner&&!PD_CLOSED_STATUSES.includes(p.status));}
+// Which stoma kinds a patient has on record: colostomy, ileostomy, urostomy.
+function pdStomaKinds(p){
+  let types=[];
+  try{types=patientStomaList(p).map(x=>x.type);}catch(e){}
+  if(!types.some(t=>String(t||'').trim()))types=[p.stoma_type];
+  const kinds=new Set();
+  types.forEach(t=>{const v=String(t||'').toLowerCase();
+    if(/urostom|ileal conduit|uretero/.test(v))kinds.add('urostomy');
+    else if(/ileostom/.test(v))kinds.add('ileostomy');
+    else if(/colostom/.test(v))kinds.add('colostomy');});
+  return kinds;
+}
+function pdStomaKindTiles(rows,scopeNote){
+  const count=k=>rows.filter(p=>pdStomaKinds(p).has(k)).length;
+  return `${annualKpi('Colostomies',count('colostomy'),scopeNote,'#b45309')}
+    ${annualKpi('Ileostomies',count('ileostomy'),scopeNote,'#0d7377')}
+    ${annualKpi('Urostomies',count('urostomy'),scopeNote,'#2563eb')}`;
+}
+let pdSummaryOwner=null;
+function renderPatientDirectorySummary(owner='all'){
   const el=document.getElementById('pd-summary');
   if(!el)return;
+  if(owner!=='all'){
+    // The owner's numbers: their caseload only, with its stoma mix.
+    const mine=pdOwnerCaseload(patientDirectoryRows,owner);
+    const c=st=>mine.filter(p=>p.status===st).length;
+    const held=c('paused')+c('awaiting_feedback');
+    el.innerHTML=`
+      ${annualKpi('Total Patients',mine.length,owner+'’s patients')}
+      ${annualKpi('Active',c('active'),'active follow-up','#1baf7a')}
+      ${held?annualKpi('Paused / awaiting',held,'on file, out of recall','#64748b'):''}
+      ${pdStomaKindTiles(mine,'in '+owner+'’s list')}`;
+    return;
+  }
   const rows=patientDirectoryRows;
   const n=st=>rows.filter(p=>p.status===st).length;
   // Paused and awaiting-feedback are real statuses with no tile of their own, so
@@ -13160,7 +13199,8 @@ function renderPatientDirectorySummary(){
     ${unaccounted?annualKpi('Unaccounted',unaccounted,'not in any status above','#b91c1c'):''}
     ${annualKpi('Ever reversed',everRev,
       revElsewhere>0?`every reversal on record, deaths ignored · ${revElsewhere} since died or moved away`
-                    :'every reversal on record, deaths ignored','#7c3aed')}`;
+                    :'every reversal on record, deaths ignored','#7c3aed')}
+    ${pdStomaKindTiles(rows,'on record, all statuses')}`;
   const wrong=patientsMarkedOtherButDeceased(rows).length;
   if(wrong){
     const b=document.createElement('div');
@@ -13205,12 +13245,16 @@ function renderPatientDirectory(){
   const status=document.getElementById('pd-status')?.value||'all';
   const pdKey=q+'|'+owner+'|'+status;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
+  // The number tiles follow the owner filter (recomputed only when it changes).
+  if(pdSummaryOwner!==owner){pdSummaryOwner=owner;renderPatientDirectorySummary(owner);}
   const archivedCount=patientDirectoryRows.filter(p=>p.archived).length;
   let rows=patientDirectoryRows.filter(p=>{
     // Archived patients are kept out of the registry unless they are being shown
     // on purpose, so an accidental clutter never reappears in the active list.
     if(!pdShowArchived&&p.archived)return false;
     if(owner!=='all'&&p.owner!==owner)return false;
+    // Under an owner, closed records stay hidden unless that status is chosen.
+    if(owner!=='all'&&PD_CLOSED_STATUSES.includes(p.status)&&!(status===p.status||status==='ever_reversed'))return false;
     // "Ever reversed" cuts across the status buckets — see patientEverReversed.
     if(status==='ever_reversed'){if(!patientEverReversed(p))return false;}
     else if(status!=='all'&&p.status!==status)return false;
