@@ -21,10 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-445"/>
-<script src="assets/manual.js?v=2026.10.06-445"></script>
-<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-445"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-445"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-446"/>
+<script src="assets/manual.js?v=2026.10.06-446"></script>
+<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-446"/>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-446"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.06-446"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3637,7 +3638,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-445';
+const APP_BUILD='2026.10.06-446';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6434,7 +6435,9 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         });
       }catch(e){}
     }
-    const clinicalPane=`${complicationReviewSectionHTML(p,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
+    // Jason's per-stoma assessment sits first in Clinical review (filled after opening).
+    const stomaReviewHost=(window.VisitStomaReview&&VisitStomaReview.enabled())?'<div id="es-stoma-review" style="margin-bottom:14px;"></div>':'';
+    const clinicalPane=`${stomaReviewHost}${complicationReviewSectionHTML(p,complicationsNow,appt.complication_review||'')}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
@@ -6474,6 +6477,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   if(!isDntuEditMode){
     esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[]};
+    if(window.VisitStomaReview)VisitStomaReview.mount(document.getElementById('es-stoma-review'),{appt,patient:fullPat,resume:!!options.resume});
     esGoStep(1);
     esCmpReviewChange();
     esAppReviewChange();
@@ -6668,6 +6672,7 @@ function esPrevStep(){const o=esStepsOrder(),i=o.indexOf(esState.step);if(i>0)es
 async function esFollowupNext(){
   if(!esState)return;
   if(!esOutcomeAttended()){esGoStep(4);return;}
+  if(window.VisitStomaReview&&!VisitStomaReview.validate())return;
   const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
   const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
   const isDntu=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
@@ -6853,11 +6858,14 @@ function esRenderReview(){
   // Bold just the month in the due line; the availability detail after it stays light.
   const dueFull=String(selText('of-month')||'');
   const dueMonth=dueFull.split(' — ')[0];
+  // Jason's per-stoma assessment, one line per stoma, before Complications.
+  const stomaRows=window.VisitStomaReview&&esState?VisitStomaReview.payloadFor(esState.apptId):null;
+  const stomaReviewCard=stomaRows&&stomaRows.length?card(2,'Stoma assessment',VisitStomaReview.summaryLines(stomaRows).map(l=>boldVal(l.name+':',l.text)),{bg:'#e8f5f4',bd:'#a7d8d3',tx:'#0d5f63'}):'';
   const dueLine=dueTxt?{html:`<div style="font-size:13px;color:#64707e;line-height:1.7;">Due <strong style="color:#111827;font-weight:750;">${htmlSafe(dueMonth)}</strong>${htmlSafe(dueFull.slice(dueMonth.length))}</div>`}:'';
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
     ${card(1,'Attendance',[dtLine,ownerBadge,boldVal('Outcome',selText('of-status'))],TONE_ATT)}
-    ${card(2,'Complications',cmpLines,TONE_CMP)}
+    ${stomaReviewCard}${card(2,'Complications',cmpLines,TONE_CMP)}
     ${card(3,'Appliance & accessories',appLines,TONE_APP)}
     ${card(4,'Follow-up',[boldVal('',nextTxt),dueLine,boldVal('Status',selText('of-followup-status'))],TONE_FU)}`;
 }
@@ -7594,6 +7602,9 @@ async function commitOutcomeFollowup(v,stomaRows){
   if(applianceReview)outcomeUpdate.appliance_review=applianceReview;
   if(complicationReviews&&complicationReviews.length)outcomeUpdate.complication_reviews=complicationReviews;
   if(followupAction)outcomeUpdate.followup_action=followupAction;
+  // Jason's per-stoma assessment (tolerant: dropped, with a note, until the column exists).
+  const stomaAssessment=status==='attended'&&window.VisitStomaReview?VisitStomaReview.payloadFor(apptId):null;
+  if(stomaAssessment)outcomeUpdate.stoma_assessment=stomaAssessment;
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
 
@@ -7608,6 +7619,7 @@ async function commitOutcomeFollowup(v,stomaRows){
     return;
   }
   if(saved.error){alert('Could not save appointment edit/outcome: '+saved.error.message);return;}
+  if(stomaAssessment&&(saved.dropped||[]).includes('stoma_assessment'))alert('The visit was saved, but the stoma assessment was not: the database does not have its column yet. Run sql/add-visit-stoma-assessment.sql once in Supabase.');
 
   if(patientId){
     const updatePayload=(isDntuEditMode&&dntuTarget===3)?{
@@ -7628,6 +7640,9 @@ async function commitOutcomeFollowup(v,stomaRows){
       followup_status:followupStatus
     };
     if(status==='attended')updatePayload.followup_type='follow_up';
+    // A rod ticked, unticked or re-dated in the stoma assessment updates the patient.
+    const rodPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.rodPatchFor(apptId):null;
+    if(rodPatch&&!(isDntuEditMode&&dntuTarget===3))Object.assign(updatePayload,rodPatch);
     // Tolerant: if followup_flexible (or another new column) is not in the
     // database yet, it is dropped and the rest of the follow-up still saves.
     const{error:pErr}=await updatePatientTolerant(patientId,updatePayload);
@@ -7641,6 +7656,7 @@ async function commitOutcomeFollowup(v,stomaRows){
     }
   }
 
+  if(window.VisitStomaReview)VisitStomaReview.clear();
   closeModal();
   if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);
   refreshAppointmentViews();
@@ -24432,6 +24448,12 @@ function plVisitAppliancesHTML(appt){
     .concat(accessories.map(n=>`<span class="pl-tag accessory">${htmlSafe(n)}</span>`));
   return tags.length?`<div class="pl-tags" style="margin-top:8px;">${tags.join('')}</div>`:'';
 }
+// Jason's per-stoma assessment recorded at this visit, if any.
+function plVisitStomaAssessmentHTML(appt){
+  let rows=appt&&appt.stoma_assessment;if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
+  if(!Array.isArray(rows)||!rows.length||!window.VisitStomaReview||!VisitStomaReview.enabled())return '';
+  return VisitStomaReview.summaryLines(rows).map(l=>`<div class="pl-event-detail"><strong>${htmlSafe(l.name)}:</strong> ${htmlSafe(l.text)}</div>`).join('');
+}
 function plFollowupCardHTML(appt){
   const nurse=appointmentNurseLabel(appt);
   const action=plFollowupActionLabel(appt.followup_action);
@@ -24440,6 +24462,7 @@ function plFollowupCardHTML(appt){
     <div class="pl-event-top"><span class="pl-event-date">${htmlSafe(fmtShortDate(appt.appt_date))}${appt.appt_slot?' · '+htmlSafe(String(appt.appt_slot).slice(0,5)):''}</span>${plAppointmentBadge(appt)}</div>
     <div class="pl-event-by">${htmlSafe(appt.status==='attended'?'Seen by '+nurse:'Clinic column: '+nurse)}</div>
     ${action?`<div class="pl-event-detail"><strong>Follow-up decision:</strong> ${htmlSafe(action)}</div>`:''}
+    ${plVisitStomaAssessmentHTML(appt)}
     ${appt.complication_review?`<div class="pl-event-detail"><strong>Complication review:</strong> ${htmlSafe(String(appt.complication_review).replaceAll('-',' '))}</div>`:''}
     ${plVisitAppliancesHTML(appt)}
   </article>`;
