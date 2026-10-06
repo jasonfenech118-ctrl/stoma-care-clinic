@@ -35,7 +35,7 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
     return{rows:q.cols==='patient_id,appt_date,status'?future:[],error:null};
   };
   vm.runInContext("const ADMIN_WORKLIST_KEY='admin_worklist_v2';",c);
-  for(const name of ['adminWorklistLoad','followupMonthName','monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
+  for(const name of ['adminWorklistLoad','followupMonthName','monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcDuePatientsFor','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
   return c;
 }
 const ids=c=>Array.from(c.bookCalState.duePatients,p=>p.id);

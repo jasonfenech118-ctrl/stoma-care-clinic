@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-447"/>
-<script src="assets/manual.js?v=2026.10.06-447"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-448"/>
+<script src="assets/manual.js?v=2026.10.06-448"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-447"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-447"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.06-447"></script>
@@ -2064,6 +2064,11 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .bc-day.drop{outline:2px dashed var(--teal);outline-offset:-1px;}
 .bc-list-pat{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:#fff;cursor:grab;touch-action:pan-y pinch-zoom;user-select:none;}
 .bc-list-pat.sel{border-color:var(--teal);box-shadow:0 0 0 2px rgba(13,115,119,.28);background:#e8f5f4;}
+.bc-list-pat.bc-carried{border:2px solid #dc2626;background:#fef2f2;}
+.bc-list-pat.bc-carried .bc-nm,.bc-list-pat.bc-carried .bc-history-link{color:#991b1b;}
+.bc-carried-tag{font-size:11px;font-weight:800;color:#fff;background:#dc2626;border-radius:6px;padding:3px 7px;margin:0 0 6px;display:inline-block;}
+.bc-carried-count{font-size:11px;font-weight:800;color:#fff;background:#dc2626;border-radius:999px;padding:2px 8px;margin-left:4px;vertical-align:middle;}
+.bc-pickhint.bc-carried-hint{background:#fef2f2;border-color:#fecaca;color:#991b1b;}
 .bc-list-pat .bc-nm{font-weight:900;color:var(--navy);font-size:13px;}
 .bc-list-pat .bc-meta{font-size:11px;color:var(--muted);line-height:1.4;margin-top:2px;}
 .bc-list-pat.bc-name-tone-1:not(.sel){background:#eff5fc;}
@@ -3638,7 +3643,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-447';
+const APP_BUILD='2026.10.06-448';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -8465,6 +8470,34 @@ function bcFillColor(booked){
   const r=Math.max(0,Math.min(1,booked/cap));
   return `hsl(${Math.round(120-120*r)},62%,${Math.round(86-36*r)}%)`;
 }
+/* The month's booking list. Carry-over: once a month has ended, an active patient
+   whose due month passed without a booking moves into the CURRENT month's list
+   automatically — at the top, flagged _carried, oldest due first — and keeps
+   moving on each month until booked. Their recorded due month is left as it
+   was, so the delay stays visible. */
+function bcDuePatientsFor(pats,{year,month,owner,earliestFuture}){
+  const nowKey=Number(String(TODAY).slice(0,4))*100+Number(String(TODAY).slice(5,7));
+  const viewKey=Number(year)*100+Number(month);
+  const name=p=>`${p.first_name||''} ${p.surname||''}`.trim();
+  return (pats||[]).map(p=>{
+    if(normaliseFollowupStatus(p.followup_status)!=='active')return null;
+    const m=Number(p.followup_due_month),y=Number(p.followup_year);
+    if(!(m>=1&&m<=12&&y>2000))return null;
+    const key=y*100+m,carried=viewKey===nowKey&&key<nowKey;
+    if(key!==viewKey&&!carried)return null;
+    if(owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return null;
+    if((earliestFuture||{})[String(p.id)])return null;
+    return carried?{...p,_carried:key}:p;
+  }).filter(Boolean).sort((a,b)=>(a._carried?0:1)-(b._carried?0:1)||(a._carried||0)-(b._carried||0)
+    ||name(a).localeCompare(name(b),'en',{sensitivity:'base'}));
+}
+function bcCarriedLabel(p){
+  if(!p||!p._carried)return '';
+  const y=Math.floor(p._carried/100),m=p._carried%100;
+  const nowKey=Number(String(TODAY).slice(0,4))*100+Number(String(TODAY).slice(5,7));
+  const months=(Math.floor(nowKey/100)-y)*12+(nowKey%100-m);
+  return `Carried over from ${followupMonthName(m)} ${y}${months>1?` · ${months} months`:''} — not yet booked`;
+}
 async function loadBookingCalendar(){
   const root=document.getElementById('bookcal-root');
   if(!root)return;
@@ -8499,13 +8532,7 @@ async function loadBookingCalendar(){
     const bookingDates=futureBookingDatesByPatient(future);
     const earliestFuture={};
     Object.entries(bookingDates).forEach(([pid,dates])=>{earliestFuture[pid]=dates[0];});
-    const duePatients=(pats||[]).filter(p=>{
-      if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
-      if(Number(p.followup_due_month)!==month||Number(p.followup_year)!==year)return false;
-      if(owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
-      return !earliestFuture[String(p.id)];
-    }).sort((a,b)=>`${a.first_name||''} ${a.surname||''}`.trim().localeCompare(
-      `${b.first_name||''} ${b.surname||''}`.trim(),'en',{sensitivity:'base'}));
+    const duePatients=bcDuePatientsFor(pats,{year,month,owner,earliestFuture});
     const history=await getAppointmentHistoryLite(duePatients.map(p=>p.id),{strict:true});
     bookCalState.lastFollowupByPatient={};
     duePatients.forEach(p=>{bookCalState.lastFollowupByPatient[String(p.id)]=bcLastFollowupAppointment(history[String(p.id)]);});
@@ -8712,7 +8739,9 @@ function bcListHTML(){
   if(!list.length)
     return `<div class="bc-head"><h4>${title}</h4></div><div class="report-note">${flex?'✅ No “according to availability” or 1–2 DNTU patients to book for this nurse.':'✅ No patients due to book for this nurse and month.'}</div>`;
   const sameNameTones=bcSameNameTones(list);
-  return `<div class="bc-head"><h4>${title} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
+  const carriedCount=flex?0:list.filter(p=>p._carried).length;
+  return `<div class="bc-head"><h4>${title} <span style="color:var(--muted);font-weight:600;">(${list.length})</span>${carriedCount?` <span class="bc-carried-count">${carriedCount} carried over</span>`:''}</h4></div>
+    ${carriedCount?'<div class="bc-pickhint bc-carried-hint">Red cards were due in an earlier month and were not booked — they are carried over automatically and listed first. Book them first.</div>':''}
     ${flex?'<div class="bc-pickhint">Set to “according to clinic availability”, or missed 1–2 appointments. Drag a card onto a free slot to book, or open a patient’s follow-up history to rebook.</div>':''}
     <div class="bc-list-scroll" tabindex="0" role="region" aria-label="${title} patient list">
     ${list.map(p=>{
@@ -8726,7 +8755,9 @@ function bcListHTML(){
       const cardNumber=String(p.id_card||'').trim()||'Not recorded';
       const last=bookCalState.lastFollowupByPatient?.[String(p.id)];
       const lastLabel=bcLastFollowupLabel(last);
-      return `<div class="bc-list-pat ${selected?'sel ':''}${sameNameTone!==undefined?'bc-name-tone-'+sameNameTone:''}" data-id="${htmlSafe(p.id)}" title="Click to view follow-up history and bookings; drag to book">
+      const carried=!flex&&p._carried?bcCarriedLabel(p):'';
+      return `<div class="bc-list-pat ${selected?'sel ':''}${carried?'bc-carried ':''}${sameNameTone!==undefined?'bc-name-tone-'+sameNameTone:''}" data-id="${htmlSafe(p.id)}" title="Click to view follow-up history and bookings; drag to book">
+        ${carried?`<div class="bc-carried-tag">⚠ ${htmlSafe(carried)}</div>`:''}
         <div class="bc-nm"><button type="button" class="bc-history-link" onclick="openFollowupHistory('${jsSafe(p.id)}')" aria-label="Open follow-up history and bookings for ${htmlSafe(nm)}, ID card ${htmlSafe(cardNumber)}" title="Open follow-up history and bookings">${htmlSafe(nm)}</button></div>
         <div class="bc-id-card"><span>ID card</span><strong>${htmlSafe(cardNumber)}</strong></div>
         ${sameNameTone!==undefined?'<div class="bc-name-note">Same name — check ID card</div>':''}
@@ -8943,8 +8974,8 @@ function bcPrintWindow(title,inner){
 }
 function printBookingList(){
   const {month,year,listOwner}=bookCalState;
-  const rows=bookCalState.patients.map(p=>`<tr>
-    <td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim())}</td>
+  const rows=bookCalState.patients.map(p=>`<tr${p._carried?' style="color:#b91c1c;font-weight:700;"':''}>
+    <td>${htmlSafe(`${p.first_name||''} ${p.surname||''}`.trim())}${p._carried?`<div style="font-size:11px;">⚠ ${htmlSafe(bcCarriedLabel(p))}</div>`:''}</td>
     <td>${htmlSafe(p.id_card||'')}</td><td>${htmlSafe(bcStomaLabel(p))}</td>
     <td>${htmlSafe(p.locality||'')}</td><td>${htmlSafe(bcLastFollowupLabel(bookCalState.lastFollowupByPatient?.[String(p.id)]))}</td></tr>`).join('')
     ||'<tr><td colspan="5">No patients due to book.</td></tr>';

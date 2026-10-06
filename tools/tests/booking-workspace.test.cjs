@@ -44,7 +44,7 @@ function context({patients=[patient()],appointments=[]}={}){
       then(resolve,reject){return Promise.resolve(this.result()).then(resolve,reject);}
     };return q;
   }};
-  for(const name of ['htmlSafe','jsSafe','fmtShortDate','followupMonthName','statusLabel','fetchAllRows','getAppointmentHistoryLite','futureBookingDatesByPatient','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcLastFollowupLabel','loadBookingCalendar','bcStomaLabel','bcSameNameTones','bcListHTML','openFollowupHistory','bcBook','bcSelectPatient','bcPointerDown','bcPointerMove','bcPointerUp'])vm.runInContext(source(name),c);
+  for(const name of ['htmlSafe','jsSafe','fmtShortDate','followupMonthName','statusLabel','fetchAllRows','getAppointmentHistoryLite','futureBookingDatesByPatient','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcLastFollowupLabel','bcDuePatientsFor','loadBookingCalendar','bcStomaLabel','bcSameNameTones','bcListHTML','openFollowupHistory','bcBook','bcSelectPatient','bcPointerDown','bcPointerMove','bcPointerUp'])vm.runInContext(source(name),c);
   return{c,root,modal};
 }
 const ids=c=>Array.from(c.bookCalState.duePatients,p=>p.id);
