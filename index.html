@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-441"/>
-<script src="assets/manual.js?v=2026.10.06-441"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-442"/>
+<script src="assets/manual.js?v=2026.10.06-442"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-439"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-440"></script>
 <style>
@@ -3629,7 +3629,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-441';
+const APP_BUILD='2026.10.06-442';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4864,6 +4864,15 @@ async function fetchRosterDay(date){
   bankTILToday.filter(b=>b.notes?.startsWith('TIL-Off')).forEach(b=>{const core=findCoreStaffByName(b.bank_staff?.full_name);if(core)offIds.add(String(core.id));});
   return {rd:rd||[],otToday,bankTILToday,tilIn:tilIn||[],coreOTToday,offIds,OFF_ST:ROSTER_OFF_STATUSES};
 }
+// A booking made under a bank / OT entry that was later cancelled, or typed
+// with a slightly different spelling, still belongs to the core nurse of that
+// name when she holds a column that day — it shows (and blocks the slot) there.
+function foldBankBookingIntoCoreColumn(nurses,a){
+  if(!a?.bank_staff_id||(nurses||[]).some(n=>appointmentMatchesNurseColumn(a,n)))return;
+  const core=findCoreStaffByName(a.bank_staff?.full_name);
+  const col=core&&nurses.find(n=>n.type!=='common'&&String(n.id)===String(core.id));
+  if(col)col.bankIds=[...new Set([...calendarNurseBankIds(col),String(a.bank_staff_id)])];
+}
 function buildRosterNurses(day,date){
   const{rd=[],offIds=new Set(),OFF_ST=ROSTER_OFF_STATUSES,tilIn=[],bankTILToday=[],coreOTToday=[],otToday=[]}=day||{};
   const nurses=[];
@@ -4980,6 +4989,7 @@ async function loadAppts(){
       const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
       addNurse({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent'});
     }
+    foldBankBookingIntoCoreColumn(nurses,a);
     if(a.bank_staff_id && !nurses.some(n=>appointmentMatchesNurseColumn({bank_staff_id:a.bank_staff_id},n))){
       addNurse({id:a.bank_staff_id,name:a.bank_staff?.full_name||'Booked OT/Bank Staff',type:'ot-booked'});
     }
@@ -20609,7 +20619,8 @@ async function refreshSitingSlotAvail(){
   const nurses=await nurseListForDate(date);
   let sit=[],ap=[];
   try{const{data}=await SB.from('siting_sessions').select('*').eq('session_date',date);sit=(data||[]).filter(r=>r.status!=='cancelled'&&r.id!==sitingEditId);}catch(e){}
-  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  ap.forEach(a=>foldBankBookingIntoCoreColumn(nurses,a));
   // cell[slot][nurseId] = who that nurse has in that half-hour.
   const cell={};
   const setCell=(sl,nid,label)=>{if(!nid)return;(cell[sl]=cell[sl]||{});if(!cell[sl][nid])cell[sl][nid]=label;};
@@ -21493,7 +21504,8 @@ async function refreshPostopSlots(){
   const nurses=await nurseListForDate(date);
   if(!nurses.length){host.innerHTML='<div class="ap-hint" style="color:#a3241a;">Nobody is on the roster for this day. Pick another date.</div>';return;}
   let ap=[];
-  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  ap.forEach(a=>foldBankBookingIntoCoreColumn(nurses,a));
   if(postopBookCtx)postopBookCtx.nurses=nurses;
   // cell[slot][nurseId] = who that nurse already has booked in that half-hour.
   const cell={};

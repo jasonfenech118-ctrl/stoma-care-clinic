@@ -52,3 +52,14 @@ test('a bank OT entry spelt one letter differently folds into the core nurse col
   assert.equal(ctx.findCoreStaffByName('Tracy Borg'),null);
   assert.equal(ctx.findCoreStaffByName('Jasmine Fenech'),null);
 });
+
+test('a booking left under a cancelled, misspelt OT entry stays in the core nurse column',()=>{
+  const nameHelpers=html.slice(html.indexOf('function normStaffName('),html.indexOf('function isTILNote('));
+  const staffList=[{id:'core-t',full_name:'Tracey Galea'}];
+  const appts=[{bank_staff_id:'bank-t',bank_staff:{full_name:'Tracy Galea'},appt_slot:'10:00',status:'booked'}];
+  const ctx=vm.createContext({staffList,bankTILToday:[],otToday:[],appts,date:'2026-10-25',offIds:new Set(),rd:[],tilIn:[],coreOTToday:[{staff_id:'core-t',staff:{full_name:'Tracey Galea'}}],OFF_ST:[],defaultCode:()=> 'off'});
+  vm.runInContext(nameHelpers+helpers+assembly+'\nglobalThis.columns=nurses;',ctx);
+  assert.equal(ctx.columns.length,1);
+  assert.equal(ctx.columns[0].type,'core-ot');
+  assert.equal(ctx.appointmentsForSlotAndColumn(appts,'10:00',ctx.columns[0]).length,1);
+});
