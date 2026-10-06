@@ -69,7 +69,8 @@
       if(x.accessories?.length)parts.push('accessories: '+x.accessories.join(', '));
       if(x.flange_due)parts.push('flange due: '+x.flange_due);
       list(x.complications).filter(c=>c.text).forEach(c=>parts.push(c.text+': '+(c.status==='resolved'?'resolved':'active')));
-      if(x.rod?.status&&x.rod.status!=='Not recorded')parts.push('rod: '+x.rod.status.toLowerCase()+(x.rod.due?' (planned removal '+x.rod.due+')':'')+(x.rod.removed?' (removed '+x.rod.removed+')':''));
+      if(x.rod?.status==='In place')parts.push('rod present'+(x.rod.due?' (planned removal '+x.rod.due+')':''));
+      if(x.rod?.status==='Removed')parts.push('rod removed'+(x.rod.removed?' '+x.rod.removed:''));
       const name=stomaName(x,stomas);
       lines.push(name+' — '+(parts.join('; ')||'No assessment recorded')+'.');
       if(String(x.notes||'').trim())lines.push(name+' notes: '+x.notes);
@@ -93,7 +94,8 @@
       const flange=ap.find(n=>APPLIANCE_CATALOGUE.find(c=>c.name===n)?.part==='flange')||'';
       const pouch=ap.find(n=>n!==flange)||'';
       const own=comps.filter(c=>c.stoma_uid===s.uid||c.stoma===legacy?.slot||c.stoma===String(legacy?.number)||(!c.stoma&&all.length===1));
-      const rodOwn=p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&all.length===1);
+      const loops=all.filter(x=>typeof stomaTypeCanHaveRod==='function'&&stomaTypeCanHaveRod(x.typeLabel||x.type));
+      const rodOwn=p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&(all.length===1||(loops.length===1&&loops[0].uid===s.uid)));
       return {uid:s.uid,number,type:s.typeLabel||s.type||'Stoma',short:s.shortLabel||s.short||'',legacy_ref:legacy?.slot||String(legacy?.number||''),
         colour:'',output:[],notes:'',system,baseplate:flange,pouch,appliances:copy(ap),accessories:copy(ac),flange_due:row?.flange_due||'',
         complications:own.map(c=>({id:c.id,text:c.text,status:c.status})),
@@ -193,6 +195,19 @@
     return '<div class="jenc-field"><label>'+esc(label)+'</label><details class="jenc-multi"><summary>'+text+'</summary><div class="jenc-menu">'+options.map(v=>'<label><input type="checkbox" '+attrs(kind,field,extra)+' value="'+esc(v)+'"'+(values.includes(v)?' checked':'')+(ctx.editable?'':' disabled')+'>'+esc(v)+'</label>').join('')+'</div></details></div>';
   }
   function accordion(key,title,summary,body){return '<details class="jenc-accordion" data-section="'+esc(key)+'"'+(ctx.openSections.has(key)?' open':'')+'><summary>'+esc(title)+'<span class="jenc-summary">'+summary+'</span></summary><div class="jenc-body">'+body+'</div></details>';}
+  // One tick: "Rod present". Ticking it shows the planned removal date; unticking
+  // a rod that was in place records it as removed (today, adjustable).
+  const rodText=r=>r?.status==='In place'?'Present'+(r.due?' · removal '+r.due:''):r?.status==='Removed'?'Removed'+(r.removed?' '+r.removed:''):'Not present';
+  function rodHTML(s,extra,old){
+    const r=s.rod||{},was=ctx.baseline?.stomas?.find(x=>x.uid===s.uid)?.rod||{},on=r.status==='In place',lock=ctx.editable?'':' disabled';
+    const changed=ctx.compare&&ctx.comparison&&!same(rodText(old?.rod),rodText(r));
+    let out='<div class="jenc-rod'+(changed?' jenc-changed':'')+'"><label class="jenc-check"><input type="checkbox" '+attrs('rod','present',extra)+(on?' checked':'')+lock+'> Rod present</label>';
+    if(on)out+='<div class="jenc-field"><label>Planned removal date *</label><input type="date" '+attrs('rod','due',extra)+' value="'+esc(r.due||'')+'"'+lock+'></div>';
+    else if(r.status==='Removed'&&(was.status==='In place'||ctx.record))out+='<div class="jenc-field"><label>Rod removed on</label><input type="date" '+attrs('rod','removed',extra)+' value="'+esc(r.removed||TODAY)+'" max="'+esc(TODAY)+'"'+lock+'></div>';
+    else if(r.status==='Removed')out+='<div class="jenc-meta">Rod removed'+(r.removed?' '+esc(r.removed):'')+'.</div>';
+    if(changed)out+='<div class="jenc-previous">Previously: '+esc(rodText(old?.rod))+'</div>';
+    return out+'</div>';
+  }
   function stomaHTML(s){
     const extra='data-uid="'+esc(s.uid)+'"',old=oldStoma(s.uid),cat=APPLIANCE_CATALOGUE;
     const baseChoices=cat.filter(c=>c.part==='flange').map(c=>c.name);
@@ -212,18 +227,11 @@
       return '<div class="jenc-comp">'+select('Complication',c.text,choices,'comp','text',ref,o?.text)+select('Status',c.status,[['open','Active'],['resolved','Resolved']],'comp','status',ref,o?.status)+(ctx.editable?'<button class="jenc-remove" data-action="remove-comp" '+extra+' data-index="'+i+'" aria-label="Remove this complication from the encounter">×</button>':'')+'</div>';
     }).join('');
     if(ctx.editable)compBody+='<button class="jenc-btn" data-action="add-comp" '+extra+'>+ Add complication</button>';
-    const rodCapable=stomaTypeCanHaveRod(s.type),oldRemoved=s.rod.status==='Removed'&&!ctx.record;
-    if(rodCapable&&!oldRemoved){compBody+='<h4>Rod</h4><div class="jenc-fields">'+select('Rod status',s.rod.status,['Not recorded','In place','Removed'],'rod','status',extra,old?.rod?.status);
-      if(s.rod.status==='In place')compBody+=select('Planned removal date',s.rod.due,Array.from({length:31},(_,i)=>dateAddStr(TODAY,i)),'rod','due',extra,old?.rod?.due);
-      if(s.rod.status==='Removed')compBody+='<div class="jenc-meta">Removed: '+esc(s.rod.removed||TODAY)+'</div>';compBody+='</div>';}
-    const careSummary=x=>{
-      const complications=list(x?.complications).filter(c=>c.text).map(c=>c.text+' · '+(c.status==='resolved'?'resolved':'active')).join('\n')||'No complication recorded';
-      const rod=x?.rod;return complications+(rodCapable&&rod?.status&&rod.status!=='Not recorded'?'\nRod: '+rod.status+(rod.status==='In place'&&rod.due?' · removal '+rod.due:rod.status==='Removed'&&rod.removed?' · '+rod.removed:''):'');
-    };
+    const careSummary=x=>list(x?.complications).filter(c=>c.text).map(c=>c.text+' · '+(c.status==='resolved'?'resolved':'active')).join('\n')||'No complication recorded';
     const compSummary=ctx.compare&&ctx.comparison?diffHTML(careSummary(old),careSummary(s),true):esc(careSummary(s));
     return {
       review:'<div class="jenc-fields">'+select('Colour / appearance',s.colour,COLOURS,'stoma','colour',extra,old?.colour)+multi('Function / output',s.output,OUTPUTS,'stoma','output',extra,old?.output||[])+'</div>'+
-        accordion('complications:'+s.uid,'Complications'+(rodCapable?' & rod':''),compSummary,compBody),
+        rodHTML(s,extra,old)+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
       appliances:accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
     };
   }
@@ -291,6 +299,13 @@
     if(kind==='infection')obj=ctx.draft.infection;
     if(kind==='referral')obj=ctx.draft.referrals[Number(el.dataset.index)];
     const st=ctx.draft.stomas.find(s=>s.uid===el.dataset.uid);
+    if(kind==='rod'&&field==='present'&&st){
+      const was=ctx.baseline.stomas.find(x=>x.uid===st.uid)?.rod||{};
+      if(el.checked)st.rod={status:'In place',due:st.rod?.due||(was.status==='In place'?was.due:'')||'',removed:''};
+      else if(was.status==='In place')st.rod={status:'Removed',due:was.due||'',removed:TODAY};
+      else st.rod=was.status==='Removed'?copy(was):{status:'Not recorded',due:'',removed:''};
+      render();return;
+    }
     if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
     if(el.type==='checkbox'){
       let v=list(obj[field]).filter(x=>x!==el.value);if(el.checked)v.push(el.value);
@@ -337,8 +352,8 @@
         if(!same(existing.find(v=>v.id===c.id)?.status,c.status)||!existing.some(v=>v.id===c.id&&v.text===c.text))item.events.push({id:crypto.randomUUID(),date:TODAY,trend:c.status==='resolved'?'resolved':'noted',note:c.text,by:ctx.who.name});item.text=c.text;item.status=c.status;if(c.status==='resolved')item.resolved_date=TODAY;});
     });patch.complications=JSON.stringify(comps);expected.complications=p.complications??null;}
     const rodChanges=draft.stomas.filter(s=>!same(s.rod,base.stomas.find(b=>b.uid===s.uid)?.rod));
-    if(rodChanges.some(s=>s.rod.status==='In place'&&!s.rod.due))throw new Error('Choose the planned rod removal date.');
-    const rod=rodChanges.length?(draft.stomas.filter(s=>s.rod.status==='In place').sort((a,b)=>a.rod.due.localeCompare(b.rod.due))[0]||rodChanges[0]):null;
+    if(rodChanges.some(s=>s.rod?.status==='In place'&&!s.rod.due))throw new Error('Choose the planned rod removal date.');
+    const rod=rodChanges.length?(draft.stomas.filter(s=>s.rod?.status==='In place').sort((a,b)=>a.rod.due.localeCompare(b.rod.due))[0]||rodChanges[0]):null;
     if(rod){
       Object.assign(patch,{rod_stoma_uid:rod.uid,rod_removal_date:rod.rod.due||null,rod_removed_date:rod.rod.status==='Removed'?(rod.rod.removed||TODAY):null});
       ['rod_stoma_uid','rod_removal_date','rod_removed_date'].forEach(k=>expected[k]=p[k]??null);}
