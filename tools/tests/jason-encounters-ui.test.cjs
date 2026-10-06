@@ -28,7 +28,7 @@ test('a failed save keeps the editable draft and leaves appliances untouched for
 
 test('an appliance edit affects one stoma, and a two-piece system requires both pieces',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-field="pouch"]','Convex drainable pouch');await w.JasonEncounters.save();assert.equal(w.fixture.calls[0].args.p_impact.appliances.length,1);assert.equal(w.fixture.calls[0].args.p_impact.appliances[0].stoma_uid,'stoma-one');assert.deepEqual(w.fixture.calls[0].args.p_snapshot.stomas[1].appliances,['Urostomy pouch']);click(w,'edit');change(w,'[data-field="system"]','two');change(w,'[data-field="baseplate"]','Baseplate 57 mm');await w.JasonEncounters.save();assert.equal(w.fixture.calls.length,1);assert.match(w.document.querySelector('[role="alert"]').textContent,/both the baseplate and pouch/);});
 
-test('patient infection, episode support and per-stoma complications all enter the saved report',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-kind="infection"][data-field="status"]','Infection');change(w,'[data-kind="infection"][data-field="organism"]','CRE');click(w,'add-referral');change(w,'[data-kind="referral"][data-field="profession"]','Psychologist');change(w,'[data-kind="referral"][data-field="status"]','Seen');click(w,'add-comp');change(w,'[data-kind="comp"][data-field="text"]','Retraction');await w.JasonEncounters.save();const a=w.fixture.calls[0].args;assert.match(a.p_report,/CRE · Infection/);assert.match(a.p_report,/Psychologist: seen/);assert.match(a.p_report,/Retraction: active/);const comps=JSON.parse(a.p_impact.patient_patch.complications);assert.equal(comps[0].stoma_uid,'stoma-one');assert.equal(a.p_snapshot.stomas[1].complications.length,0);});
+test('patient infection, episode support and per-stoma complications all enter the saved report',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-kind="infection"][data-field="status"]','Infection');change(w,'[data-kind="infection"][data-field="organism"]','CRE');click(w,'add-referral');change(w,'[data-kind="referral"][data-field="profession"]','Psychologist');click(w,'add-comp');change(w,'[data-kind="comp"][data-field="text"]','Retraction');await w.JasonEncounters.save();const a=w.fixture.calls[0].args;assert.match(a.p_report,/CRE · Infection/);assert.match(a.p_report,/Referred to Psychologist on 2026-10-05\./);assert.match(a.p_report,/Retraction: active/);const comps=JSON.parse(a.p_impact.patient_patch.complications);assert.equal(comps[0].stoma_uid,'stoma-one');assert.equal(a.p_snapshot.stomas[1].complications.length,0);});
 
 test('unchanged edits create no extra version and read-only history still allows filtering',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Assessment complete.');await w.JasonEncounters.save();click(w,'edit');await w.JasonEncounters.save();assert.equal(w.fixture.calls.length,1);assert.match(w.document.querySelector('[role="alert"]').textContent,/no changes/);click(w,'cancel');click(w,'history');const filter=w.document.querySelector('[data-kind="history"]');assert.equal(filter.disabled,false);change(w,'[data-kind="history"]','all');assert.equal(w.document.querySelectorAll('[data-action="view"]').length,1);});
 
@@ -118,3 +118,28 @@ test('an encounter can be edited only on the day it was recorded; later it is re
   click(w,'history');click(w,'view');const page=w.document.querySelector('#page-jason-encounters');
   assert.equal(page.querySelector('[data-action="edit"]'),null);assert.match(page.querySelector('.jenc-locked').textContent,/Recorded 2026-10-04 — an encounter can be edited only on the day it was recorded/);
   assert.equal(w.JasonEncounters.state.editable,false);assert.match(page.querySelector('.jenc-signature').textContent,/Signed by: Jason Fenech/);});
+
+test('referrals belong to the patient: referred with date and signer, ticked Seen later, shown at the top and carried to the next encounter',async t=>{const w=setup(t);
+  const patches=[];w.updatePatientTolerant=async(id,patch)=>{patches.push(JSON.parse(JSON.stringify(patch)));Object.assign(w.fixture.patient,patch);return {error:null,dropped:[]};};
+  await w.JasonEncounters.open(w.fixture.patient.id);const q=x=>w.document.querySelector(x);
+  assert.equal(q('[data-kind="referral"][data-field="status"]'),null,'no status dropdown');
+  click(w,'add-referral');change(w,'[data-kind="referral"][data-field="profession"]','Dietitian');
+  assert.match(q('.jenc-head .jenc-ref-chips').textContent,/Referred to Dietitian/);
+  await w.JasonEncounters.save();
+  assert.equal(patches.length,1);const saved=patches[0].support_referrals;assert.equal(saved.length,1);
+  assert.deepEqual({p:saved[0].profession,on:saved[0].referred_on,by:saved[0].referred_by,seen:saved[0].seen},{p:'Dietitian',on:'2026-10-05',by:'Jason Fenech',seen:false});
+  assert.match(w.fixture.calls[0].args.p_report,/Referred to Dietitian on 2026-10-05\./);
+  // Next day: a new encounter (another episode would behave the same) starts from the patient's list.
+  w.TODAY='2026-10-08';await w.JasonEncounters.open(w.fixture.patient.id);
+  assert.equal(w.JasonEncounters.state.record,null);assert.equal(w.JasonEncounters.state.draft.referrals[0].profession,'Dietitian');
+  assert.ok(q('.jenc-ref-name'),'an existing referral shows by name, not as a dropdown');assert.equal(q('[data-action="remove-referral"]'),null,'an earlier referral is not removed here');
+  change(w,'[data-kind="referral"][data-field="seen"]',true);assert.equal(q('[data-kind="referral"][data-field="seen_on"]').value,'2026-10-08');
+  assert.match(q('.jenc-head .jenc-ref-chips').textContent,/Seen by Dietitian/);
+  await w.JasonEncounters.save();const last=patches[patches.length-1].support_referrals;assert.equal(last.length,1);
+  assert.deepEqual({seen:last[0].seen,on:last[0].seen_on,by:last[0].seen_by,id:last[0].id},{seen:true,on:'2026-10-08',by:'Jason Fenech',id:saved[0].id});
+  assert.match(w.fixture.calls[1].args.p_report,/Seen by Dietitian on 2026-10-08\./);});
+
+test('older encounters with a referral status still read: Seen/Completed count as seen, Declined is dropped',t=>{const w=setup(t);
+  const n=w.JasonEncounters.normReferral;assert.equal(n({profession:'Psychologist',status:'Completed'}).seen,true);assert.equal(n({profession:'Dietitian',status:'Needed'}).seen,false);assert.equal(n({profession:'Social worker',status:'Declined'}),null);
+  const merged=w.JasonEncounters.mergedReferrals([{id:'a',profession:'Dietitian'},{id:'b',profession:'Psychologist'}],[{id:'b',profession:'Psychologist'}],[{id:'c',profession:'Social worker'}]);
+  assert.deepEqual(merged.map(r=>r.id),['a','c'],'removed in this encounter goes; others stay; new ones join');});

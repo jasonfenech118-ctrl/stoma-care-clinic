@@ -42,7 +42,30 @@
   const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
   const ORGANISMS=['CRE','VRE','MRSA','C. difficile','ESBL','Other'];
   const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
-  const REFERRAL_STATUS=['Needed','Requested','Referred','Seen','Completed','Declined'];
+  // Support referrals belong to the PATIENT, not one episode: who they were
+  // referred to (when, by whom) and, later, ticked Seen (with the date). They
+  // carry over to every later encounter and clinic visit. Older encounters kept
+  // a status per episode; those still read (Seen/Completed = seen, Declined = gone).
+  function normReferral(r){
+    if(!r||!String(r.profession||'').trim()||r.status==='Declined')return null;
+    return {id:String(r.id||crypto.randomUUID()),profession:String(r.profession),referred_on:String(r.referred_on||''),referred_by:String(r.referred_by||''),
+      seen:typeof r.seen==='boolean'?r.seen:['Seen','Completed'].includes(r.status),seen_on:String(r.seen_on||''),seen_by:String(r.seen_by||'')};
+  }
+  function patientReferrals(p){let v=p?.support_referrals;if(typeof v==='string'){try{v=JSON.parse(v);}catch(_){v=null;}}return list(v).map(normReferral).filter(Boolean);}
+  const showDay=d=>d?(typeof fmtShortDate==='function'?fmtShortDate(d):d):'';
+  const referralText=r=>r.seen?'Seen by '+r.profession+(r.seen_on?' · '+showDay(r.seen_on):''):'Referred to '+r.profession+(r.referred_on?' · '+showDay(r.referred_on):'');
+  function referralChipsHTML(rows){
+    const l=list(rows).map(normReferral).filter(Boolean);if(!l.length)return '';
+    return '<span class="jenc-ref-chips">'+l.map(r=>'<span class="jenc-ref-chip '+(r.seen?'seen':'referred')+'">'+(r.seen?'✅ ':'↗ ')+esc(referralText(r))+'</span>').join('')+'</span>';
+  }
+  // The patient's list after this encounter: earlier entries removed here go,
+  // everything in the draft is added or updated by its id.
+  function mergedReferrals(patientList,baseRows,draftRows){
+    const draftNorm=list(draftRows).map(normReferral).filter(Boolean),ids=new Set(draftNorm.map(r=>r.id));
+    const removed=new Set(list(baseRows).map(normReferral).filter(Boolean).map(r=>r.id).filter(id=>!ids.has(id)));
+    const out=list(patientList).filter(r=>!removed.has(r.id)&&!ids.has(r.id));
+    return out.concat(draftNorm);
+  }
   let ctx=null,request=0;
   const latestByPatient=new Map();
   const copy=x=>JSON.parse(JSON.stringify(x));
@@ -112,7 +135,7 @@
       if(String(x.notes||'').trim())lines.push(name+' notes: '+x.notes);
     });
     if(s.infection?.status&&s.infection.status!=='Not recorded')lines.push('Infection status: '+[s.infection.organism,s.infection.status].filter(Boolean).join(' · ')+'.');
-    list(s.referrals).filter(r=>r.profession).forEach(r=>lines.push(r.profession+': '+r.status.toLowerCase()+'.'));
+    list(s.referrals).map(normReferral).filter(Boolean).forEach(r=>lines.push(r.seen?'Seen by '+r.profession+(r.seen_on?' on '+r.seen_on:'')+'.':'Referred to '+r.profession+(r.referred_on?' on '+r.referred_on:'')+'.'));
     if(s.notes)lines.push('Notes: '+s.notes);
     return lines.join('\n');
   }
@@ -157,7 +180,10 @@
     const recent=ctx?.rows?.find(r=>String(r.episode_id)===String(ep.id)&&assessment(r).snapshot);
     const saved=recent?assessment(recent).snapshot:null;
     stomas.forEach(s=>{const prior=saved?.stomas?.find(v=>v.uid===s.uid);if(prior?.rod&&p.rod_stoma_uid!==s.uid)s.rod=copy(prior.rod);s.rod_asked=firstAssessmentOf(s.uid);});
-    return {stomas,scope:stomas.map(s=>s.uid),notes:'',infection:infectionSeed(p),referrals:copy(saved?.referrals||[])};
+    // Referrals come from the patient record; an older episode's own list fills any gap.
+    const fromPatient=patientReferrals(p);
+    const legacy=list(saved?.referrals).map(normReferral).filter(r=>r&&!fromPatient.some(x=>x.id===r.id||(!x.seen&&x.profession===r.profession)));
+    return {stomas,scope:stomas.map(s=>s.uid),notes:'',infection:infectionSeed(p),referrals:fromPatient.concat(legacy)};
   }
   // A rod is only placed at surgery, so the rod question belongs to the FIRST
   // encounter that assessed a stoma; later encounters do not ask it again.
@@ -226,6 +252,7 @@
     // Every stoma is assessed on one screen, so an encounter always covers them all.
     ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
     list(ctx.draft.stomas).forEach(x=>{if(!x.skin)x.skin={status:'',problems:[]};});
+    ctx.draft.referrals=list(ctx.draft.referrals).map(normReferral).filter(Boolean);
     const idx=vs.indexOf(v);
     ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
     // A saved version is compared with the report as it was saved, not re-worded.
@@ -313,7 +340,7 @@
   function render(){
     if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
     const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
-    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div></div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
+    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
@@ -325,9 +352,18 @@
     const infectionText=x=>[x?.organism,x?.status||'Not recorded'].filter(Boolean).join(' · ');
     const infectionSummary=ctx.compare&&ctx.comparison?diffHTML(infectionText(ctx.comparison.infection),infectionText(inf),true):esc(infectionText(inf));
     const infBody='<div class="jenc-fields">'+select('Status',inf.status,INFECTION_STATUS,'infection','status','',ctx.comparison?.infection?.status)+select('Organism',inf.organism,ORGANISMS,'infection','organism','',ctx.comparison?.infection?.organism)+'</div>';
-    const referrals=list(d.referrals).map((r,i)=>{const previous=list(ctx.comparison?.referrals),old=r.id?previous.find(v=>v.id===r.id):previous.find(v=>!v.id&&v.profession===r.profession)||previous[i];
-      return '<div class="jenc-referral">'+select('Profession',r.profession,PROFESSIONS,'referral','profession','data-index="'+i+'"',old?.profession)+select('Status',r.status,REFERRAL_STATUS,'referral','status','data-index="'+i+'"',old?.status)+(ctx.editable?'<button class="jenc-remove" data-action="remove-referral" data-index="'+i+'" aria-label="Remove this referral from the encounter">×</button>':'')+'</div>';
-    }).join('');
+    const previousRefs=list(ctx.comparison?.referrals).map(normReferral).filter(Boolean);
+    const referrals=list(d.referrals).map((r,i)=>{
+      const old=previousRefs.find(v=>v.id===r.id),isNew=!list(ctx.baseline?.referrals).some(v=>v.id===r.id),lock=ctx.editable?'':' disabled';
+      const changed=ctx.compare&&ctx.comparison&&(!old||old.seen!==r.seen||old.seen_on!==r.seen_on||old.profession!==r.profession);
+      const open=PROFESSIONS.filter(x=>x===r.profession||!list(d.referrals).some(y=>y!==r&&y.profession===x&&!y.seen));
+      const who=r.profession&&!isNew?'<div class="jenc-ref-name">'+esc(r.profession)+'</div>':select('Refer to',r.profession,open,'referral','profession','data-index="'+i+'"',old?.profession);
+      const meta='<div class="jenc-meta">Referred '+esc(showDay(r.referred_on||TODAY))+(r.referred_by?' by '+esc(r.referred_by):'')+'</div>';
+      let seen='<label class="jenc-check"><input type="checkbox" data-kind="referral" data-field="seen" data-index="'+i+'"'+(r.seen?' checked':'')+lock+'> Seen'+(r.profession?' by '+esc(r.profession):'')+'</label>';
+      if(r.seen)seen+='<div class="jenc-field"><label>Seen on</label><input type="date" data-kind="referral" data-field="seen_on" data-index="'+i+'" value="'+esc(r.seen_on||TODAY)+'" max="'+esc(TODAY)+'"'+lock+'></div>'+(r.seen_by?'<div class="jenc-meta">Recorded by '+esc(r.seen_by)+'</div>':'');
+      const remove=ctx.editable&&isNew?'<button class="jenc-remove" data-action="remove-referral" data-index="'+i+'" aria-label="Remove this referral">×</button>':'';
+      return '<div class="jenc-referral-row'+(changed?' jenc-changed':'')+'"><div>'+who+meta+'</div><div class="jenc-ref-seen">'+seen+'</div>'+remove+'</div>';
+    }).join('')||'<div class="jenc-meta">No referrals on record for this patient.</div>';
     // One column per stoma, side by side, so nothing is hidden behind a tab.
     const panels=d.stomas.map(v=>({stoma:v,name:stomaName(v,d.stomas),...stomaHTML(v)}));
     const grid=cols=>'<div class="jenc-stoma-grid" style="--jenc-cols:'+Math.min(Math.max(panels.length,1),3)+'">'+cols+'</div>';
@@ -342,7 +378,7 @@
     const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+'</section>';
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
-    const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','This episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
+    const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','Patient · every episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
     page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(editableToday(rec)?'<button class="jenc-btn primary" data-action="edit">Edit this encounter (V'+(versions(rec).slice(-1)[0].version+1)+')</button>':'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
@@ -373,6 +409,7 @@
     if(kind==='global')obj=ctx.draft;
     if(kind==='infection')obj=ctx.draft.infection;
     if(kind==='referral')obj=ctx.draft.referrals[Number(el.dataset.index)];
+    if(kind==='referral'&&field==='seen'&&obj){obj.seen=el.checked;obj.seen_on=el.checked?(obj.seen_on||TODAY):'';obj.seen_by=el.checked?ctx.who.name:'';render();return;}
     const st=ctx.draft.stomas.find(s=>s.uid===el.dataset.uid);
     if(kind==='rod'&&field==='present'&&st){
       const was=ctx.baseline.stomas.find(x=>x.uid===st.uid)?.rod||{};
@@ -420,7 +457,7 @@
     if(action==='add-option'&&st){await addOptionFlow(btn.dataset.option,st);return;}
     if(action==='add-comp'&&st){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
     if(action==='remove-comp'&&st){st.complications.splice(Number(btn.dataset.index),1);render();}
-    if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',status:'Needed'});render();}
+    if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',referred_on:TODAY,referred_by:ctx.who.name,seen:false,seen_on:'',seen_by:''});render();}
     if(action==='remove-referral'){ctx.draft.referrals.splice(Number(btn.dataset.index),1);render();}
     if(action==='save')await save();
   }
@@ -466,7 +503,7 @@
     const noSkin=ctx.draft.stomas.filter(s=>s.skin?.status==='Not healthy'&&!list(s.skin.problems).length);
     if(noSkin.length)return error('Choose the peristomal skin problem for '+noSkin.map(s=>stomaName(s,ctx.draft.stomas)).join(', ')+'.');
     if(ctx.draft.stomas.some(s=>s.complications.some(c=>!c.text)))return error('Choose a complication or remove the empty row.');
-    if(ctx.draft.referrals.some(r=>!r.profession||!r.status))return error('Choose the profession and status for each referral.');
+    if(ctx.draft.referrals.some(r=>!r.profession))return error('Choose who the patient is referred to, or remove the empty referral.');
     let updates;try{updates=impact();}catch(e){return error(e.message);}
     if(updates.appliances.some(s=>!s.appliances.length))return error('Select a pouch / appliance for the changed setup.');
     if(ctx.draft.stomas.some(s=>s.system==='two'&&updates.appliances.some(a=>a.stoma_uid===s.uid)&&(!s.baseplate||!s.pouch)))return error('Select both the baseplate and pouch for a two-piece system.');
@@ -481,12 +518,22 @@
       if(saveError)throw new Error(saveError.message);if(!data?.id)throw new Error('The saved encounter was not returned.');
       if(ctx!==savedCtx)return;
       const currentIndex=ctx.rows.findIndex(r=>r.id===data.id);if(currentIndex<0)ctx.rows.unshift(data);else ctx.rows[currentIndex]=data;
+      // Referrals live on the patient so they carry to later episodes and visits.
+      const before=patientReferrals(savedCtx.patient),after=mergedReferrals(before,savedCtx.baseline.referrals,savedCtx.draft.referrals);
+      let refNote='';
+      if(!same(before,after)&&typeof updatePatientTolerant==='function'){
+        try{const r=await updatePatientTolerant(savedCtx.patient.id,{support_referrals:after});
+          if(r?.error)refNote=' Referrals could not be saved to the patient: '+(r.error.message||r.error)+'.';
+          else if(list(r?.dropped).includes('support_referrals'))refNote=' Referrals were kept in this encounter only — run sql/add-support-referrals.sql once in Supabase so they carry over to later episodes and visits.';
+        }catch(e){refNote=' Referrals could not be saved to the patient.';}
+      }
+      if(ctx!==savedCtx)return;
       ctx.editable=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
       const results=await Promise.allSettled([fetchPatientById(ctx.patient.id),SB.from('clinical_records').select('*').eq('patient_id',ctx.patient.id).eq('kind','episode').order('record_date',{ascending:false})]);
       if(ctx!==savedCtx)return;
       if(results[0].status==='fulfilled'&&results[0].value.data)ctx.patient=results[0].value.data;
       if(results[1].status==='fulfilled'&&results[1].value.data)ctx.episodes=results[1].value.data;
-      selectRecord(data.id);ctx.message='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.';render();
+      selectRecord(data.id);ctx.message='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.'+refNote;render();
       hvEncounteredToday.add(String(ctx.patient.id));latestByPatient.set(String(ctx.patient.id),data);
       if(typeof refreshReminders==='function')Promise.resolve(refreshReminders()).catch(()=>{});
     }catch(e){if(ctx===savedCtx){ctx.saving=false;render();error(e.message+' Your changes remain on this screen.');}}
@@ -507,7 +554,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;

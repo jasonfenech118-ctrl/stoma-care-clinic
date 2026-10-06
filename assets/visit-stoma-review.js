@@ -86,9 +86,11 @@
     if(!(resume&&draft&&draft.apptId===String(appt?.id))){
       const vs=versionsOf(appt);
       draft={apptId:String(appt?.id||''),patientId:String(patient?.id||''),stomas:seed(appt,patient),versions:copy(vs),
-        locked:!editableToday(appt),day:recordedDay(appt),compare:vs.length?copy(list(vs[vs.length-1].stomas)):null,signer:''};
+        locked:!editableToday(appt),day:recordedDay(appt),compare:vs.length?copy(list(vs[vs.length-1].stomas)):null,signer:'',
+        referrals:JE()?.patientReferrals?JE().patientReferrals(patient):[]};
       baseline=copy(draft);
     }
+    if(!Array.isArray(draft.referrals))draft.referrals=[];
     if(!host.dataset.vsrBound){host.dataset.vsrBound='1';host.addEventListener('change',change);host.addEventListener('input',input);host.addEventListener('click',click);}
     render();
     const mine=draft,loads=[];
@@ -176,7 +178,25 @@
       ?'<div class="jenc-stoma-grid vsr-grid" style="--jenc-cols:'+Math.min(all.length,3)+'">'+all.map(s=>columnHTML(s,all)).join('')+'</div>'
       :'<div class="report-note">No stoma is recorded for this patient. Add it in the patient record to assess it here.</div>')+
       '<div id="vsr-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>'+
-      (all.length?'<div class="jenc-signature">Signature will be recorded automatically'+(draft.signer?': '+esc(draft.signer):'')+'</div>':'');
+      (all.length?'<div class="jenc-signature">Signature will be recorded automatically'+(draft.signer?': '+esc(draft.signer):'')+'</div>':'')+referralsHTML();
+  }
+  // Support / referrals: the patient's own list (it carries across episodes and
+  // visits). A new referral picks who to; an earlier one is ticked Seen with its date.
+  function referralsHTML(){
+    const refs=list(draft?.referrals),base=list(baseline?.referrals),pros=JE()?.professions||['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
+    const showDay=d=>d?(typeof fmtShortDate==='function'?fmtShortDate(d):d):'';
+    const rows=refs.map((r,i)=>{
+      const isNew=!base.some(b=>b.id===r.id),ref=' data-i="'+i+'"';
+      const open=pros.filter(x=>x===r.profession||!refs.some(y=>y!==r&&y.profession===x&&!y.seen));
+      const who=r.profession&&!isNew?'<div class="jenc-ref-name">'+esc(r.profession)+'</div>'
+        :field('Refer to','<select data-vsr="ref-prof"'+ref+'><option value="">— choose —</option>'+open.map(x=>'<option value="'+esc(x)+'"'+(x===r.profession?' selected':'')+'>'+esc(x)+'</option>').join('')+'</select>');
+      let seen='<label class="jenc-check"><input type="checkbox" data-vsr="ref-seen"'+ref+(r.seen?' checked':'')+'> Seen'+(r.profession?' by '+esc(r.profession):'')+'</label>';
+      if(r.seen)seen+=field('Seen on','<input type="date" data-vsr="ref-seen-on"'+ref+' value="'+esc(r.seen_on||today())+'" max="'+esc(today())+'">');
+      return '<div class="jenc-referral-row"><div>'+who+'<div class="jenc-meta">Referred '+esc(showDay(r.referred_on||today()))+(r.referred_by?' by '+esc(r.referred_by):'')+'</div></div><div class="jenc-ref-seen">'+seen+'</div>'+
+        (isNew?'<button type="button" class="jenc-remove" data-vsr-ref-remove="'+i+'" aria-label="Remove this referral">×</button>':'')+'</div>';
+    }).join('');
+    return '<div class="edit-seen-section" style="margin-top:14px;">Support / referrals <span class="vsr-badge" style="color:#425b69;background:#eaf2f5;">Patient · every episode</span></div>'+
+      (rows||'<div class="jenc-meta">No referrals on record for this patient.</div>')+'<button type="button" class="jenc-btn" data-vsr-ref-add="1" style="margin-top:8px;">+ Add referral</button>';
   }
   function find(el){return draft?.stomas.find(s=>s.uid===el.dataset.uid);}
   // "Healthy skin" stands alone; ticking any finding clears it.
@@ -188,7 +208,15 @@
   function reopen(kind,s){const next=[...host.querySelectorAll('[data-vsr="'+kind+'"]')].find(x=>x.dataset.uid===s.uid);if(next)next.closest('details').open=true;}
   function skinChanged(){if(typeof window.onVisitSkinChange==='function')window.onVisitSkinChange();}
   function change(e){
-    const el=e.target,kind=el.dataset?.vsr,s=kind&&find(el);if(!s)return;
+    const el=e.target,kind=el.dataset?.vsr;
+    if(kind&&kind.startsWith('ref-')&&draft){
+      const r=draft.referrals[Number(el.dataset.i)];if(!r)return;
+      if(kind==='ref-prof')r.profession=el.value;
+      if(kind==='ref-seen'){r.seen=el.checked;r.seen_on=el.checked?(r.seen_on||today()):'';r.seen_by=el.checked?draft.signer:'';}
+      if(kind==='ref-seen-on')r.seen_on=el.value;
+      render();return;
+    }
+    const s=kind&&find(el);if(!s)return;
     if(kind==='colour'){if(el.value==='__add__'){addOther('colour',s);return;}s.colour=el.value;}
     else if(kind==='output'){const v=list(s.output).filter(x=>x!==el.value);if(el.checked)v.push(el.value);setOutput(s,v,el.value,el.checked);}
     else if(kind==='skin'){const v=skinValues(s.skin).filter(x=>x!==el.value);if(el.checked)v.push(el.value);setSkin(s,v,el.value,el.checked);}
@@ -204,7 +232,11 @@
     if(kind==='output'||kind==='skin')reopen(kind,s);
     if(kind==='skin')skinChanged();
   }
-  function click(e){const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);}
+  function click(e){
+    if(e.target.closest?.('[data-vsr-ref-add]')&&draft){draft.referrals.push({id:(window.crypto?.randomUUID?crypto.randomUUID():'r'+Date.now().toString(36)),profession:'',referred_on:today(),referred_by:draft.signer,seen:false,seen_on:'',seen_by:''});render();return;}
+    const rm=e.target.closest?.('[data-vsr-ref-remove]');if(rm&&draft){draft.referrals.splice(Number(rm.dataset.vsrRefRemove),1);render();return;}
+    const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);
+  }
   // "+ Add other…": the new wording joins the list for good and is chosen here.
   async function addOther(fieldName,s){
     const label={colour:'colour / appearance',output:'function / output',skin:'peristomal skin finding'}[fieldName];if(!label)return;
@@ -225,6 +257,7 @@
   // Called before leaving Clinical review: a ticked rod needs its removal date.
   function validate(){
     if(!enabled()||!draft||draft.locked||!host?.isConnected)return true;
+    if(list(draft.referrals).some(r=>!r.profession)){const err=host.querySelector('#vsr-error');if(err){err.hidden=false;err.textContent='Choose who the patient is referred to, or remove the empty referral.';}return false;}
     const missing=draft.stomas.filter(s=>rodAsked(s)&&s.rod?.status==='In place'&&!s.rod.due);
     const err=host.querySelector('#vsr-error');
     if(missing.length){if(err){err.hidden=false;err.textContent='Choose the planned rod removal date for '+missing.map(s=>nameOf(s,draft.stomas)).join(', ')+'.';}return false;}
@@ -278,7 +311,19 @@
     if(!draft||draft.apptId!==String(apptId))return null;
     return draft.locked?list(draft.versions[draft.versions.length-1]?.stomas):payloadFor(apptId);
   }
+  // The patient's referral list to save, or null when nothing changed here.
+  function referralsPatchFor(apptId){
+    if(!enabled()||!draft||draft.locked||draft.apptId!==String(apptId))return null;
+    const norm=JE()?.normReferral||(r=>r);
+    const now=list(draft.referrals).filter(r=>r.profession).map(r=>({...r,referred_by:r.referred_by||draft.signer,seen_by:r.seen?(r.seen_by||draft.signer):''})).map(norm).filter(Boolean);
+    const before=list(baseline?.referrals).map(norm).filter(Boolean);
+    return JSON.stringify(now)===JSON.stringify(before)?null:now;
+  }
+  function referralLines(apptId){
+    if(!draft||draft.apptId!==String(apptId))return [];
+    return list(draft.referrals).filter(r=>r.profession).map(r=>r.seen?'Seen by '+r.profession+(r.seen_on?' · '+r.seen_on:''):'Referred to '+r.profession+(r.referred_on?' · '+r.referred_on:''));
+  }
   function clear(){draft=null;baseline=null;}
-  window.VisitStomaReview={enabled,mount,validate,payloadFor,rodPatchFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  window.VisitStomaReview={enabled,mount,validate,payloadFor,rodPatchFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,referralsPatchFor,referralLines,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();

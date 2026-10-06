@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-452"/>
-<script src="assets/manual.js?v=2026.10.06-452"></script>
-<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-450"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-452"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.06-452"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-453"/>
+<script src="assets/manual.js?v=2026.10.06-453"></script>
+<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-453"/>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-453"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.06-453"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3644,7 +3644,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-452';
+const APP_BUILD='2026.10.06-453';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6417,6 +6417,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
           <span class="es-summary-label">Last follow-up</span><span class="es-summary-value" id="es-summary-lastfu">…</span>
           <span class="es-summary-label">Appliance</span><span class="es-summary-value" id="es-summary-appliance">…</span>
           ${compNames.length?`<span class="es-summary-label">Complications</span><span class="es-summary-value warn">${htmlSafe(compNames.join(', '))}</span>`:''}
+          ${(()=>{const c=isEncounterUser()&&window.JasonEncounters?JasonEncounters.referralChipsHTML(JasonEncounters.patientReferrals(fullPat)):'';return c?`<span class="es-summary-label">Support</span><span class="es-summary-value">${c}</span>`:'';})()}
         </div>
       </div>`;
     // Demographics are shown read-only above and carried as hidden inputs — the
@@ -6915,7 +6916,7 @@ function esRenderReview(){
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
     ${card(1,'Attendance',[dtLine,ownerBadge,boldVal('Outcome',selText('of-status'))],TONE_ATT)}
-    ${stomaReviewCard}${card(2,'Complications',cmpLines,TONE_CMP)}
+    ${stomaReviewCard}${(()=>{const l=window.VisitStomaReview&&esState?VisitStomaReview.referralLines(esState.apptId):[];return l.length?card(2,'Support / referrals',l.map(x=>boldVal('',x)),{bg:'#f1f8f8',bd:'#b7ddd9',tx:'#0d5f63'}):'';})()}${card(2,'Complications',cmpLines,TONE_CMP)}
     ${card(3,'Appliance & accessories',appLines,TONE_APP)}
     ${card(4,'Follow-up',[boldVal('',nextTxt),dueLine,boldVal('Status',selText('of-followup-status'))],TONE_FU)}`;
 }
@@ -7696,10 +7697,14 @@ async function commitOutcomeFollowup(v,stomaRows){
     // A rod ticked, unticked or re-dated in the stoma assessment updates the patient.
     const rodPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.rodPatchFor(apptId):null;
     if(rodPatch&&!(isDntuEditMode&&dntuTarget===3))Object.assign(updatePayload,rodPatch);
+    // Support referrals ticked or added at this visit (Jason) are the patient's.
+    const refPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.referralsPatchFor(apptId):null;
+    if(refPatch)updatePayload.support_referrals=refPatch;
     // Tolerant: if followup_flexible (or another new column) is not in the
     // database yet, it is dropped and the rest of the follow-up still saves.
-    const{error:pErr}=await updatePatientTolerant(patientId,updatePayload);
+    const{error:pErr,dropped:pDropped}=await updatePatientTolerant(patientId,updatePayload);
     if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
+    else if(updatePayload.support_referrals&&(pDropped||[]).includes('support_referrals'))alert('The visit was saved, but the support referrals were not: run sql/add-support-referrals.sql once in Supabase.');
   }
   if(isDntuEditMode){
     const target=dntuTarget;
@@ -12583,7 +12588,7 @@ async function fetchPatientsSelect(build){
 const PATIENT_BASE_COLS='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country';
+const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -18964,7 +18969,7 @@ async function openPatientRecord(patientId){
             <span class="psm-id${pat.id_card?'':' is-missing'}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>
           </div>
           ${demo?`<span class="psm-sub">${demo}</span>`:''}
-          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
+          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${isEncounterUser()&&window.JasonEncounters?JasonEncounters.referralChipsHTML(JasonEncounters.patientReferrals(pat)):''}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
         </div>
       </div>
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
@@ -24644,8 +24649,9 @@ async function saveVisitReviewEdit(){
     say(res.error?'Could not save: '+(res.error.message||res.error):'The database does not have the stoma assessment column yet. Run sql/add-visit-stoma-assessment.sql once in Supabase.');
     if(btn){btn.disabled=false;btn.textContent='Save as V'+stored.versions.length;}return;
   }
-  const rodPatch=VisitStomaReview.rodPatchFor(st.apptId);
-  if(rodPatch&&st.appt.patient_id){try{await updatePatientTolerant(st.appt.patient_id,rodPatch);}catch(e){}}
+  const rodPatch=VisitStomaReview.rodPatchFor(st.apptId),refPatch=VisitStomaReview.referralsPatchFor(st.apptId);
+  const patientPatch={...(rodPatch||{}),...(refPatch?{support_referrals:refPatch}:{})};
+  if(Object.keys(patientPatch).length&&st.appt.patient_id){try{await updatePatientTolerant(st.appt.patient_id,patientPatch);}catch(e){}}
   if(st.appt.patient_id)await linkVisitSkinComplications(st.appt.patient_id,VisitStomaReview.skinFor(st.apptId));
   VisitStomaReview.clear();
   st.appt.stoma_assessment=stored;st.version=null;st.compare=true;
