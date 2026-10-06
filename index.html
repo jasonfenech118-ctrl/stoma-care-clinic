@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-446"/>
-<script src="assets/manual.js?v=2026.10.06-446"></script>
-<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-446"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-446"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.06-446"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-447"/>
+<script src="assets/manual.js?v=2026.10.06-447"></script>
+<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-447"/>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-447"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.06-447"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3638,7 +3638,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-446';
+const APP_BUILD='2026.10.06-447';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6666,6 +6666,41 @@ function esRenderStepper(){
 }
 function esNextStep(){const o=esStepsOrder(),i=o.indexOf(esState.step);if(i<o.length-1)esGoStep(o[i+1]);}
 function esPrevStep(){const o=esStepsOrder(),i=o.indexOf(esState.step);if(i>0)esGoStep(o[i-1]);}
+/* A peristomal skin problem in Jason's stoma assessment is a complication, so the
+   complications answer follows it to "A complication is identified". */
+function onVisitSkinChange(){
+  if(!esState||!window.VisitStomaReview||!VisitStomaReview.skinFor(esState.apptId).problems.length)return;
+  const r=document.querySelector('input[name="of-cmp-review"][value="new-added"]');
+  if(r&&!r.checked){r.checked=true;try{esCmpReviewChange();}catch(e){}}
+  const err=document.getElementById('of-review-error');if(err)err.hidden=true;
+}
+/* Peristomal skin problems recorded in Jason's visit assessment are complications
+   of that stoma: new ones are added to the patient, and a stoma assessed Healthy
+   resolves its open skin complications. */
+async function linkVisitSkinComplications(patientId,skin){
+  if(!patientId||!skin||!window.VisitStomaReview||(!skin.problems.length&&!skin.healthy.length))return;
+  const{data:pat}=await fetchPatientById(patientId);if(!pat)return;
+  const list=parseComplications(pat),user=await getCurrentUserForAudit(),by=user.name||user.email||'';
+  const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const sameText=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+  const onStoma=(c,stomaUid)=>c.stoma_uid===stomaUid||(!c.stoma_uid&&!c.stoma&&skin.single===stomaUid);
+  let changed=false;
+  skin.problems.forEach(({uid:stomaUid,text})=>{
+    if(list.some(c=>c.status!=='resolved'&&sameText(c.text,text)&&(onStoma(c,stomaUid)||!c.stoma_uid)))return;
+    list.push({id:'c'+uid(),text,stoma:'',stoma_uid:stomaUid,date:TODAY,status:'open',resolved_date:'',note:'Peristomal skin',source:'Appointment',by,
+      events:[{id:'e'+uid(),date:TODAY,trend:'noted',note:'Peristomal skin',by}]});
+    changed=true;
+  });
+  list.forEach(c=>{
+    if(c.status==='resolved'||!VisitStomaReview.isSkinProblem(c.text)||!skin.healthy.some(u=>onStoma(c,u)))return;
+    c.status='resolved';c.resolved_date=TODAY;(c.events=c.events||[]).push({id:'e'+uid(),date:TODAY,trend:'resolved',note:'Peristomal skin healthy at visit',by});changed=true;
+  });
+  if(!changed)return;
+  const res=await saveComplicationsWithEvent(patientId,list);
+  if(res.missing)alert('The visit was saved, but the peristomal skin complication could not be: the complications column is not in the database. Run sql/add-complications.sql once in Supabase.');
+  else if(res.error)alert('The visit was saved, but the peristomal skin complication could not be: '+(res.error.message||res.error));
+  else if(clrState.patient&&String(clrState.patient.id)===String(patientId))clrState.patient.complications=res.list;
+}
 /* Leaving Clinical review (step 2): confirm the complications were reviewed,
    then move on to the Appliances step (3). The appliance picker itself opens
    from that step, not here. */
@@ -6673,6 +6708,14 @@ async function esFollowupNext(){
   if(!esState)return;
   if(!esOutcomeAttended()){esGoStep(4);return;}
   if(window.VisitStomaReview&&!VisitStomaReview.validate())return;
+  // Unhealthy peristomal skin is a complication: it cannot be "none identified".
+  const skinIssues=window.VisitStomaReview?VisitStomaReview.skinFor(esState.apptId).problems:[];
+  if(skinIssues.length&&document.querySelector('input[name="of-cmp-review"]:checked')?.value==='none'){
+    const err=document.getElementById('of-review-error');
+    if(err){err.hidden=false;err.textContent='The peristomal skin is not healthy ('+[...new Set(skinIssues.map(x=>x.text))].join(', ')+') — choose “A complication is identified”.';}
+    return;
+  }
+  if(skinIssues.length)onVisitSkinChange();
   const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
   const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
   const isDntu=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
@@ -6789,7 +6832,8 @@ function esRenderReview(){
     ...((esState&&esState.complications)?esState.complications.map(c=>String(c.text||c.title||'').trim()):[]),
     ...[...document.querySelectorAll('#of-cmp-list .cmp-title')].map(cmpText),
     ...[...document.querySelectorAll('.of-cmp-multi:checked')].map(b=>String(b.value||'').trim()),
-    ...[...document.querySelectorAll('#of-cmp-existing .cmp-review-row .cmp-title')].map(cmpText)
+    ...[...document.querySelectorAll('#of-cmp-existing .cmp-review-row .cmp-title')].map(cmpText),
+    ...(window.VisitStomaReview&&esState?VisitStomaReview.skinFor(esState.apptId).problems.map(x=>x.text):[])
   ].filter(Boolean))];
   const cmpLines=cmpValue==='none'
     ? [boldVal('','No complications identified')]
@@ -7656,6 +7700,7 @@ async function commitOutcomeFollowup(v,stomaRows){
     }
   }
 
+  if(status==='attended'&&window.VisitStomaReview&&patientId)await linkVisitSkinComplications(patientId,VisitStomaReview.skinFor(apptId));
   if(window.VisitStomaReview)VisitStomaReview.clear();
   closeModal();
   if(status==='did_not_attend')await checkDntuThresholdForAppointment(apptId);

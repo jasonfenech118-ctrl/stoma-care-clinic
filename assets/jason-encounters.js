@@ -5,6 +5,11 @@
   const JASON_EMAIL='jason.fenech@gov.mt';
   const COLOURS=['Healthy pink','Dusky','Aubergine colour','Necrotic'];
   const OUTPUTS=['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'];
+  // Peristomal skin problems. Each one ticked is also a complication of that stoma.
+  const SKIN=['Erythema / redness','Irritant dermatitis (leakage)','Excoriation / erosion','Mucocutaneous separation','Allergic dermatitis','Fungal infection','Folliculitis','Hypergranulation','Pressure ulcer / MARSI','Pyoderma gangrenosum'];
+  const isSkinProblem=t=>SKIN.some(k=>k.toLowerCase()===String(t||'').trim().toLowerCase());
+  // A rod is only ever used with a loop stoma — never an end stoma or a urostomy.
+  const rodCapable=type=>typeof stomaTypeCanHaveRod==='function'?stomaTypeCanHaveRod(type):/loop|transverse/i.test(String(type||''));
   const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
   const ORGANISMS=['CRE','VRE','MRSA','C. difficile','ESBL','Other'];
   const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
@@ -65,6 +70,8 @@
     stomas.forEach(x=>{
       const parts=[];if(x.colour)parts.push('colour / appearance: '+x.colour.toLowerCase());
       if(x.output?.length)parts.push('function / output: '+x.output.join(', '));
+      if(x.skin?.status==='Healthy')parts.push('peristomal skin: healthy');
+      if(x.skin?.status==='Not healthy')parts.push('peristomal skin: not healthy'+(list(x.skin.problems).length?' ('+x.skin.problems.join(', ')+')':''));
       if(x.appliances?.length)parts.push('appliance: '+x.appliances.join(', '));
       if(x.accessories?.length)parts.push('accessories: '+x.accessories.join(', '));
       if(x.flange_due)parts.push('flange due: '+x.flange_due);
@@ -94,11 +101,12 @@
       const flange=ap.find(n=>APPLIANCE_CATALOGUE.find(c=>c.name===n)?.part==='flange')||'';
       const pouch=ap.find(n=>n!==flange)||'';
       const own=comps.filter(c=>c.stoma_uid===s.uid||c.stoma===legacy?.slot||c.stoma===String(legacy?.number)||(!c.stoma&&all.length===1));
-      const loops=all.filter(x=>typeof stomaTypeCanHaveRod==='function'&&stomaTypeCanHaveRod(x.typeLabel||x.type));
-      const rodOwn=p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&(all.length===1||(loops.length===1&&loops[0].uid===s.uid)));
+      const loops=all.filter(x=>rodCapable(x.typeLabel||x.type));
+      const rodOwn=rodCapable(s.typeLabel||s.type)&&(p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&(all.length===1||(loops.length===1&&loops[0].uid===s.uid))));
       return {uid:s.uid,number,type:s.typeLabel||s.type||'Stoma',short:s.shortLabel||s.short||'',legacy_ref:legacy?.slot||String(legacy?.number||''),
         colour:'',output:[],notes:'',system,baseplate:flange,pouch,appliances:copy(ap),accessories:copy(ac),flange_due:row?.flange_due||'',
         complications:own.map(c=>({id:c.id,text:c.text,status:c.status})),
+        skin:(()=>{const open=[...new Set(own.filter(c=>c.status!=='resolved'&&isSkinProblem(c.text)).map(c=>SKIN.find(k=>k.toLowerCase()===c.text.trim().toLowerCase())))];return {status:open.length?'Not healthy':'',problems:open};})(),
         rod:{status:rodOwn?(p.rod_removed_date?'Removed':p.rod_removal_date?'In place':'Not recorded'):'Not recorded',
           due:rodOwn?(p.rod_removal_date||''):'',removed:rodOwn?(p.rod_removed_date||''):''}};
     });
@@ -176,6 +184,7 @@
     ctx.draft=copy(v.snapshot);if(!ctx.draft.stomas?.length){const legacy=seed(ctx.patient,ep,String(rec.encounter_date));ctx.draft={...legacy,notes:v.snapshot.notes||''};}
     // Every stoma is assessed on one screen, so an encounter always covers them all.
     ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
+    list(ctx.draft.stomas).forEach(x=>{if(!x.skin)x.skin={status:'',problems:[]};});
     const idx=vs.indexOf(v);
     ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
     // A saved version is compared with the report as it was saved, not re-worded.
@@ -187,7 +196,7 @@
   function select(label,value,choices,kind,field,extra='',old){
     const ch=choices.map(c=>Array.isArray(c)?c:[c,c]);if(value&&!ch.some(c=>c[0]===value))ch.push([value,value]);
     const changed=ctx.compare&&ctx.comparison&&kind!=='history'&&!same(old??'',value);
-    return '<div class="jenc-field"><label>'+esc(label)+'</label><select '+attrs(kind,field,extra)+(ctx.editable||kind==='history'?'':' disabled')+(changed?' class="jenc-changed"':'')+' aria-label="'+esc(label)+'"><option value="">— '+(label==='Colour / appearance'?'not recorded':'choose')+' —</option>'+ch.map(c=>{const val=c[0],txt=c[1];return '<option value="'+esc(val)+'"'+(val===value?' selected':'')+'>'+esc(txt)+'</option>';}).join('')+'</select>'+(changed?'<div class="jenc-previous">Previously: '+esc(old||'not recorded')+'</div>':'')+'</div>';
+    return '<div class="jenc-field"><label>'+esc(label)+'</label><select '+attrs(kind,field,extra)+(ctx.editable||kind==='history'?'':' disabled')+(changed?' class="jenc-changed"':'')+' aria-label="'+esc(label)+'"><option value="">— '+(['Colour / appearance','Peristomal skin'].includes(label)?'not recorded':'choose')+' —</option>'+ch.map(c=>{const val=c[0],txt=c[1];return '<option value="'+esc(val)+'"'+(val===value?' selected':'')+'>'+esc(txt)+'</option>';}).join('')+'</select>'+(changed?'<div class="jenc-previous">Previously: '+esc(old||'not recorded')+'</div>':'')+'</div>';
   }
   function multi(label,values,choices,kind,field,extra='',old=[]){
     values=list(values);const options=[...new Set(choices.concat(values))];
@@ -207,6 +216,22 @@
     else if(r.status==='Removed')out+='<div class="jenc-meta">Rod removed'+(r.removed?' '+esc(r.removed):'')+'.</div>';
     if(changed)out+='<div class="jenc-previous">Previously: '+esc(rodText(old?.rod))+'</div>';
     return out+'</div>';
+  }
+  function skinHTML(s,extra,old){
+    const k=s.skin||{status:'',problems:[]};
+    let out='<div class="jenc-fields jenc-skin">'+select('Peristomal skin',k.status,['Healthy','Not healthy'],'skin','status',extra,old?.skin?.status);
+    if(k.status==='Not healthy')out+=multi('Skin problem(s) *',k.problems,SKIN,'skin','problems',extra,old?.skin?.problems||[]);
+    return out+'</div>';
+  }
+  // Skin problems are complications too: each one ticked joins the stoma's
+  // complications; "Healthy" resolves the skin complications already on record.
+  function linkSkin(st){
+    const base=list(ctx.baseline.stomas.find(x=>x.uid===st.uid)?.complications),k=st.skin||{status:'',problems:[]};
+    const want=k.status==='Not healthy'?list(k.problems):[],wanted=t=>want.some(w=>w.toLowerCase()===String(t||'').trim().toLowerCase());
+    st.complications=list(st.complications).filter(c=>!isSkinProblem(c.text)||wanted(c.text)||base.some(b=>b.id===c.id));
+    st.complications.forEach(c=>{const b=base.find(x=>x.id===c.id);if(!b||!isSkinProblem(c.text))return;
+      c.status=wanted(c.text)?'open':k.status==='Healthy'?'resolved':b.status;});
+    want.forEach(w=>{if(!st.complications.some(c=>String(c.text||'').trim().toLowerCase()===w.toLowerCase()))st.complications.push({id:crypto.randomUUID(),text:w,status:'open'});});
   }
   function stomaHTML(s){
     const extra='data-uid="'+esc(s.uid)+'"',old=oldStoma(s.uid),cat=APPLIANCE_CATALOGUE;
@@ -231,7 +256,7 @@
     const compSummary=ctx.compare&&ctx.comparison?diffHTML(careSummary(old),careSummary(s),true):esc(careSummary(s));
     return {
       review:'<div class="jenc-fields">'+select('Colour / appearance',s.colour,COLOURS,'stoma','colour',extra,old?.colour)+multi('Function / output',s.output,OUTPUTS,'stoma','output',extra,old?.output||[])+'</div>'+
-        rodHTML(s,extra,old)+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
+        skinHTML(s,extra,old)+(rodCapable(s.type)?rodHTML(s,extra,old):'')+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
       appliances:accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
     };
   }
@@ -306,7 +331,8 @@
       else st.rod=was.status==='Removed'?copy(was):{status:'Not recorded',due:'',removed:''};
       render();return;
     }
-    if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
+    if(kind==='skin'&&st&&!st.skin)st.skin={status:'',problems:[]};
+    if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='skin')obj=st?.skin;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
     if(el.type==='checkbox'){
       let v=list(obj[field]).filter(x=>x!==el.value);if(el.checked)v.push(el.value);
       if(field==='output')v=nilExclusive(v,el.checked?el.value:'');
@@ -319,6 +345,7 @@
         if(flange&&bag&&flange.coupling!==bag.coupling)st.pouch='';}
       st.appliances=[st.system==='two'?st.baseplate:'',st.pouch].filter(Boolean);
     }
+    if(kind==='skin'){if(field==='status'&&st.skin.status!=='Not healthy')st.skin.problems=[];linkSkin(st);}
     if(kind==='rod'&&field==='status'){if(el.value==='Removed'){st.rod.removed=TODAY;}else if(el.value==='Not recorded'){st.rod.due='';st.rod.removed='';}else st.rod.removed='';}
     const menu=el.closest('details.jenc-multi');render();
     if(menu){const next=document.querySelector('[data-kind="'+kind+'"][data-field="'+field+'"]'+(el.dataset.uid?'[data-uid="'+el.dataset.uid+'"]':''));if(next)next.closest('details').open=true;}
@@ -367,6 +394,8 @@
     if(!ctx?.editable||ctx.saving||!enabled())return;
     if(!dirty())return error(ctx.record?'There are no changes to save.':'Record a finding, care change, referral or clinical note before saving.');
     if(!ctx.draft.scope.length||ctx.draft.scope.some(uid=>!ctx.draft.stomas.some(s=>s.uid===uid)))return error('Record the patient’s stoma in the patient record before saving an encounter.');
+    const noSkin=ctx.draft.stomas.filter(s=>s.skin?.status==='Not healthy'&&!list(s.skin.problems).length);
+    if(noSkin.length)return error('Choose the peristomal skin problem for '+noSkin.map(s=>stomaName(s,ctx.draft.stomas)).join(', ')+'.');
     if(ctx.draft.stomas.some(s=>s.complications.some(c=>!c.text)))return error('Choose a complication or remove the empty row.');
     if(ctx.draft.referrals.some(r=>!r.profession||!r.status))return error('Choose the profession and status for each referral.');
     let updates;try{updates=impact();}catch(e){return error(e.message);}
@@ -410,7 +439,7 @@
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
   window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,
-    get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS};
+    get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,rodCapable};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
   if(priorSwitch)window.switchTab=function(name){if(name!=='manual'&&document.body.classList.contains('jenc-open')&&!dismiss())return;return priorSwitch(name);};
