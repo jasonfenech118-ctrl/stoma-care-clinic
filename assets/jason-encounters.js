@@ -5,9 +5,38 @@
   const JASON_EMAIL='jason.fenech@gov.mt';
   const COLOURS=['Healthy pink','Dusky','Aubergine colour','Necrotic'];
   const OUTPUTS=['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'];
-  // Peristomal skin problems. Each one ticked is also a complication of that stoma.
-  const SKIN=['Erythema / redness','Irritant dermatitis (leakage)','Excoriation / erosion','Mucocutaneous separation','Allergic dermatitis','Fungal infection','Folliculitis','Hypergranulation','Pressure ulcer / MARSI','Pyoderma gangrenosum'];
-  const isSkinProblem=t=>SKIN.some(k=>k.toLowerCase()===String(t||'').trim().toLowerCase());
+  // Peristomal skin: "Healthy skin" stands alone; every other finding is a skin
+  // problem and is also recorded as a complication of that stoma.
+  const HEALTHY_SKIN='Healthy skin';
+  const SKIN=[HEALTHY_SKIN,'Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated'];
+  // Earlier skin wording, still recognised on records saved with it.
+  const LEGACY_SKIN=['Erythema / redness','Irritant dermatitis (leakage)','Excoriation / erosion','Mucocutaneous separation','Allergic dermatitis','Folliculitis','Hypergranulation','Pressure ulcer / MARSI','Pyoderma gangrenosum'];
+  // Findings Jason adds himself ("+ Add other…") join these lists for good:
+  // shared through the assessment_options table, and kept on this device too.
+  const BASE_OPTIONS={colour:COLOURS,output:OUTPUTS,skin:SKIN},OPTION_STORE='jenc-assessment-options';
+  const lower=x=>String(x||'').trim().toLowerCase();
+  function readLocalOptions(){try{const v=JSON.parse(localStorage.getItem(OPTION_STORE)||'{}');return {colour:list(v.colour),output:list(v.output),skin:list(v.skin)};}catch(_){return {colour:[],output:[],skin:[]};}}
+  let customOptions=readLocalOptions(),optionsLoad=null,warnedLocal=false;
+  function writeLocalOptions(){try{localStorage.setItem(OPTION_STORE,JSON.stringify(customOptions));}catch(_){}}
+  function options(field){const out=[];list(BASE_OPTIONS[field]).concat(list(customOptions[field])).forEach(x=>{if(!out.some(y=>lower(y)===lower(x)))out.push(x);});return out;}
+  function loadOptions(force=false){
+    if(optionsLoad&&!force)return optionsLoad;
+    optionsLoad=(async()=>{try{
+      const {data,error:e}=await SB.from('assessment_options').select('field,name').order('created_at');if(e)return false;let changed=false;
+      list(data).forEach(r=>{if(!r||!customOptions[r.field]||!String(r.name||'').trim())return;if(!options(r.field).some(x=>lower(x)===lower(r.name))){customOptions[r.field].push(String(r.name).trim());changed=true;}});
+      if(changed)writeLocalOptions();return changed;}catch(_){return false;}})();
+    return optionsLoad;
+  }
+  async function addOption(field,raw){
+    const name=String(raw||'').trim().replace(/\s+/g,' ');if(!name||!BASE_OPTIONS[field])return '';
+    const existing=options(field).find(x=>lower(x)===lower(name));if(existing)return existing;
+    customOptions[field].push(name);writeLocalOptions();
+    let shared=false;try{const {error:e}=await SB.from('assessment_options').insert({field,name,created_by:'Jason Fenech'});shared=!e||/duplicate|unique/i.test(String(e.message||''));}catch(_){}
+    if(!shared&&!warnedLocal){warnedLocal=true;try{window.alert('“'+name+'” was added on this computer only. Run sql/add-assessment-options.sql once in Supabase so added options are shared on every computer.');}catch(_){}}
+    return name;
+  }
+  const skinName=t=>options('skin').concat(LEGACY_SKIN).find(k=>lower(k)===lower(t))||'';
+  const isSkinProblem=t=>!!skinName(t)&&lower(t)!==lower(HEALTHY_SKIN);
   // A rod is only ever used with a loop stoma — never an end stoma or a urostomy.
   const rodCapable=type=>typeof stomaTypeCanHaveRod==='function'?stomaTypeCanHaveRod(type):/loop|transverse/i.test(String(type||''));
   const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
@@ -76,8 +105,8 @@
       if(x.accessories?.length)parts.push('accessories: '+x.accessories.join(', '));
       if(x.flange_due)parts.push('flange due: '+x.flange_due);
       list(x.complications).filter(c=>c.text).forEach(c=>parts.push(c.text+': '+(c.status==='resolved'?'resolved':'active')));
-      if(x.rod?.status==='In place')parts.push('rod present'+(x.rod.due?' (planned removal '+x.rod.due+')':''));
-      if(x.rod?.status==='Removed')parts.push('rod removed'+(x.rod.removed?' '+x.rod.removed:''));
+      if(x.rod_asked!==false&&x.rod?.status==='In place')parts.push('rod present'+(x.rod.due?' (planned removal '+x.rod.due+')':''));
+      if(x.rod_asked!==false&&x.rod?.status==='Removed')parts.push('rod removed'+(x.rod.removed?' '+x.rod.removed:''));
       const name=stomaName(x,stomas);
       lines.push(name+' — '+(parts.join('; ')||'No assessment recorded')+'.');
       if(String(x.notes||'').trim())lines.push(name+' notes: '+x.notes);
@@ -106,7 +135,7 @@
       return {uid:s.uid,number,type:s.typeLabel||s.type||'Stoma',short:s.shortLabel||s.short||'',legacy_ref:legacy?.slot||String(legacy?.number||''),
         colour:'',output:[],notes:'',system,baseplate:flange,pouch,appliances:copy(ap),accessories:copy(ac),flange_due:row?.flange_due||'',
         complications:own.map(c=>({id:c.id,text:c.text,status:c.status})),
-        skin:(()=>{const open=[...new Set(own.filter(c=>c.status!=='resolved'&&isSkinProblem(c.text)).map(c=>SKIN.find(k=>k.toLowerCase()===c.text.trim().toLowerCase())))];return {status:open.length?'Not healthy':'',problems:open};})(),
+        skin:(()=>{const open=[...new Set(own.filter(c=>c.status!=='resolved'&&isSkinProblem(c.text)).map(c=>skinName(c.text)))];return {status:open.length?'Not healthy':'',problems:open};})(),
         rod:{status:rodOwn?(p.rod_removed_date?'Removed':p.rod_removal_date?'In place':'Not recorded'):'Not recorded',
           due:rodOwn?(p.rod_removal_date||''):'',removed:rodOwn?(p.rod_removed_date||''):''}};
     });
@@ -127,9 +156,16 @@
     const stomas=stomaSeed(p,ep,date);
     const recent=ctx?.rows?.find(r=>String(r.episode_id)===String(ep.id)&&assessment(r).snapshot);
     const saved=recent?assessment(recent).snapshot:null;
-    stomas.forEach(s=>{const prior=saved?.stomas?.find(v=>v.uid===s.uid);if(prior?.rod&&p.rod_stoma_uid!==s.uid)s.rod=copy(prior.rod);});
+    stomas.forEach(s=>{const prior=saved?.stomas?.find(v=>v.uid===s.uid);if(prior?.rod&&p.rod_stoma_uid!==s.uid)s.rod=copy(prior.rod);s.rod_asked=firstAssessmentOf(s.uid);});
     return {stomas,scope:stomas.map(s=>s.uid),notes:'',infection:infectionSeed(p),referrals:copy(saved?.referrals||[])};
   }
+  // A rod is only placed at surgery, so the rod question belongs to the FIRST
+  // encounter that assessed a stoma; later encounters do not ask it again.
+  function firstAssessmentOf(uid){
+    const rec=ctx?.record;
+    return !list(ctx?.rows).some(r=>(!rec||(String(r.id)!==String(rec.id)&&String(r.created_at||'')<String(rec.created_at||'')))&&list(assessment(r).snapshot?.stomas).some(x=>x.uid===uid));
+  }
+  const rodAsked=s=>rodCapable(s?.type)&&(s?.rod_asked??firstAssessmentOf(s?.uid));
   function changedAppliances(base,draft){return list(draft.stomas).filter(s=>{
     const old=list(base.stomas).find(x=>x.uid===s.uid);return !old||!same([s.appliances,s.accessories,s.flange_due],[old.appliances,old.accessories,old.flange_due]);
   }).map(s=>({stoma_uid:s.uid,stoma_code:s.number,stoma_short:s.short,stoma_type:s.type,
@@ -148,6 +184,7 @@
     if(ctx&&!canLeave())return;
     const token=++request,returnScroll=window.scrollY,returnPage=ctx?.returnPage||document.querySelector('.main > .page.active')?.id||'page-handover';ctx=null;
     const page=parentPage();document.body.classList.add('jenc-open');
+    loadOptions().then(changed=>{if(changed&&ctx&&ctx.mode==='form')render();});
     document.querySelectorAll('.main > .page.active').forEach(el=>el.classList.remove('active'));
     page.classList.add('active');page.innerHTML='<div class="jenc-card">Loading encounter…</div>';window.scrollTo(0,0);closeModal();
     try{
@@ -198,10 +235,11 @@
     const changed=ctx.compare&&ctx.comparison&&kind!=='history'&&!same(old??'',value);
     return '<div class="jenc-field"><label>'+esc(label)+'</label><select '+attrs(kind,field,extra)+(ctx.editable||kind==='history'?'':' disabled')+(changed?' class="jenc-changed"':'')+' aria-label="'+esc(label)+'"><option value="">— '+(['Colour / appearance','Peristomal skin'].includes(label)?'not recorded':'choose')+' —</option>'+ch.map(c=>{const val=c[0],txt=c[1];return '<option value="'+esc(val)+'"'+(val===value?' selected':'')+'>'+esc(txt)+'</option>';}).join('')+'</select>'+(changed?'<div class="jenc-previous">Previously: '+esc(old||'not recorded')+'</div>':'')+'</div>';
   }
-  function multi(label,values,choices,kind,field,extra='',old=[]){
+  function multi(label,values,choices,kind,field,extra='',old=[],addField=''){
     values=list(values);const options=[...new Set(choices.concat(values))];
+    const add=ctx.editable&&addField?'<button type="button" class="jenc-add-opt" data-action="add-option" data-option="'+esc(addField)+'" '+extra+'>＋ Add other…</button>':'';
     const text=values.length?values.map(v=>ctx.compare&&!old.includes(v)&&ctx.comparison?'<span class="jenc-change">'+esc(v)+'</span>':esc(v)).join(', '):'— not recorded —';
-    return '<div class="jenc-field"><label>'+esc(label)+'</label><details class="jenc-multi"><summary>'+text+'</summary><div class="jenc-menu">'+options.map(v=>'<label><input type="checkbox" '+attrs(kind,field,extra)+' value="'+esc(v)+'"'+(values.includes(v)?' checked':'')+(ctx.editable?'':' disabled')+'>'+esc(v)+'</label>').join('')+'</div></details></div>';
+    return '<div class="jenc-field"><label>'+esc(label)+'</label><details class="jenc-multi"><summary>'+text+'</summary><div class="jenc-menu">'+options.map(v=>'<label><input type="checkbox" '+attrs(kind,field,extra)+' value="'+esc(v)+'"'+(values.includes(v)?' checked':'')+(ctx.editable?'':' disabled')+'>'+esc(v)+'</label>').join('')+add+'</div></details></div>';
   }
   function accordion(key,title,summary,body){return '<details class="jenc-accordion" data-section="'+esc(key)+'"'+(ctx.openSections.has(key)?' open':'')+'><summary>'+esc(title)+'<span class="jenc-summary">'+summary+'</span></summary><div class="jenc-body">'+body+'</div></details>';}
   // One tick: "Rod present". Ticking it shows the planned removal date; unticking
@@ -217,11 +255,19 @@
     if(changed)out+='<div class="jenc-previous">Previously: '+esc(rodText(old?.rod))+'</div>';
     return out+'</div>';
   }
+  const skinValues=k=>k?.status==='Healthy'?[HEALTHY_SKIN]:list(k?.problems);
   function skinHTML(s,extra,old){
-    const k=s.skin||{status:'',problems:[]};
-    let out='<div class="jenc-fields jenc-skin">'+select('Peristomal skin',k.status,['Healthy','Not healthy'],'skin','status',extra,old?.skin?.status);
-    if(k.status==='Not healthy')out+=multi('Skin problem(s) *',k.problems,SKIN,'skin','problems',extra,old?.skin?.problems||[]);
-    return out+'</div>';
+    return '<div class="jenc-fields jenc-skin">'+multi('Peristomal skin',skinValues(s.skin),options('skin'),'skin','pick',extra,skinValues(old?.skin),'skin')+'</div>';
+  }
+  // "Healthy skin" stands alone; ticking any finding clears it.
+  function applySkin(st,values,value,checked){
+    let v=checked&&value===HEALTHY_SKIN?[HEALTHY_SKIN]:list(values).filter(x=>x!==HEALTHY_SKIN);
+    st.skin=v.includes(HEALTHY_SKIN)?{status:'Healthy',problems:[]}:{status:v.length?'Not healthy':'',problems:v};
+    linkSkin(st);
+  }
+  function colourSelect(s,extra,old){
+    const html=select('Colour / appearance',s.colour,options('colour'),'stoma','colour',extra,old?.colour);
+    return ctx.editable?html.replace('</select>','<option value="__add__">＋ Add other…</option></select>'):html;
   }
   // Skin problems are complications too: each one ticked joins the stoma's
   // complications; "Healthy" resolves the skin complications already on record.
@@ -255,8 +301,8 @@
     const careSummary=x=>list(x?.complications).filter(c=>c.text).map(c=>c.text+' · '+(c.status==='resolved'?'resolved':'active')).join('\n')||'No complication recorded';
     const compSummary=ctx.compare&&ctx.comparison?diffHTML(careSummary(old),careSummary(s),true):esc(careSummary(s));
     return {
-      review:'<div class="jenc-fields">'+select('Colour / appearance',s.colour,COLOURS,'stoma','colour',extra,old?.colour)+multi('Function / output',s.output,OUTPUTS,'stoma','output',extra,old?.output||[])+'</div>'+
-        skinHTML(s,extra,old)+(rodCapable(s.type)?rodHTML(s,extra,old):'')+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
+      review:'<div class="jenc-fields">'+colourSelect(s,extra,old)+multi('Function / output',s.output,options('output'),'stoma','output',extra,old?.output||[],'output')+'</div>'+
+        skinHTML(s,extra,old)+(rodAsked(s)?rodHTML(s,extra,old):'')+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
       appliances:accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
     };
   }
@@ -331,6 +377,11 @@
       else st.rod=was.status==='Removed'?copy(was):{status:'Not recorded',due:'',removed:''};
       render();return;
     }
+    if(kind==='stoma'&&field==='colour'&&el.value==='__add__'&&st){addOptionFlow('colour',st);return;}
+    if(kind==='skin'&&field==='pick'&&st){
+      const v=skinValues(st.skin).filter(x=>x!==el.value);if(el.checked)v.push(el.value);applySkin(st,v,el.value,el.checked);
+      render();const next=[...document.querySelectorAll('[data-kind="skin"][data-field="pick"]')].find(x=>x.dataset.uid===st.uid);if(next)next.closest('details').open=true;return;
+    }
     if(kind==='skin'&&st&&!st.skin)st.skin={status:'',problems:[]};
     if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='skin')obj=st?.skin;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
     if(el.type==='checkbox'){
@@ -362,11 +413,24 @@
     if(action==='print'){window.print();return;}
     if(!ctx.editable)return;
     const st=ctx.draft.stomas.find(s=>s.uid===btn.dataset.uid);
+    if(action==='add-option'&&st){await addOptionFlow(btn.dataset.option,st);return;}
     if(action==='add-comp'&&st){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
     if(action==='remove-comp'&&st){st.complications.splice(Number(btn.dataset.index),1);render();}
     if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',status:'Needed'});render();}
     if(action==='remove-referral'){ctx.draft.referrals.splice(Number(btn.dataset.index),1);render();}
     if(action==='save')await save();
+  }
+  // "+ Add other…": the new wording joins the list for good and is chosen here.
+  async function addOptionFlow(field,st){
+    const label={colour:'colour / appearance',output:'function / output',skin:'peristomal skin finding'}[field];if(!label)return;
+    let raw='';try{raw=window.prompt('Add another '+label+' to the list:')||'';}catch(_){}
+    const name=await addOption(field,raw);
+    if(name&&ctx?.editable&&st){
+      if(field==='colour')st.colour=name;
+      if(field==='output')st.output=nilExclusive(list(st.output).filter(x=>x!==name).concat(name),name);
+      if(field==='skin')applySkin(st,skinValues(st.skin).filter(x=>x!==name).concat(name),name,true);
+    }
+    render();
   }
   function impact(){
     const patch={},expected={},p=ctx.patient,base=ctx.baseline,draft=ctx.draft;
@@ -439,7 +503,7 @@
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
   window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,
-    get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,rodCapable};
+    get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
   if(priorSwitch)window.switchTab=function(name){if(name!=='manual'&&document.body.classList.contains('jenc-open')&&!dismiss())return;return priorSwitch(name);};
