@@ -1,4 +1,4 @@
-/* Jason's ward encounter workspace. Standard findings are dropdowns; notes stay
+/* The ward encounter workspace (for every signed-in nurse; it began as Jason's). Standard findings are dropdowns; notes stay
    editable. A server transaction appends revisions and publishes current care. */
 (function(){
   'use strict';
@@ -72,6 +72,8 @@
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   const list=x=>Array.isArray(x)?x:[];
+  // Any signed-in nurse may record encounters; each version is signed with their name.
+  const signedIn=u=>!!String(u?.email||'').trim();
   const isJason=u=>String(u?.email||'').trim().toLowerCase()===JASON_EMAIL;
   const enabled=()=>typeof isEncounterUser==='function'&&isEncounterUser();
   const signedName=u=>typeof attDisplayName==='function'?(attDisplayName(u)||u.email):u.email;
@@ -206,7 +208,7 @@
     if(origin==='page-patient-record'&&typeof openPatientRecord==='function')await openPatientRecord(pid);
     else{document.getElementById('page-handover')?.classList.add('active');await loadHandover();}window.scrollTo(0,pos);}
   async function open(pid,recordId=null){
-    if(!enabled())return;const {data,error:authError}=await SB.auth.getUser();if(authError||!isJason(data?.user))return;
+    if(!enabled())return;const {data,error:authError}=await SB.auth.getUser();if(authError||!signedIn(data?.user))return;
     if(ctx&&!canLeave())return;
     const token=++request,returnScroll=window.scrollY,returnPage=ctx?.returnPage||document.querySelector('.main > .page.active')?.id||'page-handover';ctx=null;
     const page=parentPage();document.body.classList.add('jenc-open');
@@ -509,7 +511,7 @@
     if(ctx.draft.stomas.some(s=>s.system==='two'&&updates.appliances.some(a=>a.stoma_uid===s.uid)&&(!s.baseplate||!s.pouch)))return error('Select both the baseplate and pouch for a two-piece system.');
     const target=ctx;
     const {data:auth,error:authError}=await SB.auth.getUser();if(ctx!==target)return;
-    if(authError||!isJason(auth?.user))return error('Sign in with Jason’s profile to save this encounter.');
+    if(authError||!signedIn(auth?.user))return error('Sign in to save this encounter.');
     const savedCtx=ctx;ctx.saving=true;const button=document.getElementById('jenc-save');if(button){button.textContent='Saving…';}
     parentPage().querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);
     try{
@@ -554,7 +556,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;

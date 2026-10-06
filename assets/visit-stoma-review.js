@@ -1,4 +1,4 @@
-/* Jason's stoma assessment in the Complete visit → Clinical review step. One
+/* The stoma assessment in the Complete visit → Clinical review step (every nurse). One
    column per stoma, named by its type (End Colostomy …): colour / appearance,
    function / output, peristomal skin (Healthy skin, or the findings — each also
    recorded as a complication of that stoma), a "Rod present" tick with its

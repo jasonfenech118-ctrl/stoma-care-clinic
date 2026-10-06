@@ -5,6 +5,8 @@ const path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const PAT='11111111-1111-4111-8111-111111111111',EP='22222222-2222-4222-8222-222222222222';
 const sql=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261005212220_jason_encounter_workspace.sql'),'utf8');
+// Encounters are now for every signed-in nurse; the later migration replaces the function.
+const openSql=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261006190000_encounters_for_all_nurses.sql'),'utf8');
 let db;
 const original=[{stoma_uid:'base',appliances:['Old pouch'],accessories:['Powder'],changed_on:'2026-10-01'},{stoma_uid:'second',appliances:['Uro pouch'],accessories:[],changed_on:'2026-10-01'}];
 const snapshot=(notes='Patient recieved guidance.')=>({stomas:[{uid:'base',number:'S1',type:'Loop ileostomy',colour:'Healthy pink',output:['Liquid','Gas'],appliances:['Old pouch'],accessories:['Powder'],complications:[],rod:{status:'Not recorded'}},{uid:'second',number:'S2',type:'Urostomy',colour:'',output:[],appliances:['Uro pouch'],accessories:[],complications:[],rod:{status:'Not recorded'}}],scope:['base','second'],notes,infection:{status:'Not recorded',organism:''},referrals:[]});
@@ -18,7 +20,7 @@ test.before(async()=>{
     create table patients(id uuid primary key,inpatient_ward text,inpatient_bed text,inpatient_notes text,inpatient_nurse_notes text,flange_due date,complications text,rod_stoma_uid text,rod_removal_date date,rod_removed_date date);
     create table clinical_records(id uuid primary key,patient_id uuid,kind text,record_date date,is_current boolean,discharge_date date,episode_ref text,appliances jsonb);
     create table encounters(id uuid primary key default gen_random_uuid(),patient_id text,episode_id text,episode_ref text,encounter_date date default current_date,assessment jsonb default '{}'::jsonb,nursing_report text,created_by_email text,created_by_name text,created_at timestamptz default now());`);
-  await db.exec(sql);await db.exec(sql);
+  await db.exec(sql);await db.exec(sql);await db.exec(openSql);await db.exec(openSql);
 });
 test.beforeEach(async()=>{
   await db.exec('truncate encounters,clinical_records,patients;');
@@ -27,8 +29,12 @@ test.beforeEach(async()=>{
   await db.query("insert into clinical_records values($1,$2,'episode',current_date,true,null,'E03',$3::jsonb)",[EP,PAT,JSON.stringify(original)]);
 });
 test.after(async()=>db.close());
-test('Jason-only endpoint refuses a different profile before storing anything',async()=>{
-  await db.query("select set_config('test.email','other.nurse@gov.mt',false)");await assert.rejects(save(),/Jason only/);assert.equal((await state()).count,0);
+test('any signed-in nurse can save, signed with her own name; no sign-in is refused before storing anything',async()=>{
+  await db.query("select set_config('test.uid','',false)");await assert.rejects(save(),/Sign in to record an encounter/);assert.equal((await state()).count,0);
+  await db.query("select set_config('test.uid','44444444-4444-4444-8444-444444444444',false),set_config('test.email','jacqueline.sammut@gov.mt',false)");
+  const e=await save();assert.equal(e.created_by_name,'Jacqueline Sammut');assert.equal(e.created_by_email,'jacqueline.sammut@gov.mt');assert.equal(e.assessment.versions[0].author_name,'Jacqueline Sammut');
+  await db.query("select set_config('test.email','lorraine.marie.stivala@gov.mt',false)");
+  const two=await save(snapshot('Lorraine corrected the notes.'),e.id,1);assert.equal(two.assessment.versions[1].author_name,'Lorraine Marie Stivala');assert.equal(two.assessment.versions[0].author_name,'Jacqueline Sammut');
 });
 test('a note-only encounter records episode, stomas, automatic author and V1 without replacing appliances',async()=>{
   const e=await save();assert.equal(e.patient_id,PAT);assert.equal(e.episode_id,EP);assert.equal(e.episode_ref,'E03');assert.equal(e.created_by_name,'Jason Fenech');assert.equal(e.assessment.current_version,1);assert.deepEqual(e.assessment.snapshot.scope,['base','second']);

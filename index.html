@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-454"/>
-<script src="assets/manual.js?v=2026.10.06-454"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-455"/>
+<script src="assets/manual.js?v=2026.10.06-455"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-453"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-453"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.06-453"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-455"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.06-455"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3167,8 +3167,10 @@ let followupPatients=[];
 let IS_ADMIN=false;
 // The ward Encounter feature (stoma assessment + nursing report) is Jason-only,
 // so it rides on the same sign-in check. It only hides UI — not a security boundary.
-let JASON_ENCOUNTER_PROFILE=false;
-function isEncounterUser(){return !!IS_ADMIN&&JASON_ENCOUNTER_PROFILE;}
+// Encounters, visit stoma assessments / reviews and support referrals are for
+// every signed-in nurse (they began on Jason's profile only).
+let ENCOUNTER_USER=false;
+function isEncounterUser(){return !!ENCOUNTER_USER;}
 // Patient ids with an encounter saved TODAY — their handover Appliance+notes cell
 // reads green. Rebuilt on every handover load (for the Encounter user only).
 let hvEncounteredToday=new Set();
@@ -3646,7 +3648,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-454';
+const APP_BUILD='2026.10.06-455';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3659,7 +3661,7 @@ async function doLogin(){
   else startApp();
 }
 document.getElementById('li-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-async function doLogout(){stopClinicRealtime();await SB.auth.signOut();IS_ADMIN=false;JASON_ENCOUNTER_PROFILE=false;document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
+async function doLogout(){stopClinicRealtime();await SB.auth.signOut();IS_ADMIN=false;ENCOUNTER_USER=false;document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
 async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
 
 async function startApp(){
@@ -3669,7 +3671,7 @@ async function startApp(){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
   // Who is signed in — decides whether the administrator-only tools appear.
-  try{const _who=await getCurrentUserForAudit();IS_ADMIN=attIsJason(_who,'');JASON_ENCOUNTER_PROFILE=String(_who.email||'').trim().toLowerCase()==='jason.fenech@gov.mt';}catch(e){IS_ADMIN=false;JASON_ENCOUNTER_PROFILE=false;}
+  try{const _who=await getCurrentUserForAudit();IS_ADMIN=attIsJason(_who,'');ENCOUNTER_USER=!!String(_who.email||'').trim();}catch(e){IS_ADMIN=false;ENCOUNTER_USER=false;}
   // Honour a direct route before any awaited startup work, so Quick Look is the
   // first app page painted instead of briefly showing the roster.
   const initialTab=quickLookStart?'phone':'roster';
@@ -19570,7 +19572,7 @@ async function loadHandover(){
   const awaitingTrs=awaiting.map(handoverAwaitingRowHTML).join('')
     +revDue.map(handoverReversalRowHTML).join('')
     +surgDue.map(handoverSurgeryRowHTML).join('');
-  // Jason-only: which on-ward patients have an encounter saved TODAY, so their
+  // Which on-ward patients have an encounter saved TODAY, so their
   // Appliance+notes cell reads green. Degrades quietly if the table is absent.
   hvEncounteredToday=new Set();
   if(isEncounterUser()&&rows.length){
@@ -20004,7 +20006,7 @@ function handoverRowHTML(p,cls){
   // Infection alert — a note (or appliance line) carrying CRE, VRE or anything
   // "+ve" turns the Appliance/notes cell bright red so it cannot be missed.
   const infAlert=hvIsInfectionNote(p.inpatient_nurse_notes)||hvIsInfectionNote(applLine);
-  // Jason-only encounter: the cell goes green once an encounter is saved today.
+  // Encounter: the cell goes green once an encounter is saved today.
   const encUser=isEncounterUser();
   const encDone=encUser&&hvEncounteredToday.has(String(p.id));
   return `<tr class="${cls||''}" data-pid="${p.id}">
