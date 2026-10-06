@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-437"/>
-<script src="assets/manual.js?v=2026.10.06-437"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-438"/>
+<script src="assets/manual.js?v=2026.10.06-438"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.05-434"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-437"></script>
 <style>
@@ -3605,7 +3605,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-437';
+const APP_BUILD='2026.10.06-438';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20806,6 +20806,7 @@ async function openSitingSeen(id){
   const savedMarks=(existing&&Array.isArray(existing.stoma_marks))?existing.stoma_marks
     :((existing&&existing.stoma_mark&&typeof existing.stoma_mark==='object')?[existing.stoma_mark]:[]);
   sitingStomaMarks=savedMarks.filter(m=>m&&typeof m==='object').slice(0,STOMA_MARK_MAX);
+  sitingBodyMapVersion=preopBodyMapVersion(existing);
   const mb=document.getElementById('mb');mb.className='mb mb-wide';
   mb.innerHTML=`<h2>📍 Pre-operative Assessment</h2>
     <div class="patient-modal-identity">${patientNameAvatarHTML(profile||ss,nm||'Patient',`<span>${htmlSafe(ss.id_card||'No ID')}${ss.consultant?' · '+htmlSafe(ss.consultant):''}</span>`,'md')}</div>
@@ -20813,6 +20814,7 @@ async function openSitingSeen(id){
     <div class="sit-bodymap-sec">
       <div class="sit-bodymap-label">Stoma sites — tap to add a marker, drag to move it, tap a marker to remove it
         <button type="button" class="sit-bodymap-clear" onclick="clearStomaMark()">Clear all</button></div>
+      ${sitingBodyMapVersion==='legacy'?'<div class="report-note">Saved sites are shown on the original diagram. Clear all to use the current diagram.</div>':''}
       <div class="sit-bodymap" id="sit-bodymap" onclick="placeStomaMark(event)">
         <img src="${htmlSafe(preopBodyMapSrc())}" alt="Abdomen diagram" draggable="false"/>
       </div>
@@ -20842,7 +20844,21 @@ const STOMA_MARK_SVG='<svg viewBox="0 0 34 34" width="34" height="34"><circle cx
 // kept for the hint on the label, not as a limit.
 const STOMA_MARK_MAX=12;
 let sitingStomaMarks=[], stomaDragging=false, stomaMoved=false, stomaMarkCap=1;
-function preopBodyMapSrc(){return new URL('assets/preop-abdomen.jpg',location.href).href;}
+const PREOP_BODY_MAP_VERSION='torso-2026-10';
+let sitingBodyMapVersion=PREOP_BODY_MAP_VERSION;
+// Saved coordinates belong to their original diagram; changing its anatomy
+// underneath existing markers would change the recorded clinical site.
+function preopBodyMapVersion(checklist){
+  const version=checklist&&checklist.body_map_version;
+  if(version===PREOP_BODY_MAP_VERSION||version==='legacy')return version;
+  const marks=checklist&&Array.isArray(checklist.stoma_marks)?checklist.stoma_marks
+    :(checklist&&checklist.stoma_mark?[checklist.stoma_mark]:[]);
+  return marks.some(m=>m&&typeof m==='object')?'legacy':PREOP_BODY_MAP_VERSION;
+}
+function preopBodyMapSrc(version=sitingBodyMapVersion){
+  const path=version==='legacy'?'assets/preop-abdomen.jpg':'assets/preop-abdomen-torso.png';
+  const url=new URL(path,location.href);url.searchParams.set('v',APP_BUILD);return url.href;
+}
 /* One marker per stoma the patient is sited for — two types, two sites — with
    at least one so a marker can always be placed. Older "Bilateral (…)" wording
    still counts as two through sitingTypesFromFor. */
@@ -20890,7 +20906,14 @@ function startStomaDrag(e,idx){
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 }
-function clearStomaMark(){sitingStomaMarks=[];renderStomaMarks();}
+function clearStomaMark(){
+  sitingStomaMarks=[];sitingBodyMapVersion=PREOP_BODY_MAP_VERSION;
+  const box=document.getElementById('sit-bodymap');
+  const img=box&&box.querySelector('img');if(img)img.src=preopBodyMapSrc();
+  const note=box&&box.previousElementSibling;
+  if(note&&note.classList.contains('report-note'))note.remove();
+  renderStomaMarks();
+}
 // Show the per-item notes field only when that item is marked "Noted".
 function toggleCkNote(n){
   const noted=(document.querySelector(`input[name="ck-status-${n}"]:checked`)||{}).value==='noted';
@@ -20922,6 +20945,7 @@ function readSitingChecklist(){
     signed_initials:document.getElementById('ck-sign-init')?.value.trim()||'',
     signed_date:document.getElementById('ck-sign-date')?.value||'',
     other,
+    body_map_version:sitingBodyMapVersion,
     stoma_marks:sitingStomaMarks.slice(),
     stoma_mark:sitingStomaMarks[0]||null};   // kept so older saved forms still read
 }
@@ -20981,8 +21005,7 @@ function printSitingChecklist(){
     .signoff .sig{display:inline-block;border-bottom:1px solid #000;min-width:230px;height:16px;}
     .signoff .v{display:inline-block;border-bottom:1px solid #000;min-width:90px;padding:0 6px;}
     /* The diagram gets the back page to itself, at the full width of the text
-       area. The image is 680x836, so at 178mm wide it stands 219mm tall and
-       still leaves room for its heading. */
+       area. Both diagram versions retain their natural aspect ratio. */
     .sitepage{page-break-before:always;break-before:page;}
     .sitepage h3{text-align:center;font-weight:bold;text-decoration:underline;
       margin:0 0 10px;font-size:14px;}
@@ -21013,7 +21036,7 @@ function printSitingChecklist(){
     </div>
     <div class="sitepage">
       <h3>STOMA SITE${printMarks.length>1?'S':''}</h3>
-      <div class="bodymap"><img src="${htmlSafe(preopBodyMapSrc())}"/>
+      <div class="bodymap"><img src="${htmlSafe(preopBodyMapSrc(c.body_map_version))}"/>
         ${printMarks.map(m=>`<div class="mk" style="left:${(m.x*100).toFixed(2)}%;top:${(m.y*100).toFixed(2)}%;">${STOMA_MARK_SVG}</div>`).join('')}</div>
     </div>
   </body></html>`);
