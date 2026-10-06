@@ -75,7 +75,7 @@ test('only a loop stoma offers the Rod present tick; it shows the removal date a
 
 test('peristomal skin is one list: Healthy skin stands alone, every finding becomes a complication of that stoma, Healthy resolves it',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);const q=x=>w.document.querySelector(x);
   const pick=(uid,value,on)=>change(w,'[data-kind="skin"][data-field="pick"][data-uid="'+uid+'"][value="'+value+'"]',on);
-  assert.deepEqual([...w.document.querySelectorAll('[data-kind="skin"][data-uid="stoma-one"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated']);
+  assert.deepEqual([...w.document.querySelectorAll('[data-kind="skin"][data-uid="stoma-one"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration']);
   pick('stoma-two','Excoriation',true);pick('stoma-two','Ulcerated',true);
   assert.equal(q('[data-kind="skin"][data-field="pick"][data-uid="stoma-two"]').closest('details').open,true);
   const st=w.JasonEncounters.state.draft.stomas;assert.deepEqual(plain(st[1].complications.map(c=>[c.text,c.status])),[['Excoriation','open'],['Ulcerated','open']]);assert.equal(st[0].complications.length,0);

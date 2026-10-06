@@ -21,7 +21,7 @@ test('only Jason sees it; each stoma gets its own named column with colour, outp
   const {w,host,mount}=setup(t);await mount();
   assert.deepEqual([...host.querySelectorAll('.jenc-stoma-title')].map(h=>h.textContent),['End Colostomy','Loop Ileostomy']);
   for(const uid of ['a','b'])for(const k of ['colour','output','skin','notes'])assert.ok(host.querySelector('[data-vsr="'+k+'"][data-uid="'+uid+'"]'),k+uid);
-  assert.deepEqual([...host.querySelectorAll('[data-vsr="skin"][data-uid="a"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated']);
+  assert.deepEqual([...host.querySelectorAll('[data-vsr="skin"][data-uid="a"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration']);
   assert.equal(host.querySelector('[data-vsr="rod"][data-uid="a"]'),null,'an end colostomy never has a rod');assert.ok(host.querySelector('[data-vsr="rod"][data-uid="b"]'));
   assert.doesNotMatch(host.textContent,/\bS[12]\b/);
 });

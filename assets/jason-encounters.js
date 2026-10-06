@@ -8,7 +8,7 @@
   // Peristomal skin: "Healthy skin" stands alone; every other finding is a skin
   // problem and is also recorded as a complication of that stoma.
   const HEALTHY_SKIN='Healthy skin';
-  const SKIN=[HEALTHY_SKIN,'Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated'];
+  const SKIN=[HEALTHY_SKIN,'Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration'];
   // Earlier skin wording, still recognised on records saved with it.
   const LEGACY_SKIN=['Erythema / redness','Irritant dermatitis (leakage)','Excoriation / erosion','Mucocutaneous separation','Allergic dermatitis','Folliculitis','Hypergranulation','Pressure ulcer / MARSI','Pyoderma gangrenosum'];
   // Findings Jason adds himself ("+ Add other…") join these lists for good:
