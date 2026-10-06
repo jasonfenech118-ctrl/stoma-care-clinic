@@ -4,7 +4,7 @@
   'use strict';
   const JASON_EMAIL='jason.fenech@gov.mt';
   const COLOURS=['Healthy pink','Dusky','Aubergine colour','Necrotic'];
-  const OUTPUTS=['Liquid','Gas','Nil','Semi-formed stools','Blood','Hemorrhagic fluid','Serous fluid'];
+  const OUTPUTS=['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'];
   const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
   const ORGANISMS=['CRE','VRE','MRSA','C. difficile','ESBL','Other'];
   const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
