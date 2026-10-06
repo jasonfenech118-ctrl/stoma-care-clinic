@@ -120,7 +120,9 @@
     if(!enabled())return;const {data,error:authError}=await SB.auth.getUser();if(authError||!isJason(data?.user))return;
     if(ctx&&!canLeave())return;
     const token=++request,returnScroll=window.scrollY,returnPage=ctx?.returnPage||document.querySelector('.main > .page.active')?.id||'page-handover';ctx=null;
-    const page=parentPage();document.body.classList.add('jenc-open');page.classList.add('active');page.innerHTML='<div class="jenc-card">Loading encounter…</div>';window.scrollTo(0,0);closeModal();
+    const page=parentPage();document.body.classList.add('jenc-open');
+    document.querySelectorAll('.main > .page.active').forEach(el=>el.classList.remove('active'));
+    page.classList.add('active');page.innerHTML='<div class="jenc-card">Loading encounter…</div>';window.scrollTo(0,0);closeModal();
     try{
       const [patientResult,episodeResult,encResult]=await Promise.all([
         fetchPatientById(pid),SB.from('clinical_records').select('*').eq('patient_id',pid).eq('kind','episode').order('record_date',{ascending:false}),
