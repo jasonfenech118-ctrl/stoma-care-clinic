@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-440"/>
-<script src="assets/manual.js?v=2026.10.06-440"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-441"/>
+<script src="assets/manual.js?v=2026.10.06-441"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-439"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.06-440"></script>
 <style>
@@ -3319,16 +3319,40 @@ function normStaffName(v){
     .replace(/\s+/g,' ')
     .trim();
 }
+function staffNamesWithinOneEdit(a,b){
+  if(a===b)return true;
+  if(Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,edits=0;
+  while(i<a.length&&j<b.length){
+    if(a[i]===b[j]){i++;j++;continue;}
+    if(++edits>1)return false;
+    if(a.length>b.length)i++;
+    else if(a.length<b.length)j++;
+    else{i++;j++;}
+  }
+  return edits+(a.length-i)+(b.length-j)<=1;
+}
 function findCoreStaffByName(name){
   const n=normStaffName(name);
   if(!n)return null;
-  return (staffList||[]).find(st=>{
+  const list=staffList||[];
+  const match=list.find(st=>{
     const s=normStaffName(st.full_name);
     if(!s)return false;
     const nf=n.split(' ')[0];
     const sf=s.split(' ')[0];
     return n===s || n===sf || s===nf || n.startsWith(s+' ') || s.startsWith(n+' ') || nf===sf;
-  })||null;
+  });
+  if(match)return match;
+  // Same surname with a one-letter spelling difference in the first name
+  // (Tracy / Tracey) is the same nurse typed two ways on the OT and staff lists.
+  const parts=n.split(' ');
+  if(parts.length<2||parts[0].length<4)return null;
+  const near=list.filter(st=>{
+    const s=normStaffName(st.full_name).split(' ');
+    return s.length>=2 && s[s.length-1]===parts[parts.length-1] && s[0].length>=4 && staffNamesWithinOneEdit(parts[0],s[0]);
+  });
+  return near.length===1?near[0]:null;
 }
 function isTILNote(notes){
   const n=String(notes||'');
@@ -3605,7 +3629,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-440';
+const APP_BUILD='2026.10.06-441';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4820,6 +4844,66 @@ function appointmentMatchesNurseColumn(a,n){
 function appointmentsForSlotAndColumn(appts,slot,n){
   return (appts||[]).filter(a=>String(a.appt_slot||'').slice(0,5)===slot && appointmentMatchesNurseColumn(a,n));
 }
+/* Who holds a booking column on a date. The Daily Clinic grid and the
+   follow-up / siting booking pickers all build their nurse columns from these
+   two, so a nurse on overtime or TIL-In shows in every one of them, and a core
+   nurse whose OT was entered on the bank list folds into their own column. */
+const ROSTER_OFF_STATUSES=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+async function fetchRosterDay(date){
+  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
+  const{data:bankRaw}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
+  // A cancelled OT entry stays in the table for the audit, but holds no column.
+  const bankActive=(bankRaw||[]).filter(b=>String(b.status||'active')!=='cancelled');
+  const otToday=bankActive.filter(b=>!isTILNote(b.notes));
+  const bankTILToday=bankActive.filter(b=>isTILNote(b.notes));
+  const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
+  const{data:coreOTRaw}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').eq('start_date',date);
+  const coreOTToday=(coreOTRaw||[]).filter(r=>!isTILNote(r.notes));
+  const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
+  const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
+  bankTILToday.filter(b=>b.notes?.startsWith('TIL-Off')).forEach(b=>{const core=findCoreStaffByName(b.bank_staff?.full_name);if(core)offIds.add(String(core.id));});
+  return {rd:rd||[],otToday,bankTILToday,tilIn:tilIn||[],coreOTToday,offIds,OFF_ST:ROSTER_OFF_STATUSES};
+}
+function buildRosterNurses(day,date){
+  const{rd=[],offIds=new Set(),OFF_ST=ROSTER_OFF_STATUSES,tilIn=[],bankTILToday=[],coreOTToday=[],otToday=[]}=day||{};
+  const nurses=[];
+  const addNurse=(n)=>addCalendarNurse(nurses,n);
+
+  for(const st of(staffList||[])){
+    if(offIds.has(String(st.id)))continue;
+    const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
+    if(e){
+      if(!OFF_ST.includes(e.status))addNurse({id:st.id,name:st.full_name,type:'core'});
+    }else if(defaultCode(st,date)==='working'){
+      addNurse({id:st.id,name:st.full_name,type:'core'});
+    }
+  }
+
+  for(const t of(tilIn||[])){
+    if(t.staff?.full_name)addNurse({id:t.staff_id,name:t.staff.full_name,type:'til'});
+  }
+
+  for(const b of(bankTILToday||[]).filter(x=>x.notes?.startsWith('TIL-In'))){
+    if(b.bank_staff?.full_name){
+      const core=findCoreStaffByName(b.bank_staff.full_name);
+      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'til'});
+      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'til',assignmentSource:'bank'});
+    }
+  }
+
+  for(const o of(coreOTToday||[])){
+    if(o.staff?.full_name)addNurse({id:o.staff_id,name:o.staff.full_name,type:'core-ot'});
+  }
+
+  for(const b of(otToday||[])){
+    if(b.bank_staff?.full_name){
+      const core=findCoreStaffByName(b.bank_staff.full_name);
+      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'core-ot'});
+      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
+    }
+  }
+  return nurses;
+}
 
 function visiblePatientContactHTML(patient){
   const id=htmlSafe(patient?.id_card||'No ID');
@@ -4868,17 +4952,7 @@ async function loadAppts(){
     }
   }
   try{
-  const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
-  const{data:otTodayRaw}=await SB.from('bank_staff_assignments').select('*, bank_staff(id,full_name)').eq('work_date',date);
-  const otToday=(otTodayRaw||[]).filter(b=>!isTILNote(b.notes));
-  const bankTILToday=(otTodayRaw||[]).filter(b=>isTILNote(b.notes));
-  const{data:tilIn}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').like('notes','TIL-In:%').eq('start_date',date);
-  const{data:coreOTTodayRaw}=await SB.from('leave_records').select('*, staff(id,full_name)').eq('leave_type','overtime').eq('start_date',date);
-  const coreOTToday=(coreOTTodayRaw||[]).filter(r=>!isTILNote(r.notes));
-  const{data:tilOff}=await SB.from('leave_records').select('staff_id').eq('leave_type','overtime').like('notes','TIL-Off:%').eq('start_date',date);
-  const offIds=new Set((tilOff||[]).map(t=>String(t.staff_id)));
-  bankTILToday.filter(b=>b.notes?.startsWith('TIL-Off')).forEach(b=>{const core=findCoreStaffByName(b.bank_staff?.full_name);if(core)offIds.add(String(core.id));});
-  const OFF_ST=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
+  const{rd,otToday,bankTILToday,tilIn,coreOTToday,offIds,OFF_ST}=await fetchRosterDay(date);
 
   const{data:rawAppts}=await SB.from('appointments')
     .select('*')
@@ -4897,40 +4971,7 @@ async function loadAppts(){
 
   const nurses=[];
   const addNurse=(n)=>addCalendarNurse(nurses,n);
-
-  for(const st of staffList){
-    if(offIds.has(String(st.id)))continue;
-    const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
-    if(e){
-      if(!OFF_ST.includes(e.status))addNurse({id:st.id,name:st.full_name,type:'core'});
-    }else if(defaultCode(st,date)==='working'){
-      addNurse({id:st.id,name:st.full_name,type:'core'});
-    }
-  }
-
-  for(const t of(tilIn||[])){
-    if(t.staff?.full_name)addNurse({id:t.staff_id,name:t.staff.full_name,type:'til'});
-  }
-
-  for(const b of bankTILToday.filter(x=>x.notes?.startsWith('TIL-In'))){
-    if(b.bank_staff?.full_name){
-      const core=findCoreStaffByName(b.bank_staff.full_name);
-      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'til'});
-      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'til',assignmentSource:'bank'});
-    }
-  }
-
-  for(const o of(coreOTToday||[])){
-    if(o.staff?.full_name)addNurse({id:o.staff_id,name:o.staff.full_name,type:'core-ot'});
-  }
-
-  for(const b of(otToday||[])){
-    if(b.bank_staff?.full_name){
-      const core=findCoreStaffByName(b.bank_staff.full_name);
-      if(core)addNurse({id:core.id,bankId:b.bank_staff.id,name:core.full_name,type:'core-ot'});
-      else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
-    }
-  }
+  buildRosterNurses({rd,offIds,OFF_ST,tilIn,bankTILToday,coreOTToday,otToday},date).forEach(addNurse);
 
   // Important fix: show existing bookings even when that nurse is now off/sick/leave or not rostered.
   // Without this, the appointment exists in Supabase but has no visible column, so it looks as if it disappeared.
@@ -5483,9 +5524,9 @@ async function loadClinicStaffingIndex(startDate,endDate){
       coreOtByKey[key]=r;
     }
   });
-  const{data:bankRows}=await SB.from('bank_staff_assignments').select('bank_staff_id,work_date,notes, bank_staff(full_name)').gte('work_date',startDate).lte('work_date',endDate);
+  const{data:bankRows}=await SB.from('bank_staff_assignments').select('*, bank_staff(full_name)').gte('work_date',startDate).lte('work_date',endDate);
   (bankRows||[]).forEach(b=>{
-    if(isTILNote(b.notes))return;
+    if(isTILNote(b.notes)||String(b.status||'active')==='cancelled')return;
     (bankByDate[b.work_date]||(bankByDate[b.work_date]=[])).push(b);
   });
   return {rosterByKey,tilByKey,coreOtByKey,bankByDate};
@@ -20535,36 +20576,26 @@ function openSitingBooking(presetDate,presetSlot,edit){
    default pattern), plus the Common column on non-clinic days. A siting needs
    one of these free for the whole hour, so this caps the availability. */
 async function nurseCapacityForDate(date){
-  let cap=0;
-  try{
-    const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
-    const OFF=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
-    (staffList||[]).forEach(st=>{
-      const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
-      if(e){if(!OFF.includes(e.status))cap++;}
-      else if(defaultCode(st,date)==='working')cap++;
-    });
-  }catch(e){}
-  if(!isClinicDay(date))cap++;   // the Common (general) column
-  return cap;
+  return (await nurseListForDate(date)).length;
 }
-/* The nurse columns for a date — the nurses working (roster or their default
-   shift pattern), plus a Common column on non-clinic days. */
+/* The nurse columns for a date — the same ones the Daily Clinic shows: nurses
+   working (roster or their default shift pattern), TIL-In and overtime nurses
+   (core or bank), plus a Common column on non-clinic days. */
 async function nurseListForDate(date){
-  const out=[];
+  let out=[];
   try{
-    const{data:rd}=await SB.from('roster').select('*').eq('roster_date',date);
-    const OFF=['off','sick_leave','maternity_leave','study_leave','annual_leave','public_holiday'];
-    (staffList||[]).forEach(st=>{
-      const e=(rd||[]).find(r=>String(r.staff_id)===String(st.id));
-      if(e){if(!OFF.includes(e.status))out.push({id:String(st.id),name:st.full_name});}
-      else if(defaultCode(st,date)==='working')out.push({id:String(st.id),name:st.full_name});
-    });
+    out=buildRosterNurses(await fetchRosterDay(date),date)
+      .map(n=>({...n,id:String(n.id),bankIds:calendarNurseBankIds(n)}));
   }catch(e){}
-  if(!isClinicDay(date))out.push({id:'common',name:'Common'});
+  if(!isClinicDay(date))out.push({id:'common',name:'Common',type:'common'});
   return out;
 }
 function firstNameOf(n){return String(n||'').trim().split(/\s+/)[0]||n;}
+// The small OT / TIL tag under a picker column, matching the Daily Clinic badges.
+function pickerNurseTag(n){
+  const t=n?.type==='core-ot'||n?.type==='ot'?'OT':n?.type==='til'?'TIL':'';
+  return t?`<span style="margin-left:4px;padding:0 4px;border-radius:3px;font-size:8px;background:${t==='OT'?'#e6a817':'#0d7377'};color:#fff;">${t}</span>`:'';
+}
 function bookingCellHTML(nm,id,siting){
   const name=String(nm||'').trim()||'Booked';
   const idl=id?`<div style="font-family:monospace;font-size:9px;color:#5a6b7b;line-height:1.1;">${htmlSafe(id)}</div>`:'';
@@ -20583,10 +20614,8 @@ async function refreshSitingSlotAvail(){
   const cell={};
   const setCell=(sl,nid,label)=>{if(!nid)return;(cell[sl]=cell[sl]||{});if(!cell[sl][nid])cell[sl][nid]=label;};
   ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;
-    let nid=a.assigned_to?String(a.assigned_to):null;
-    if(!nid&&a.bank_staff_id){const core=findCoreStaffByName(a.bank_staff?.full_name);nid=core?String(core.id):String(a.bank_staff_id);}
-    if(!nid&&!a.assigned_to&&!a.bank_staff_id)nid='common';
-    if(!nurses.some(n=>n.id===nid)){const spare=nurses.find(n=>!(cell[sl]&&cell[sl][n.id]));nid=spare?spare.id:nid;}
+    let nid=nurses.find(n=>appointmentMatchesNurseColumn(a,n))?.id||null;
+    if(!nid){const spare=nurses.find(n=>!(cell[sl]&&cell[sl][n.id]));nid=spare?spare.id:null;}
     setCell(sl,nid,bookingCellHTML(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim(),a.patients?.id_card,false));});
   // Existing sitings take the first nurse free for their whole hour.
   const busy={}; nurses.forEach(n=>busy[n.id]=new Set());
@@ -20609,7 +20638,7 @@ async function refreshSitingSlotAvail(){
   let anyFree=false;
   const head=`<tr>
     <th style="position:sticky;left:0;background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;text-align:left;">Time</th>
-    ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}</th>`).join('')}
+    ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}${pickerNurseTag(n)}</th>`).join('')}
     <th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;">Hour</th></tr>`;
   const body=hourStarts.map(i=>{
     const sl=SLOTS[i], h=SLOTS[i+1];
@@ -21465,19 +21494,18 @@ async function refreshPostopSlots(){
   if(!nurses.length){host.innerHTML='<div class="ap-hint" style="color:#a3241a;">Nobody is on the roster for this day. Pick another date.</div>';return;}
   let ap=[];
   try{const{data}=await SB.from('appointments').select('appt_slot,status,assigned_to,bank_staff_id,patients(first_name,surname,id_card)').eq('appt_date',date);ap=(data||[]).filter(r=>r.status!=='cancelled');}catch(e){}
+  if(postopBookCtx)postopBookCtx.nurses=nurses;
   // cell[slot][nurseId] = who that nurse already has booked in that half-hour.
   const cell={};
   ap.forEach(a=>{const sl=String(a.appt_slot||'').slice(0,5);if(!sl)return;
-    let nid=a.assigned_to?String(a.assigned_to):null;
-    if(!nid&&a.bank_staff_id){const core=findCoreStaffByName(a.bank_staff?.full_name);nid=core?String(core.id):String(a.bank_staff_id);}
-    if(!nid)nid='common';
-    if(!nurses.some(n=>n.id===nid))return;   // a booking on a column not shown this day
+    const nid=nurses.find(n=>appointmentMatchesNurseColumn(a,n))?.id;
+    if(!nid)return;   // a booking on a column not shown this day
     (cell[sl]=cell[sl]||{});cell[sl][nid]=bookingCellHTML(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim(),a.patients?.id_card,false);
   });
   const sel=postopBookCtx||{};
   const head=`<tr>
     <th style="position:sticky;left:0;background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;text-align:left;">Time</th>
-    ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}</th>`).join('')}</tr>`;
+    ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}${pickerNurseTag(n)}</th>`).join('')}</tr>`;
   const body=SLOTS.map(sl=>{
     const cells=nurses.map(n=>{
       const c=cell[sl]&&cell[sl][n.id];
@@ -21506,7 +21534,10 @@ async function savePostopBooking(){
   if(!date){showErr('Pick a date.');return;}
   if(!ctx.slot||!ctx.nurseId){showErr('Pick a free slot under a nurse.');return;}
   const isCommon=ctx.nurseId==='common';
-  const payload={patient_id:ctx.patientId,appt_date:date,appt_slot:ctx.slot,assigned_to:isCommon?null:ctx.nurseId,bank_staff_id:null,status:'booked'};
+  // A bank-only OT / TIL nurse is booked on bank_staff_id, as the Daily Clinic does.
+  const picked=(ctx.nurses||[]).find(n=>String(n.id)===String(ctx.nurseId));
+  const isBank=!!picked&&(picked.type==='ot'||picked.assignmentSource==='bank');
+  const payload={patient_id:ctx.patientId,appt_date:date,appt_slot:ctx.slot,assigned_to:(isCommon||isBank)?null:ctx.nurseId,bank_staff_id:isBank?ctx.nurseId:null,status:'booked'};
   const{error:aErr}=await SB.from('appointments').insert(payload);
   if(aErr){
     const m=String(aErr.message||'').toLowerCase();

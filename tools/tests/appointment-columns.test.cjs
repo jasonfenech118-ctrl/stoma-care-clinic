@@ -38,3 +38,17 @@ test('unrostered bank bookings get a visible fallback column; Common stays separ
   assert.equal(ctx.appointmentMatchesNurseColumn({},{type:'common',id:'common'}),true);
   assert.equal(ctx.appointmentMatchesNurseColumn({bank_staff_id:'unrostered'},{type:'common',id:'common'}),false);
 });
+
+test('a bank OT entry spelt one letter differently folds into the core nurse column',()=>{
+  const nameHelpers=html.slice(html.indexOf('function normStaffName('),html.indexOf('function isTILNote('));
+  const staffList=[{id:'core-t',full_name:'Tracey Galea'},{id:'core-j',full_name:'Jason Fenech'}];
+  const ctx=vm.createContext({staffList,bankTILToday:[],otToday:[{bank_staff:{id:'bank-t',full_name:'Tracy Galea'}}],appts:[],date:'2026-10-25',offIds:new Set(),rd:[],tilIn:[],coreOTToday:[{staff_id:'core-t',staff:{full_name:'Tracey Galea'}}],OFF_ST:[],defaultCode:()=> 'off'});
+  vm.runInContext(nameHelpers+helpers+assembly+'\nglobalThis.columns=nurses;',ctx);
+  assert.equal(ctx.columns.length,1);
+  assert.equal(ctx.columns[0].name,'Tracey Galea');
+  assert.equal(ctx.appointmentMatchesNurseColumn({bank_staff_id:'bank-t'},ctx.columns[0]),true);
+  assert.equal(ctx.appointmentMatchesNurseColumn({assigned_to:'core-t'},ctx.columns[0]),true);
+  assert.equal(ctx.findCoreStaffByName('Tracy Galea').id,'core-t');
+  assert.equal(ctx.findCoreStaffByName('Tracy Borg'),null);
+  assert.equal(ctx.findCoreStaffByName('Jasmine Fenech'),null);
+});
