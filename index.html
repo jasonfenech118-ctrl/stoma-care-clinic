@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-449"/>
-<script src="assets/manual.js?v=2026.10.06-449"></script>
-<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-449"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-449"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.06-449"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-450"/>
+<script src="assets/manual.js?v=2026.10.06-450"></script>
+<link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-450"/>
+<script defer src="assets/jason-encounters.js?v=2026.10.06-450"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.06-450"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -1094,6 +1094,7 @@ body.qli-standalone #ql-install-btn{display:none;}
 .clr-chev.open{transform:rotate(90deg);}
 .clr-list{border-top:1px solid var(--border);padding:6px 14px 10px;display:grid;gap:8px;}
 .clr-rec{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.vr-open-btn{margin-top:6px;background:#e8f5f4;color:#0d5f63;font-weight:800;}
 .clr-enc{margin:-2px 0 6px 14px;padding:8px 10px;border-left:3px solid #9fd3cf;background:#f6fbfb;border-radius:0 8px 8px 0;display:grid;gap:5px;}
 .clr-enc-head{font-size:12px;font-weight:800;color:#0d4f5a;display:flex;align-items:center;gap:6px;}
 .clr-enc-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%;text-align:left;border:1px solid #d6e9e8;background:#fff;border-radius:7px;padding:7px 9px;font:inherit;font-size:12px;color:#1a2e4a;cursor:pointer;}
@@ -3643,7 +3644,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-449';
+const APP_BUILD='2026.10.06-450';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6908,7 +6909,7 @@ function esRenderReview(){
   const dueFull=String(selText('of-month')||'');
   const dueMonth=dueFull.split(' — ')[0];
   // Jason's per-stoma assessment, one line per stoma, before Complications.
-  const stomaRows=window.VisitStomaReview&&esState?VisitStomaReview.payloadFor(esState.apptId):null;
+  const stomaRows=window.VisitStomaReview&&esState?VisitStomaReview.currentRows(esState.apptId):null;
   const stomaReviewCard=stomaRows&&stomaRows.length?card(2,'Stoma assessment',VisitStomaReview.summaryLines(stomaRows).map(l=>boldVal(l.name+':',l.text)),{bg:'#e8f5f4',bd:'#a7d8d3',tx:'#0d5f63'}):'';
   const dueLine=dueTxt?{html:`<div style="font-size:13px;color:#64707e;line-height:1.7;">Due <strong style="color:#111827;font-weight:750;">${htmlSafe(dueMonth)}</strong>${htmlSafe(dueFull.slice(dueMonth.length))}</div>`}:'';
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
@@ -7652,7 +7653,10 @@ async function commitOutcomeFollowup(v,stomaRows){
   if(complicationReviews&&complicationReviews.length)outcomeUpdate.complication_reviews=complicationReviews;
   if(followupAction)outcomeUpdate.followup_action=followupAction;
   // Jason's per-stoma assessment (tolerant: dropped, with a note, until the column exists).
-  const stomaAssessment=status==='attended'&&window.VisitStomaReview?VisitStomaReview.payloadFor(apptId):null;
+  // Saved as a signed version (V1, V2 …) only when it changed; a review recorded
+  // on an earlier day is locked and left as it is.
+  const assessRows=status==='attended'&&window.VisitStomaReview?VisitStomaReview.payloadFor(apptId):null;
+  const stomaAssessment=assessRows?VisitStomaReview.storedFor(apptId,assessRows,{name:attDisplayName(currentUser)||currentUser.email,email:currentUser.email}):null;
   if(stomaAssessment)outcomeUpdate.stoma_assessment=stomaAssessment;
   if(nurse.startsWith('core:')) outcomeUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) outcomeUpdate.bank_staff_id=nurse.replace('bank:','');
@@ -18901,7 +18905,7 @@ async function openPatientRecord(patientId){
   const missing=patientDatesAvailable?patientMissingFields(pat):[];
   const missingBlock=missing.length?`<div class="psm-missing">${psmIc('clipboard')}<div>⚠ <strong>Still to complete:</strong> ${htmlSafe(missing.join(', '))}. Press <strong>Edit patient</strong> to fill these in.</div></div>`:'';
   const histItems=past.length
-    ? past.map(a=>`<div class="psm-appt"><div class="psm-appt-meta"><span>${htmlSafe(fmtShortDate(a.appt_date))} · ${String(a.appt_slot||'').slice(0,5)}</span>${badge(a)}</div><span class="psm-appt-by">${staffName(a)==='—'?'Unassigned':'Seen by '+staffName(a)}</span></div>`).join('')
+    ? past.map(a=>`<div class="psm-appt"><div class="psm-appt-meta"><span>${htmlSafe(fmtShortDate(a.appt_date))} · ${String(a.appt_slot||'').slice(0,5)}</span>${badge(a)}</div><span class="psm-appt-by">${staffName(a)==='—'?'Unassigned':'Seen by '+staffName(a)}</span>${visitReviewButtonHTML(a)}</div>`).join('')
     : '<div style="color:var(--muted);font-size:12.5px;">No appointment history yet.</div>';
   const oc=recordOutcomeDecor(pat);
   host.innerHTML=`<div class="psm-page${sexModalClass(pat)}${pat.operated_abroad?' psm-abroad':''}">${backBar}<div class="psm">
@@ -24526,9 +24530,83 @@ function plVisitAppliancesHTML(appt){
 }
 // Jason's per-stoma assessment recorded at this visit, if any.
 function plVisitStomaAssessmentHTML(appt){
-  let rows=appt&&appt.stoma_assessment;if(typeof rows==='string'){try{rows=JSON.parse(rows);}catch(e){rows=null;}}
-  if(!Array.isArray(rows)||!rows.length||!window.VisitStomaReview||!VisitStomaReview.enabled())return '';
-  return VisitStomaReview.summaryLines(rows).map(l=>`<div class="pl-event-detail"><strong>${htmlSafe(l.name)}:</strong> ${htmlSafe(l.text)}</div>`).join('');
+  if(!window.VisitStomaReview||!VisitStomaReview.enabled())return '';
+  const rows=VisitStomaReview.rowsOf(appt&&appt.stoma_assessment);if(!rows.length)return '';
+  return VisitStomaReview.summaryLines(rows).map(l=>`<div class="pl-event-detail"><strong>${htmlSafe(l.name)}:</strong> ${htmlSafe(l.text)}</div>`).join('')+visitReviewButtonHTML(appt);
+}
+// Jason's "Open review" button on a visit that has a stoma assessment.
+function visitReviewButtonHTML(appt){
+  if(!appt||!window.VisitStomaReview||!VisitStomaReview.enabled()||!VisitStomaReview.rowsOf(appt.stoma_assessment).length)return '';
+  const vs=VisitStomaReview.versionsOf(appt),v=vs[vs.length-1];
+  return `<button type="button" class="ncb-btn vr-open-btn" onclick="event.stopPropagation();openVisitReview('${jsSafe(appt.id)}')">📝 Open review${v?' · V'+htmlSafe(v.version):''}</button>`;
+}
+/* Jason's visit review, opened from the patient's appointments: the stoma
+   assessment recorded at the visit, version by version (changes from the
+   previous version in red), each signed automatically. It can be edited — making
+   the next version — only on the day it was first recorded. */
+let visitReviewState=null;
+async function openVisitReview(apptId,opts={}){
+  if(!window.VisitStomaReview||!VisitStomaReview.enabled())return;
+  const{data:appt,error}=await SB.from('appointments').select('*').eq('id',apptId).maybeSingle();
+  if(error||!appt){alert('Could not open this visit review.');return;}
+  let pat={};try{const r=await fetchPatientById(appt.patient_id);if(r&&r.data)pat=r.data;}catch(e){}
+  visitReviewState={apptId:String(apptId),appt,patient:pat,version:null,compare:true};
+  renderVisitReview(!!opts.edit);
+}
+function setVisitReviewVersion(i){if(visitReviewState){visitReviewState.version=i;renderVisitReview(false);}}
+function toggleVisitReviewChanges(on){if(visitReviewState){visitReviewState.compare=!!on;renderVisitReview(false);}}
+function renderVisitReview(edit){
+  const st=visitReviewState;if(!st||!window.VisitStomaReview)return;
+  const vs=VisitStomaReview.versionsOf(st.appt),editable=VisitStomaReview.editableToday(st.appt);
+  const idx=st.version==null?vs.length-1:Math.max(0,Math.min(st.version,vs.length-1)),v=vs[idx]||{};
+  const nm=`${st.patient.first_name||''} ${st.patient.surname||''}`.trim()||'Patient';
+  const when=`${fmtShortDate(st.appt.appt_date)}${st.appt.appt_slot?' · '+String(st.appt.appt_slot).slice(0,5):''}`;
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide';
+  if(edit&&editable){
+    mb.innerHTML=`<h2>Edit visit review</h2>
+      <div class="msub">${htmlSafe(nm)} · ID ${htmlSafe(st.patient.id_card||'—')} · Visit ${htmlSafe(when)}<br/>Saving makes <strong>V${vs.length+1}</strong>; what you change shows in red.</div>
+      <div id="vr-edit"></div><div id="vr-msg"></div>
+      <div class="mact"><button class="btn-cancel" onclick="renderVisitReview(false)">Cancel</button><button class="btn-save" id="vr-save" onclick="saveVisitReviewEdit()">Save as V${vs.length+1}</button></div>`;
+    openMo();
+    VisitStomaReview.mount(document.getElementById('vr-edit'),{appt:st.appt,patient:st.patient});
+    return;
+  }
+  const prev=st.compare&&idx>0?vs[idx-1].stomas:null;
+  const versions=vs.length>1?`<div class="vr-versions">${vs.map((x,i)=>`<button type="button" class="jenc-btn${i===idx?' active':''}" onclick="setVisitReviewVersion(${i})">V${htmlSafe(x.version)}</button>`).join('')}
+      ${idx>0?`<label class="jenc-meta" style="margin-left:6px;"><input type="checkbox" ${st.compare?'checked':''} onchange="toggleVisitReviewChanges(this.checked)"> Show changes from V${htmlSafe(vs[idx-1].version)}</label>`:''}</div>`:'';
+  const day=VisitStomaReview.recordedDay(st.appt);
+  mb.innerHTML=`<h2>Visit review${v.version?' · V'+htmlSafe(v.version):''}</h2>
+    <div class="msub">${htmlSafe(nm)} · ID ${htmlSafe(st.patient.id_card||'—')} · Visit ${htmlSafe(when)}</div>
+    ${versions}
+    ${VisitStomaReview.reviewHTML(v.stomas,prev)}
+    <div class="jenc-signature">Signed by: <strong>${htmlSafe(v.author_name||v.author_email||'—')}</strong>${v.saved_at?' · '+htmlSafe(VisitStomaReview.stamp(v.saved_at)):''}</div>
+    ${editable?'':`<div class="vsr-locked" style="margin-top:10px;">🔒 Recorded ${htmlSafe(day)} — a visit review can be edited only on the day it was recorded.</div>`}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>${editable?`<button class="btn-save" onclick="renderVisitReview(true)">✏️ Edit review (V${vs.length+1})</button>`:''}</div>`;
+  openMo();
+}
+async function saveVisitReviewEdit(){
+  const st=visitReviewState;if(!st||!window.VisitStomaReview)return;
+  const msg=document.getElementById('vr-msg');
+  const say=t=>{if(msg)msg.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${htmlSafe(t)}</div>`;};
+  if(!VisitStomaReview.editableToday(st.appt)){say('This visit review was recorded on another day and can no longer be edited.');return;}
+  if(!VisitStomaReview.validate())return;
+  const rows=VisitStomaReview.payloadFor(st.apptId);if(!rows)return;
+  const user=await getCurrentUserForAudit();
+  const stored=VisitStomaReview.storedFor(st.apptId,rows,{name:attDisplayName(user)||user.email,email:user.email});
+  if(!stored){say('There are no changes to save.');return;}
+  const btn=document.getElementById('vr-save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const res=await updateAppointmentTolerant(st.apptId,{stoma_assessment:stored});
+  if(res.error||(res.dropped||[]).includes('stoma_assessment')){
+    say(res.error?'Could not save: '+(res.error.message||res.error):'The database does not have the stoma assessment column yet. Run sql/add-visit-stoma-assessment.sql once in Supabase.');
+    if(btn){btn.disabled=false;btn.textContent='Save as V'+stored.versions.length;}return;
+  }
+  const rodPatch=VisitStomaReview.rodPatchFor(st.apptId);
+  if(rodPatch&&st.appt.patient_id){try{await updatePatientTolerant(st.appt.patient_id,rodPatch);}catch(e){}}
+  if(st.appt.patient_id)await linkVisitSkinComplications(st.appt.patient_id,VisitStomaReview.skinFor(st.apptId));
+  VisitStomaReview.clear();
+  st.appt.stoma_assessment=stored;st.version=null;st.compare=true;
+  const cached=(clrState.appts||[]).find(a=>String(a.id)===st.apptId);if(cached)cached.stoma_assessment=stored;
+  renderVisitReview(false);
 }
 function plFollowupCardHTML(appt){
   const nurse=appointmentNurseLabel(appt);

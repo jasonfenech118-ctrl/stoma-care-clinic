@@ -49,7 +49,7 @@ test('every stoma has its own column named by type, with no S-numbers, tabs or n
 
 test('an older encounter with one set of episode notes still shows them as General notes',async t=>{const w=setup(t);
   const snap={stomas:[{uid:'stoma-one',number:'S1',type:'Loop ileostomy',colour:'',output:['Gas'],appliances:['Drainable pouch'],accessories:[],complications:[],rod:{status:'Not recorded'}},{uid:'stoma-two',number:'S2',type:'Urostomy',colour:'',output:[],appliances:['Urostomy pouch'],accessories:[],complications:[],rod:{status:'Not recorded'}}],scope:['stoma-one'],notes:'Old episode notes.',infection:{status:'Not recorded',organism:''},referrals:[]};
-  w.fixture.records.push({id:'44444444-4444-4444-8444-444444444444',patient_id:w.fixture.patient.id,episode_id:w.fixture.episode.id,episode_ref:'EP-DEMO',encounter_date:'2026-10-04',created_at:'2026-10-04T10:00:00Z',created_by_name:'Jason Fenech',assessment:{schema:2,current_version:1,snapshot:snap,versions:[{version:1,saved_at:'2026-10-04T10:00:00Z',author_name:'Jason Fenech',snapshot:snap,report:'S1 — Loop ileostomy: function / output: Gas.\nNotes: Old episode notes.'}]}});
+  w.fixture.records.push({id:'44444444-4444-4444-8444-444444444444',patient_id:w.fixture.patient.id,episode_id:w.fixture.episode.id,episode_ref:'EP-DEMO',encounter_date:'2026-10-05',created_at:'2026-10-05T08:00:00Z',created_by_name:'Jason Fenech',assessment:{schema:2,current_version:1,snapshot:snap,versions:[{version:1,saved_at:'2026-10-04T10:00:00Z',author_name:'Jason Fenech',snapshot:snap,report:'S1 — Loop ileostomy: function / output: Gas.\nNotes: Old episode notes.'}]}});
   await w.JasonEncounters.open(w.fixture.patient.id);click(w,'history');click(w,'view');
   assert.equal(w.document.getElementById('jenc-notes').value,'Old episode notes.');assert.match(w.document.querySelector('label[for="jenc-notes"]').textContent,/General notes/);
   assert.match(w.document.getElementById('jenc-report').textContent,/S1 — Loop ileostomy/);assert.match(w.document.querySelector('[data-field="output"][data-uid="stoma-one"]').closest('details').textContent,/Gas/);
@@ -110,3 +110,11 @@ test('the rod question is asked only at the first encounter for a stoma, not at 
 test('an open skin complication on record pre-fills the peristomal skin as Not healthy',async t=>{const w=setup(t);w.fixture.patient.complications=JSON.stringify([{id:'c1',text:'Mucocutaneous separation',stoma_uid:'stoma-one',status:'open'},{id:'c2',text:'Retraction',stoma_uid:'stoma-one',status:'open'}]);
   await w.JasonEncounters.open(w.fixture.patient.id);const k=w.JasonEncounters.state.draft.stomas[0].skin;assert.deepEqual(plain(k),{status:'Not healthy',problems:['Mucocutaneous separation']});
   assert.deepEqual(plain(w.JasonEncounters.state.draft.stomas[1].skin),{status:'',problems:[]});});
+
+test('an encounter can be edited only on the day it was recorded; later it is read-only and locked',async t=>{const w=setup(t);
+  const snap={stomas:[{uid:'stoma-one',type:'Loop ileostomy',colour:'Dusky',output:[],appliances:['Drainable pouch'],accessories:[],complications:[],rod:{status:'Not recorded'},notes:'Yesterday.'}],scope:['stoma-one'],notes:'',infection:{status:'Not recorded',organism:''},referrals:[]};
+  w.fixture.records.push({id:'66666666-6666-4666-8666-666666666666',patient_id:w.fixture.patient.id,episode_id:w.fixture.episode.id,encounter_date:'2026-10-04',created_at:'2026-10-04T10:00:00Z',assessment:{schema:2,current_version:1,snapshot:snap,versions:[{version:1,author_name:'Jason Fenech',snapshot:snap,report:'r'}]}});
+  await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.JasonEncounters.state.record,null,'a new day starts a new encounter');
+  click(w,'history');click(w,'view');const page=w.document.querySelector('#page-jason-encounters');
+  assert.equal(page.querySelector('[data-action="edit"]'),null);assert.match(page.querySelector('.jenc-locked').textContent,/Recorded 2026-10-04 — an encounter can be edited only on the day it was recorded/);
+  assert.equal(w.JasonEncounters.state.editable,false);assert.match(page.querySelector('.jenc-signature').textContent,/Signed by: Jason Fenech/);});

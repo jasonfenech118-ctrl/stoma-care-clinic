@@ -94,3 +94,32 @@ test('saving the visit adds each skin problem as a complication on its stoma and
   assert.equal(stored.filter(c=>c.text==='Mucocutaneous separation').length,1,'an open one is not duplicated');
   const added=stored.find(c=>c.text==='Folliculitis');assert.equal(added.stoma_uid,'a');assert.equal(added.status,'open');assert.equal(added.source,'Appointment');
 });
+
+test('visit reviews are signed versions: editing on the day makes V2 with changes in red; a review from another day is locked',async t=>{
+  const v1=[{uid:'a',type:'End colostomy',name:'End Colostomy',colour:'Healthy pink',output:['Flatus present'],skin:{status:'Healthy',problems:[]},rod:{status:'Not recorded',due:'',removed:''},rod_asked:false,notes:'Settled.'},
+    {uid:'b',type:'Loop ileostomy',name:'Loop Ileostomy',colour:'',output:[],skin:{status:'',problems:[]},rod:{status:'Not recorded',due:'',removed:''},rod_asked:false,notes:''}];
+  const stored={schema:2,current:v1,versions:[{version:1,saved_at:'2026-10-25T08:00:00Z',author_name:'Jacqueline Sammut',author_email:'j@x',stomas:v1}]};
+  const {w,host,mount}=setup(t);w.getCurrentUserForAudit=async()=>({email:'jason.fenech@gov.mt'});w.attDisplayName=()=> 'Jason Fenech';
+  await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:stored});const q=s=>host.querySelector(s);
+  assert.match(host.textContent,/Editing V2 · changes in red/);assert.match(host.textContent,/Signature will be recorded automatically: Jason Fenech/);
+  assert.equal(q('[data-vsr="colour"][data-uid="a"]').value,'Healthy pink');
+  change(w,q('[data-vsr="colour"][data-uid="a"]'),'Dusky');assert.ok(q('[data-vsr="colour"][data-uid="a"]').classList.contains('jenc-changed'));assert.match(host.textContent,/Previously: Healthy pink/);
+  change(w,q('[data-vsr="output"][data-uid="a"][value="Liquid stools"]'),true);
+  assert.equal(q('[data-vsr="output"][data-uid="a"]').closest('details').querySelector('summary .jenc-change').textContent,'Liquid stools');
+  const notes=q('[data-vsr="notes"][data-uid="a"]');notes.value='Settled. Skin reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.match(q('.vsr-note-diff[data-uid="a"] .jenc-change').textContent,/Skin/);
+  const rows=w.VisitStomaReview.payloadFor('ap1');const next=JSON.parse(JSON.stringify(w.VisitStomaReview.storedFor('ap1',rows,{name:'Jason Fenech',email:'jason.fenech@gov.mt'})));
+  assert.equal(next.versions.length,2);assert.equal(next.versions[0].author_name,'Jacqueline Sammut');assert.equal(next.versions[1].author_name,'Jason Fenech');assert.equal(next.versions[1].version,2);
+  assert.equal(next.current[0].colour,'Dusky');assert.deepEqual(next.versions[0].stomas[0].colour,'Healthy pink');
+  const html=w.VisitStomaReview.reviewHTML(next.versions[1].stomas,next.versions[0].stomas);const el=w.document.createElement('div');el.innerHTML=html;
+  assert.deepEqual([...el.querySelectorAll('.jenc-change')].map(x=>x.textContent.trim()).filter(Boolean).slice(0,2),['Dusky','Liquid stools']);
+  // unchanged → nothing to store
+  await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:next});assert.equal(w.VisitStomaReview.storedFor('ap1',w.VisitStomaReview.payloadFor('ap1'),{name:'x'}),null);
+  // recorded yesterday → locked, read-only, nothing saved
+  const old={...stored,versions:[{...stored.versions[0],saved_at:'2026-10-24T09:00:00Z'}]};
+  await mount({id:'ap2',appt_date:'2026-10-24',stoma_assessment:old});
+  assert.match(host.textContent,/Recorded 2026-10-24 — a visit review can be edited only on the day it was recorded/);assert.equal(host.querySelector('[data-vsr]'),null);
+  assert.match(host.textContent,/Signed by: Jacqueline Sammut/);assert.equal(w.VisitStomaReview.payloadFor('ap2'),null);
+  assert.equal(w.VisitStomaReview.currentRows('ap2')[0].colour,'Healthy pink');assert.equal(w.VisitStomaReview.validate(),true);
+  assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24',stoma_assessment:old}),false);assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24'}),true);
+});

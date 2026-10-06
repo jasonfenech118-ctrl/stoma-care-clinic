@@ -213,8 +213,12 @@
     ctx.episode=ep;ctx.record=null;ctx.viewVersion=null;ctx.editable=true;ctx.mode='form';ctx.expectedVersion=0;ctx.comparison=null;ctx.comparisonReport=null;ctx.openSections=new Set();
     ctx.draft=seed(ctx.patient,ep,TODAY);ctx.baseline=copy(ctx.draft);ctx.message='';render();
   }
+  // An encounter can be edited (making V2, V3 …) only on the day it was recorded.
+  function recordDay(rec){const d=String(rec?.encounter_date||'').slice(0,10);if(d)return d;try{return new Date(rec?.created_at).toLocaleDateString('en-CA',{timeZone:'Europe/Malta'});}catch(_){return '';}}
+  const editableToday=rec=>!!rec&&recordDay(rec)===TODAY;
   function selectRecord(id,index=null,edit=false){
     if(!ctx||!canLeave())return;const rec=ctx.rows.find(r=>String(r.id)===String(id));if(!rec)return;
+    if(edit&&!editableToday(rec))edit=false;
     const vs=versions(rec),v=index===null?vs.slice(-1)[0]:vs[index];if(!v)return;
     const ep=ctx.episodes.find(e=>String(e.id)===String(rec.episode_id));if(!ep)return error('The linked episode could not be loaded.');
     ctx.episode=ep;ctx.record=rec;ctx.viewVersion=v;ctx.expectedVersion=vs.slice(-1)[0].version;ctx.editable=edit;ctx.mode='form';ctx.openSections=new Set();ctx.message='';
@@ -339,7 +343,7 @@
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','This episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
-    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':'<button class="jenc-btn primary" data-action="edit">Edit this encounter</button><button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
+    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(editableToday(rec)?'<button class="jenc-btn primary" data-action="edit">Edit this encounter (V'+(versions(rec).slice(-1)[0].version+1)+')</button>':'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
   }
@@ -456,6 +460,7 @@
   }
   async function save(){
     if(!ctx?.editable||ctx.saving||!enabled())return;
+    if(ctx.record&&!editableToday(ctx.record))return error('This encounter was recorded on '+recordDay(ctx.record)+' and can no longer be edited.');
     if(!dirty())return error(ctx.record?'There are no changes to save.':'Record a finding, care change, referral or clinical note before saving.');
     if(!ctx.draft.scope.length||ctx.draft.scope.some(uid=>!ctx.draft.stomas.some(s=>s.uid===uid)))return error('Record the patient’s stoma in the patient record before saving an encounter.');
     const noSkin=ctx.draft.stomas.filter(s=>s.skin?.status==='Not healthy'&&!list(s.skin.problems).length);
