@@ -123,3 +123,9 @@ test('visit reviews are signed versions: editing on the day makes V2 with change
   assert.equal(w.VisitStomaReview.currentRows('ap2')[0].colour,'Healthy pink');assert.equal(w.VisitStomaReview.validate(),true);
   assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24',stoma_assessment:old}),false);assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24'}),true);
 });
+
+test('the Seen (Complete visit) form has no Support / referrals section — referrals live in encounters',async t=>{
+  const {w,host,mount}=setup(t);await mount();
+  assert.doesNotMatch(host.textContent,/referral/i);assert.equal(host.querySelector('[data-vsr-ref-add],[data-vsr^="ref-"]'),null);
+  assert.equal(w.VisitStomaReview.referralsPatchFor,undefined);assert.equal(w.VisitStomaReview.referralLines,undefined);
+});

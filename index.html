@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.06-455"/>
-<script src="assets/manual.js?v=2026.10.06-455"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-456"/>
+<script src="assets/manual.js?v=2026.10.07-456"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.06-453"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.06-455"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.06-455"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.07-456"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.07-456"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3648,7 +3648,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.06-455';
+const APP_BUILD='2026.10.07-456';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6935,7 +6935,7 @@ function esRenderReview(){
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
     ${card(1,'Attendance',[dtLine,ownerBadge,boldVal('Outcome',selText('of-status'))],TONE_ATT)}
-    ${stomaReviewCard}${(()=>{const l=window.VisitStomaReview&&esState?VisitStomaReview.referralLines(esState.apptId):[];return l.length?card(2,'Support / referrals',l.map(x=>boldVal('',x)),{bg:'#f1f8f8',bd:'#b7ddd9',tx:'#0d5f63'}):'';})()}${card(2,'Complications',cmpLines,TONE_CMP)}
+    ${stomaReviewCard}${card(2,'Complications',cmpLines,TONE_CMP)}
     ${card(3,'Appliance & accessories',appLines,TONE_APP)}
     ${card(4,'Follow-up',[boldVal('',nextTxt),dueLine,boldVal('Status',selText('of-followup-status'))],TONE_FU)}`;
 }
@@ -7732,14 +7732,10 @@ async function commitOutcomeFollowup(v,stomaRows){
     // A rod ticked, unticked or re-dated in the stoma assessment updates the patient.
     const rodPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.rodPatchFor(apptId):null;
     if(rodPatch&&!(isDntuEditMode&&dntuTarget===3))Object.assign(updatePayload,rodPatch);
-    // Support referrals ticked or added at this visit (Jason) are the patient's.
-    const refPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.referralsPatchFor(apptId):null;
-    if(refPatch)updatePayload.support_referrals=refPatch;
     // Tolerant: if followup_flexible (or another new column) is not in the
     // database yet, it is dropped and the rest of the follow-up still saves.
-    const{error:pErr,dropped:pDropped}=await updatePatientTolerant(patientId,updatePayload);
+    const{error:pErr}=await updatePatientTolerant(patientId,updatePayload);
     if(pErr){alert('Appointment saved, but patient/follow-up details could not be saved: '+pErr.message);}
-    else if(updatePayload.support_referrals&&(pDropped||[]).includes('support_referrals'))alert('The visit was saved, but the support referrals were not: run sql/add-support-referrals.sql once in Supabase.');
   }
   if(isDntuEditMode){
     const target=dntuTarget;
@@ -20019,7 +20015,7 @@ function handoverRowHTML(p,cls){
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
     <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}${encDone?' hv-encountered':''}">
       <div class="hv-applwrap">
-        ${encUser&&window.JasonEncounters?window.JasonEncounters.handoverCell(p,applLine):`
+        ${`
         <button type="button" class="hv-appl${applLine?'':' hv-appl-await'}" data-appliance="${htmlSafe(applLine)}"
           title="${applLine?'Set appliance':'Awaiting first review — tap to set the appliance once the patient is seen'}" onclick="openHandoverAppliance('${p.id}')">${applLine
             ?htmlSafe(applLine)
@@ -24684,9 +24680,8 @@ async function saveVisitReviewEdit(){
     say(res.error?'Could not save: '+(res.error.message||res.error):'The database does not have the stoma assessment column yet. Run sql/add-visit-stoma-assessment.sql once in Supabase.');
     if(btn){btn.disabled=false;btn.textContent='Save as V'+stored.versions.length;}return;
   }
-  const rodPatch=VisitStomaReview.rodPatchFor(st.apptId),refPatch=VisitStomaReview.referralsPatchFor(st.apptId);
-  const patientPatch={...(rodPatch||{}),...(refPatch?{support_referrals:refPatch}:{})};
-  if(Object.keys(patientPatch).length&&st.appt.patient_id){try{await updatePatientTolerant(st.appt.patient_id,patientPatch);}catch(e){}}
+  const rodPatch=VisitStomaReview.rodPatchFor(st.apptId);
+  if(rodPatch&&st.appt.patient_id){try{await updatePatientTolerant(st.appt.patient_id,rodPatch);}catch(e){}}
   if(st.appt.patient_id)await linkVisitSkinComplications(st.appt.patient_id,VisitStomaReview.skinFor(st.apptId));
   VisitStomaReview.clear();
   st.appt.stoma_assessment=stored;st.version=null;st.compare=true;

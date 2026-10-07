@@ -143,3 +143,47 @@ test('older encounters with a referral status still read: Seen/Completed count a
   const n=w.JasonEncounters.normReferral;assert.equal(n({profession:'Psychologist',status:'Completed'}).seen,true);assert.equal(n({profession:'Dietitian',status:'Needed'}).seen,false);assert.equal(n({profession:'Social worker',status:'Declined'}),null);
   const merged=w.JasonEncounters.mergedReferrals([{id:'a',profession:'Dietitian'},{id:'b',profession:'Psychologist'}],[{id:'b',profession:'Psychologist'}],[{id:'c',profession:'Social worker'}]);
   assert.deepEqual(merged.map(r=>r.id),['a','c'],'removed in this encounter goes; others stay; new ones join');});
+
+test('options added on this computer are still there after the page reloads',t=>{
+  const dom=new JSDOM('<div id="app"><main class="main"></main></div>',{runScripts:'outside-only',url:'https://example.test'});t.after(()=>dom.window.close());const w=dom.window;boot(w);
+  w.localStorage.setItem('jenc-assessment-options',JSON.stringify({colour:['Pale pink'],output:['Mucus'],skin:['Granuloma']}));
+  w.eval(script);
+  assert.ok(w.JasonEncounters.options('skin').includes('Granuloma'));assert.ok(w.JasonEncounters.options('output').includes('Mucus'));assert.ok(w.JasonEncounters.options('colour').includes('Pale pink'));
+  assert.equal(w.JasonEncounters.isSkinProblem('granuloma'),true);
+});
+
+test('an added option is signed with the nurse who added it, not Jason',async t=>{const w=setup(t);
+  w.fixture.email='jacqueline.sammut@gov.mt';w.attDisplayName=()=> 'Jacqueline Sammut';
+  const inserts=[];const from=w.SB.from;w.SB.from=table=>table==='assessment_options'?{select:()=>({order:async()=>({data:[],error:null})}),insert:async row=>{inserts.push(JSON.parse(JSON.stringify(row)));return {error:null};}}:from(table);
+  await w.JasonEncounters.open(w.fixture.patient.id);w.prompt=()=> 'Contact allergy';
+  click(w,'add-option','[data-option="skin"][data-uid="stoma-two"]');await new Promise(r=>setTimeout(r,0));
+  assert.deepEqual(inserts,[{field:'skin',name:'Contact allergy',created_by:'Jacqueline Sammut'}]);
+});
+
+test('a referral saved without an id keeps one stable id, so it is matched rather than duplicated',t=>{const w=setup(t);
+  const n=w.JasonEncounters.normReferral,r={profession:'Dietitian',referred_on:'2026-10-01'};
+  assert.equal(n(r).id,n(r).id);assert.equal(n(r).id,'ref-dietitian-2026-10-01');
+  assert.deepEqual(w.JasonEncounters.mergedReferrals([n(r)],[r],[{...r,seen:true,seen_on:'2026-10-05'}]).map(x=>[x.id,x.seen]),[['ref-dietitian-2026-10-01',true]]);
+});
+
+test('correcting today’s encounter keeps a referral ticked Seen elsewhere since',async t=>{const w=setup(t);
+  const patches=[];w.updatePatientTolerant=async(id,patch)=>{patches.push(JSON.parse(JSON.stringify(patch)));Object.assign(w.fixture.patient,patch);return {error:null,dropped:[]};};
+  await w.JasonEncounters.open(w.fixture.patient.id);click(w,'add-referral');change(w,'[data-kind="referral"][data-field="profession"]','Psychologist');await w.JasonEncounters.save();
+  const id=patches[0].support_referrals[0].id;
+  // Later the same day, the Psychologist referral is ticked Seen somewhere else.
+  w.fixture.patient.support_referrals=[{...patches[0].support_referrals[0],seen:true,seen_on:'2026-10-05',seen_by:'Lorraine Marie Stivala'}];
+  await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.JasonEncounters.state.editable,true);
+  assert.equal(w.JasonEncounters.state.draft.referrals[0].seen,true,'the correction starts from the patient’s current list');
+  notes(w,'Afternoon review.');await w.JasonEncounters.save();
+  assert.equal(patches.length,1,'nothing changed in the referrals, so the patient list is not rewritten');
+  const last=w.fixture.patient.support_referrals;
+  assert.equal(last.find(r=>r.id===id).seen,true);assert.equal(last.find(r=>r.id===id).seen_by,'Lorraine Marie Stivala');
+});
+
+test('a handover patient with no admission record yet gets one opened, so the encounter works',async t=>{const w=setup(t);
+  w.fixture.episode.is_current=false;w.fixture.episode.discharge_date='2026-09-01';w.fixture.patient.is_inpatient=true;w.fixture.patient.inpatient_since='2026-10-04';
+  const made=[];w.createInpatientEpisodeFor=async(pid,date)=>{made.push([pid,date]);return {data:{...JSON.parse(JSON.stringify(w.fixture.episode)),id:'99999999-9999-4999-8999-999999999999',episode_ref:'EP-NEW',is_current:true,discharge_date:null,record_date:date},error:null};};
+  await w.JasonEncounters.open(w.fixture.patient.id);
+  assert.deepEqual(made,[[w.fixture.patient.id,'2026-10-04']]);assert.equal(w.JasonEncounters.state.mode,'form');assert.equal(w.JasonEncounters.state.editable,true);
+  assert.equal(w.JasonEncounters.state.episode.episode_ref,'EP-NEW');
+});

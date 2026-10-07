@@ -15,7 +15,9 @@
   // shared through the assessment_options table, and kept on this device too.
   const BASE_OPTIONS={colour:COLOURS,output:OUTPUTS,skin:SKIN},OPTION_STORE='jenc-assessment-options';
   const lower=x=>String(x||'').trim().toLowerCase();
-  function readLocalOptions(){try{const v=JSON.parse(localStorage.getItem(OPTION_STORE)||'{}');return {colour:list(v.colour),output:list(v.output),skin:list(v.skin)};}catch(_){return {colour:[],output:[],skin:[]};}}
+  // Runs while the module loads, before the shared helpers below exist.
+  function readLocalOptions(){const arr=x=>Array.isArray(x)?x.filter(y=>typeof y==='string'&&y.trim()):[];
+    try{const v=JSON.parse(localStorage.getItem(OPTION_STORE)||'{}')||{};return {colour:arr(v.colour),output:arr(v.output),skin:arr(v.skin)};}catch(_){return {colour:[],output:[],skin:[]};}}
   let customOptions=readLocalOptions(),optionsLoad=null,warnedLocal=false;
   function writeLocalOptions(){try{localStorage.setItem(OPTION_STORE,JSON.stringify(customOptions));}catch(_){}}
   function options(field){const out=[];list(BASE_OPTIONS[field]).concat(list(customOptions[field])).forEach(x=>{if(!out.some(y=>lower(y)===lower(x)))out.push(x);});return out;}
@@ -27,11 +29,11 @@
       if(changed)writeLocalOptions();return changed;}catch(_){return false;}})();
     return optionsLoad;
   }
-  async function addOption(field,raw){
+  async function addOption(field,raw,by){
     const name=String(raw||'').trim().replace(/\s+/g,' ');if(!name||!BASE_OPTIONS[field])return '';
     const existing=options(field).find(x=>lower(x)===lower(name));if(existing)return existing;
     customOptions[field].push(name);writeLocalOptions();
-    let shared=false;try{const {error:e}=await SB.from('assessment_options').insert({field,name,created_by:'Jason Fenech'});shared=!e||/duplicate|unique/i.test(String(e.message||''));}catch(_){}
+    let shared=false;try{const {error:e}=await SB.from('assessment_options').insert({field,name,created_by:String(by||ctx?.who?.name||'')||null});shared=!e||/duplicate|unique/i.test(String(e.message||''));}catch(_){}
     if(!shared&&!warnedLocal){warnedLocal=true;try{window.alert('“'+name+'” was added on this computer only. Run sql/add-assessment-options.sql once in Supabase so added options are shared on every computer.');}catch(_){}}
     return name;
   }
@@ -48,7 +50,9 @@
   // a status per episode; those still read (Seen/Completed = seen, Declined = gone).
   function normReferral(r){
     if(!r||!String(r.profession||'').trim()||r.status==='Declined')return null;
-    return {id:String(r.id||crypto.randomUUID()),profession:String(r.profession),referred_on:String(r.referred_on||''),referred_by:String(r.referred_by||''),
+    // No id on an older entry: derive a stable one so it is matched, not duplicated.
+    const id=r.id||('ref-'+String(r.profession).toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-'+String(r.referred_on||''));
+    return {id:String(id),profession:String(r.profession),referred_on:String(r.referred_on||''),referred_by:String(r.referred_by||''),
       seen:typeof r.seen==='boolean'?r.seen:['Seen','Completed'].includes(r.status),seen_on:String(r.seen_on||''),seen_by:String(r.seen_by||'')};
   }
   function patientReferrals(p){let v=p?.support_referrals;if(typeof v==='string'){try{v=JSON.parse(v);}catch(_){v=null;}}return list(v).map(normReferral).filter(Boolean);}
@@ -222,7 +226,14 @@
       if(token!==request)return;
       const p=patientResult.data;if(patientResult.error||!p)throw new Error('Could not load this patient.');
       if(episodeResult.error||encResult.error)throw new Error(episodeResult.error?.message||encResult.error?.message);
-      const episodes=episodeResult.data||[],rows=encResult.rows||[],openEpisode=episodes.find(e=>e.is_current&&!e.discharge_date);
+      let episodes=episodeResult.data||[];const rows=encResult.rows||[];
+      // On the handover but no admission record yet (an older entry): open one,
+      // exactly as the patient record does, so the encounter has its episode.
+      if(p.is_inpatient&&!episodes.some(e=>e.is_current&&!e.discharge_date)&&typeof createInpatientEpisodeFor==='function'){
+        const made=await createInpatientEpisodeFor(pid,p.inpatient_since||TODAY);if(token!==request)return;
+        if(made?.data)episodes=[made.data].concat(episodes);
+      }
+      const openEpisode=episodes.find(e=>e.is_current&&!e.discharge_date);
       const ep=openEpisode||episodes.find(e=>rows.some(r=>String(r.episode_id)===String(e.id)));
       if(!ep)throw new Error('There are no saved encounters or open inpatient episodes. Open an inpatient visit from the patient record first.');
       ctx={patient:p,episode:ep,episodes,rows,who:{email:data.user.email,name:signedName({email:data.user.email})},returnScroll,returnPage,mode:'form',historyFilter:String(ep.id),compare:true,openSections:new Set()};
@@ -255,6 +266,9 @@
     ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
     list(ctx.draft.stomas).forEach(x=>{if(!x.skin)x.skin={status:'',problems:[]};});
     ctx.draft.referrals=list(ctx.draft.referrals).map(normReferral).filter(Boolean);
+    // Correcting today's encounter starts from the patient's current referrals,
+    // so one ticked Seen elsewhere since is not quietly undone on save.
+    if(edit){const pat=patientReferrals(ctx.patient);if(pat.length)ctx.draft.referrals=pat.concat(ctx.draft.referrals.filter(r=>!pat.some(x=>x.id===r.id)));}
     const idx=vs.indexOf(v);
     ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
     // A saved version is compared with the report as it was saved, not re-worded.
