@@ -123,7 +123,9 @@
       [...new Set(options('colour').concat(s.colour?[s.colour]:[]))].map(c=>'<option value="'+esc(c)+'"'+(c===s.colour?' selected':'')+'>'+esc(c)+'</option>').join('')+
       '<option value="__add__">＋ Add other…</option></select>'+(colourChanged?'<div class="jenc-previous">Previously: '+esc(old.colour||'not recorded')+'</div>':'');
     const output=menu('output',list(s.output),options('output'),ref,'— not recorded —',old?list(old.output):null);
-    const skin='<div class="jenc-fields jenc-skin">'+field('Peristomal skin',menu('skin',skinValues(s.skin),options('skin'),ref,'— not recorded —',old?skinValues(old.skin):null))+'</div>';
+    // A fistula patient's fistula: output and the skin around it, no colour.
+    const fistula=s.uid==='fistula'||String(s.type||'').trim().toLowerCase()==='fistula';
+    const skin='<div class="jenc-fields jenc-skin">'+field(fistula?'Skin around the fistula':'Peristomal skin',menu('skin',skinValues(s.skin),options('skin'),ref,'— not recorded —',old?skinValues(old.skin):null))+'</div>';
     let rod='';
     if(rodAsked(s)){
       const r=s.rod||{},on=r.status==='In place',was=baseline?.stomas?.find(x=>x.uid===s.uid)?.rod||{};
@@ -137,7 +139,7 @@
     }
     const notes=field(nameOf(s,all)+' — clinical notes','<textarea data-vsr="notes"'+ref+' rows="3" placeholder="Write your observations, care provided or patient concerns…">'+esc(s.notes||'')+'</textarea>'+
       '<div class="jenc-previous vsr-note-diff" data-uid="'+esc(s.uid)+'">'+noteDiff(s)+'</div>');
-    return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4><div class="jenc-fields">'+field('Colour / appearance',colour)+field('Function / output',output)+'</div>'+skin+rod+notes+'</div>';
+    return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4><div class="jenc-fields">'+(fistula?'':field('Colour / appearance',colour))+field(fistula?'Output':'Function / output',output)+'</div>'+skin+rod+notes+'</div>';
   }
   function noteDiff(s){
     const old=draft?.compare?draft.compare.find(x=>x.uid===s.uid):null;if(!old)return '';

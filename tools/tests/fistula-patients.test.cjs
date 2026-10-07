@@ -11,6 +11,7 @@ const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);const a=html.lastIndexOf('\n',i);return html.slice(a+1,html.indexOf('\n}',i)+2);};
 const plain=x=>JSON.parse(JSON.stringify(x));
+const oneLine=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);return html.slice(i,html.indexOf('\n',i));};
 const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const FIS={id:'f1',first_name:'Maria',surname:'Borg',id_card:'123456M',patient_kind:'fistula',fistula_operation_date:'2026-09-30',findings:'ECF through the midline wound'};
 const STOMA={id:'s1',first_name:'Joe',surname:'Vella',id_card:'7M',patient_kind:'stoma',stoma_type:'End colostomy',surgery_date:'2026-09-01'};
@@ -21,7 +22,7 @@ test('the SQL adds the two columns, keeps every existing patient a stoma patient
   const sql=fs.readFileSync(path.join(__dirname,'../../sql/add-fistula-patients.sql'),'utf8');
   await db.exec(sql);await db.exec(sql);
   assert.equal((await db.query('select patient_kind from patients')).rows[0].patient_kind,'stoma');
-  await db.query("insert into patients(first_name,patient_kind,fistula_operation_date) values('New','fistula','2026-09-30')");
+  await db.query("insert into patients(first_name,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason) values('New','fistula','2026-09-30','2026-10-07','Healed / resolved')");
   await assert.rejects(db.query("insert into patients(first_name,patient_kind) values('Typo','fistual')"),/patient_kind_check/);
   await db.close();
 });
@@ -77,24 +78,13 @@ test('on the handover a fistula row is marked FISTULA and is simply discharged �
   assert.equal(tr.querySelector('td[data-label="Surname"] .fistula-tag').textContent,'FISTULA');
   assert.equal(tr.querySelector('td[data-label="Surname"] strong').textContent,'Borg');
   const actions=[...tr.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')].map(b=>b.textContent.trim());
-  assert.deepEqual(actions,['Discharge']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg'\)/);
+  assert.deepEqual(actions,['Discharge patient']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg'\)/);
   // Appliance, notes, complications and the encounter work exactly as for anyone.
   assert.match(tr.querySelector('button.hv-appl').getAttribute('onclick'),/openHandoverAppliance\('f1'\)/);
   assert.ok(tr.querySelector('.hv-enc-btn'));assert.ok(tr.querySelector('.hv-cmp-btn'));
   const stoma=handoverRow(STOMA);
   assert.equal(stoma.classList.contains('hv-fistula'),false);assert.equal(stoma.querySelector('.fistula-tag'),null);
   assert.deepEqual([...stoma.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')].map(b=>b.textContent.trim()),['Postop discharge','Discharge (old case)','Relocated overseas','Discharged to Gozo']);
-});
-
-test('discharging a fistula patient closes the episode but never writes a stoma discharge date',async()=>{
-  const calls=[];
-  const c=helpers({confirm:()=>true,alert:m=>calls.push(['alert',m]),
-    SB:{from:t=>({update:patch=>({eq:async(k,v)=>{calls.push(['update',t,patch,v]);return {error:null};}})})},
-    closeOpenInpatientEpisode:async(id,o)=>calls.push(['close',id,o]),stampPostopDischargeDate:async()=>calls.push(['stamp']),
-    loadHandover:()=>calls.push(['reload']),refreshReminders:async()=>calls.push(['bell'])});
-  vm.runInContext(fn('dischargeFistulaFromHandover'),c);
-  await c.dischargeFistulaFromHandover('f1','Maria Borg');
-  assert.deepEqual(plain(calls),[['update','patients',{is_inpatient:false},'f1'],['close','f1',{postop:true}],['reload'],['bell']]);
 });
 
 function fistulaForm(t,{matches=[],insertErrors=[]}={}){
@@ -136,18 +126,116 @@ test('before the SQL is run the form says which file to run instead of adding a 
   assert.match(w.document.getElementById('fis-error').textContent,/sql\/add-fistula-patients\.sql/);assert.equal(log.inserts.length,1);assert.deepEqual(log.admitted,[]);
 });
 
-test('the Fistulas list puts patients on the ward first, offers Admit to the rest, and searches',t=>{
-  const dom=new JSDOM('<input id="fis-search"/><span id="fis-count"></span><div id="fis-body"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
+
+function discharge(t,{dropped=[]}={}){
+  const dom=new JSDOM('<div id="mb"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;const calls=[];
+  Object.assign(w,{TODAY:'2026-10-07',htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>calls.push(['closeModal']),alert:m=>calls.push(['alert',m]),
+    SB:{from:t=>({update:patch=>({eq:async(k,v)=>{calls.push(['update',t,patch,v]);return {error:null};}})})},
+    updatePatientTolerant:async(id,patch)=>{calls.push(['case',id,patch]);return {error:null,dropped};},
+    closeOpenInpatientEpisode:async(id,o)=>calls.push(['close',id,o]),stampPostopDischargeDate:async()=>calls.push(['stamp']),
+    loadHandover:()=>calls.push(['reload']),refreshReminders:async()=>calls.push(['bell'])});
+  w.eval(fn('dischargeFistulaFromHandover')+'\n'+fn('confirmFistulaDischarge'));
+  return {w,calls};
+}
+test('Discharge patient asks whether the fistula resolved: resolved closes the case, never a postop discharge',async t=>{
+  const {w,calls}=discharge(t);w.dischargeFistulaFromHandover('f1','Maria Borg');
+  const mb=w.document.getElementById('mb');assert.match(mb.querySelector('h2').textContent,/Discharge patient/);
+  assert.equal(mb.querySelector('input[name="fis-dis"]:checked').value,'close');assert.match(mb.textContent,/do not go on the Postop Discharges list/);
+  await w.confirmFistulaDischarge('f1');
+  assert.deepEqual(plain(calls),[['update','patients',{is_inpatient:false},'f1'],['close','f1',{postop:true}],
+    ['case','f1',{fistula_closed_date:'2026-10-07',fistula_closed_reason:'Healed / resolved'}],['closeModal'],['reload'],['bell']]);
+});
+test('a long-term fistula goes home as an open case',async t=>{
+  const {w,calls}=discharge(t);w.dischargeFistulaFromHandover('f1','Maria Borg');
+  w.document.querySelector('input[name="fis-dis"][value="open"]').checked=true;
+  await w.confirmFistulaDischarge('f1');
+  assert.equal(calls.some(c=>c[0]==='case'),false);assert.equal(calls.some(c=>c[0]==='stamp'),false);assert.deepEqual(plain(calls[1]),['close','f1',{postop:true}]);
+});
+test('before the SQL is run the discharge still happens and says the case could not be closed',async t=>{
+  const {w,calls}=discharge(t,{dropped:['fistula_closed_date','fistula_closed_reason']});w.dischargeFistulaFromHandover('f1','Maria Borg');
+  await w.confirmFistulaDischarge('f1');
+  assert.match(calls.at(-1)[1],/sql\/add-fistula-patients\.sql/);
+});
+
+function registry(t,rows,episodes={},encounters={}){
+  const dom=new JSDOM('<div id="fis-tiles"></div><input id="fis-search"/><span id="fis-count"></span><div id="fis-body"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
   Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),fmtShortDate:d=>d,patientNameAvatarHTML:(p,nm,meta)=>`<span class="nm">${nm}</span>${meta}`,emptyStateHTML:(i,title)=>`<p>${title}</p>`});
-  w.eval(fistulaHelpers);w.eval(fn('renderFistulaPatients')+'\nvar fistulaRows=[];');
-  w.renderFistulaPatients();assert.match(w.document.getElementById('fis-body').textContent,/No fistula patients yet/);
-  w.eval(`fistulaRows=${JSON.stringify([{...FIS,surname:'Zammit',is_inpatient:false},{...FIS,id:'f2',surname:'Abela',is_inpatient:false,procedure_performed:'Hartmann reversal'},{...FIS,id:'f3',surname:'Micallef',is_inpatient:true,inpatient_ward:'SW2',inpatient_bed:'7'}])}`);
+  w.eval(fistulaHelpers);
+  const start=html.indexOf('const FISTULA_CLOSE_REASONS=');
+  w.eval(html.slice(start,html.indexOf('\n',start)).replace(/^const /,'var ')+'\n'+oneLine('fistulaCaseClosed')+'\n'+fn('fistulaEpisodesHTML')+'\n'+fn('fistulaCaseHTML')+'\n'+fn('renderFistulaPatients')+'\n'+fn('setFistulaView'));
+  w.eval(`var fistulaView='open',fistulaRows=${JSON.stringify(rows)},fistulaEpisodes=${JSON.stringify(episodes)},fistulaEncounters=${JSON.stringify(encounters)};`);
+  return w;
+}
+test('the Fistula Registry shows open cases first by default, with closed cases and the ward a tap away',t=>{
+  const rows=[{...FIS,surname:'Zammit'},{...FIS,id:'f2',surname:'Abela',procedure_performed:'Hartmann reversal'},
+    {...FIS,id:'f3',surname:'Micallef',is_inpatient:true,inpatient_ward:'SW2',inpatient_bed:'7'},
+    {...FIS,id:'f4',surname:'Camilleri',fistula_closed_date:'2026-09-20',fistula_closed_reason:'Healed / resolved'}];
+  const eps={f3:[{id:'e1',patient_id:'f3',episode_ref:'EP-2026-0007',record_date:'2026-10-01',is_current:true},{id:'e0',patient_id:'f3',episode_ref:'EP-2026-0002',record_date:'2026-06-01',discharge_date:'2026-06-20'}],
+    f4:[{id:'e9',patient_id:'f4',episode_ref:'EP-2026-0005',record_date:'2026-09-01',discharge_date:'2026-09-20'}]};
+  const w=registry(t,rows,eps,{f3:[{id:'n1'},{id:'n2'},{id:'n3'}]});
   w.renderFistulaPatients();
   const names=()=>[...w.document.querySelectorAll('.nm')].map(n=>n.textContent);
+  assert.deepEqual([...w.document.querySelectorAll('#fis-tiles button')].map(b=>b.textContent),['Open cases 3','On the ward 1','Closed cases 1','All 4']);
   assert.deepEqual(names(),['Maria Micallef','Maria Abela','Maria Zammit']);
-  const first=w.document.querySelector('tbody tr');assert.match(first.textContent,/SW2 – 7/);assert.match(first.textContent,/Handover/);
-  assert.match(w.document.querySelectorAll('tbody tr')[1].querySelector('.fis-actions button').getAttribute('onclick'),/admitFistulaPatient\('f2'\)/);
-  assert.equal(w.document.querySelectorAll('.fistula-tag').length,3);
-  assert.equal(w.document.getElementById('fis-count').textContent,'3 of 3 fistula patients · 1 on the handover');
-  w.document.getElementById('fis-search').value='hartmann';w.renderFistulaPatients();assert.deepEqual(names(),['Maria Abela']);
+  const ward=w.document.querySelector('tbody tr');
+  assert.match(ward.textContent,/On the ward · SW2 – 7/);assert.match(ward.textContent,/2 episodes · 3 encounters/);assert.match(ward.textContent,/Latest: EP-2026-0007 · on the ward since 2026-10-01/);
+  assert.match(ward.querySelector('[onclick^="openFistulaEpisodes"]').getAttribute('onclick'),/'f3'/);
+  const abela=w.document.querySelectorAll('tbody tr')[1];
+  assert.match(abela.textContent,/No admission yet/);assert.match(abela.textContent,/Not admitted yet/);
+  assert.deepEqual([...abela.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['🏥 Admit to handover','✓ Close case','Edit','Record']);
+  w.setFistulaView('closed');
+  assert.deepEqual(names(),['Maria Camilleri']);const closed=w.document.querySelector('tbody tr');
+  assert.match(closed.textContent,/Closed 2026-09-20/);assert.match(closed.textContent,/Healed \/ resolved/);assert.match(closed.textContent,/discharged 2026-09-20/);
+  assert.deepEqual([...closed.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['↺ Reopen case','Edit','Record']);
+  w.setFistulaView('all');w.document.getElementById('fis-search').value='hartmann';w.renderFistulaPatients();assert.deepEqual(names(),['Maria Abela']);
+  // A patient back on the ward is an open case, whatever an older closure says.
+  const back=registry(t,[{...FIS,is_inpatient:true,fistula_closed_date:'2026-09-01'}]);back.renderFistulaPatients();
+  assert.match(back.document.getElementById('fis-tiles').textContent,/Open cases 1.*Closed cases 0/);
+});
+
+function caseActions(t,patient){
+  const dom=new JSDOM('<div id="mb"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;const log={patches:[],admitted:[],alerts:[]};
+  Object.assign(w,{TODAY:'2026-10-07',htmlSafe:esc,jsSafe:v=>String(v??''),fmtShortDate:d=>d,openMo:()=>{},closeModal:()=>{},confirm:()=>true,alert:m=>log.alerts.push(m),
+    updatePatientTolerant:async(id,p)=>{log.patches.push(p);return {error:null,dropped:[]};},fetchPatientById:async()=>({data:JSON.parse(JSON.stringify(patient)),error:null}),
+    openInpatientVisitFor:async id=>log.admitted.push(id),loadFistulaPatients:async()=>{},openPatientRecord:async()=>{},clrState:{}});
+  const start=html.indexOf('const FISTULA_CLOSE_REASONS=');
+  w.eval(html.slice(start,html.indexOf('\n',start)).replace(/^const /,'var ')+'\nvar fistulaRows='+JSON.stringify([patient])+';\n'+
+    ['openCloseFistulaCase','saveCloseFistulaCase','reopenFistulaCase','afterFistulaCaseChange','admitFistulaPatient'].map(fn).join('\n'));
+  return {w,log};
+}
+test('a case is closed with a date and reason, reopened, and a closed case is reopened before it is admitted',async t=>{
+  const {w,log}=caseActions(t,{...FIS,id:'f1'});
+  w.openCloseFistulaCase('f1');
+  assert.deepEqual([...w.document.querySelectorAll('#fis-close-reason option')].map(o=>o.textContent),['Healed / resolved','Surgically repaired','Deceased','Other']);
+  w.document.getElementById('fis-close-date').value='2026-10-06';w.document.getElementById('fis-close-reason').value='Surgically repaired';
+  await w.saveCloseFistulaCase('f1');
+  await w.reopenFistulaCase('f1');
+  assert.deepEqual(plain(log.patches),[{fistula_closed_date:'2026-10-06',fistula_closed_reason:'Surgically repaired'},{fistula_closed_date:null,fistula_closed_reason:null}]);
+  const closed=caseActions(t,{...FIS,id:'f2',fistula_closed_date:'2026-09-01'});
+  await closed.w.admitFistulaPatient('f2');
+  assert.deepEqual(plain(closed.log.patches),[{fistula_closed_date:null,fistula_closed_reason:null}]);assert.deepEqual(closed.log.admitted,['f2']);
+  const ward=caseActions(t,{...FIS,id:'f3',is_inpatient:true});ward.w.openCloseFistulaCase('f3');
+  assert.match(ward.log.alerts[0],/Discharge them there/);assert.equal(ward.w.document.getElementById('fis-close-date'),null);
+});
+
+test('seeing a fistula patient in clinic saves no nurse owner, due month or follow-up status',async()=>{
+  const patches=[];
+  const c=vm.createContext({console,Date,Set,Number,window:{},alert:()=>{},getCurrentUserForAudit:async()=>({email:'nurse@gov.mt',name:'Nurse'}),
+    updateAppointmentTolerant:async()=>({error:null,dropped:[]}),updatePatientTolerant:async(id,p)=>{patches.push(JSON.parse(JSON.stringify(p)));return {error:null,dropped:[]};},
+    checkDntuThresholdForAppointment:async()=>{},createMissingDntuRowsFromEditForm:async()=>{},refreshAppointmentViews:async()=>{},closeModal:()=>{},
+    attDisplayName:()=>'',linkVisitSkinComplications:async()=>{},openCancellationForm:()=>{}});
+  vm.runInContext(fn('commitOutcomeFollowup'),c);
+  const v={apptId:'a1',patientId:'f1',status:'attended',year:'2026',month:'11',followupFlexible:false,followupStatus:'active',owner:'Jason',fn:'Maria',sn:'Borg',idcard:'1M',phone:'',
+    date:'2026-10-07',slot:'08:30',nurse:'common',isDntuEditMode:false,dntuTarget:0,complicationReview:'none',applianceReview:'unchanged',complicationReviews:[],followupAction:'none',noDueMonth:true};
+  await c.commitOutcomeFollowup({...v,fistula:true},[]);
+  await c.commitOutcomeFollowup({...v,fistula:false,followupAction:'review-month',noDueMonth:false},[]);
+  assert.deepEqual(patches[0],{first_name:'Maria',surname:'Borg',id_card:'1M',phone_number:null});
+  assert.equal(patches[1].followup_owner,'Jason');assert.equal(patches[1].followup_due_month,11);assert.equal(patches[1].followup_status,'active');
+});
+
+test('the Complete visit window offers a fistula patient no nurse owner and no due month',()=>{
+  const i=html.indexOf('async function openOutcomeFollowupModal(');const src=html.slice(i,html.indexOf('\n}',i));
+  assert.match(src,/fistulaVisit\?`<div class="fg"><label>Nurse owner<\/label><input type="hidden" id="of-owner" value=""\/>/);
+  assert.match(src,/fistulaVisit\s*\? `<label><input type="radio" name="of-next" value="none" checked/);
+  assert.match(src,/<div id="of-duemonth-wrap"\$\{fistulaVisit\?' hidden':''\}>/);
 });

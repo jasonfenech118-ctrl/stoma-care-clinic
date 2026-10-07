@@ -129,3 +129,12 @@ test('the Seen (Complete visit) form has no Support / referrals section — refe
   assert.doesNotMatch(host.textContent,/referral/i);assert.equal(host.querySelector('[data-vsr-ref-add],[data-vsr^="ref-"]'),null);
   assert.equal(w.VisitStomaReview.referralsPatchFor,undefined);assert.equal(w.VisitStomaReview.referralLines,undefined);
 });
+
+test('a fistula patient’s visit has one Fistula column: output and the skin around it, no colour and no rod',async t=>{
+  const {host,mount}=setup(t,{stomas:[{uid:'fistula',type:'Fistula',typeLabel:'Fistula'}]});await mount();
+  assert.deepEqual([...host.querySelectorAll('.jenc-stoma-title')].map(h=>h.textContent),['Fistula']);
+  assert.equal(host.querySelector('[data-vsr="colour"]'),null);assert.equal(host.querySelector('[data-vsr="rod"]'),null);
+  const labels=[...host.querySelectorAll('label')].map(l=>l.textContent);
+  assert.ok(labels.includes('Output'));assert.ok(labels.includes('Skin around the fistula'));
+  assert.ok(host.querySelector('[data-vsr="output"][data-uid="fistula"]'));assert.ok(host.querySelector('[data-vsr="notes"][data-uid="fistula"]'));
+});

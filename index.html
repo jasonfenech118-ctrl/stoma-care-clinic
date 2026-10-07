@@ -21,11 +21,11 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-458"/>
-<script src="assets/manual.js?v=2026.10.07-458"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-459"/>
+<script src="assets/manual.js?v=2026.10.07-459"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.07-456"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -2200,6 +2200,11 @@ tr.hv-fistula>td[data-label="ID number"],tr.hv-fistula>td[data-label="Surname"],
 .fis-check{display:flex;align-items:center;gap:8px;font-weight:700;cursor:pointer;}
 .fis-check input{width:auto;}
 .fg textarea.fis-text{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;resize:vertical;}
+.fis-owner-note{display:inline-block;padding:7px 10px;border-radius:8px;background:#faf5ff;border:1px solid #c084fc;color:#6b21a8;font-size:12.5px;font-weight:700;}
+.fis-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.fis-open{display:inline-block;padding:2px 8px;border-radius:10px;background:#f3e8ff;color:#6b21a8;font-size:11px;font-weight:800;}
+.fis-closed{display:inline-block;padding:2px 8px;border-radius:10px;background:#e5e7eb;color:#374151;font-size:11px;font-weight:800;white-space:nowrap;}
+tr.fis-row-closed td{opacity:.85;}
 .fis-convert{margin:12px 0 0;padding:10px 12px;border:1px dashed #c084fc;border-radius:8px;background:#faf5ff;font-size:12.5px;color:#4c1d95;}
 .psm-fistula{margin:0 0 12px;padding:12px 14px;border:1.5px solid #c084fc;border-radius:10px;background:#faf5ff;color:#3b0764;}
 .psm-fistula h3{margin:0 0 6px;font-size:15px;color:#6b21a8;}
@@ -3015,12 +3020,13 @@ tr.hv-fistula>td[data-label="ID number"],tr.hv-fistula>td[data-label="Surname"],
     <!-- FISTULAS — patients with a fistula and no stoma -->
     <div class="page" id="page-fistulas">
       <div class="phdr">
-        <div><h2>🩹 Fistulas</h2><p>Patients with a fistula and no stoma — their appliance is managed on the ward. Kept out of the stoma registry, follow-up planning and reports.</p></div>
+        <div><h2>🩹 Fistula Registry</h2><p>Patients with a fistula and no stoma — open and closed cases, with their episodes and encounters. No nurse owner and no due month; kept out of the stoma registry, follow-up planning and reports.</p></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-add" onclick="openFistulaPatientModal()" style="background:#7c3aed;">＋ Add fistula patient</button>
           <button class="btn-add" onclick="loadFistulaPatients()">Refresh</button>
         </div>
       </div>
+      <div class="pd-quickfilters" id="fis-tiles"></div>
       <div class="pd-toolbar">
         <input type="text" id="fis-search" placeholder="Search by name, ID card, firm, operation or findings…" oninput="renderFistulaPatients()"/>
         <span class="pd-count" id="fis-count"></span>
@@ -3680,7 +3686,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.07-458';
+const APP_BUILD='2026.10.07-459';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3793,7 +3799,7 @@ const TAB_GROUPS=[
      {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
      {tab:'phone',label:'Quick Look',icon:'📱',color:'#4338ca'},
      {tab:'duplicates',label:'Needs Checking',icon:'🔍',color:'#d97706'},
-     {tab:'fistulas',label:'Fistulas',icon:'🩹',color:'#7c3aed'}
+     {tab:'fistulas',label:'Fistula Registry',icon:'🩹',color:'#7c3aed'}
    ]},
   {key:'audit',label:'Audit & Reports',icon:'📊',color:'#dc2626',  /* red */
    pages:[
@@ -6350,6 +6356,8 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   mb.dataset.initialFollowupMonth=String(defaultMonth||'');
   mb.dataset.initialFollowupYear=String(defaultYear||'');
   mb.dataset.followupType=String(p.followup_type||'follow_up');
+  const fistulaVisit=isFistulaPatient(p);
+  mb.dataset.fistula=fistulaVisit?'1':'0';
   const currentDntuAlreadyRecorded=appt.status==='did_not_attend';
   const modalTitle=isDntuEditMode?(currentDntuAlreadyRecorded?'Edit DNTU appointment':'Record DNTU appointment'):'Edit / Seen Appointment';
   const modalSub=isDntuEditMode
@@ -6383,9 +6391,9 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
       <input type="hidden" id="of-nurse" value="${htmlSafe(bookedNurseValue)}" data-label="${htmlSafe(bookedNurseLabel)}"/>
       <div class="fg"><label>Appointment Date *</label><input type="date" id="of-date" value="${htmlSafe(appt.appt_date||'')}"/></div>
       <div class="fg"><label>Appointment Time *</label><input type="time" id="of-slot" value="${htmlSafe(String(appt.appt_slot||'').slice(0,5))}"/></div>
-      <div class="fg"><label>Nurse owner *</label><select id="of-owner" class="followup-owner-plain" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
+      ${fistulaVisit?`<div class="fg"><label>Nurse owner</label><input type="hidden" id="of-owner" value=""/><div class="fis-owner-note">🩹 Fistula patient — no nurse owner and no due month</div></div>`:`<div class="fg"><label>Nurse owner *</label><select id="of-owner" class="followup-owner-plain" onchange="refreshOutcomeMonthOptions();updateFollowupChangeWarning()">
         ${followupOwnerOptions(ownerDefault)}
-      </select></div>
+      </select></div>`}
       ${outcomeControl}
     </div>`;
   const followupBlock=`<div id="of-followup-planning-wrap">
@@ -6520,11 +6528,13 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
         <div class="edit-seen-section">Follow-up — what happens next?</div>
         <div id="of-existing-appt"></div>
         <div class="es-review-choice" id="of-next">
-          <label><input type="radio" name="of-next" value="review-month" ${(appt.followup_action||'review-month')!=='none'?'checked':''} onchange="esNextChange()"> Review due in a selected month</label>
-          <label><input type="radio" name="of-next" value="none" ${appt.followup_action==='none'?'checked':''} onchange="esNextChange()"> No further appointment required</label>
+          ${fistulaVisit
+            ? `<label><input type="radio" name="of-next" value="none" checked onchange="esNextChange()"> No due month — a fistula patient is booked from the clinic when needed</label>`
+            : `<label><input type="radio" name="of-next" value="review-month" ${(appt.followup_action||'review-month')!=='none'?'checked':''} onchange="esNextChange()"> Review due in a selected month</label>
+          <label><input type="radio" name="of-next" value="none" ${appt.followup_action==='none'?'checked':''} onchange="esNextChange()"> No further appointment required</label>`}
         </div>
         <div id="of-next-note" class="dntu-note" style="margin:6px 0;"></div>
-        <div id="of-duemonth-wrap">${followupBlock}</div>
+        <div id="of-duemonth-wrap"${fistulaVisit?' hidden':''}>${followupBlock}</div>
       </div>
       <div class="es-pane" id="es-pane-5"></div>
       <div class="mact" id="es-footer"></div>`;
@@ -6966,7 +6976,7 @@ function esRenderReview(){
     </button>`;};
   // The nurse owner is the thing a reviewer most needs to spot, so it reads as a
   // bold gold badge rather than a plain line — the eye lands on it at once.
-  const ownerBadge={html:`<div style="margin:7px 0 3px;"><span style="display:inline-flex;align-items:center;gap:7px;background:var(--gold);color:#111;font-weight:900;font-size:13.5px;letter-spacing:.2px;padding:6px 14px;border-radius:999px;border:1px solid #a96f00;box-shadow:0 2px 6px rgba(169,111,0,.35);"><span style="font-size:15px;">👤</span>Nurse owner: ${htmlSafe(selText('of-owner')||'Common')}</span></div>`};
+  const ownerBadge=document.getElementById('mb')?.dataset?.fistula==='1'?{html:'<div class="fis-owner-note" style="margin:7px 0 3px;">🩹 Fistula patient — no nurse owner and no due month</div>'}:{html:`<div style="margin:7px 0 3px;"><span style="display:inline-flex;align-items:center;gap:7px;background:var(--gold);color:#111;font-weight:900;font-size:13.5px;letter-spacing:.2px;padding:6px 14px;border-radius:999px;border:1px solid #a96f00;box-shadow:0 2px 6px rgba(169,111,0,.35);"><span style="font-size:15px;">👤</span>Nurse owner: ${htmlSafe(selText('of-owner')||'Common')}</span></div>`};
   const TONE_ATT={bg:'#eef5ff',bd:'#bcd4f5',tx:'#1e40af'};   // light blue — attendance
   const TONE_CMP={bg:'#fdecec',bd:'#f2bcbc',tx:'#b91c1c'};   // red — complications
   const TONE_APP={bg:'#fff3e6',bd:'#f6cfa0',tx:'#b45309'};   // orange — appliances
@@ -7067,7 +7077,9 @@ function esNextChange(){
     'review-month':'A due-month plan: the patient is reviewed around the chosen month, without an exact date yet.',
     'none':'No further appointment: the due month is cleared. The patient follow-up status is not changed automatically.'
   };
-  if(note)note.textContent=notes[v]||'';
+  if(note)note.textContent=document.getElementById('mb')?.dataset?.fistula==='1'
+    ?'Fistula patients are not allocated to a nurse and have no due month. Book their next visit from the clinic when it is needed.'
+    :(notes[v]||'');
 }
 /* Shows any future appointment the patient already has, so a second one is not
    booked by accident. Read-only, with a Change action onto that appointment. */
@@ -7657,6 +7669,7 @@ async function saveOutcomeFollowup(apptId,patientId){
   const isDntuEditMode=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
   const dntuTarget=isDntuEditMode?(Number(document.getElementById('of-dntu-target')?.value)||0):0;
   const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
+  const fistula=document.getElementById('mb')?.dataset?.fistula==='1';
 
   // What happens next: a due-month plan, an exact booking, or none.
   const followupAction=document.querySelector('input[name="of-next"]:checked')?.value||'review-month';
@@ -7694,7 +7707,7 @@ async function saveOutcomeFollowup(apptId,patientId){
 
   const pending={apptId,patientId,status,year,month,followupFlexible,followupStatus,owner,fn,sn,idcard,phone,date,
     slot:String(slot).slice(0,5),nurse,isDntuEditMode,dntuTarget,
-    complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth,
+    complicationReview,applianceReview,complicationReviews,followupAction,noDueMonth,fistula,
     allowSameMonth:!!document.getElementById('of-allow-same-month')?.checked};
 
   /* A patient who was seen records what was used, one card per stoma — but only
@@ -7773,7 +7786,13 @@ async function commitOutcomeFollowup(v,stomaRows){
   if(stomaAssessment&&(saved.dropped||[]).includes('stoma_assessment'))alert('The visit was saved, but the stoma assessment was not: the database does not have its column yet. Run sql/add-visit-stoma-assessment.sql once in Supabase.');
 
   if(patientId){
-    const updatePayload=(isDntuEditMode&&dntuTarget===3)?{
+    // A fistula patient keeps no nurse owner and no due month: only their details save.
+    const updatePayload=v.fistula?{
+      first_name:fn,
+      surname:sn,
+      id_card:idcard,
+      phone_number:phone||null
+    }:(isDntuEditMode&&dntuTarget===3)?{
       first_name:fn,
       surname:sn,
       id_card:idcard,
@@ -7790,7 +7809,7 @@ async function commitOutcomeFollowup(v,stomaRows){
       followup_owner:owner,
       followup_status:followupStatus
     };
-    if(status==='attended')updatePayload.followup_type='follow_up';
+    if(status==='attended'&&!v.fistula)updatePayload.followup_type='follow_up';
     // A rod ticked, unticked or re-dated in the stoma assessment updates the patient.
     const rodPatch=status==='attended'&&window.VisitStomaReview?VisitStomaReview.rodPatchFor(apptId):null;
     if(rodPatch&&!(isDntuEditMode&&dntuTarget===3))Object.assign(updatePayload,rodPatch);
@@ -8004,7 +8023,7 @@ async function openPatientRebookModal(patientId,cancelledAppointmentId=null){
   mb.innerHTML=`<h2>Rebook Patient</h2>
     <input type="hidden" id="rb-source-cancellation" value="${htmlSafe(cancelledAppointmentId||'')}"/>
     <div class="patient-modal-identity">${patientNameAvatarHTML(pat,nm,`<span>${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}</span>`,'md')}</div>
-    <div class="msub">Follow-up owner: <strong>${htmlSafe(owner)}</strong> · Due: <strong>${htmlSafe(dueLabel)}</strong><br/>
+    <div class="msub">${isFistulaPatient(pat)?'🩹 <strong>Fistula patient</strong> — booked when needed, with no nurse owner or due month.':`Follow-up owner: <strong>${htmlSafe(owner)}</strong> · Due: <strong>${htmlSafe(dueLabel)}</strong>`}<br/>
       Patient details are already on file — no need to re-enter the ID card. This creates a new booked appointment and keeps the full history.</div>
     <div class="fg"><label>Nurse / Column</label><select id="rb-nurse" onchange="refreshRebookDayOptions()">${nurseOptions}</select>
       <div class="dntu-note" style="margin-top:4px;">Common patients are booked Monday to Saturday. A named nurse books into the Sunday and public holiday clinic.</div>
@@ -8016,7 +8035,7 @@ async function openPatientRebookModal(patientId,cancelledAppointmentId=null){
     <div class="fg" id="rb-custom-date-wrap" style="display:none;"><label>Custom Date</label><input type="date" id="rb-date-custom" onchange="document.getElementById('rb-date').value=this.value;updateRebookDayPreview()"/></div>
     <input type="hidden" id="rb-date" value=""/>
     <div class="fg"><label>Appointment Time *</label><select id="rb-slot">${slotOptions}</select></div>
-    <div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>
+    ${isFistulaPatient(pat)?'':'<div class="booking-guidance-note">Follow-up allocation / owner, due year and due month are now completed after rebooking by clicking Edit or Seen on the scheduled appointment.</div>'}
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="savePatientRebook('${patientId}')">Book Appointment</button></div>`;
   openMo();
   refreshRebookDayOptions();
@@ -12725,7 +12744,7 @@ async function stomaPatientCount(){
 }
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date';
+const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -19141,9 +19160,11 @@ async function openPatientRecord(patientId){
         <dl><dt>Date of operation</dt><dd>${htmlSafe(pat.fistula_operation_date?fmtShortDate(pat.fistula_operation_date):'Not recorded')}</dd>
         <dt>Operation performed</dt><dd>${htmlSafe(pat.procedure_performed||'Not recorded')}</dd>
         <dt>Findings</dt><dd>${htmlSafe(pat.findings||'Not recorded')}</dd>
-        <dt>Firm</dt><dd>${htmlSafe(pat.consultant||'Not recorded')}</dd></dl>
+        <dt>Firm</dt><dd>${htmlSafe(pat.consultant||'Not recorded')}</dd>
+        <dt>Case</dt><dd>${pat.is_inpatient?'Open — on the ward':fistulaCaseClosed(pat)?`Closed ${htmlSafe(fmtShortDate(pat.fistula_closed_date))}${pat.fistula_closed_reason?' · '+htmlSafe(pat.fistula_closed_reason):''}`:'Open'}</dd>
+        <dt>Follow-up</dt><dd>No nurse owner and no due month — booked from the clinic when needed</dd></dl>
         <div class="fis-actions"><button class="ncb-btn" style="background:#ede9fe;color:#5b21b6;" onclick="openFistulaPatientModal('${jsSafe(String(patientId))}')">Edit fistula details</button>
-        ${pat.is_inpatient?'':`<button class="ncb-btn" style="background:#ffedd5;color:#9a3412;" onclick="admitFistulaPatient('${jsSafe(String(patientId))}')">🏥 Admit to handover</button>`}</div></div>`:''}
+        ${pat.is_inpatient?'':fistulaCaseClosed(pat)?`<button class="ncb-btn" style="background:#e0f2fe;color:#075985;" onclick="reopenFistulaCase('${jsSafe(String(patientId))}')">↺ Reopen case</button>`:`<button class="ncb-btn" style="background:#ffedd5;color:#9a3412;" onclick="admitFistulaPatient('${jsSafe(String(patientId))}')">🏥 Admit to handover</button><button class="ncb-btn" style="background:#ecfdf5;color:#047857;" onclick="openCloseFistulaCase('${jsSafe(String(patientId))}')">✓ Close case</button>`}</div></div>`:''}
       <div class="psm-ov-cols">
       <div>
         <div class="psm-sec-head"><h3>Patient details</h3><span class="psm-badge">Locked once entered — unlock in Edit patient</span></div>
@@ -20156,7 +20177,7 @@ function handoverRowHTML(p,cls){
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
-      ${fistula?`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}')" title="Off the handover; fistula patients are not on the Postop Discharges list">Discharge</button>`:`<button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${nameArg}')">Postop discharge</button>
+      ${fistula?`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}')" title="Off the handover; fistula patients are not on the Postop Discharges list">Discharge patient</button>`:`<button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${nameArg}')">Postop discharge</button>
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${nameArg}')">Discharge (old case)</button>
       <button class="ncb-btn" style="background:#fef9c3;color:#713f12;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','relocated_overseas')">Relocated overseas</button>
       <button class="ncb-btn" style="background:#dbeafe;color:#1e3a8a;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','discharged_gozo')">Discharged to Gozo</button>`}
@@ -20609,16 +20630,39 @@ async function dischargeFromHandover(patientId,name){
   loadHandover();
   await refreshReminders();
 }
-/* A fistula patient leaves the handover and their episode closes with today's
-   date. They are not followed up like a stoma patient, so they never join the
-   Postop Discharges list and no stoma discharge date is written. */
-async function dischargeFistulaFromHandover(patientId,name){
-  if(!confirm(`Discharge ${name||'this patient'}?\n\nThey come off the handover and their inpatient episode is closed with today's date. As a fistula patient they do not go on the Postop Discharges list. They stay in Registry › Fistulas with everything on their record.`))return;
+/* Discharge patient: a fistula patient leaves the handover and their admission
+   closes with today's date. They are not followed up like a stoma patient, so
+   they never join the Postop Discharges list. Most fistulas have resolved by
+   discharge, so the case closes too — unless they go home with a long-term
+   fistula, which stays an open case and is booked from the clinic when needed. */
+function dischargeFistulaFromHandover(patientId,name){
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Discharge patient</h2>
+    <div class="msub"><strong>${htmlSafe(name||'This patient')}</strong> <span class="fistula-tag">FISTULA</span> comes off the handover and the admission closes with today’s date. Fistula patients do not go on the Postop Discharges list.</div>
+    <div class="es-review-choice" id="fis-dis">
+      <label><input type="radio" name="fis-dis" value="close" checked/> <strong>Fistula resolved</strong> — close the case</label>
+      <label><input type="radio" name="fis-dis" value="open"/> <strong>Going home with a long-term fistula</strong> — keep the case open (book them in clinic when needed)</label>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="fis-dis-save" onclick="confirmFistulaDischarge('${jsSafe(String(patientId))}')">Discharge patient</button></div>`;
+  openMo();
+}
+async function confirmFistulaDischarge(patientId){
+  const keepOpen=document.querySelector('input[name="fis-dis"]:checked')?.value==='open';
+  const btn=document.getElementById('fis-dis-save');if(btn)btn.disabled=true;
   const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
-  if(error){alert('Could not discharge: '+error.message);return;}
+  if(error){if(btn)btn.disabled=false;alert('Could not discharge: '+error.message);return;}
   await closeOpenInpatientEpisode(patientId,{postop:true});
+  let note='';
+  if(!keepOpen){
+    const r=await updatePatientTolerant(patientId,{fistula_closed_date:TODAY,fistula_closed_reason:'Healed / resolved'});
+    if(r.error)note='Discharged, but the case could not be closed: '+(r.error.message||r.error);
+    else if((r.dropped||[]).includes('fistula_closed_date'))note='Discharged, but the case could not be marked closed: run sql/add-fistula-patients.sql once in Supabase, then close it from the Fistula Registry.';
+  }
+  closeModal();
   loadHandover();
   await refreshReminders();
+  if(note)alert(note);
 }
 /* An old case: taken off the handover without being counted as a postop
    discharge. The episode is closed but not stamped with a discharge date, so it
@@ -22352,11 +22396,16 @@ function startHandoverSnapshotScheduler(){
   setInterval(tick,60000);
 }
 /* ── REGISTRY › FISTULAS ───────────────────────────────────────────────────────
-   Fistula patients: added here with their operation and findings, admitted to
-   the handover from here, and moved to the Patient Registry if they later have
-   a stoma formed. */
+   The fistula registry: every fistula patient, as an open or a closed case,
+   with their inpatient episodes and encounters. Patients are added here,
+   admitted to the handover from here, and closed when the fistula resolves —
+   usually at discharge. Long-term fistulas stay open and are booked from the
+   clinic when needed: there is no nurse owner and no due month. */
 function fistulaTagHTML(p){return isFistulaPatient(p)?'<span class="fistula-tag" title="Fistula patient — no stoma">FISTULA</span>':'';}
-let fistulaRows=[],fistulaLoadVersion=0;
+const FISTULA_CLOSE_REASONS=['Healed / resolved','Surgically repaired','Deceased','Other'];
+// A patient on the ward is always an open case, whatever an old closure says.
+function fistulaCaseClosed(p){return !!p?.fistula_closed_date&&p?.is_inpatient!==true;}
+let fistulaRows=[],fistulaLoadVersion=0,fistulaView='open',fistulaEpisodes={},fistulaEncounters={};
 async function loadFistulaPatients(){
   const body=document.getElementById('fis-body');
   if(!body)return;
@@ -22369,21 +22418,53 @@ async function loadFistulaPatients(){
     fistulaRows=[];
     const missing=/patient_kind|column|does not exist/i.test(String(probe.error.message||''));
     body.innerHTML=missing
-      ? handoverMissingHTML('Fistula patients need one database change first. Run <strong>sql/add-fistula-patients.sql</strong> once in Supabase (on a computer), then refresh.')
+      ? handoverMissingHTML('The fistula registry needs one database change first. Run <strong>sql/add-fistula-patients.sql</strong> once in Supabase (on a computer), then refresh.')
       : `<div class="report-note">Could not load fistula patients: ${htmlSafe(probe.error.message||'')}</div>`;
     return;
   }
   const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols).eq('patient_kind','fistula')));
   if(version!==fistulaLoadVersion)return;
   if(res.error){body.innerHTML=`<div class="report-note">Could not load fistula patients: ${htmlSafe(res.error.message||'')}</div>`;return;}
-  fistulaRows=(res.rows||[]).filter(isFistulaPatient);
-  fistulaIdCache={at:Date.now(),ids:new Set(fistulaRows.map(p=>String(p.id)))};
+  const rows=(res.rows||[]).filter(isFistulaPatient);
+  // Each patient's admissions (episodes) and the encounters recorded in them.
+  const ids=rows.map(p=>String(p.id)),episodes={},encounters={};
+  for(let i=0;i<ids.length;i+=100){
+    const chunk=ids.slice(i,i+100);
+    try{const r=await fetchAllRows(()=>SB.from('clinical_records').select('id,patient_id,episode_ref,record_date,discharge_date,is_current').eq('kind','episode').in('patient_id',chunk));
+      (r.rows||[]).forEach(e=>(episodes[String(e.patient_id)]=episodes[String(e.patient_id)]||[]).push(e));}catch(e){}
+    try{const r=await fetchAllRows(()=>SB.from('encounters').select('id,patient_id,episode_id').in('patient_id',chunk));
+      (r.rows||[]).forEach(e=>(encounters[String(e.patient_id)]=encounters[String(e.patient_id)]||[]).push(e));}catch(e){}
+  }
+  if(version!==fistulaLoadVersion)return;
+  fistulaRows=rows;fistulaEpisodes=episodes;fistulaEncounters=encounters;
+  fistulaIdCache={at:Date.now(),ids:new Set(ids)};
   renderFistulaPatients();
+}
+function setFistulaView(v){fistulaView=v;renderFistulaPatients();}
+function fistulaEpisodesHTML(p){
+  const eps=(fistulaEpisodes[String(p.id)]||[]).slice().sort((a,b)=>String(b.record_date||'').localeCompare(String(a.record_date||'')));
+  if(!eps.length)return '<span style="color:var(--muted);">No admission yet</span>';
+  const encs=(fistulaEncounters[String(p.id)]||[]).length,last=eps[0];
+  const open=last.is_current&&!last.discharge_date;
+  const when=open?`on the ward since ${fmtShortDate(last.record_date)}`:(last.discharge_date?`discharged ${fmtShortDate(last.discharge_date)}`:`admitted ${fmtShortDate(last.record_date)}`);
+  return `<div><strong>${eps.length} episode${eps.length===1?'':'s'}</strong> · ${encs} encounter${encs===1?'':'s'}</div>
+    <div class="fis-sub">Latest: ${htmlSafe(last.episode_ref||'episode')} · ${htmlSafe(when)}</div>
+    <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;margin-top:4px;" onclick="openFistulaEpisodes('${jsSafe(String(p.id))}')">📂 Episodes &amp; encounters</button>`;
+}
+function fistulaCaseHTML(p){
+  if(p.is_inpatient===true)return `<span class="fis-ward">🏥 On the ward · ${htmlSafe([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' – ')||'admitted')}</span>`;
+  if(fistulaCaseClosed(p))return `<span class="fis-closed">Closed ${htmlSafe(fmtShortDate(p.fistula_closed_date))}</span>${p.fistula_closed_reason?`<div class="fis-sub">${htmlSafe(p.fistula_closed_reason)}</div>`:''}`;
+  const seen=(fistulaEpisodes[String(p.id)]||[]).length;
+  return `<span class="fis-open">Open</span><div class="fis-sub">${seen?'At home — long-term fistula':'Not admitted yet'}</div>`;
 }
 function renderFistulaPatients(){
   const body=document.getElementById('fis-body');
   if(!body)return;
   const count=document.getElementById('fis-count');
+  const tiles=document.getElementById('fis-tiles');
+  const open=fistulaRows.filter(p=>!fistulaCaseClosed(p)),closed=fistulaRows.filter(fistulaCaseClosed),ward=fistulaRows.filter(p=>p.is_inpatient===true);
+  if(tiles)tiles.innerHTML=[['open','Open cases',open.length],['ward','On the ward',ward.length],['closed','Closed cases',closed.length],['all','All',fistulaRows.length]]
+    .map(([k,l,n])=>`<button class="pd-qf${fistulaView===k?' active':''}" data-fis-view="${k}" onclick="setFistulaView('${k}')">${l} <strong>${n}</strong></button>`).join('');
   if(!fistulaRows.length){
     if(count)count.textContent='';
     body.innerHTML=emptyStateHTML('🩹','No fistula patients yet',
@@ -22391,40 +22472,45 @@ function renderFistulaPatients(){
       '<button class="btn-save" onclick="openFistulaPatientModal()">＋ Add fistula patient</button>');
     return;
   }
+  const pool=fistulaView==='closed'?closed:fistulaView==='ward'?ward:fistulaView==='all'?fistulaRows:open;
   const q=String(document.getElementById('fis-search')?.value||'').trim().toLowerCase();
-  const rows=fistulaRows
-    .filter(p=>!q||[p.first_name,p.surname,p.id_card,p.consultant,p.procedure_performed,p.findings].map(x=>String(x||'')).join(' ').toLowerCase().includes(q))
-    // Those on the ward first, then A–Z by surname.
+  const rows=pool
+    .filter(p=>!q||[p.first_name,p.surname,p.id_card,p.consultant,p.procedure_performed,p.findings,p.fistula_closed_reason].map(x=>String(x||'')).join(' ').toLowerCase().includes(q))
+    // On the ward first, then open, then closed (latest closure first), A–Z within.
     .sort((a,b)=>(b.is_inpatient===true)-(a.is_inpatient===true)
+      ||fistulaCaseClosed(a)-fistulaCaseClosed(b)
+      ||String(b.fistula_closed_date||'').localeCompare(String(a.fistula_closed_date||''))
       ||String(a.surname||'').localeCompare(String(b.surname||''),'en',{sensitivity:'base'})
       ||String(a.first_name||'').localeCompare(String(b.first_name||''),'en',{sensitivity:'base'}));
-  const onWard=fistulaRows.filter(p=>p.is_inpatient===true).length;
-  if(count)count.textContent=`${rows.length} of ${fistulaRows.length} fistula patient${fistulaRows.length===1?'':'s'}${onWard?` · ${onWard} on the handover`:''}`;
+  if(count)count.textContent=`${rows.length} shown · ${open.length} open · ${closed.length} closed`;
   const t=v=>v?htmlSafe(v):'<span style="color:var(--muted);">—</span>';
+  const btn=(bg,fg,label,js)=>`<button class="ncb-btn" style="background:${bg};color:${fg};" onclick="${js}">${label}</button>`;
   const trs=rows.map(p=>{
-    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+    const id=jsSafe(String(p.id)),nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
     const op=[p.fistula_operation_date?fmtShortDate(p.fistula_operation_date):'',p.procedure_performed||''].filter(Boolean).join(' · ');
-    const ward=p.is_inpatient===true
-      ?`<span class="fis-ward">🏥 ${htmlSafe([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' – ')||'On the ward')}</span>`
-      :'<span style="color:var(--muted);">Not admitted</span>';
-    const admit=p.is_inpatient===true
-      ?`<button class="ncb-btn" style="background:#ffedd5;color:#9a3412;" onclick="switchTab('handover')">Handover</button>`
-      :`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="admitFistulaPatient('${jsSafe(String(p.id))}')">🏥 Admit to handover</button>`;
-    return `<tr>
+    const acts=p.is_inpatient===true?[btn('#ffedd5','#9a3412','Handover',"switchTab('handover')")]
+      :fistulaCaseClosed(p)?[btn('#e0f2fe','#075985','↺ Reopen case',`reopenFistulaCase('${id}')`)]
+      :[btn('#f3e8ff','#6b21a8','🏥 Admit to handover',`admitFistulaPatient('${id}')`),btn('#ecfdf5','#047857','✓ Close case',`openCloseFistulaCase('${id}')`)];
+    acts.push(btn('#eef2f6','var(--navy)','Edit',`openFistulaPatientModal('${id}')`),btn('#e8f5f4','var(--teal)','Record',`openPatientRecord('${id}')`));
+    return `<tr class="${fistulaCaseClosed(p)?'fis-row-closed':''}">
       <td data-label="Patient">${patientNameAvatarHTML(p,nm,fistulaTagHTML(p),'sm')}</td>
       <td data-label="ID card" style="font-family:monospace;">${t(p.id_card)}</td>
       <td data-label="Firm">${t(p.consultant)}</td>
-      <td data-label="Operation">${t(op)}</td>
-      <td data-label="Findings" style="white-space:pre-wrap;">${t(p.findings)}</td>
-      <td data-label="Ward">${ward}</td>
-      <td data-label="Actions"><div class="fis-actions">${admit}
-        <button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openFistulaPatientModal('${jsSafe(String(p.id))}')">Edit</button>
-        <button class="ncb-btn" style="background:#e8f5f4;color:var(--teal);" onclick="openPatientRecord('${jsSafe(String(p.id))}')">Record</button></div></td>
+      <td data-label="Operation">${t(op)}${p.findings?`<div class="fis-sub" style="white-space:pre-wrap;">${htmlSafe(p.findings)}</div>`:''}</td>
+      <td data-label="Episodes">${fistulaEpisodesHTML(p)}</td>
+      <td data-label="Case">${fistulaCaseHTML(p)}</td>
+      <td data-label="Actions"><div class="fis-actions">${acts.join('')}</div></td>
     </tr>`;
   }).join('');
+  const empty={open:'No open fistula cases.',ward:'No fistula patient is on the ward.',closed:'No closed fistula cases yet.',all:'No fistula patients.'}[fistulaView];
   body.innerHTML=`<div style="overflow-x:auto;"><table class="dt fis-table">
-    <thead><tr><th>Patient</th><th>ID card</th><th>Firm</th><th>Operation</th><th>Findings</th><th>Ward</th><th>Actions</th></tr></thead>
-    <tbody>${trs||'<tr><td colspan="7" class="empty">No fistula patient matches that search.</td></tr>'}</tbody></table></div>`;
+    <thead><tr><th>Patient</th><th>ID card</th><th>Firm</th><th>Operation &amp; findings</th><th>Episodes &amp; encounters</th><th>Case</th><th>Actions</th></tr></thead>
+    <tbody>${trs||`<tr><td colspan="7" class="empty">${q?'No fistula patient matches that search.':empty}</td></tr>`}</tbody></table></div>`;
+}
+// The record's Episodes tab lists each admission with its encounters underneath.
+async function openFistulaEpisodes(pid){
+  await openPatientRecord(pid);
+  if(typeof switchPatientPanel==='function')switchPatientPanel('episodes');
 }
 async function openFistulaPatientModal(patientId){
   let p={};
@@ -22438,7 +22524,7 @@ async function openFistulaPatientModal(patientId){
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>${editing?'Fistula patient':'Add fistula patient'}</h2>
-    <div class="msub">A patient with a fistula and no stoma. Their appliance is managed on the ward and they can go on the handover, marked <span class="fistula-tag">FISTULA</span>. They are kept out of the stoma registry, follow-up planning and reports.</div>
+    <div class="msub">A patient with a fistula and no stoma. Their appliance is managed on the ward and they can go on the handover, marked <span class="fistula-tag">FISTULA</span>. They have no nurse owner and no due month, and are kept out of the stoma registry, follow-up planning and reports.</div>
     <div class="edit-seen-grid">
       <div class="fg"><label>First name *</label><input type="text" id="fis-first" value="${v('first_name')}" placeholder="Given name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="fis-surname" value="${v('surname')}" placeholder="Family name"/></div>
@@ -22479,7 +22565,7 @@ async function saveFistulaPatient(patientId){
     if(error)return fail(htmlSafe(error.message||String(error)));
     if((dropped||[]).includes('fistula_operation_date'))return fail(htmlSafe(sqlNote));
   }else{
-    // Followed only on the ward, so never in the stoma recall lists.
+    // No nurse owner and no due month: never in the stoma recall lists.
     const body={...record,patient_kind:'fistula',followup_status:'paused'};
     let made=null;
     for(let i=0;i<8;i++){
@@ -22500,12 +22586,54 @@ async function saveFistulaPatient(patientId){
   if(patientId&&document.getElementById('page-patient-record')?.classList.contains('active'))openPatientRecord(patientId);
   if(admit)await admitFistulaPatient(pid);
 }
-// Admitting uses the same "Open inpatient visit" window as every patient.
+// Admitting uses the same "Open inpatient visit" window as every patient, so
+// each admission is its own episode. A closed case is reopened first.
 async function admitFistulaPatient(pid){
   const{data:pat}=await fetchPatientById(pid);
   if(!pat){alert('Could not load this patient.');return;}
   if(pat.is_inpatient){alert(`${pat.first_name||'This patient'} is already on the handover.`);return;}
+  if(pat.fistula_closed_date){
+    if(!confirm(`This fistula case was closed on ${fmtShortDate(pat.fistula_closed_date)}. Reopen it and admit ${pat.first_name||'the patient'} to the handover?`))return;
+    const{error}=await updatePatientTolerant(pid,{fistula_closed_date:null,fistula_closed_reason:null});
+    if(error){alert('Could not reopen the case: '+(error.message||error));return;}
+    pat.fistula_closed_date=null;pat.fistula_closed_reason=null;
+  }
   await openInpatientVisitFor(pid,pat);
+}
+function openCloseFistulaCase(pid){
+  const p=fistulaRows.find(x=>String(x.id)===String(pid))||clrState?.patient||{};
+  if(p.is_inpatient){alert('This patient is on the handover. Discharge them there — the discharge closes the case.');return;}
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Close fistula case</h2>
+    <div class="msub">${htmlSafe(nm)} — the case moves to <strong>Closed cases</strong>. Their record, episodes and encounters are kept, and the case can be reopened.</div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label>Date closed *</label><input type="date" id="fis-close-date" value="${htmlSafe(TODAY)}" max="${htmlSafe(TODAY)}"/></div>
+      <div class="fg"><label>Reason</label><select id="fis-close-reason">${FISTULA_CLOSE_REASONS.map(r=>`<option>${htmlSafe(r)}</option>`).join('')}</select></div>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" onclick="saveCloseFistulaCase('${jsSafe(String(pid))}')">Close case</button></div>`;
+  openMo();
+}
+async function saveCloseFistulaCase(pid){
+  const date=String(document.getElementById('fis-close-date')?.value||'').trim();
+  const reason=document.getElementById('fis-close-reason')?.value||FISTULA_CLOSE_REASONS[0];
+  if(!date||date>TODAY){alert('Choose the date the case closed (today or earlier).');return;}
+  const{error,dropped}=await updatePatientTolerant(pid,{fistula_closed_date:date,fistula_closed_reason:reason});
+  if(error){alert('Could not close the case: '+(error.message||error));return;}
+  if((dropped||[]).includes('fistula_closed_date')){alert('Closing a case needs one database change first: run sql/add-fistula-patients.sql once in Supabase, then try again.');return;}
+  closeModal();
+  await afterFistulaCaseChange(pid);
+}
+async function reopenFistulaCase(pid){
+  if(!confirm('Reopen this fistula case? It moves back to Open cases.'))return;
+  const{error}=await updatePatientTolerant(pid,{fistula_closed_date:null,fistula_closed_reason:null});
+  if(error){alert('Could not reopen the case: '+(error.message||error));return;}
+  await afterFistulaCaseChange(pid);
+}
+async function afterFistulaCaseChange(pid){
+  if(document.getElementById('page-fistulas')?.classList.contains('active'))await loadFistulaPatients();
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(pid);
 }
 // A fistula patient who later has a stoma formed joins the stoma registry.
 async function convertFistulaToStoma(pid){
