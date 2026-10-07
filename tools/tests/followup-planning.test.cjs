@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));
@@ -35,6 +36,7 @@ function context({patients=[patient()],future=[],owner='Lorraine'}={}){
     return{rows:q.cols==='patient_id,appt_date,status'?future:[],error:null};
   };
   vm.runInContext("const ADMIN_WORKLIST_KEY='admin_worklist_v2';",c);
+  vm.runInContext(fistulaHelpers,c);
   for(const name of ['adminWorklistLoad','followupMonthName','monthKeyToEndDate','addMonthsToKey','futureBookingDatesByPatient','bookingDateForDueMonth','monthsBetweenKeys','overdueLabel','isUpcomingFollowupBooking','bcLastFollowupAppointment','bcDuePatientsFor','loadBookingCalendar','getReminderData'])vm.runInContext(source(name),c);
   return c;
 }

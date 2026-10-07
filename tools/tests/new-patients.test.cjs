@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const start=html.indexOf('let newPatientRows=[];');
 const end=html.indexOf('function renderNewPatients(){',start);
@@ -32,6 +33,7 @@ function fixture(initialRows){
   });
   // Count the actual database helper calls without changing the result.
   context.fetchPatientsSelect=async()=>{reads++;return{rows:databaseRows,error:null};};
+  vm.runInContext(fistulaHelpers,context);
   vm.runInContext(source,context);
   return{
     context,body,

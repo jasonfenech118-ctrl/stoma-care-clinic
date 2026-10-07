@@ -5,6 +5,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {JSDOM}=require('jsdom');
 
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));
@@ -79,6 +80,7 @@ function session(db,name='Nurse A'){
     'attachHandoverApplianceLines','loadHandover','currentInpatientEpisode','commitEpisodeAppliances',
     'handoverReminderDate','daysUntilDate','flangeDueMeta','flangeDueChipHTML','episodeFlangeDueDate'];
   vm.runInContext('let handoverLoadVersion=0;let handoverWasPhone=false;let plLoaded=true;',c);
+  vm.runInContext(fistulaHelpers,c);
   names.forEach(n=>vm.runInContext(source(n),c));
   const reminderStart=html.indexOf('const HANDOVER_REMINDER_COLS=');
   const reminderEnd=html.indexOf('function renderSitingReminderList(',reminderStart);

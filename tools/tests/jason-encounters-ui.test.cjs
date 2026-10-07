@@ -204,3 +204,20 @@ test('a handover patient with no admission record yet gets one opened, so the en
   assert.deepEqual(made,[[w.fixture.patient.id,'2026-10-04']]);assert.equal(w.JasonEncounters.state.mode,'form');assert.equal(w.JasonEncounters.state.editable,true);
   assert.equal(w.JasonEncounters.state.episode.episode_ref,'EP-NEW');
 });
+
+test('a fistula patient’s encounter has one Fistula column: output, skin around the fistula and appliance — no colour, no rod',async t=>{const w=setup(t);
+  const fis=[{uid:'fistula',code:'F1',type:'Fistula',typeLabel:'Fistula',shortLabel:'Fistula',origin:'fistula'}];
+  w.stomaTimeline=()=>JSON.parse(JSON.stringify(fis));w.stomasPresentOn=()=>JSON.parse(JSON.stringify(fis));w.patientStomaList=()=>[];
+  w.fixture.patient.patient_kind='fistula';w.fixture.patient.rod_stoma_uid=null;w.fixture.patient.rod_removal_date=null;
+  w.fixture.episode.appliances=[{stoma_uid:'fistula',changed_on:'2026-10-02',appliances:['Wound manager (large)'],accessories:['Stoma Seals']}];
+  await w.JasonEncounters.open(w.fixture.patient.id);const page=w.document.querySelector('#page-jason-encounters');
+  assert.match(page.querySelector('#jenc-review-heading').textContent,/Fistula review/);
+  assert.deepEqual([...page.querySelectorAll('[data-step="review"] .jenc-stoma-title')].map(h=>h.textContent),['Fistula']);
+  assert.equal(page.querySelector('[data-kind="stoma"][data-field="colour"]'),null);assert.equal(page.querySelector('[data-kind="rod"]'),null);
+  assert.ok([...page.querySelectorAll('.jenc-field > label')].some(l=>l.textContent==='Skin around the fistula'));
+  assert.ok([...page.querySelectorAll('.jenc-field > label')].some(l=>l.textContent==='Output'));
+  assert.match(page.querySelector('[data-step="appliances"] .jenc-setup').textContent,/Wound manager \(large\)/);
+  change(w,'[data-field="output"][value="Bilious effluent"]',true);change(w,'[data-kind="skin"][data-field="pick"][value="Excoriation"]',true);
+  await w.JasonEncounters.save();const a=w.fixture.calls[0].args;
+  assert.match(a.p_report,/^Fistula — output: Bilious effluent; skin around the fistula: not healthy \(Excoriation\); appliance: Wound manager \(large\)/);
+  assert.equal(JSON.parse(a.p_impact.patient_patch.complications)[0].stoma_uid,'fistula');});

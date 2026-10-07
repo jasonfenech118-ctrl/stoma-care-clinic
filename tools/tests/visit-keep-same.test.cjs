@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);const a=html.lastIndexOf('\n',i);return html.slice(a+1,html.indexOf('\n}',i)+2);};
 function setup(t,{prev,mode='',stomas=[{uid:'s1',code:'S1',typeLabel:'End colostomy'}]}){
@@ -15,6 +16,7 @@ function setup(t,{prev,mode='',stomas=[{uid:'s1',code:'S1',typeLabel:'End colost
     function openMo(){} function visitStomaBannerHTML(){return '';} function visitStomaLabel(st){return st.typeLabel;}
     function commitVisitFromWizard(){committed=JSON.parse(JSON.stringify(Object.values(visitWizard.rows)));}
     var visitWizard=null;`);
+  w.eval(fistulaHelpers);
   w.eval(fn('visitStoma')+fn('renderVisitStep')+fn('visitKeepSame'));
   w.eval(`visitWizard=${JSON.stringify({pending:{mode,date:'2026-10-08',slot:'08:30'},patient:{first_name:'Stephen',surname:'Fava'},stomas,prev,rows:{},chosen:stomas[0].uid,step:'system',system:'',work:{appliances:[],accessories:[]}})};renderVisitStep();`);
   return w;

@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));assert.ok(match,name);
@@ -41,6 +42,7 @@ function context(dataset={}){
     'metricMonthly','metricPeriodTotal','metricPeriodRecords','metricCumulativeUnique','renderPeriodTotals','renderStomaFormationTable',
     'reportRequiredRows','appointmentJsonHasValues','isLegacyAdminAppliancePlaceholder','metricCompareEnsureData','daDatesOf',
     'openMetricCompare','annualKpi','metricPeriodColor','metricPeriodLabel','metricPeriodKey','metricAddYearOptions','metricRecordsHTML','destroyChart'];
+  vm.runInContext(fistulaHelpers,c);
   names.forEach(name=>vm.runInContext(source(name),c));
   c.state=()=>vm.runInContext('metricCompareState',c);
   c.series=key=>vm.runInContext('DA_SERIES',c).find(s=>s.key===key);
@@ -207,4 +209,14 @@ test('a slower comparison read cannot repaint an older month of the same metric'
   resolve[1](d);await latest;resolve[0](d);await old;
   assert.match(c.document.querySelector('.mc-stat-h').textContent,/Oct 2026/);
   assert.equal(c.document.querySelector('.mc-stat-big').textContent,'2');
+});
+
+test('fistula patients and their admissions stay out of the report numbers',async()=>{
+  const {c,d}=context({patients:[patient('a','2026-02-01'),{id:'f',first_name:'Maria',patient_kind:'fistula',followup_status:'paused',fistula_operation_date:'2026-09-01'}],
+    episodes:[{id:'e1',patient_id:'a',record_date:'2026-09-01',kind:'episode'},{id:'e2',patient_id:'f',record_date:'2026-09-02',kind:'episode'}]});
+  await c.renderPeriodTotals('totals',2026,'09',d.patients,[]);
+  const tile=key=>Number(c.document.querySelector(`[onclick*="'${key}'"]`).querySelector('.k-value').textContent);
+  assert.equal(tile('inpatients'),1);assert.equal(tile('stomas_formed'),0);
+  const data=await c.metricCompareEnsureData([2026]);
+  assert.deepEqual(JSON.parse(JSON.stringify(data.episodes)).map(e=>e.id),['e1']);
 });

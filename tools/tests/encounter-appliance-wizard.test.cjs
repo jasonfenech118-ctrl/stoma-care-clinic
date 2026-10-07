@@ -6,6 +6,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);const a=html.lastIndexOf('\n',i);return html.slice(a+1,html.indexOf('\n}',i)+2);};
 const plain=x=>JSON.parse(JSON.stringify(x));
@@ -26,6 +27,7 @@ function setup(t){
     function filterApplianceList(){} function updateApplianceSummary(){} function scrollPanelsToTicked(){}
     async function commitEpisodeAppliances(p,rows){saved.push(rows);} async function commitOutcomeFollowup(p,rows){saved.push(rows);}
     var visitWizard=null,esPickerSkipFor=null;`);
+  w.eval(fistulaHelpers+'\nvar ivWizard=null;');
   w.eval(['openEncounterApplianceWizard','visitStoma','startVisitStoma','vaFlangeCouplings','vaBagPanelHTML','renderVisitStep','isoPlusDays','flangeDueFieldHTML',
     'visitChooseSystem','captureVisitStep','visitSubSteps','visitNext','visitBack','visitBackToAppointment','commitVisitFromWizard',
     'visitPanelHTML','applianceChkHTML','applianceValues','selectedAppliances'].map(fn).join('\n'));

@@ -105,6 +105,8 @@
     const n=twins.findIndex(r=>String(r.id)===String(rec?.id));
     return 'ENC-'+id+(y&&m&&d?'-'+d+m+y.slice(2):'')+(n>0?'-'+(n+1):'');
   }
+  // A fistula patient's fistula has a column of its own: no colour and no rod.
+  const isFistulaCol=s=>s?.uid==='fistula'||String(s?.type||'').trim().toLowerCase()==='fistula';
   function stomaName(s,all){const t=titleCase(s?.type),twins=list(all).filter(x=>titleCase(x.type)===t);return twins.length>1?t+' ('+(twins.indexOf(s)+1)+')':t;}
   function nilExclusive(values,changed){return changed==='Nil'?['Nil']:values.filter(v=>v!=='Nil');}
   function diffHTML(before,after,removed=false){
@@ -126,10 +128,10 @@
   function report(s){
     const lines=[],stomas=list(s.stomas);
     stomas.forEach(x=>{
-      const parts=[];if(x.colour)parts.push('colour / appearance: '+x.colour.toLowerCase());
-      if(x.output?.length)parts.push('function / output: '+x.output.join(', '));
-      if(x.skin?.status==='Healthy')parts.push('peristomal skin: healthy');
-      if(x.skin?.status==='Not healthy')parts.push('peristomal skin: not healthy'+(list(x.skin.problems).length?' ('+x.skin.problems.join(', ')+')':''));
+      const parts=[],skinWord=isFistulaCol(x)?'skin around the fistula':'peristomal skin';if(x.colour)parts.push('colour / appearance: '+x.colour.toLowerCase());
+      if(x.output?.length)parts.push((isFistulaCol(x)?'output: ':'function / output: ')+x.output.join(', '));
+      if(x.skin?.status==='Healthy')parts.push(skinWord+': healthy');
+      if(x.skin?.status==='Not healthy')parts.push(skinWord+': not healthy'+(list(x.skin.problems).length?' ('+x.skin.problems.join(', ')+')':''));
       if(x.appliances?.length)parts.push('appliance: '+x.appliances.join(', '));
       if(x.accessories?.length)parts.push('accessories: '+x.accessories.join(', '));
       if(x.flange_due)parts.push('flange due: '+x.flange_due);
@@ -307,7 +309,7 @@
   }
   const skinValues=k=>k?.status==='Healthy'?[HEALTHY_SKIN]:list(k?.problems);
   function skinHTML(s,extra,old){
-    return '<div class="jenc-fields jenc-skin">'+multi('Peristomal skin',skinValues(s.skin),options('skin'),'skin','pick',extra,skinValues(old?.skin),'skin')+'</div>';
+    return '<div class="jenc-fields jenc-skin">'+multi(isFistulaCol(s)?'Skin around the fistula':'Peristomal skin',skinValues(s.skin),options('skin'),'skin','pick',extra,skinValues(old?.skin),'skin')+'</div>';
   }
   // "Healthy skin" stands alone; ticking any finding clears it.
   function applySkin(st,values,value,checked){
@@ -375,7 +377,7 @@
     const careSummary=x=>list(x?.complications).filter(c=>c.text).map(c=>c.text+' · '+(c.status==='resolved'?'resolved':'active')).join('\n')||'No complication recorded';
     const compSummary=ctx.compare&&ctx.comparison?diffHTML(careSummary(old),careSummary(s),true):esc(careSummary(s));
     return {
-      review:'<div class="jenc-fields">'+colourSelect(s,extra,old)+multi('Function / output',s.output,options('output'),'stoma','output',extra,old?.output||[],'output')+'</div>'+
+      review:'<div class="jenc-fields">'+(isFistulaCol(s)?'':colourSelect(s,extra,old))+multi(isFistulaCol(s)?'Output':'Function / output',s.output,options('output'),'stoma','output',extra,old?.output||[],'output')+'</div>'+
         skinHTML(s,extra,old)+(rodAsked(s)?rodHTML(s,extra,old):'')+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
       appliances:applianceHTML(s,extra,old)
     };
@@ -417,7 +419,7 @@
     const notesHTML=(panels.length?grid(panels.map((x,i)=>noteBox(x.stoma.uid,x.name+' — clinical notes',x.stoma.notes,'jenc-notes-'+i)).join('')):'')+
       (generalNotes?noteBox('',panels.length?'General notes':'Clinical notes',d.notes,'jenc-notes'):'');
     const heading=(number,title,id,badge='')=>'<h3 class="jenc-step-heading" id="'+id+'"><span class="jenc-step-number" aria-hidden="true">'+number+'</span>'+title+(badge?'<span class="jenc-state">'+badge+'</span>':'')+'</h3>';
-    const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
+    const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,panels.length&&panels.every(x=>isFistulaCol(x.stoma))?'Fistula review':'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
     const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+'</section>';
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
@@ -593,7 +595,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;

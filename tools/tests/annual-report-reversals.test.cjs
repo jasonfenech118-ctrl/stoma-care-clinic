@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function source(name){
   const match=html.match(new RegExp('(?:async )?function '+name+'\\('));assert.ok(match,name);
@@ -17,6 +18,7 @@ function context(){
     monthEndDate:(y,m)=>`${y}-${m}-${new Date(Number(y),Number(m),0).getDate()}`,
     followupMonthName:m=>new Date(2026,Number(m)-1,1).toLocaleString('en',{month:'long'}),pct:(a,b)=>b?Math.round(a/b*100):0,
     SB:{from:()=>({select:async()=>({count:7,error:null})})},fetchAllRows:async()=>({rows:[],error:null})});
+  vm.runInContext(fistulaHelpers,c);
   const start=html.indexOf('const DA_STOMA_GROUPS=[');vm.runInContext(html.slice(start,html.indexOf('\n];',start)+3),c);
   for(const name of ['parseStomas','parseRefashionings','parseInitialStomas','stomaOperationHistory','patientStomaList','daStomaGroup',
     'stomaEvents','stomaEndDates','metricNewReversalDates','stomaReversalEntries','metricReversalDates','metricMonthly','metricIsDead','metricOperatedInYear','metricSurgeryDate','reportRequiredRows',

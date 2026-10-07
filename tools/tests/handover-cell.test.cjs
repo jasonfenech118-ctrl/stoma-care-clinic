@@ -6,6 +6,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const {JSDOM}=require('jsdom');
+const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);return html.slice(i,html.indexOf('\n}',i)+2);};
 function row(encounterUser,done=false){
@@ -17,6 +18,7 @@ function row(encounterUser,done=false){
     patientRodApplies:()=>false,handoverRodPrintCarrier:()=>'',flangeDueChipHTML:()=>'',handoverDocButtonHTML:()=>'',
     handoverComplicationLine:()=>'',stripHandoverFlangeDue:v=>v});
   c.window.JasonEncounters=c.JasonEncounters;
+  vm.runInContext(fistulaHelpers,c);
   vm.runInContext(fn('handoverRowHTML'),c);
   dom.window.document.getElementById('t').innerHTML=c.handoverRowHTML({id:'p1',inpatient_ward:'SW4',inpatient_bed:'3',id_card:'1M',surname:'Ciantar',first_name:'Saviour',inpatient_notes:'Little Ones',inpatient_nurse_notes:'Skin intact'},'');
   return dom.window.document.querySelector('td.hv-appl-cell');
