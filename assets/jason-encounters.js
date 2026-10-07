@@ -145,6 +145,12 @@
     if(s.notes)lines.push('Notes: '+s.notes);
     return lines.join('\n');
   }
+  // The system, baseplate and pouch follow from the appliances themselves.
+  function setupFields(ap){
+    const item=n=>APPLIANCE_CATALOGUE.find(c=>c.name===n);ap=list(ap);
+    const baseplate=ap.find(n=>item(n)?.part==='flange')||'';
+    return {system:ap.some(n=>item(n)?.system==='two')?'two':(item(ap[0])?.system||(ap.length?'one':'')),baseplate,pouch:ap.find(n=>n!==baseplate)||''};
+  }
   function stomaSeed(p,ep,date){
     const timeline=stomaTimeline(p),all=stomasPresentOn(p,date).filter(s=>!s.ended||String(s.ended)>date);
     const rows=parseEpisodeApplianceRows(ep),comps=parseComplications(p);
@@ -154,10 +160,7 @@
       let candidates=rows.filter(r=>applianceStomaUid(r,timeline)===s.uid&&(!r.changed_on||r.changed_on<=date));
       if(all.length===1&&!['new','refashion'].includes(s.origin))candidates=candidates.concat(rows.filter(r=>!applianceStomaUid(r,timeline)&&(!r.changed_on||r.changed_on<=date)));
       const row=candidates.reduce((a,b)=>!a||String(b.changed_on||'')>=String(a.changed_on||'')?b:a,null);
-      const ap=row?.appliances||[],ac=row?.accessories||[];
-      const system=ap.some(n=>APPLIANCE_CATALOGUE.find(c=>c.name===n)?.system==='two')?'two':(APPLIANCE_CATALOGUE.find(c=>c.name===ap[0])?.system||(ap.length?'one':''));
-      const flange=ap.find(n=>APPLIANCE_CATALOGUE.find(c=>c.name===n)?.part==='flange')||'';
-      const pouch=ap.find(n=>n!==flange)||'';
+      const ap=row?.appliances||[],ac=row?.accessories||[],{system,baseplate:flange,pouch}=setupFields(ap);
       const own=comps.filter(c=>c.stoma_uid===s.uid||c.stoma===legacy?.slot||c.stoma===String(legacy?.number)||(!c.stoma&&all.length===1));
       const loops=all.filter(x=>rodCapable(x.typeLabel||x.type));
       const rodOwn=rodCapable(s.typeLabel||s.type)&&(p.rod_stoma_uid===s.uid||(!p.rod_stoma_uid&&(all.length===1||(loops.length===1&&loops[0].uid===s.uid))));
@@ -326,19 +329,43 @@
       c.status=wanted(c.text)?'open':k.status==='Healthy'?'resolved':b.status;});
     want.forEach(w=>{if(!st.complications.some(c=>String(c.text||'').trim().toLowerCase()===w.toLowerCase()))st.complications.push({id:crypto.randomUUID(),text:w,status:'open'});});
   }
+  // The appliance setup reads as it stands, with no dropdowns. "Keep same
+  // appliance" leaves it as recorded; "Modify appliance" opens the same picker
+  // pages as an appointment, and what is picked comes back into this encounter.
+  const setupKey=x=>[list(x?.appliances),list(x?.accessories),x?.flange_due||''];
+  function applianceHTML(s,extra,old){
+    const base=ctx.baseline?.stomas?.find(x=>x.uid===s.uid)||{},changed=!same(setupKey(s),setupKey(base)),had=list(base.appliances).length>0;
+    // Red marks what differs from the setup on record (or, on a saved version, from the one before).
+    const ref=!ctx.compare?null:ctx.editable?base:ctx.comparison?(old||{}):null;
+    // Whole items are marked, so an appliance name is never split by the highlight.
+    const row=(label,now,was,empty)=>{const items=list(now).map(v=>ref&&!list(was).includes(v)?'<span class="jenc-change">'+esc(v)+'</span>':esc(v));
+      return '<div class="jenc-setup-row"><span class="jenc-setup-label">'+esc(label)+'</span><span>'+(items.join(', ')||esc(empty))+'</span></div>';};
+    const moved=ref&&!same(setupKey(s),setupKey(ref));
+    let html='<div class="jenc-setup'+(moved?' jenc-setup-changed':'')+'">'+row('Appliance',s.appliances,ref?.appliances,'No appliance recorded')+row('Accessories',s.accessories,ref?.accessories,'None recorded');
+    if(s.flange_due||ref?.flange_due)html+=row('Flange due',[s.flange_due].filter(Boolean),[ref?.flange_due].filter(Boolean),'Not set');
+    if(moved)html+='<div class="jenc-previous">Previously: '+esc([list(ref.appliances).join(', ')||'No appliance recorded',list(ref.accessories).join(', '),ref.flange_due?'flange due '+ref.flange_due:''].filter(Boolean).join(' · '))+'</div>';
+    html+='<div class="jenc-meta">'+(!ctx.editable?'Saved setup':changed?'Changed in this encounter'+(had?' — Keep same appliance puts it back':''):had?'Same appliance as before — no change':'No appliance set yet')+'</div>';
+    // Keep same is offered only when there is an appliance on record to keep.
+    if(ctx.editable){
+      html+='<div class="jenc-setup-actions">'+(had?'<button type="button" class="jenc-btn jenc-keep'+(changed?'':' is-kept')+'" data-action="keep-appliance" '+extra+' aria-pressed="'+(!changed)+'">'+(changed?'↺ ':'✓ ')+'Keep same appliance</button>':'')+
+        '<button type="button" class="jenc-btn" data-action="modify-appliance" '+extra+'>✏️ '+(had?'Modify appliance':'Set appliance')+'</button></div>';
+    }
+    return html+'</div>';
+  }
+  function modifyAppliance(st){
+    if(typeof openEncounterApplianceWizard!=='function')return error('The appliance picker is not available. Reload the page and try again.');
+    const target=ctx,uid=st.uid;
+    openEncounterApplianceWizard({patient:ctx.patient,uid,type:st.type,short:st.short,code:st.number,
+      current:{appliances:copy(list(st.appliances)),accessories:copy(list(st.accessories)),flange_due:st.flange_due||''},
+      onDone:picked=>{
+        if(ctx!==target||!ctx.editable)return;const s=ctx.draft.stomas.find(x=>x.uid===uid);if(!s)return;
+        const ap=list(picked?.appliances).slice(),f=setupFields(ap);
+        Object.assign(s,{appliances:ap,accessories:list(picked?.accessories).slice(),flange_due:picked?.flange_due||'',system:picked?.system||f.system,baseplate:f.baseplate,pouch:f.pouch});
+        render();
+      }});
+  }
   function stomaHTML(s){
-    const extra='data-uid="'+esc(s.uid)+'"',old=oldStoma(s.uid),cat=APPLIANCE_CATALOGUE;
-    const baseChoices=cat.filter(c=>c.part==='flange').map(c=>c.name);
-    let bagChoices=cat.filter(c=>s.system==='two'?c.system==='two'&&c.part==='bag':c.system===(s.system==='dressing'?'dressing':'one')).map(c=>c.name);
-    const coupling=cat.find(c=>c.name===s.baseplate)?.coupling;if(s.system==='two'&&coupling)bagChoices=cat.filter(c=>c.part==='bag'&&c.coupling===coupling).map(c=>c.name);
-    const applianceChanged=!same([s.appliances,s.accessories,s.flange_due],[ctx.baseline.stomas.find(x=>x.uid===s.uid)?.appliances,ctx.baseline.stomas.find(x=>x.uid===s.uid)?.accessories,ctx.baseline.stomas.find(x=>x.uid===s.uid)?.flange_due]);
-    const apText=s.appliances.join(', ')||'No appliance recorded',acText=s.accessories.join(', ')||'None recorded';
-    const apSummary=(ctx.compare&&ctx.comparison?diffHTML(old?.appliances?.join(', ')||'No appliance recorded',apText):esc(apText))+'\nAccessories: '+
-      (ctx.compare&&ctx.comparison?diffHTML(old?.accessories?.join(', ')||'None recorded',acText):esc(acText))+'\n'+(!ctx.editable?'Saved setup':applianceChanged?'Changed in this encounter':ctx.record?'Setup retained':'Current setup · no changes');
-    let apBody=select('System',s.system,[['one','One-piece'],['two','Two-piece'],['dressing','Dressing']],'stoma','system',extra,old?.system);
-    if(s.system==='two')apBody+=select('Baseplate',s.baseplate,baseChoices,'stoma','baseplate',extra,old?.baseplate);
-    apBody+=select(s.system==='dressing'?'Dressing':'Pouch / appliance',s.pouch,bagChoices,'stoma','pouch',extra,old?.pouch)+multi('Accessories',s.accessories,accessoryChoices(s.accessories),'stoma','accessories',extra,old?.accessories||[]);
-    if(s.system==='two'){const dates=['',...Array.from({length:31},(_,i)=>dateAddStr(TODAY,i))];apBody+=select('Next flange change',s.flange_due,dates.filter(Boolean),'stoma','flange_due',extra,old?.flange_due);}
+    const extra='data-uid="'+esc(s.uid)+'"',old=oldStoma(s.uid);
     let compBody=list(s.complications).map((c,i)=>{
       const o=old?.complications?.find(v=>v.id===c.id),ref=extra+' data-index="'+i+'"';
       const choices=complicationCatalogue.filter(v=>v.active!==false&&(v.scope==='all'||v.scope===complicationScopeForStoma(s.type))).map(v=>v.name);
@@ -350,7 +377,7 @@
     return {
       review:'<div class="jenc-fields">'+colourSelect(s,extra,old)+multi('Function / output',s.output,options('output'),'stoma','output',extra,old?.output||[],'output')+'</div>'+
         skinHTML(s,extra,old)+(rodAsked(s)?rodHTML(s,extra,old):'')+accordion('complications:'+s.uid,'Complications',compSummary,compBody),
-      appliances:accordion('appliances:'+s.uid,'Current setup',apSummary,'<div class="jenc-fields">'+apBody+'</div>')
+      appliances:applianceHTML(s,extra,old)
     };
   }
   function render(){
@@ -443,16 +470,8 @@
     if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='skin')obj=st?.skin;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
     if(el.type==='checkbox'){
       let v=list(obj[field]).filter(x=>x!==el.value);if(el.checked)v.push(el.value);
-      if(field==='output')v=nilExclusive(v,el.checked?el.value:'');
-      if(field==='accessories')v=el.checked&&el.value==='None'?['None']:v.filter(x=>x!=='None');obj[field]=v;
+      if(field==='output')v=nilExclusive(v,el.checked?el.value:'');obj[field]=v;
     }else obj[field]=el.value;
-    if(kind==='stoma'&&['system','baseplate','pouch'].includes(field)){
-      if(field==='system'){st.baseplate='';st.pouch='';st.flange_due='';}
-      if(field==='baseplate'){
-        const flange=APPLIANCE_CATALOGUE.find(v=>v.name===st.baseplate),bag=APPLIANCE_CATALOGUE.find(v=>v.name===st.pouch);
-        if(flange&&bag&&flange.coupling!==bag.coupling)st.pouch='';}
-      st.appliances=[st.system==='two'?st.baseplate:'',st.pouch].filter(Boolean);
-    }
     if(kind==='skin'){if(field==='status'&&st.skin.status!=='Not healthy')st.skin.problems=[];linkSkin(st);}
     if(kind==='rod'&&field==='status'){if(el.value==='Removed'){st.rod.removed=TODAY;}else if(el.value==='Not recorded'){st.rod.due='';st.rod.removed='';}else st.rod.removed='';}
     const menu=el.closest('details.jenc-multi');render();
@@ -471,6 +490,10 @@
     if(!ctx.editable)return;
     const st=ctx.draft.stomas.find(s=>s.uid===btn.dataset.uid);
     if(action==='add-option'&&st){await addOptionFlow(btn.dataset.option,st);return;}
+    // Keep same: the recorded setup goes back exactly as it was (an older snapshot may lack some fields).
+    if(action==='keep-appliance'&&st){const b=ctx.baseline.stomas.find(x=>x.uid===st.uid);
+      if(b)['system','baseplate','pouch','appliances','accessories','flange_due'].forEach(k=>{if(k in b)st[k]=copy(b[k]);else delete st[k];});render();return;}
+    if(action==='modify-appliance'&&st){modifyAppliance(st);return;}
     if(action==='add-comp'&&st){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
     if(action==='remove-comp'&&st){st.complications.splice(Number(btn.dataset.index),1);render();}
     if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',referred_on:TODAY,referred_by:ctx.who.name,seen:false,seen_on:'',seen_by:''});render();}
@@ -521,8 +544,8 @@
     if(ctx.draft.stomas.some(s=>s.complications.some(c=>!c.text)))return error('Choose a complication or remove the empty row.');
     if(ctx.draft.referrals.some(r=>!r.profession))return error('Choose who the patient is referred to, or remove the empty referral.');
     let updates;try{updates=impact();}catch(e){return error(e.message);}
-    if(updates.appliances.some(s=>!s.appliances.length))return error('Select a pouch / appliance for the changed setup.');
-    if(ctx.draft.stomas.some(s=>s.system==='two'&&updates.appliances.some(a=>a.stoma_uid===s.uid)&&(!s.baseplate||!s.pouch)))return error('Select both the baseplate and pouch for a two-piece system.');
+    const empty=ctx.draft.stomas.filter(s=>updates.appliances.some(a=>a.stoma_uid===s.uid&&!list(a.appliances).length));
+    if(empty.length)return error('Choose the appliance for '+empty.map(s=>stomaName(s,ctx.draft.stomas)).join(', ')+' — press Modify appliance, or Keep same appliance.');
     const target=ctx;
     const {data:auth,error:authError}=await SB.auth.getUser();if(ctx!==target)return;
     if(authError||!signedIn(auth?.user))return error('Sign in to save this encounter.');
@@ -570,7 +593,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
