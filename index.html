@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-460"/>
-<script src="assets/manual.js?v=2026.10.07-460"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-461"/>
+<script src="assets/manual.js?v=2026.10.07-461"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -2209,6 +2209,17 @@ tr.fis-row-closed td{opacity:.85;}
 tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 .psm-fistula.psm-bagging{border-color:#7dd3fc;background:#f0f9ff;}
 .psm-fistula.psm-bagging h3,.psm-fistula.psm-bagging dt{color:#075985;}
+.fis-path{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:6px 0 4px;}
+.fis-path-btn{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:16px;border:1.5px solid #c084fc;border-radius:12px;background:#faf5ff;cursor:pointer;font-family:inherit;transition:box-shadow .12s,transform .05s;}
+.fis-path-btn:hover{box-shadow:0 2px 10px rgba(124,58,237,.2);}
+.fis-path-btn:active{transform:translateY(1px);}
+.fis-path-btn.is-bagging{border-color:#7dd3fc;background:#f0f9ff;}
+.fis-path-ic{font-size:26px;line-height:1;}
+.fis-path-txt strong{display:block;font-size:15px;color:#1f2937;margin-bottom:3px;}.fis-path-txt span{font-size:12.5px;color:var(--muted);}
+.fis-path-chip{display:inline-block;margin:0 0 12px;padding:5px 12px;border-radius:999px;background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;font-size:12.5px;font-weight:800;}
+.fis-path-chip.is-bagging{background:#e0f2fe;color:#075985;border-color:#7dd3fc;}
+.fis-change{background:none;border:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0;}
+@media(max-width:600px){.fis-path{grid-template-columns:1fr;}}
 .fis-kind{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 12px;}
 .fis-kind label{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:#fff;}
 .fis-kind label:has(input:checked){border-color:#7c3aed;background:#faf5ff;box-shadow:0 0 0 2px #e9d5ff;}
@@ -3697,7 +3708,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.07-460';
+const APP_BUILD='2026.10.07-461';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22537,54 +22548,67 @@ async function openFistulaEpisodes(pid){
   if(typeof switchPatientPanel==='function')switchPatientPanel('episodes');
 }
 async function openFistulaPatientModal(patientId){
-  let p={};
   if(patientId){
     const r=await fetchPatientById(patientId);
+    if(r.error||!r.data){alert('Could not load this patient.');return;}
+    return openFistulaPatientForm(r.data,isBaggingPatient(r.data)?'bagging':'fistula');
+  }
+  // Adding: choose the pathway first — fistula present or bagging advice — then
+  // open the matching form.
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2>Add patient</h2>
+    <div class="msub">Which pathway?</div>
+    <div class="fis-path">
+      <button type="button" class="fis-path-btn" onclick="openFistulaPatientForm(null,'fistula')"><span class="fis-path-ic">🩹</span><span class="fis-path-txt"><strong>Fistula present</strong><span>A fistula managed with a bag or wound manager</span></span></button>
+      <button type="button" class="fis-path-btn is-bagging" onclick="openFistulaPatientForm(null,'bagging')"><span class="fis-path-ic">👜</span><span class="fis-path-txt"><strong>Bagging advice</strong><span>Asked to assess and advise a bag — e.g. a percutaneous drain or a wound</span></span></button>
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button></div>`;
+  openMo();
+}
+async function openFistulaPatientForm(patient,kind){
+  let p=patient||{};
+  // Called from the chooser with just a kind; an edit passes the patient.
+  if(typeof patient==='string'){kind=patient;p={};}
+  if(p&&p.id&&typeof p.first_name==='undefined'){
+    const r=await fetchPatientById(p.id);
     if(r.error||!r.data){alert('Could not load this patient.');return;}
     p=r.data;
   }
   if(!firmList.length){try{await loadFirms();}catch(e){}}
-  const editing=!!p.id,v=k=>htmlSafe(p[k]||'');
-  const kind=editing?(isBaggingPatient(p)?'bagging':'fistula'):'';
+  const editing=!!p.id;
+  kind=(kind==='bagging'||kind==='fistula')?kind:(isBaggingPatient(p)?'bagging':'fistula');
+  const bag=kind==='bagging',v=k=>htmlSafe(p[k]||'');
+  const opdateLabel=bag?'Date of procedure / referral':'Date of operation';
+  const opLabel=bag?'Drain / wound &amp; reason for bagging advice':'Operation performed &amp; findings';
+  const opPlaceholder=bag?'e.g. Percutaneous drain (PCD), right flank — high output, asked for advice on the type of bag':'e.g. Laparotomy and small bowel resection — enterocutaneous fistula through the midline wound';
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
-  mb.innerHTML=`<h2>${editing?htmlSafe(fistulaKindLabel(p)):'Add patient — fistula or bagging advice'}</h2>
-    <div class="msub">A patient with no stoma whose appliance is managed on the ward. They can go on the handover, marked <span class="fistula-tag">FISTULA</span> or <span class="fistula-tag bagging-tag">BAGGING</span>. They have no nurse owner and no due month, and are kept out of the stoma registry, follow-up planning and reports.</div>
-    <div class="fis-kind" id="fis-kind-choice">
-      <label><input type="radio" name="fis-kind" value="fistula" ${kind==='fistula'?'checked':''} onchange="fisKindChange()"/><div><strong>🩹 Fistula present</strong><span>A fistula managed with a bag or wound manager</span></div></label>
-      <label><input type="radio" name="fis-kind" value="bagging" ${kind==='bagging'?'checked':''} onchange="fisKindChange()"/><div><strong>👜 Bagging advice</strong><span>Asked to assess and advise a bag — e.g. a percutaneous drain or a wound</span></div></label>
-    </div>
+  mb.innerHTML=`<h2>${editing?htmlSafe(fistulaKindLabel(p)):(bag?'Add patient — bagging advice':'Add patient — fistula present')}</h2>
+    <input type="hidden" id="fis-kind-value" value="${htmlSafe(kind)}"/>
+    <div class="fis-path-chip${bag?' is-bagging':''}">${bag?'👜 Bagging advice':'🩹 Fistula present'}${editing?'':` · <button type="button" class="fis-change" onclick="openFistulaPatientModal()">change</button>`}</div>
     <div class="edit-seen-grid">
       <div class="fg"><label>First name *</label><input type="text" id="fis-first" value="${v('first_name')}" placeholder="Given name"/></div>
       <div class="fg"><label>Surname *</label><input type="text" id="fis-surname" value="${v('surname')}" placeholder="Family name"/></div>
       <div class="fg"><label>ID card *</label><input type="text" id="fis-idcard" value="${v('id_card')}" placeholder="e.g. 404261M"/></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="fis-consultant" onchange="firmAdd(this)">${firmOptions(p.consultant||'')}</select></div>
-      <div class="fg"><label id="fis-opdate-label">Date of operation</label><input type="date" id="fis-opdate" value="${v('fistula_operation_date')}" max="${htmlSafe(TODAY)}"/></div>
-      <div class="fg" style="grid-column:1 / -1;"><label id="fis-operation-label">Operation performed &amp; findings</label><textarea class="fis-text" id="fis-operation" rows="3" placeholder="e.g. Laparotomy and small bowel resection — enterocutaneous fistula through the midline wound">${htmlSafe(fistulaOpText(p))}</textarea></div>
+      <div class="fg"><label>${opdateLabel}</label><input type="date" id="fis-opdate" value="${v('fistula_operation_date')}" max="${htmlSafe(TODAY)}"/></div>
+      <div class="fg" style="grid-column:1 / -1;"><label>${opLabel}</label><textarea class="fis-text" id="fis-operation" rows="3" placeholder="${opPlaceholder}">${htmlSafe(fistulaOpText(p))}</textarea></div>
       ${editing?'':`<div class="fg" style="grid-column:1 / -1;"><label class="fis-check"><input type="checkbox" id="fis-admit" checked/> Admit to the handover now <span style="font-weight:400;color:var(--muted);">— the ward, bed and admission date are asked next</span></label></div>`}
     </div>
     <div id="fis-error"></div>
     ${editing?`<div class="fis-convert">Has this patient now had a stoma formed? <button type="button" class="ncb-btn" style="background:#ede9fe;color:#5b21b6;margin-left:6px;" onclick="convertFistulaToStoma('${jsSafe(String(p.id))}')">Move to the Patient Registry as a stoma patient</button></div>`:''}
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+    <div class="mact"><button class="btn-cancel" onclick="${editing?'closeModal()':'openFistulaPatientModal()'}">${editing?'Cancel':'Back'}</button>
       <button class="btn-save" id="fis-save" onclick="saveFistulaPatient('${jsSafe(String(p.id||''))}')">${editing?'Save':'Add patient'}</button></div>`;
   openMo();
-  fisKindChange();
-}
-// The labels follow the choice: an operation for a fistula, a drain or wound for bagging advice.
-function fisKindChange(){
-  const bag=document.querySelector('input[name="fis-kind"]:checked')?.value==='bagging';
-  const set=(id,text,ph)=>{const l=document.getElementById(id+'-label');if(l)l.textContent=text;const el=document.getElementById(id);if(el&&ph)el.placeholder=ph;};
-  set('fis-opdate',bag?'Date of procedure / referral':'Date of operation');
-  set('fis-operation',bag?'Drain / wound &amp; reason for bagging advice':'Operation performed &amp; findings',
-    bag?'e.g. Percutaneous drain (PCD), right flank — high output, asked for advice on the type of bag':'e.g. Laparotomy and small bowel resection — enterocutaneous fistula through the midline wound');
 }
 async function saveFistulaPatient(patientId){
   const g=id=>String(document.getElementById(id)?.value||'').trim();
   const err=document.getElementById('fis-error');
   const fail=m=>{if(err)err.innerHTML=`<div class="registry-lookup-note error" style="margin-top:8px;">${m}</div>`;const b=document.getElementById('fis-save');if(b)b.disabled=false;};
   const first=g('fis-first'),surname=g('fis-surname'),idc=normaliseIdCard(g('fis-idcard'));
-  const kind=document.querySelector('input[name="fis-kind"]:checked')?.value||'';
-  if(!kind)return fail('Choose <strong>Fistula present</strong> or <strong>Bagging advice</strong>.');
+  const kind=document.getElementById('fis-kind-value')?.value||'';
+  if(kind!=='fistula'&&kind!=='bagging')return fail('Choose <strong>Fistula present</strong> or <strong>Bagging advice</strong>.');
   if(!first||!surname||!idc)return fail('Please fill in the first name, surname and ID card.');
   const opDate=g('fis-opdate');
   if(opDate&&opDate>TODAY)return fail('The date of operation cannot be in the future.');

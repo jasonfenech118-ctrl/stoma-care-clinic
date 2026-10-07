@@ -97,15 +97,21 @@ function fistulaForm(t,{matches=[],insertErrors=[]}={}){
     fetchPatientById:async id=>({data:{id,first_name:'Maria',is_inpatient:false},error:null}),openInpatientVisitFor:async(id)=>log.admitted.push(id),
     SB:{from:()=>({insert:body=>({select:()=>({single:async()=>{log.inserts.push(JSON.parse(JSON.stringify(body)));const e=insertErrors.shift();return e?{data:null,error:e}:{data:{id:'new-1'},error:null};}})})})}});
   w.eval(fistulaHelpers);
-  w.eval(['openFistulaPatientModal','saveFistulaPatient','admitFistulaPatient','fisKindChange'].map(fn).join('\n'));
-  return {w,log,set:(id,v)=>{w.document.getElementById(id).value=v;},kind:k=>{const r=w.document.querySelector(`input[name="fis-kind"][value="${k}"]`);r.checked=true;w.fisKindChange();}};
+  w.eval(['openFistulaPatientModal','openFistulaPatientForm','saveFistulaPatient','admitFistulaPatient'].map(fn).join('\n'));
+  // The Add flow now opens a pathway chooser first; a kind picks that pathway.
+  return {w,log,set:(id,v)=>{w.document.getElementById(id).value=v;},kind:k=>w.openFistulaPatientForm(null,k)};
 }
 test('Add fistula patient saves a fistula patient off stoma follow-up, then opens the admission window',async t=>{
   const {w,log,set,kind}=fistulaForm(t);await w.openFistulaPatientModal();
-  assert.match(w.document.getElementById('mb').textContent,/Add patient — fistula or bagging advice/);assert.equal(w.document.getElementById('fis-admit').checked,true);
-  // Operation performed and findings are one field.
-  assert.equal(w.document.getElementById('fis-findings'),null);assert.equal(w.document.getElementById('fis-operation').tagName,'TEXTAREA');
+  // Add opens a two-pathway chooser first.
+  assert.match(w.document.getElementById('mb').textContent,/Which pathway\?/);
+  const paths=w.document.querySelectorAll('.fis-path-btn');assert.equal(paths.length,2);assert.match(paths[0].textContent,/Fistula present/);assert.match(paths[1].textContent,/Bagging advice/);
   kind('fistula');
+  // The descriptive paragraph is gone; the field pair is one box.
+  assert.doesNotMatch(w.document.getElementById('mb').textContent,/kept out of the stoma registry/);
+  assert.equal(w.document.getElementById('fis-findings'),null);assert.equal(w.document.getElementById('fis-operation').tagName,'TEXTAREA');
+  assert.match(w.document.querySelector('.fis-path-chip').textContent,/Fistula present/);
+  assert.equal(w.document.getElementById('fis-admit').checked,true);
   set('fis-first','Maria');set('fis-surname','Borg');set('fis-idcard',' 123456 m ');set('fis-consultant','Mr A Surgeon');set('fis-opdate','2026-09-30');
   set('fis-operation','Laparotomy and small bowel resection — ECF through the midline wound');
   await w.saveFistulaPatient('');
@@ -116,7 +122,6 @@ test('Add fistula patient saves a fistula patient off stoma follow-up, then open
 test('the form refuses a missing name or ID, a future operation date and an ID card already in the registry',async t=>{
   const {w,log,set,kind}=fistulaForm(t,{matches:[{id:'s1',first_name:'Joe',surname:'Vella'}]});await w.openFistulaPatientModal();
   const err=()=>w.document.getElementById('fis-error').textContent;
-  await w.saveFistulaPatient('');assert.match(err(),/Fistula present.*Bagging advice/s);
   kind('fistula');
   await w.saveFistulaPatient('');assert.match(err(),/first name, surname and ID card/);
   set('fis-first','Maria');set('fis-surname','Borg');set('fis-idcard','7M');set('fis-opdate','2026-10-09');
@@ -250,8 +255,10 @@ test('bagging advice is the other kind in the section: its own labels, tag and c
   // The add form offers both kinds and relabels the fields for bagging advice.
   const {w,log,set,kind}=fistulaForm(t);await w.openFistulaPatientModal();
   kind('bagging');
-  assert.match(w.document.getElementById('fis-opdate-label').textContent,/Date of procedure/);
-  assert.match(w.document.getElementById('fis-operation-label').textContent,/Drain \/ wound.*reason/);
+  assert.match(w.document.querySelector('.fis-path-chip').textContent,/Bagging advice/);
+  const labels=[...w.document.querySelectorAll('.edit-seen-grid label')].map(l=>l.textContent);
+  assert.ok(labels.some(t=>/Date of procedure/.test(t)));
+  assert.ok(labels.some(t=>/Drain \/ wound.*reason/.test(t)));
   assert.match(w.document.getElementById('fis-operation').placeholder,/Percutaneous drain|PCD/);
   set('fis-first','Paul');set('fis-surname','Said');set('fis-idcard','55M');
   set('fis-operation','Percutaneous drain, right flank — high output, asked for a bag');
@@ -292,4 +299,34 @@ test('the registry filter separates fistulas from bagging advice', t=>{
   assert.deepEqual([...w.document.querySelectorAll('.nm')].map(n=>n.textContent),['Paul Said']);
   w.document.getElementById('fis-kind').value='fistula';w.renderFistulaPatients();
   assert.deepEqual([...w.document.querySelectorAll('.nm')].map(n=>n.textContent),['Maria Borg']);
+});
+
+test('Add opens a two-pathway chooser; each button opens its form, and Back returns to the chooser', async t=>{
+  const {w}=fistulaForm(t);
+  await w.openFistulaPatientModal();
+  // Chooser first — no form fields yet.
+  assert.match(w.document.getElementById('mb').textContent,/Which pathway\?/);
+  assert.equal(w.document.getElementById('fis-first'),null);
+  const [fis,bag]=w.document.querySelectorAll('.fis-path-btn');
+  assert.match(fis.getAttribute('onclick'),/openFistulaPatientForm\(null,'fistula'\)/);
+  assert.match(bag.getAttribute('onclick'),/openFistulaPatientForm\(null,'bagging'\)/);
+  // Bagging pathway opens the form with the kind fixed and a Back button.
+  await w.openFistulaPatientForm(null,'bagging');
+  assert.equal(w.document.getElementById('fis-kind-value').value,'bagging');
+  assert.match(w.document.querySelector('.fis-path-chip').textContent,/Bagging advice/);
+  const back=w.document.querySelector('.mact .btn-cancel');
+  assert.match(back.textContent,/Back/);assert.match(back.getAttribute('onclick'),/openFistulaPatientModal\(\)/);
+  // The "change" link also returns to the chooser.
+  assert.match(w.document.querySelector('.fis-path-chip .fis-change').getAttribute('onclick'),/openFistulaPatientModal\(\)/);
+});
+
+test('editing a patient skips the chooser and opens straight into their pathway', async t=>{
+  const {w}=fistulaForm(t);
+  w.fetchPatientById=async()=>({data:{id:'b1',first_name:'Paul',surname:'Said',patient_kind:'fistula',fistula_category:'bagging',procedure_performed:'PCD'},error:null});
+  await w.openFistulaPatientModal('b1');
+  assert.equal(w.document.getElementById('mb').textContent.includes('Which pathway?'),false);
+  assert.equal(w.document.getElementById('fis-kind-value').value,'bagging');
+  assert.equal(w.document.getElementById('fis-first').value,'Paul');
+  assert.equal(w.document.querySelector('.fis-path-chip .fis-change'),null,'no change link when editing');
+  assert.match(w.document.querySelector('.mact .btn-cancel').textContent,/Cancel/);
 });
