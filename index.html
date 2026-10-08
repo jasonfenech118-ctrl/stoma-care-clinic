@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-462"/>
-<script src="assets/manual.js?v=2026.10.08-462"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-463"/>
+<script src="assets/manual.js?v=2026.10.08-463"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -3708,7 +3708,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.08-462';
+const APP_BUILD='2026.10.08-463';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23154,27 +23154,26 @@ function renderDataAnalysisRegistry(){
   const complete=rows.length-incomplete.length;
   const pctInc=rows.length?Math.round(incomplete.length/rows.length*100):0;
 
-  // Year span from surgery dates, used for the pickers and the yearly bar.
-  const allYears=rows.map(p=>daYear(p.surgery_date)).filter(Boolean);
+  // Only years that actually have an incomplete record drive this view, so the
+  // pickers and the yearly bar never stretch across empty decades. A lone very
+  // old record shows as a single bar beside the rest — not forty blank years
+  // before it — and the From / To list offers only years that have something.
   const nowY=new Date().getFullYear();
-  const minY=allYears.length?Math.min(...allYears):nowY;
-  const maxY=allYears.length?Math.max(...allYears):nowY;
-  // The chart reacts to where the incomplete records actually are: the default
-  // range is the first and last surgery year that has an incomplete record, so a
-  // handful of very old COMPLETE records no longer stretch it across empty
-  // decades. The pickers still span the full year range for manual exploring.
-  const incYears=incomplete.map(p=>daYear(p.surgery_date)).filter(Boolean);
-  const incMinY=incYears.length?Math.min(...incYears):minY;
-  const incMaxY=incYears.length?Math.max(...incYears):maxY;
-  if(!daRegFrom||daRegFrom<minY||daRegFrom>maxY)daRegFrom=incMinY;
-  if(!daRegTo||daRegTo<minY||daRegTo>maxY)daRegTo=incMaxY;
+  const incByYearMap=new Map();
+  incomplete.forEach(p=>{const y=daYear(p.surgery_date);if(y)incByYearMap.set(y,(incByYearMap.get(y)||0)+1);});
+  const yearsWithInc=[...incByYearMap.keys()].sort((a,b)=>a-b);
+  const inYears=y=>yearsWithInc.includes(y);
+  const incMinY=yearsWithInc.length?yearsWithInc[0]:nowY;
+  const incMaxY=yearsWithInc.length?yearsWithInc[yearsWithInc.length-1]:nowY;
+  if(!daRegFrom||!inYears(daRegFrom))daRegFrom=incMinY;
+  if(!daRegTo||!inYears(daRegTo))daRegTo=incMaxY;
   if(daRegFrom>daRegTo)daRegFrom=daRegTo;
-  if(!daRegYear||daRegYear<minY||daRegYear>maxY)daRegYear=incMaxY;
+  if(!daRegYear||!inYears(daRegYear))daRegYear=incMaxY;
 
-  const years=[];for(let y=daRegFrom;y<=daRegTo;y++)years.push(y);
-  // Incomplete records per year (by surgery year), plus an Unknown bucket for
-  // incomplete records that have no surgery date at all.
-  const incByYear=years.map(y=>incomplete.filter(p=>daYear(p.surgery_date)===y).length);
+  // The bars are the years with incomplete records that fall between From and
+  // To — gap-free — plus an Unknown bucket for records with no surgery date.
+  const years=yearsWithInc.filter(y=>y>=daRegFrom&&y<=daRegTo);
+  const incByYear=years.map(y=>incByYearMap.get(y)||0);
   const unknownInc=incomplete.filter(p=>!daYear(p.surgery_date)).length;
   const yearLabels=years.map(String).concat(unknownInc?['Unknown']:[]);
   const yearData=incByYear.concat(unknownInc?[unknownInc]:[]);
@@ -23187,7 +23186,11 @@ function renderDataAnalysisRegistry(){
     return m===i+1;
   }).length);
 
-  const yearOpts=(sel)=>{let o='';for(let y=minY;y<=maxY;y++)o+=`<option value="${y}" ${y===sel?'selected':''}>${y}</option>`;return o;};
+  // The pickers list only the years that have incomplete records, so no empty
+  // year is ever offered. With none, the current year is the lone placeholder.
+  const yearOpts=(sel)=>yearsWithInc.length
+    ? yearsWithInc.map(y=>`<option value="${y}" ${y===sel?'selected':''}>${y}</option>`).join('')
+    : `<option value="${nowY}" selected>${nowY}</option>`;
 
   body.innerHTML=daSubTabs()+`
     ${patientDatesAvailable?'':'<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical columns are not in the database yet, so every record counts as incomplete. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase.</div>'}
@@ -23206,7 +23209,7 @@ function renderDataAnalysisRegistry(){
         `<div style="height:250px;"><canvas id="da-reg-pie"></canvas></div>
          <div class="ap-hint" style="margin:6px 0 0;">Click the amber slice to list every incomplete record.</div>`)}
       ${daCard('reg-year','Incomplete records by year',
-        'Counted by the year of the surgery date.',
+        'By the year of the surgery date. Only years that have incomplete records are shown.',
         `<div class="da-controls" style="margin:0 0 8px;"><div class="da-control-row">
            <span class="da-control-label">From</span><select class="da-year-select" onchange="setDaRegFrom(this.value)">${yearOpts(daRegFrom)}</select>
            <span class="da-control-label">to</span><select class="da-year-select" onchange="setDaRegTo(this.value)">${yearOpts(daRegTo)}</select>
