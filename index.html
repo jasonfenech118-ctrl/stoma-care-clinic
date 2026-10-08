@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MDH Stoma Care Clinic — Roster</title>
+<title>MDH Stoma Care Clinic — Clinical Workspace</title>
 <!-- Home-screen install for the Quick Look patient lookup (opens at #lookup). -->
 <link rel="manifest" href="quicklook.webmanifest"/>
 <link rel="apple-touch-icon" href="apple-touch-quicklook.png"/>
@@ -21,10 +21,10 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-468"/>
-<script src="assets/manual.js?v=2026.10.08-468"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-476"/>
+<script src="assets/manual.js?v=2026.10.08-476"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.08-476"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
 <style>
 :root{
@@ -2338,6 +2338,12 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 }
 </style>
 <link rel="stylesheet" href="assets/clinic-visuals.css?v=2" media="screen">
+<link rel="stylesheet" href="assets/clinic-workspace.css?v=2026.10.08-476">
+<script src="assets/clinic-workspace.js?v=2026.10.08-476"></script>
+<script src="assets/clinic-timeline.js?v=2026.10.08-476"></script>
+<script src="assets/clinic-drafts.js?v=2026.10.08-476"></script>
+<script src="assets/clinic-tasks.js?v=2026.10.08-476"></script>
+<script src="assets/clinic-print.js?v=2026.10.08-476"></script>
 </head>
 <body>
 
@@ -2360,6 +2366,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
     <div style="display:flex;align-items:center;gap:0;min-width:0;">
       <button class="mob-ham" onclick="openMobileNav()" aria-label="Open navigation menu"><span></span><span></span><span></span></button>
       <div class="tb-logo" style="margin-left:10px;">MDH <span>Stoma Care</span> Clinic</div>
+      <span class="tb-build" id="tb-build" title="Application build"></span>
       <div class="tb-date" id="tb-date"></div>
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
     </div>
@@ -2408,6 +2415,8 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
   </div>
 
   <div class="main">
+    <section class="page" id="page-today" aria-label="Today clinical dashboard"><div id="cw-dashboard"></div></section>
+    <section class="page" id="page-clinical-tasks" aria-label="Clinical tasks"><div id="cw-tasks"></div></section>
 
     <!-- ROSTER -->
     <div class="page active" id="page-roster">
@@ -3660,7 +3669,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.08-468';
+const APP_BUILD='2026.10.08-476';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3686,9 +3695,14 @@ async function startApp(){
   try{const _who=await getCurrentUserForAudit();IS_ADMIN=attIsJason(_who,'');ENCOUNTER_USER=!!String(_who.email||'').trim();}catch(e){IS_ADMIN=false;ENCOUNTER_USER=false;}
   // Honour a direct route before any awaited startup work, so Quick Look is the
   // first app page painted instead of briefly showing the roster.
-  const initialTab=quickLookStart?'phone':'roster';
+  window.ClinicWorkspace?.init();
+  const initialTab=quickLookStart?'phone':'today';
   renderPrimaryTabs(initialTab);renderSubTabs(initialTab);renderMobileNav(initialTab);
   if(quickLookStart)switchTab('phone');
+  else if(!deepPatient&&!/^#handover$/.test(initialHash)){
+    document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id==='page-today'));
+    document.getElementById('cw-dashboard').innerHTML='<div class="cw-loading">Loading today’s clinic…</div>';
+  }
   document.getElementById('ot-date').value=TODAY;
   document.getElementById('til-date').value=TODAY;
   document.getElementById('jump-date').value=TODAY;
@@ -3709,6 +3723,7 @@ async function startApp(){
   startClinicRealtime();
   // The 4pm handover snapshot runs quietly in the background from here on.
   startHandoverSnapshotScheduler();
+  if(!quickLookStart&&!deepPatient&&!/^#handover$/.test(initialHash))switchTab('today');
   // Quick Look was already activated before the awaited startup work above.
   // Handle the other direct routes now that their supporting data is ready.
   if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
@@ -3739,6 +3754,7 @@ function startDateRolloverWatch(){
    shows that area's pages, so the sub-navigation is visible rather than
    hidden behind a dropdown you have to know is there. */
 const TAB_GROUPS=[
+  {key:'today',label:'Today',icon:'◷',color:'#0d7377',pages:[{tab:'today',label:'Today',icon:'◷',color:'#0d7377'},{tab:'clinical-tasks',label:'Clinical tasks',icon:'☑',color:'#0d7377'}]},
   /* The groups run in the order the day is worked: plan the rota, run the
      clinic, work the siting pathway, walk the ward, keep the records, then
      look back at the numbers. Every tab carries a picture icon. */
@@ -3803,6 +3819,7 @@ function hexAlpha(hex,a){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
 }
 function tabIconHTML(item){
+  if(window.ClinicWorkspace)return `<span class="tab-icon">${ClinicWorkspace.icon(item.tab||item.key)}</span>`;
   return `<span class="tab-icon" style="background:${hexAlpha(item.color,.14)};box-shadow:inset 0 0 0 1.5px ${hexAlpha(item.color,.5)}">${item.icon}</span>`;
 }
 function badgeHTML(item){
@@ -3838,10 +3855,11 @@ function renderMobileNav(activeTab){
   const host=document.getElementById('mob-drawer-nav');
   if(!host)return;
   host.innerHTML=TAB_GROUPS.map(g=>`<div class="mob-nav-group">${tabIconHTML(g)}${htmlSafe(g.label)}</div>`+
-    g.pages.map(p=>`<div class="mob-nav-sub ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
-      onclick="switchTabMobile('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</div>`).join('')
+    g.pages.map(p=>`<button type="button" class="mob-nav-sub ${p.tab===activeTab?'active':''}" data-tab="${p.tab}"
+      onclick="switchTabMobile('${p.tab}')">${tabIconHTML(p)}${htmlSafe(p.label)}${badgeHTML(p)}</button>`).join('')
   ).join('');
   updateReminderBadges(clinicReminderBadgeTotal());
+  window.ClinicWorkspace?.navigation(activeTab);
 }
 // Picking an area opens its first page, unless the area is already open.
 function switchGroup(key){
@@ -3866,6 +3884,8 @@ function switchTab(name){
   if(label)label.textContent=TAB_LABELS[name]||name;
   // Hide the floating Quick Look shortcut while the Quick Look page is open.
   document.body.classList.toggle('on-quicklook', name==='phone');
+  if(name==='today')window.ClinicWorkspace?.loadDashboard();
+  if(name==='clinical-tasks')window.ClinicTasks?.page();
   if(name==='staff-audit')loadStaffAudit();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')return loadHandover();
@@ -3943,12 +3963,14 @@ function flushClinicRealtime(){
   const tab=currentTabName();
   if(tab==='add-patient')return; // Never reset an unfinished patient form.
   if(tab==='patient-record'){
-    if([...tables].some(t=>['patients','appointments','clinical_records','siting_sessions','siting_images'].includes(t))&&clrState.patient?.id)
+    if([...tables].some(t=>['patients','appointments','clinical_records','siting_sessions','siting_images','clinic_pending_tasks'].includes(t))&&clrState.patient?.id)
       openPatientRecord(clrState.patient.id);
     return;
   }
   // A data change elsewhere need not redraw the screen being used.
   const relevant={
+    'clinical-tasks':new Set(['patients','staff','clinic_pending_tasks']),
+    today:new Set(['patients','appointments','clinical_records','clinic_pending_tasks','clinic_dated_reminders']),
     roster:CLINIC_ROSTER_TABLES,
     'daily-attendance':new Set([...CLINIC_ROSTER_TABLES,'daily_attendance']),
     'attendance-records':new Set(['daily_attendance','staff']),
@@ -3985,15 +4007,17 @@ async function startClinicRealtime(){
     clinicRealtimeChannel=SB.channel('clinic:changes',{config:{private:true}})
       .on('broadcast',{event:'changed'},({payload})=>queueClinicRealtime(payload?.table))
       .subscribe(status=>{
+        window.ClinicWorkspace?.connection(status);
         // Catch edits made while the device was disconnected.
         if(status==='SUBSCRIBED'){
           CLINIC_REALTIME_TABLES.forEach(t=>clinicRealtimeDirty.add(t));
           queueClinicRealtime();
         }
       });
-  }catch(e){console.warn('Clinic realtime could not connect:',e);}
+  }catch(e){window.ClinicWorkspace?.connection('CHANNEL_ERROR');console.warn('Clinic realtime could not connect:',e);}
 }
 function stopClinicRealtime(){
+  window.ClinicWorkspace?.connection('CLOSED');
   clearTimeout(clinicRealtimeTimer);clinicRealtimeDirty.clear();
   clearInterval(clinicHandoverPoll);clinicHandoverPoll=null;
   if(clinicRealtimeChannel){SB.removeChannel(clinicRealtimeChannel);clinicRealtimeChannel=null;}
@@ -4195,10 +4219,7 @@ function attendanceSheetPrintHTML(dateStr,dbRows,who){
     .legend{font-size:9px;color:#6b7280;text-align:right;line-height:1.5;}
     .legend b{color:#374151;}
   </style>
-  <div class="doc-head">
-    <div><div class="dh-ward">Ward Name: Stoma Care Unit</div><div class="dh-sub">MDH Stoma Care Clinic · Daily Staff Attendance</div></div>
-    <div class="dh-date">${htmlSafe(attDMY(dateStr))}</div>
-  </div>
+  ${window.ClinicPrint?'<style>'+ClinicPrint.styles+'</style>'+ClinicPrint.headerHTML('Daily staff attendance',{subTitle:'Ward Name: Stoma Care Unit',documentDate:attDMY(dateStr)}):'<div class="doc-head">MDH Stoma Care Clinic · Daily Staff Attendance · '+htmlSafe(attDMY(dateStr))+'</div>'}
   <table>
     ${head}
     ${attSectionHTML('Day Duty')}
@@ -9013,17 +9034,8 @@ async function downloadHtmlAsPdf(filename,inner){
     doc.close();
     await new Promise(r=>setTimeout(r,300));
     const canvas=await H(doc.body,{backgroundColor:'#ffffff',scale:2,useCORS:true,windowWidth:794});
-    const img=canvas.toDataURL('image/jpeg',0.95);
     const pdf=new JS.jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
-    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),M=16;
-    const iw=pw-M*2,ih=canvas.height*(iw/canvas.width);
-    if(ih<=ph-M*2){pdf.addImage(img,'JPEG',M,M,iw,ih);}
-    else{
-      const fih=canvas.height*(pw/canvas.width);
-      pdf.addImage(img,'JPEG',0,0,pw,fih);
-      let yy=ph;
-      while(yy<fih){pdf.addPage();pdf.addImage(img,'JPEG',0,-yy,pw,fih);yy+=ph;}
-    }
+    ClinicPrint.addRasterPages(pdf,canvas);ClinicPrint.stampPdf(pdf);
     pdf.save(String(filename||'download').replace(/[\/\\:*?"<>|]+/g,'-')+'.pdf');
   }catch(e){bcPrintWindow(filename,inner);}
   finally{iframe.remove();}
@@ -9044,17 +9056,8 @@ async function htmlToPdfFile(filename,inner){
     doc.close();
     await new Promise(r=>setTimeout(r,300));
     const canvas=await H(doc.body,{backgroundColor:'#ffffff',scale:2,useCORS:true,windowWidth:794});
-    const img=canvas.toDataURL('image/jpeg',0.95);
     const pdf=new JS.jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
-    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight(),M=16;
-    const iw=pw-M*2,ih=canvas.height*(iw/canvas.width);
-    if(ih<=ph-M*2){pdf.addImage(img,'JPEG',M,M,iw,ih);}
-    else{
-      const fih=canvas.height*(pw/canvas.width);
-      pdf.addImage(img,'JPEG',0,0,pw,fih);
-      let yy=ph;
-      while(yy<fih){pdf.addPage();pdf.addImage(img,'JPEG',0,-yy,pw,fih);yy+=ph;}
-    }
+    ClinicPrint.addRasterPages(pdf,canvas);ClinicPrint.stampPdf(pdf);
     const safe=String(filename||'download').replace(/[\/\\:*?"<>|]+/g,'-')+'.pdf';
     return new File([pdf.output('blob')],safe,{type:'application/pdf'});
   } finally { iframe.remove(); }
@@ -9069,6 +9072,7 @@ function bcPrintWindow(title,inner){
     .day{margin:0 0 10px;} .day h3{font-size:13px;color:#0d7377;margin:10px 0 4px;border-bottom:1px solid #cfd8e3;} .slot{font-size:11px;padding:2px 0;}
     @page{size:A4 portrait;margin:12mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   </style></head><body>${inner}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();setTimeout(()=>{w.focus();w.print();},350);
 }
 function printBookingList(){
@@ -9381,7 +9385,7 @@ async function getDatedClinicReminders(){
 async function getPendingReminderTasks(){
   try{
     const{data,error}=await SB.from('clinic_pending_tasks')
-      .select('id,task_text,is_completed,created_at,created_by_name,completed_on,completed_at,completed_by_name')
+      .select('*')
       .or(`is_completed.eq.false,completed_on.eq.${TODAY}`)
       .order('is_completed',{ascending:true})
       .order('created_at',{ascending:true});
@@ -9394,7 +9398,7 @@ function pendingReminderTaskHTML(task){
   const who=done?(task.completed_by_name||'Completed'):(task.created_by_name?`Added by ${task.created_by_name}`:'Pending');
   return `<label class="pending-task-row ${done?'done':''}">
     <input type="checkbox" ${done?'checked':''} onchange="togglePendingReminderTask('${jsSafe(task.id)}',this.checked,this)" aria-label="Mark ${htmlSafe(task.task_text)} ${done?'pending':'completed'}"/>
-    <span class="pending-task-copy"><span class="pending-task-text">${htmlSafe(task.task_text)}</span><span class="pending-task-meta">${htmlSafe(who)}${done?' · remains here until tomorrow':''}</span></span>
+    <span class="pending-task-copy"><span class="pending-task-text">${htmlSafe(task.task_text)}</span><span class="pending-task-meta">${htmlSafe(who)}${window.ClinicTasks?ClinicTasks.summaryHTML(task):''}${done?' · remains here until tomorrow':''}</span></span>
   </label>`;
 }
 function pendingReminderSectionHTML(state,showAdd=true){
@@ -9545,6 +9549,7 @@ async function addPendingReminderTask(){
   document.getElementById('pending-reminder-input')?.focus();
 }
 async function togglePendingReminderTask(taskId,done,box){
+  if(window.ClinicTasks)return ClinicTasks.complete(taskId,done,box);
   if(box)box.disabled=true;
   let who={};
   try{who=await getCurrentUserForAudit();}catch(e){}
@@ -12686,6 +12691,7 @@ function printAnnualReport(){
       .replace(/ onkeydown="[^"]*open(?:MetricCompare|StomaCell)[^"]*"/g,'')
       .replace(/ class="sf-cell"/g,'')
       .replace(/ role="button" tabindex="0"/g,'')}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
 }
@@ -13269,6 +13275,7 @@ function printNewPatients(){
     .np-firsttag{font-size:7px;text-transform:uppercase;color:#0d7377;border:1px solid #bfe6e2;border-radius:8px;padding:0 3px;margin-right:3px;}
     @page{size:A4 landscape;margin:10mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   </style></head><body><h1>${htmlSafe(title)}</h1>${body.innerHTML}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   w.focus();
   setTimeout(()=>w.print(),320);
@@ -17731,7 +17738,7 @@ function recordOutcomeDecor(pat){
 }
 function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
 function switchPatientPanel(which){
-  ['demographics','stomas','outcomes','appts','episodes'].forEach(p=>{
+  ['demographics','stomas','outcomes','appts','episodes','timeline','tasks'].forEach(p=>{
     const panel=document.getElementById('psm-'+p);
     if(panel)panel.hidden=p!==which;
     const tab=document.getElementById('psm-tab-'+p);
@@ -17741,6 +17748,8 @@ function switchPatientPanel(which){
   // Fill the split clinical panels the first time each is opened.
   if(which==='stomas')renderStomasPanel();
   if(which==='episodes')renderEpisodesPanel();
+  if(which==='timeline')window.ClinicTimeline?.render();
+  if(which==='tasks')window.ClinicTasks?.patientPanel();
 }
 
 /* ---- clinical records (episodes, stomas, appliances) ------------------------
@@ -19104,11 +19113,14 @@ async function openSurgeryDetail(patientId,stomaUid){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>${slot?`<button class="btn-save" onclick="openStomaModal('${jsSafe(patientId)}','${jsSafe(slot)}')">✏️ Edit this surgery</button>`:''}</div>`;
 }
 async function openPatientRecord(patientId){
+  if(document.body.classList.contains('jenc-open')&&window.JasonEncounters&&!JasonEncounters.dismiss())return;
   const host=document.getElementById('page-patient-record');
+  const previousPanel=clrState.patient?.id===patientId?host.querySelector('.psm-tab[aria-selected="true"]')?.id?.replace('psm-tab-',''):null;
   const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Registry</button>'+(isEncounterUser()?'<button class="psm-btn" onclick="openEncounter(\''+jsSafe(patientId)+'\')">📝 Encounters</button>':'')+'</div>';
   host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient card…</div></div>';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   host.classList.add('active');
+  window.ClinicWorkspace?.navigation('patient-record');
   window.scrollTo(0,0);
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div></div>';return;}
@@ -19182,6 +19194,7 @@ async function openPatientRecord(patientId){
             <span class="psm-id${pat.id_card?'':' is-missing'}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>
           </div>
           ${demo?`<span class="psm-sub">${demo}</span>`:''}
+          ${window.ClinicWorkspace?ClinicWorkspace.contextHTML(pat,appts):''}
           <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${isEncounterUser()&&window.JasonEncounters?JasonEncounters.referralChipsHTML(JasonEncounters.patientReferrals(pat)):''}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
         </div>
       </div>
@@ -19255,6 +19268,10 @@ async function openPatientRecord(patientId){
     </footer>
   </div></div>`;
   renderClinicalPanel();
+  window.ClinicTimeline?.attach();
+  window.ClinicTasks?.attach();
+  if(previousPanel)switchPatientPanel(previousPanel);
+  window.ClinicWorkspace?.navigation('patient-record');
 }
 
 /* ---- delete patient with confirmation ---- */
@@ -21520,6 +21537,7 @@ function printSitingChecklist(){
         ${printMarks.map(m=>`<div class="mk" style="left:${(m.x*100).toFixed(2)}%;top:${(m.y*100).toFixed(2)}%;">${STOMA_MARK_SVG}</div>`).join('')}</div>
     </div>
   </body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   setTimeout(()=>{try{w.print();}catch(e){}},250);
 }
@@ -22045,6 +22063,7 @@ function printPostopDischarges(){
       <tbody>${body}</tbody>
     </table>
   </body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();w.focus();setTimeout(()=>w.print(),250);
 }
 
@@ -22197,9 +22216,11 @@ function printHandover(){
     tbody tr.wg-even td{background:#fff;}
     tbody tr.wgblank td{background:#fff;height:calc(var(--fs) * 2.6);}
     .hv-legend{margin-top:6px;font-size:calc(var(--fs) - 2px);color:#333;}
+    ${window.ClinicPrint?ClinicPrint.styles:''}
+    .cp-title{font-size:calc(var(--fs) + 3px)}.cp-brand,.cp-subtitle,.cp-date{font-size:calc(var(--fs) - 1px)}.cp-header{margin-bottom:7px;padding-bottom:6px}.cp-footer,.cp-signature{font-size:calc(var(--fs) - 2px);margin-top:6px}.cp-signature span{min-width:100px}
   </style></head><body>
     <div id="sheet">
-    <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
+    ${window.ClinicPrint?ClinicPrint.headerHTML('Inpatients handover',{subTitle:'MDH Nursing Stoma Care'}):'<h1>MDH Nursing Stoma Care — Inpatients Handover</h1>'}
     <table>
       <!-- The date banner is one colspan cell, so with table-layout:fixed the
            column widths have to come from a colgroup, not from the header cells. -->
@@ -22220,6 +22241,7 @@ function printHandover(){
     <div class="hv-legend">
       <b>DL</b> = care discharge letter &nbsp;&nbsp; <b>S5</b> = Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done &nbsp; · a signed permit shows its Signed date
     </div>
+    ${window.ClinicPrint?ClinicPrint.footerHTML({pageLabel:'Page 1 of 1',signature:true}):''}
     </div>
     <script>
     (function(){
@@ -22884,6 +22906,7 @@ function printDuplicates(){
     <h1>MDH Stoma Care Clinic — Patients to check</h1>
     <p class="sub">${groups.length} group${groups.length!==1?'s':''} · printed ${htmlSafe(printed)}</p>
     ${body}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
 }
@@ -23381,6 +23404,7 @@ function printIncompleteList(){
       <thead><tr><th>Surname</th><th>First Name</th><th>ID: Number</th><th>Firm</th><th>Surgery</th><th>Still missing</th></tr></thead>
       <tbody>${body}</tbody></table>
   </body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();w.focus();setTimeout(()=>w.print(),250);
 }
 /* Clicking a bar or slice opens the patients behind it. */
@@ -23498,6 +23522,7 @@ function printDataAnalysis(){
     ${parts.join('')}
     <p class="da-print-foot">Generated from the clinic registry. Figures reflect what is recorded — see “Gaps in the record” for what is missing.</p>
   </body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   closeModal();
   setTimeout(()=>{w.focus();w.print();},400);
@@ -24084,6 +24109,7 @@ function printReportPatientList(){
   const month=document.getElementById('rep-month')?.value||'Full Year';
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html><head><title>Patients Booked Report</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#1a2e4a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:0 0 18px;color:#506070}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#1a2e4a;color:white;text-align:left;padding:7px}td{border-bottom:1px solid #ddd;padding:7px;vertical-align:top}.status-badge,.followup-status-badge,.followup-type-badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold;background:#eef;color:#123;margin:1px}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Patients Booked Report — ${htmlSafe(month)} ${htmlSafe(year)}</h2>${table.outerHTML}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();w.focus();w.print();
 }
 
@@ -24168,6 +24194,7 @@ function printReversalRegister(){
   const year=document.getElementById('rev-year')?.value||'All years';
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html><head><title>Reversal Register</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#1a2e4a}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:0 0 18px;color:#506070}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#1a2e4a;color:white;text-align:left;padding:7px}td{border-bottom:1px solid #ddd;padding:7px;vertical-align:top}.followup-status-badge{display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold;background:#dbeafe;color:#1e40af;margin:1px}</style></head><body><h1>MDH Stoma Care Clinic</h1><h2>Reversal Register — ${htmlSafe(year)}</h2>${table.outerHTML}</body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   w.focus();
   w.print();
@@ -24839,6 +24866,7 @@ function printRegistryMap(){
     <table><thead><tr><th>Locality</th><th>${htmlSafe(m.label)} (${htmlSafe(m.unit)})</th><th>Patients</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
     </body></html>`);
+  window.ClinicPrint?.decorateDocument(w.document,{title:w.document.title});
   w.document.close();
   setTimeout(()=>{w.focus();w.print();},350);
 }

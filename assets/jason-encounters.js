@@ -211,7 +211,7 @@
     el.addEventListener('click',click);el.addEventListener('change',change);el.addEventListener('input',input);}return el;}
   function error(message){const el=document.getElementById('jenc-message');if(el)el.innerHTML='<div class="jenc-error" role="alert">'+esc(message)+'</div>';}
   function dirty(){return !!ctx&&ctx.editable&&!same(ctx.draft,ctx.baseline);}
-  function canLeave(){if(ctx?.saving)return false;return !dirty()||window.confirm('Discard the unsaved encounter changes?');}
+  function canLeave(){if(ctx?.saving)return false;if(!dirty())return true;if(!window.confirm('Discard the unsaved encounter changes?'))return false;window.ClinicDrafts?.discard(ctx).catch(()=>{});return true;}
   function dismiss(force=false){if(!force&&!canLeave())return false;request++;ctx=null;document.body.classList.remove('jenc-open');document.getElementById('page-jason-encounters')?.classList.remove('active');return true;}
   async function back(){if(!canLeave())return;const pos=ctx?.returnScroll||0,pid=ctx?.patient.id,origin=ctx?.returnPage||'page-handover';dismiss(true);document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     if(origin==='page-patient-record'&&typeof openPatientRecord==='function')await openPatientRecord(pid);
@@ -242,6 +242,10 @@
       const ep=openEpisode||episodes.find(e=>rows.some(r=>String(r.episode_id)===String(e.id)));
       if(!ep)throw new Error('There are no saved encounters or open inpatient episodes. Open an inpatient visit from the patient record first.');
       ctx={patient:p,episode:ep,episodes,rows,who:{email:data.user.email,name:signedName({email:data.user.email})},returnScroll,returnPage,mode:'form',historyFilter:String(ep.id),compare:true,openSections:new Set()};
+      if(window.ClinicWorkspace){
+        const target=ctx;ClinicWorkspace.loadContext(p).then(html=>{if(ctx!==target)return;ctx.careContext=html;const el=document.getElementById('jenc-care-context');if(el)el.innerHTML=html;});
+        ClinicWorkspace.navigation('jason-encounters');
+      }
       const todays=openEpisode&&rows.find(r=>String(r.episode_id)===String(openEpisode.id)&&String(r.encounter_date||'').slice(0,10)===TODAY);
       if(recordId&&rows.some(r=>String(r.id)===String(recordId)))selectRecord(recordId);
       else if(todays){
@@ -383,9 +387,10 @@
     };
   }
   function render(){
-    if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
+    if(!ctx)return;window.ClinicDrafts?.observe(ctx);const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
+    if(window.ClinicWorkspace)ClinicWorkspace.navigation('jason-encounters');
     const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
-    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
+    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+(window.ClinicWorkspace?'<div id="jenc-care-context">'+(ctx.careContext||ClinicWorkspace.contextHTML(p))+'</div>':'')+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div>'+(window.ClinicDrafts?'<div id="jenc-draft-state" class="cw-save-note" role="status">'+ClinicDrafts.statusHTML(ctx)+'</div>':'')+'</div></div><div id="jenc-recovery">'+(window.ClinicDrafts?ClinicDrafts.recoveryHTML(ctx):'')+'</div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
@@ -553,11 +558,15 @@
     if(authError||!signedIn(auth?.user))return error('Sign in to save this encounter.');
     const savedCtx=ctx;ctx.saving=true;const button=document.getElementById('jenc-save');if(button){button.textContent='Saving…';}
     parentPage().querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);
+    window.ClinicWorkspace?.beginSave();
     try{
+      await window.ClinicDrafts?.beforeFinalSave(ctx);
       const {data,error:saveError}=await SB.rpc('save_jason_encounter',{p_patient_id:ctx.patient.id,p_episode_id:ctx.episode.id,p_encounter_id:ctx.record?.id||null,
         p_expected_version:ctx.expectedVersion,p_snapshot:copy(ctx.draft),p_report:report(ctx.draft),p_impact:updates});
       if(saveError)throw new Error(saveError.message);if(!data?.id)throw new Error('The saved encounter was not returned.');
       if(ctx!==savedCtx)return;
+      await window.ClinicDrafts?.finalSaved(savedCtx);
+      window.ClinicWorkspace?.endSave(null);
       const currentIndex=ctx.rows.findIndex(r=>r.id===data.id);if(currentIndex<0)ctx.rows.unshift(data);else ctx.rows[currentIndex]=data;
       // Referrals live on the patient so they carry to later episodes and visits.
       const before=patientReferrals(savedCtx.patient),after=mergedReferrals(before,savedCtx.baseline.referrals,savedCtx.draft.referrals);
@@ -577,7 +586,7 @@
       selectRecord(data.id);ctx.message='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.'+refNote;render();
       hvEncounteredToday.add(String(ctx.patient.id));latestByPatient.set(String(ctx.patient.id),data);
       if(typeof refreshReminders==='function')Promise.resolve(refreshReminders()).catch(()=>{});
-    }catch(e){if(ctx===savedCtx){ctx.saving=false;render();error(e.message+' Your changes remain on this screen.');}}
+    }catch(e){window.ClinicWorkspace?.endSave(e);window.ClinicDrafts?.finalFailed(savedCtx);if(ctx===savedCtx){ctx.saving=false;render();error(e.message+' Your changes remain on this screen.');}}
     finally{if(ctx===savedCtx)ctx.saving=false;}
   }
   async function attach(rows){
@@ -595,7 +604,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,refresh:render,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
