@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-467"/>
-<script src="assets/manual.js?v=2026.10.08-467"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-468"/>
+<script src="assets/manual.js?v=2026.10.08-468"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -2196,6 +2196,9 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .audit-field{display:inline-block;margin:1px 10px 1px 0;}
 .audit-field b{color:#0f3a4d;font-weight:700;}
 .audit-ent{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:800;vertical-align:middle;margin-right:2px;}
+.audit-change-wrap{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.audit-del{border:0;background:none;cursor:pointer;color:#b42318;font-size:14px;line-height:1;padding:2px 4px;border-radius:6px;flex:none;}
+.audit-del:hover{background:#fdecea;}
 .fistula-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;font-size:10.5px;font-weight:800;letter-spacing:.06em;vertical-align:middle;white-space:nowrap;}
 tr.hv-fistula>td:first-child{box-shadow:inset 5px 0 0 #7c3aed;}
 tr.hv-fistula>td[data-label="ID number"],tr.hv-fistula>td[data-label="Surname"],tr.hv-fistula>td[data-label="First name"]{background:#faf5ff;}
@@ -2736,7 +2739,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
     <!-- AUDIT TRAIL -->
     <div class="page" id="page-audit-trail">
       <div class="phdr">
-        <div><h2>🧾 Audit Trail</h2><p>Every change to a patient record or the roster — who made it, when, and what changed. View a month at a time and clear old months to free space.</p></div>
+        <div><h2>🧾 Audit Trail</h2><p>Every change to a patient record or the roster — who made it, when, and what changed. Delete a single entry, a month or a whole year permanently to free space.</p></div>
         <button class="btn-add" onclick="loadAuditTrail()">Refresh</button>
       </div>
       <div class="pd-quickfilters" id="audit-filters">
@@ -2746,7 +2749,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
         <button class="pd-qf" data-af="delete" onclick="setAuditFilter('delete')">Deleted</button>
       </div>
       <div class="pd-toolbar">
-        <label>Month:</label>
+        <label>Month / year:</label>
         <select id="audit-month" onchange="setAuditMonth(this.value)"><option value="all">All months</option></select>
         <button class="ncb-btn" id="audit-del-month" style="background:#fdecea;color:#b42318;display:none;" onclick="deleteAuditMonth()">🗑 Delete this month’s log</button>
         <input type="text" id="audit-search" placeholder="Search patient, nurse or what changed…" oninput="renderAuditTrail()"/>
@@ -3657,7 +3660,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.08-467';
+const APP_BUILD='2026.10.08-468';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11265,11 +11268,14 @@ function setAuditFilter(v){
 function setAuditMonth(v){auditMonth=v||'all';auditLimit=500;loadAuditTrail();}
 function auditMonthLabel(key){
   if(key==='all')return 'All months';
+  if(/^\d{4}$/.test(key))return key+' — whole year';
   const [y,m]=String(key).split('-').map(Number);
   return ['January','February','March','April','May','June','July','August','September','October','November','December'][(m||1)-1]+' '+y;
 }
+function auditScopeKind(key){return key==='all'?'all':/^\d{4}$/.test(key)?'year':'month';}
 function auditMonthKey(at){const d=new Date(at);return isNaN(d)?'':`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;}
 function auditMonthRange(key){
+  if(/^\d{4}$/.test(key)){const y=Number(key);return {start:`${y}-01-01`,end:`${y+1}-01-01`};}
   const [y,m]=String(key).split('-').map(Number);
   const start=`${y}-${String(m).padStart(2,'0')}-01`;
   const ny=m===12?y+1:y, nm=m===12?1:m+1;
@@ -11288,8 +11294,10 @@ async function loadAuditTrail(){
     const months=[];
     if(loK&&hiK){let [y,m]=hiK.split('-').map(Number);const stop=loK;
       for(let i=0;i<600;i++){const key=`${y}-${String(m).padStart(2,'0')}`;months.push(key);if(key===stop)break;m--;if(m<1){m=12;y--;}}}
-    auditMonths=months;
-    if(auditMonth!=='all'&&!months.includes(auditMonth))auditMonth='all';
+    const scopes=[];let seenYear=null;
+    for(const k of months){const y=k.slice(0,4);if(y!==seenYear){scopes.push(y);seenYear=y;}scopes.push(k);}
+    auditMonths=scopes;
+    if(auditMonth!=='all'&&!scopes.includes(auditMonth))auditMonth='all';
   }catch(e){}
   let q=SB.from('audit_log').select('*').order('at',{ascending:false});
   if(auditMonth==='all')q=q.limit(auditLimit);
@@ -11337,7 +11345,7 @@ function renderAuditTrail(){
   const sel=document.getElementById('audit-month');
   if(sel)sel.innerHTML=['all',...auditMonths].map(k=>`<option value="${k}" ${k===auditMonth?'selected':''}>${htmlSafe(auditMonthLabel(k))}</option>`).join('');
   const del=document.getElementById('audit-del-month');
-  if(del)del.style.display=auditMonth==='all'?'none':'';
+  if(del){del.style.display=auditMonth==='all'?'none':'';del.textContent=auditScopeKind(auditMonth)==='year'?'🗑 Delete this year’s log':'🗑 Delete this month’s log';}
   if(!auditRows.length){
     if(count)count.textContent='';
     body.innerHTML=emptyStateHTML('🧾',auditMonth==='all'?'No changes recorded yet':'No changes in '+auditMonthLabel(auditMonth),
@@ -11360,7 +11368,7 @@ function renderAuditTrail(){
       <td data-label="When" style="white-space:nowrap;">${auditWhen(r.at)}</td>
       <td data-label="Who">${htmlSafe(r.actor||'—')}</td>
       <td data-label="Record">${auditEntityTag(r)}<strong>${htmlSafe(name||'—')}</strong></td>
-      <td data-label="Change"><span class="audit-badge" style="background:${a.bg};color:${a.fg};">${a.icon} ${htmlSafe(a.label)}</span> <span class="audit-detail">${detail}</span></td>
+      <td data-label="Change"><div class="audit-change-wrap"><div><span class="audit-badge" style="background:${a.bg};color:${a.fg};">${a.icon} ${htmlSafe(a.label)}</span> <span class="audit-detail">${detail}</span></div>${r.id?`<button class="audit-del" title="Delete this entry permanently" onclick="event.stopPropagation();deleteAuditEntry('${jsSafe(String(r.id))}')">🗑</button>`:''}</div></td>
     </tr>`;
   }).join('');
   const more=auditMonth==='all'&&auditRows.length>=auditLimit
@@ -11369,10 +11377,20 @@ function renderAuditTrail(){
     <thead><tr><th>When</th><th>Who</th><th>Record</th><th>Change</th></tr></thead>
     <tbody>${trs||'<tr><td colspan="4" class="empty">No change matches that.</td></tr>'}</tbody></table></div>${more}`;
 }
+// Permanently remove a single logged line from the database.
+async function deleteAuditEntry(id){
+  if(!id)return;
+  if(!confirm('Permanently delete this one audit entry?\n\nIt is removed from the database for good and cannot be undone. The patient record / roster itself is not touched.'))return;
+  const{error}=await SB.from('audit_log').delete().eq('id',id);
+  if(error){const denied=/permission|denied|row-level|not allowed|violates/i.test(String(error.message||''));
+    alert('Could not delete: '+(error.message||error)+(denied?'\n\nRun the updated sql/add-audit-log.sql once in Supabase to allow deleting.':''));return;}
+  auditRows=auditRows.filter(r=>String(r.id)!==String(id));
+  renderAuditTrail();
+}
 async function deleteAuditMonth(){
-  if(auditMonth==='all'){alert('Choose a month first, then delete just that month.');return;}
-  const label=auditMonthLabel(auditMonth);
-  if(!confirm(`Delete the entire audit trail for ${label}?\n\nThis permanently removes every change logged that month, to free space. It cannot be undone — the patient records and roster themselves are not touched.`))return;
+  if(auditMonth==='all'){alert('Choose a month or a year first, then delete just that.');return;}
+  const label=auditMonthLabel(auditMonth),kind=auditScopeKind(auditMonth);
+  if(!confirm(`Permanently delete the entire audit trail for ${label}?\n\nEvery change logged in that ${kind} is removed from the database for good, to free space. It cannot be undone — the patient records and roster themselves are not touched.`))return;
   const{start,end}=auditMonthRange(auditMonth);
   const{error}=await SB.from('audit_log').delete().gte('at',start).lt('at',end);
   if(error){

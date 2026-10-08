@@ -7,10 +7,10 @@
 -- Every create, edit and delete of a PATIENT record or a ROSTER entry (duty,
 -- overtime, TIL, leave, change of duty) is written here as its own line: when,
 -- who (the signed-in nurse), the record, and what changed. The Audit Trail tab
--- (Audit & Reports) reads it newest-first, a month at a time, and can clear a
--- whole month to free space. The app can SELECT, INSERT and DELETE — never
--- UPDATE — so a logged line can never be quietly rewritten, only added or (a
--- whole month at a time) cleared.
+-- (Audit & Reports) reads it newest-first, and can permanently delete lines to
+-- free space at three sizes: a single entry, a whole month, or a whole year.
+-- The app can SELECT, INSERT and DELETE — never UPDATE — so a logged line can
+-- never be quietly rewritten, only added or (one entry / month / year) deleted.
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -46,7 +46,8 @@ DROP POLICY IF EXISTS audit_log_add ON public.audit_log;
 CREATE POLICY audit_log_add ON public.audit_log
   FOR INSERT TO authenticated WITH CHECK (true);
 
--- Clearing a whole month from the Audit Trail tab to free space.
+-- Deleting entries from the Audit Trail tab to free space (one entry, a month
+-- or a whole year — all the same DELETE permission).
 DROP POLICY IF EXISTS audit_log_clear ON public.audit_log;
 CREATE POLICY audit_log_clear ON public.audit_log
   FOR DELETE TO authenticated USING (true);

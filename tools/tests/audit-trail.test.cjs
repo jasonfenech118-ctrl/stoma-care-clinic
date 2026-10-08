@@ -138,3 +138,59 @@ test('Delete this month clears exactly that month on the server, after a confirm
   w.auditMonth='2026-12';calls.length=0;await w.deleteAuditMonth();
   assert.deepEqual(calls,[['audit_log','2026-12-01','2027-01-01']]);
 });
+
+test('a whole year is its own scope — labelled as a year and spanning Jan-to-Jan', ()=>{
+  const w=monthTab();
+  assert.equal(w.auditScopeKind('all'),'all');
+  assert.equal(w.auditScopeKind('2026'),'year');
+  assert.equal(w.auditScopeKind('2026-09'),'month');
+  assert.equal(w.auditMonthLabel('2026'),'2026 — whole year');
+  assert.deepEqual(plain(w.auditMonthRange('2026')),{start:'2026-01-01',end:'2027-01-01'});
+});
+test('Delete this year clears the whole calendar year on the server', async ()=>{
+  const w=monthTab();const calls=[];
+  w.SB={from:t=>({delete:()=>({gte:(k,v)=>({lt:(k2,v2)=>{calls.push([t,v,v2]);return Promise.resolve({error:null});}})})})};
+  w.loadAuditTrail=()=>{w.__reloaded=true;};
+  w.auditMonth='2026';
+  await w.deleteAuditMonth();
+  assert.deepEqual(calls,[['audit_log','2026-01-01','2027-01-01']]);
+  assert.equal(w.auditMonth,'all');assert.equal(w.__reloaded,true);
+});
+test('the picker offers each year as a whole, above its own months', async ()=>{
+  // loadAuditTrail reads the first and last recorded change, then lists every
+  // month between them with a "whole year" entry before each year's months.
+  const w=monthTab();
+  w.SB={from:()=>{
+    const q={_asc:false};
+    q.select=()=>q; q.order=(k,o)=>{q._asc=!!(o&&o.ascending);return q;};
+    q.gte=()=>q; q.lt=()=>q; q.in=()=>Promise.resolve({data:[]});
+    q.limit=n=>n===1?Promise.resolve({data:[{at:q._asc?'2025-11-10T08:00:00Z':'2026-02-03T08:00:00Z'}]})
+                     :Promise.resolve({data:[{id:'x',at:'2026-02-03T08:00:00Z',actor:'A',action:'create',patient_name:'X',summary:'Added patient'}],error:null});
+    return q;
+  }};
+  await w.loadAuditTrail();
+  assert.deepEqual(plain(w.auditMonths),['2026','2026-02','2026-01','2025','2025-12','2025-11']);
+  assert.deepEqual([...w.document.querySelectorAll('#audit-month option')].map(o=>o.value),
+    ['all','2026','2026-02','2026-01','2025','2025-12','2025-11']);
+  assert.equal([...w.document.querySelectorAll('#audit-month option')].find(o=>o.value==='2025').textContent,'2025 — whole year');
+});
+test('each entry can be deleted on its own — a hard delete by id, gone from the view', async ()=>{
+  const w=monthTab();const calls=[];
+  w.SB={from:t=>({delete:()=>({eq:(k,v)=>{calls.push([t,k,v]);return Promise.resolve({error:null});}})})};
+  w.auditRows=[{id:'a1',at:'2026-10-08T08:00:00Z',actor:'A',action:'create',patient_name:'X',summary:'Added patient'},
+               {id:'a2',at:'2026-10-08T09:00:00Z',actor:'B',action:'update',patient_name:'Y',summary:'Edited Phone'}];
+  await w.deleteAuditEntry('a1');
+  assert.deepEqual(calls,[['audit_log','id','a1']]);     // exactly that one row, by id
+  assert.deepEqual(w.auditRows.map(r=>r.id),['a2']);     // dropped from the in-memory view
+});
+test('every row offers a single-entry delete, but only when the line has an id', ()=>{
+  const w=tab([
+    {id:'a1',at:'2026-10-08T10:00:00Z',actor:'A',action:'update',patient_id:'p1',patient_name:'Stephen Fava',summary:'Edited Phone'},
+    {at:'2026-10-07T10:00:00Z',actor:'A',action:'create',patient_id:'p2',patient_name:'No Id',summary:'Added patient'}]);
+  w.renderAuditTrail();
+  const btns=[...w.document.querySelectorAll('.audit-del')];
+  assert.equal(btns.length,1);
+  assert.match(btns[0].getAttribute('onclick'),/deleteAuditEntry\('a1'\)/);
+  // The per-row delete must not also trigger the row's open-record click.
+  assert.match(btns[0].getAttribute('onclick'),/stopPropagation/);
+});
