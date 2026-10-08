@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-465"/>
-<script src="assets/manual.js?v=2026.10.08-465"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-466"/>
+<script src="assets/manual.js?v=2026.10.08-466"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -2189,6 +2189,12 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
 .registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
 /* Fistula patients: one purple tag wherever they appear, and a purple stripe on the handover. */
+.audit-table td{vertical-align:top;font-size:13px;}
+.audit-table tr[onclick]:hover{background:#f6f9fc;}
+.audit-badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:800;white-space:nowrap;}
+.audit-detail{color:#334155;}
+.audit-field{display:inline-block;margin:1px 10px 1px 0;}
+.audit-field b{color:#0f3a4d;font-weight:700;}
 .fistula-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:#f3e8ff;color:#6b21a8;border:1px solid #c084fc;font-size:10.5px;font-weight:800;letter-spacing:.06em;vertical-align:middle;white-space:nowrap;}
 tr.hv-fistula>td:first-child{box-shadow:inset 5px 0 0 #7c3aed;}
 tr.hv-fistula>td[data-label="ID number"],tr.hv-fistula>td[data-label="Surname"],tr.hv-fistula>td[data-label="First name"]{background:#faf5ff;}
@@ -2724,6 +2730,25 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
           <tbody id="dntu-tbody"><tr><td colspan="6" class="empty">Loading DNTU patients...</td></tr></tbody>
         </table>
       </div>
+    </div>
+
+    <!-- AUDIT TRAIL -->
+    <div class="page" id="page-audit-trail">
+      <div class="phdr">
+        <div><h2>🧾 Audit Trail</h2><p>Every change to a patient record — who made it, when, and what changed</p></div>
+        <button class="btn-add" onclick="loadAuditTrail()">Refresh</button>
+      </div>
+      <div class="pd-quickfilters" id="audit-filters">
+        <button class="pd-qf active" data-af="all" onclick="setAuditFilter('all')">All changes</button>
+        <button class="pd-qf" data-af="create" onclick="setAuditFilter('create')">Added</button>
+        <button class="pd-qf" data-af="update" onclick="setAuditFilter('update')">Edited</button>
+        <button class="pd-qf" data-af="delete" onclick="setAuditFilter('delete')">Deleted</button>
+      </div>
+      <div class="pd-toolbar">
+        <input type="text" id="audit-search" placeholder="Search patient, nurse or what changed…" oninput="renderAuditTrail()"/>
+        <span class="pd-count" id="audit-count"></span>
+      </div>
+      <div id="audit-body"><div class="report-note">Loading the audit trail…</div></div>
     </div>
 
     <!-- REPORTS & CHARTS -->
@@ -3628,7 +3653,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.08-465';
+const APP_BUILD='2026.10.08-466';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3749,7 +3774,8 @@ const TAB_GROUPS=[
      {tab:'data-analysis',label:'Data Analysis',icon:'📈',color:'#7c3aed'},
      {tab:'annual-report',label:'Annual Report',icon:'📄',color:'#0369a1'},
      {tab:'registry-map',label:'Map',icon:'🗺',color:'#0d7377'},
-     {tab:'dntu-policy',label:'DNTU',icon:'🚫',color:'#6b21a8'}
+     {tab:'dntu-policy',label:'DNTU',icon:'🚫',color:'#6b21a8'},
+     {tab:'audit-trail',label:'Audit Trail',icon:'🧾',color:'#475569'}
    ]}
 ];
 const TAB_LABELS={};
@@ -3843,6 +3869,7 @@ function switchTab(name){
   if(name==='snapshots')loadHandoverSnapshots();
   if(name==='discharge')loadDischargeLetters();
   if(name==='dntu-policy')loadDntuPolicy();
+  if(name==='audit-trail')loadAuditTrail();
   if(name==='reports')loadReports();
   if(name==='annual-report')loadAnnualReport();
   if(name==='patients')loadPatientDirectory();
@@ -3883,7 +3910,7 @@ const CLINIC_REALTIME_TABLES=new Set([
   'roster','staff','bank_staff','bank_staff_assignments','leave_records','daily_attendance',
   'appointments','patients','siting_sessions','siting_images','operations_no_stoma','clinical_records',
   'handover_snapshots','public_holidays','localities','firms','complication_types',
-  'clinic_pending_tasks','clinic_dated_reminders'
+  'clinic_pending_tasks','clinic_dated_reminders','audit_log'
 ]);
 let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicHandoverPoll=null,clinicRealtimeDirty=new Set();
 const CLINIC_ROSTER_TABLES=new Set(['roster','staff','bank_staff','bank_staff_assignments','leave_records','public_holidays']);
@@ -3936,6 +3963,7 @@ function flushClinicRealtime(){
     'data-analysis':new Set(['patients','appointments','clinical_records']),
     'annual-report':new Set(['patients','appointments','clinical_records']),
     'registry-map':new Set(['patients','localities']),
+    'audit-trail':new Set(['audit_log','patients']),
     'dntu-policy':new Set(['appointments','patients'])
   }[tab];
   if(relevant&&[...tables].some(t=>relevant.has(t)))switchTab(tab);
@@ -11212,6 +11240,87 @@ function dntuOwnerForGroup(rows){
   }
   return 'Common';
 }
+/* ── AUDIT TRAIL TAB ──────────────────────────────────────────────────────────
+   Reads audit_log newest-first and shows who changed which patient record,
+   when, and what changed. Immutable log — this tab only reads it. */
+let auditRows=[],auditFilter='all',auditLimit=300,auditTrailVersion=0,auditNamesById={};
+function setAuditFilter(v){
+  auditFilter=v;
+  document.querySelectorAll('#audit-filters .pd-qf').forEach(b=>b.classList.toggle('active',b.dataset.af===v));
+  renderAuditTrail();
+}
+async function loadAuditTrail(){
+  const body=document.getElementById('audit-body');
+  if(!body)return;
+  const version=++auditTrailVersion;
+  const{data,error}=await SB.from('audit_log').select('*').order('at',{ascending:false}).limit(auditLimit);
+  if(version!==auditTrailVersion)return;
+  if(error){
+    const missing=/audit_log|relation|does not exist|column/i.test(String(error.message||''));
+    body.innerHTML=missing
+      ? handoverMissingHTML('The audit trail needs one database change first. Run <strong>sql/add-audit-log.sql</strong> once in Supabase (on a computer), then refresh. From then on every change to a patient record is traced here.')
+      : `<div class="report-note">Could not load the audit trail: ${htmlSafe(error.message||'')}</div>`;
+    return;
+  }
+  auditRows=data||[];
+  // Fill in any patient names the log did not store (edits key on id alone).
+  const need=[...new Set(auditRows.filter(r=>!String(r.patient_name||'').trim()&&r.patient_id).map(r=>String(r.patient_id)))]
+    .filter(id=>!(id in auditNamesById));
+  for(let i=0;i<need.length;i+=100){
+    try{
+      const{data:ps}=await SB.from('patients').select('id,first_name,surname').in('id',need.slice(i,i+100));
+      (ps||[]).forEach(p=>{auditNamesById[String(p.id)]=`${p.first_name||''} ${p.surname||''}`.trim();});
+    }catch(e){}
+  }
+  if(version!==auditTrailVersion)return;
+  renderAuditTrail();
+}
+function auditWhen(at){
+  const d=new Date(at);
+  if(isNaN(d))return htmlSafe(String(at||''));
+  return `${fmtShortDate(d.toISOString().slice(0,10))} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+const AUDIT_ACTION={create:{label:'Added',icon:'➕',bg:'#e8f6ef',fg:'#1b7a4b'},
+  update:{label:'Edited',icon:'✎',bg:'#fff4e0',fg:'#9a6410'},
+  delete:{label:'Deleted',icon:'🗑',bg:'#fdecea',fg:'#b42318'}};
+function auditPatientName(r){
+  return String(r.patient_name||'').trim()||auditNamesById[String(r.patient_id)]||'';
+}
+function renderAuditTrail(){
+  const body=document.getElementById('audit-body'),count=document.getElementById('audit-count');
+  if(!body)return;
+  if(!auditRows.length){
+    if(count)count.textContent='';
+    body.innerHTML=emptyStateHTML('🧾','No changes recorded yet',
+      'Every time a patient record is added, edited or deleted, a line appears here with who did it and what changed.','');
+    return;
+  }
+  const q=String(document.getElementById('audit-search')?.value||'').trim().toLowerCase();
+  const rows=auditRows.filter(r=>auditFilter==='all'||r.action===auditFilter)
+    .filter(r=>!q||[auditPatientName(r),r.actor,r.summary].map(x=>String(x||'')).join(' ').toLowerCase().includes(q));
+  if(count)count.textContent=`${rows.length} shown of ${auditRows.length} recent change${auditRows.length===1?'':'s'}`;
+  const trs=rows.map(r=>{
+    const a=AUDIT_ACTION[r.action]||{label:r.action||'Change',icon:'•',bg:'#eef2f6',fg:'#475569'};
+    const name=auditPatientName(r);
+    const fields=(r.details&&Array.isArray(r.details.fields))?r.details.fields:[];
+    const detail=r.action==='update'&&fields.length
+      ? fields.map(f=>`<span class="audit-field"><b>${htmlSafe(f.label)}</b>${f.value&&f.value!=='(updated)'?' → '+htmlSafe(f.value):''}</span>`).join('')
+      : `<span class="audit-field">${htmlSafe(r.summary||'')}</span>`;
+    const open=r.patient_id&&r.action!=='delete'?`onclick="openPatientRecord('${jsSafe(String(r.patient_id))}')" style="cursor:pointer;"`:'';
+    return `<tr ${open}>
+      <td data-label="When" style="white-space:nowrap;">${auditWhen(r.at)}</td>
+      <td data-label="Who">${htmlSafe(r.actor||'—')}</td>
+      <td data-label="Patient"><strong>${htmlSafe(name||'—')}</strong></td>
+      <td data-label="Change"><span class="audit-badge" style="background:${a.bg};color:${a.fg};">${a.icon} ${htmlSafe(a.label)}</span> <span class="audit-detail">${detail}</span></td>
+    </tr>`;
+  }).join('');
+  const more=auditRows.length>=auditLimit
+    ? `<div style="text-align:center;margin-top:12px;"><button class="btn-add" onclick="auditLimit+=300;loadAuditTrail()">Load more</button></div>`:'';
+  body.innerHTML=`<div style="overflow-x:auto;"><table class="dt audit-table">
+    <thead><tr><th>When</th><th>Who</th><th>Patient</th><th>Change</th></tr></thead>
+    <tbody>${trs||'<tr><td colspan="4" class="empty">No change matches that.</td></tr>'}</tbody></table></div>${more}`;
+}
+
 function calculateCurrentDntuStreak(rows){
   return dntuSequence(rows||[]).length;
 }
@@ -11433,6 +11542,52 @@ function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDat
 // there is a real name. Never throws (safe where the audit helpers are absent).
 async function patientSignatureName(){
   try{return attDisplayName(await getCurrentUserForAudit())||'';}catch(e){return '';}
+}
+/* ── AUDIT TRAIL ──────────────────────────────────────────────────────────────
+   Every change to a patient record is written to audit_log (who, when, what).
+   logAudit never throws and never blocks a save — it is fire-and-forget, so a
+   missing table or a slow write can never stop a patient being saved. */
+const AUDIT_STAMP_COLS=new Set(['updated_at','updated_by','created_at','created_by']);
+const PATIENT_AUDIT_LABELS={first_name:'First name',surname:'Surname',id_card:'ID card',phone_number:'Phone',sex:'Sex',
+  locality:'Locality',address:'Address',date_of_birth:'Date of birth',consultant:'Firm',
+  followup_owner:'Follow-up owner',followup_due_month:'Due month',followup_year:'Due year',followup_type:'Follow-up type',
+  followup_status:'Follow-up status',followup_status_effective_date:'Status date',followup_status_reason:'Status reason',followup_flexible:'Flexible due',
+  surgery_date:'Surgery date',stoma_type:'Stoma type',stoma_location:'Stoma location',procedure_performed:'Operation',findings:'Findings',
+  reversal_date:'Reversal date',reversal_notes:'Reversal notes',stoma_superseded_date:'Superseded date',discharge_date:'Discharge date',
+  deceased_date:'Deceased date',proposed_reversal_date:'Proposed reversal',discharged_gozo_date:'Discharged to Gozo',relocated_overseas_date:'Relocated overseas',
+  initial_stomas:'Stomas',extra_stomas:'Stomas',extra_refashionings:'Refashionings',stoma_operation_history:'Stoma history',extra_statuses:'Statuses',
+  complications:'Complications',rod_removal_date:'Rod removal date',rod_removed_date:'Rod removed date',rod_stoma_uid:'Rod stoma',
+  is_inpatient:'On the ward',inpatient_ward:'Ward',inpatient_bed:'Bed',inpatient_notes:'Ward note',inpatient_nurse_notes:'Nurse note',inpatient_since:'Admitted',flange_due:'Flange due',
+  discharge_letter:'Discharge letter',schedule_five_permit:'Schedule 5 permit',operated_abroad:'Operated outside MDH',operated_abroad_hospital:'Outside hospital',operated_abroad_country:'Outside country',
+  support_referrals:'Support referrals',archived:'Archived',patient_kind:'Patient type',fistula_category:'Fistula / bagging',fistula_operation_date:'Fistula op date',fistula_closed_date:'Fistula closed',fistula_closed_reason:'Closed reason'};
+function patientAuditFields(payload,dropped){
+  const skip=new Set([...AUDIT_STAMP_COLS,...(dropped||[])]);
+  return Object.keys(payload||{}).filter(k=>!skip.has(k)).map(k=>{
+    const label=PATIENT_AUDIT_LABELS[k]||k;let v=payload[k];
+    if(v===null||v===undefined||v==='')v='(cleared)';
+    else if(typeof v==='object')v='(updated)';
+    else v=String(v);
+    if(v.length>80)v=v.slice(0,77)+'…';
+    return {col:k,label,value:v};
+  });
+}
+async function logAudit(entry){
+  try{
+    let u={};try{u=await getCurrentUserForAudit();}catch(e){}
+    let actor='';try{actor=attDisplayName(u)||u.email||'';}catch(e){actor=u.email||'';}
+    await SB.from('audit_log').insert({actor,actor_email:u.email||'',entity:'patient',...entry,details:entry.details||null});
+  }catch(e){}
+}
+// Fire-and-forget: record a patient create / update / delete. Pure-stamp writes
+// (only the signature columns changed) are not worth a line, so they are skipped.
+function auditPatientWrite(action,patientId,payload,dropped){
+  try{
+    const fields=patientAuditFields(payload,dropped);
+    if(action==='update'&&!fields.length)return;
+    const name=[payload&&payload.first_name,payload&&payload.surname].filter(Boolean).join(' ').trim();
+    const summary=action==='create'?'Added patient':action==='delete'?'Deleted patient':'Edited '+fields.map(f=>f.label).join(', ');
+    logAudit({action,entity_id:patientId!=null?String(patientId):'',patient_id:patientId!=null?String(patientId):'',patient_name:name,summary,details:{fields}});
+  }catch(e){}
 }
 // The signature line on the patient details card: who entered the record, and
 // who last edited it. Older records with nothing recorded say so plainly.
@@ -15221,7 +15376,7 @@ async function updatePatientTolerant(patientId,payload){
   const body={...payload},dropped=[];
   for(let i=0;i<10;i++){
     const{error}=await SB.from('patients').update(body).eq('id',patientId);
-    if(!error)return{error:null,dropped};
+    if(!error){auditPatientWrite('update',patientId,payload,dropped);return{error:null,dropped};}
     const bad=missingColumnFromError(error);
     if(!bad||!(bad in body))return{error,dropped};
     delete body[bad];dropped.push(bad);
@@ -15232,7 +15387,7 @@ async function insertPatientTolerant(payload){
   const body={...payload},dropped=[];
   for(let i=0;i<10;i++){
     const{data,error}=await SB.from('patients').insert(body).select('id').single();
-    if(!error)return{data,error:null,dropped};
+    if(!error){auditPatientWrite('create',data&&data.id,payload,dropped);return{data,error:null,dropped};}
     const bad=missingColumnFromError(error);
     if(!bad||!(bad in body))return{data:null,error,dropped};
     delete body[bad];dropped.push(bad);
@@ -19055,13 +19210,14 @@ function confirmDeletePatient(patientId,name){
   mb.innerHTML=`<h2 style="color:#b91c1c;">Delete patient</h2>`+`
     <div class="msub">Are you sure you want to delete <strong>${name}</strong>? This removes the patient and all their appointment history, and cannot be undone.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">No</button>
-      <button class="btn-save" style="background:#b91c1c;" onclick="executeDeletePatient('${patientId}')">Yes, delete</button></div>`;
+      <button class="btn-save" style="background:#b91c1c;" onclick="executeDeletePatient('${patientId}','${jsSafe(name)}')">Yes, delete</button></div>`;
   openMo();
 }
-async function executeDeletePatient(patientId){
+async function executeDeletePatient(patientId,name){
   await SB.from('appointments').delete().eq('patient_id',patientId);
   const{error}=await SB.from('patients').delete().eq('id',patientId);
   if(error){alert('Could not delete: '+error.message);return;}
+  logAudit({action:'delete',entity_id:String(patientId),patient_id:String(patientId),patient_name:name||'',summary:'Deleted patient'});
   closeModal();
   refreshReminders();
   // The record was open as its own page — go back to the Registry after delete.
@@ -22425,6 +22581,7 @@ async function saveFistulaPatient(patientId){
     }
     if(!made||!made.id)return fail('The patient was not added. Please try again.');
     pid=made.id;
+    auditPatientWrite('create',pid,body,[]);
   }
   fistulaIdCache.at=0;
   const admit=!patientId&&!!document.getElementById('fis-admit')?.checked;
@@ -22493,10 +22650,10 @@ function confirmDeleteFistulaPatient(pid,name){
   mb.innerHTML=`<h2 style="color:#b91c1c;">Delete patient</h2>
     <div class="msub">Delete <strong>${htmlSafe(name||'this patient')}</strong>? This removes the patient and <strong>all their episodes and encounters</strong>. It cannot be undone. If they are only finished with, use <strong>Close case</strong> instead so the record is kept.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">No</button>
-      <button class="btn-save" id="fis-del-save" style="background:#b91c1c;" onclick="executeDeleteFistulaPatient('${jsSafe(String(pid))}')">Yes, delete</button></div>`;
+      <button class="btn-save" id="fis-del-save" style="background:#b91c1c;" onclick="executeDeleteFistulaPatient('${jsSafe(String(pid))}','${jsSafe(name)}')">Yes, delete</button></div>`;
   openMo();
 }
-async function executeDeleteFistulaPatient(pid){
+async function executeDeleteFistulaPatient(pid,name){
   const btn=document.getElementById('fis-del-save');if(btn)btn.disabled=true;
   try{
     // Children first; encounters have no cascade, clinical_records does but is
@@ -22506,6 +22663,7 @@ async function executeDeleteFistulaPatient(pid){
     await SB.from('clinical_records').delete().eq('patient_id',pid);
     const{error}=await SB.from('patients').delete().eq('id',pid);
     if(error){if(btn)btn.disabled=false;alert('Could not delete: '+(error.message||error));return;}
+    logAudit({action:'delete',entity_id:String(pid),patient_id:String(pid),patient_name:name||'',summary:'Deleted patient'});
   }catch(e){if(btn)btn.disabled=false;alert('Could not delete: '+(e&&e.message||e));return;}
   fistulaIdCache.at=0;
   closeModal();

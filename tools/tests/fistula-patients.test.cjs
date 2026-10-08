@@ -93,7 +93,7 @@ function fistulaForm(t,{matches=[],insertErrors=[]}={}){
   Object.assign(w,{TODAY:'2026-10-07',htmlSafe:esc,jsSafe:v=>String(v??''),firmList:['Mr A Surgeon'],firmOptions:c=>'<option value="">— firm —</option><option>Mr A Surgeon</option>'+(c&&c!=='Mr A Surgeon'?`<option selected>${c}</option>`:''),
     loadFirms:async()=>{},openMo:()=>{},closeModal:()=>{log.closed++;},normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,''),
     findRegistryPatientsByIdCard:async()=>({matches,error:null}),missingColumnFromError:e=>(String(e?.message||'').match(/'([a-z_]+)' column/)||[])[1]||'',
-    loadFistulaPatients:()=>{},openPatientRecord:()=>{},updatePatientTolerant:async()=>({error:null,dropped:[]}),
+    loadFistulaPatients:()=>{},openPatientRecord:()=>{},updatePatientTolerant:async()=>({error:null,dropped:[]}),auditPatientWrite:()=>{},logAudit:async()=>{},
     fetchPatientById:async id=>({data:{id,first_name:'Maria',is_inpatient:false},error:null}),openInpatientVisitFor:async(id)=>log.admitted.push(id),
     SB:{from:()=>({insert:body=>({select:()=>({single:async()=>{log.inserts.push(JSON.parse(JSON.stringify(body)));const e=insertErrors.shift();return e?{data:null,error:e}:{data:{id:'new-1'},error:null};}})})})}});
   w.eval(fistulaHelpers);
@@ -142,7 +142,7 @@ function discharge(t,{dropped=[]}={}){
   Object.assign(w,{TODAY:'2026-10-07',htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>calls.push(['closeModal']),alert:m=>calls.push(['alert',m]),
     SB:{from:t=>({update:patch=>({eq:async(k,v)=>{calls.push(['update',t,patch,v]);return {error:null};}})})},
     updatePatientTolerant:async(id,patch)=>{calls.push(['case',id,patch]);return {error:null,dropped};},
-    closeOpenInpatientEpisode:async(id,o)=>calls.push(['close',id,o]),stampPostopDischargeDate:async()=>calls.push(['stamp']),
+    closeOpenInpatientEpisode:async(id,o)=>calls.push(['close',id,o]),stampPostopDischargeDate:async()=>calls.push(['stamp']),logAudit:async()=>{},
     loadHandover:()=>calls.push(['reload']),refreshReminders:async()=>calls.push(['bell'])});
   w.eval(fn('dischargeFistulaFromHandover')+'\n'+fn('confirmFistulaDischarge'));
   w.openMo=()=>{};
@@ -336,7 +336,7 @@ test('Delete removes the patient and all their episodes and encounters, after a 
   const dom=new JSDOM('<div id="mb"></div><div id="page-fistulas" class="page active"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
   const deletes=[];
   Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>{w.__closed=true;},alert:m=>{w.__alert=m;},
-    loadFistulaPatients:()=>{w.__reloaded=true;},refreshReminders:()=>{},switchTab:()=>{},
+    loadFistulaPatients:()=>{w.__reloaded=true;},refreshReminders:()=>{},switchTab:()=>{},logAudit:async()=>{},
     SB:{from:t=>({delete:()=>({eq:async(k,v)=>{deletes.push([t,k,String(v)]);return {error:null};}})})},
     fistulaIdCache:{at:Date.now(),ids:new Set()}});
   w.eval([fn('confirmDeleteFistulaPatient'),fn('executeDeleteFistulaPatient')].join('\n'));
@@ -344,8 +344,8 @@ test('Delete removes the patient and all their episodes and encounters, after a 
   const mb=w.document.getElementById('mb');
   assert.match(mb.querySelector('h2').textContent,/Delete patient/);
   assert.match(mb.textContent,/all their episodes and encounters/);assert.match(mb.textContent,/cannot be undone/);
-  assert.match(mb.querySelector('#fis-del-save').getAttribute('onclick'),/executeDeleteFistulaPatient\('f1'\)/);
-  await w.executeDeleteFistulaPatient('f1');
+  assert.match(mb.querySelector('#fis-del-save').getAttribute('onclick'),/executeDeleteFistulaPatient\('f1','Maria Borg'\)/);
+  await w.executeDeleteFistulaPatient('f1','Maria Borg');
   // Children before the patient, encounters by the text id.
   assert.deepEqual(deletes,[['encounters','patient_id','f1'],['appointments','patient_id','f1'],['clinical_records','patient_id','f1'],['patients','id','f1']]);
   assert.equal(w.__closed,true);assert.equal(w.__reloaded,true);assert.equal(w.fistulaIdCache.at,0);
@@ -354,7 +354,7 @@ test('Delete removes the patient and all their episodes and encounters, after a 
 test('a failed Delete keeps the patient and re-enables the button', async t=>{
   const dom=new JSDOM('<div id="mb"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
   Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>{w.__closed=true;},alert:m=>{w.__alert=m;},
-    loadFistulaPatients:()=>{},refreshReminders:()=>{},switchTab:()=>{},fistulaIdCache:{at:1,ids:new Set()},
+    loadFistulaPatients:()=>{},refreshReminders:()=>{},switchTab:()=>{},logAudit:async()=>{},fistulaIdCache:{at:1,ids:new Set()},
     SB:{from:t=>({delete:()=>({eq:async()=>t==='patients'?{error:{message:'nope'}}:{error:null}})})}});
   w.eval([fn('confirmDeleteFistulaPatient'),fn('executeDeleteFistulaPatient')].join('\n'));
   w.confirmDeleteFistulaPatient('f1','Maria Borg');
