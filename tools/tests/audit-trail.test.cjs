@@ -60,7 +60,7 @@ function tab(rows){
   const dom=new JSDOM('<div id="audit-filters"><button class="pd-qf active" data-af="all"></button><button class="pd-qf" data-af="update"></button><button class="pd-qf" data-af="delete"></button></div><input id="audit-search"/><span id="audit-count"></span><div id="audit-body"></div>',{runScripts:'outside-only'});
   const w=dom.window;
   Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),fmtShortDate:d=>d,emptyStateHTML:(i,t)=>`<p>${t}</p>`,openPatientRecord:()=>{}});
-  const block=html.slice(html.indexOf('let auditRows=[]'),html.indexOf('\n}',html.indexOf('function renderAuditTrail('))+2);
+  const block=html.slice(html.indexOf('let auditRows=[]'),html.indexOf('\n}',html.indexOf('async function deleteAuditMonth('))+2);
   w.eval(block.replace('let auditRows=[]','var auditRows=[]'));
   w.auditRows=rows;w.auditNamesById={p2:'Resolved Name'};
   return w;
@@ -85,4 +85,56 @@ test('the tab shows newest changes with a filter and a search; edits list the fi
   // Search within all.
   w.setAuditFilter('all');w.document.getElementById('audit-search').value='lorraine';w.renderAuditTrail();
   assert.equal(body.querySelectorAll('tbody tr').length,1);assert.match(body.textContent,/Resolved Name/);
+});
+
+test('logRoster records a roster change (duty / overtime / leave) under the roster entity', ()=>{
+  const logged=[];
+  const c=ctx();vm.runInContext(auditBlock,c);c.logAudit=e=>logged.push(e);
+  // logRoster lives just above auditPatientWrite in the same block.
+  c.logRoster('create','Jason Fenech','Overtime — Jason Fenech: 16:00–20:00 on 8 Oct 2026',{kind:'core OT'});
+  assert.equal(logged.length,1);
+  assert.equal(logged[0].entity,'roster');
+  assert.equal(logged[0].patient_name,'Jason Fenech');
+  assert.equal(logged[0].patient_id,'');
+  assert.match(logged[0].summary,/Overtime — Jason Fenech/);
+});
+
+test('a roster row shows a Roster tag, its subject and summary, and does not link to a patient', ()=>{
+  const w=tab([{at:'2026-10-08T08:00:00Z',actor:'Jason Fenech',action:'create',entity:'roster',patient_id:'',patient_name:'Tracey Galea',summary:'Overtime — Tracey Galea: 07:00–18:00 on 8 Oct 2026'}]);
+  w.renderAuditTrail();
+  const tr=w.document.querySelector('tbody tr');
+  assert.match(tr.textContent,/Roster/);assert.match(tr.textContent,/Tracey Galea/);assert.match(tr.textContent,/Overtime/);
+  assert.equal(tr.getAttribute('onclick'),null,'roster rows are not click-through to a patient');
+});
+
+function monthTab(){
+  const dom=new JSDOM('<div id="audit-filters"><button class="pd-qf active" data-af="all"></button></div><select id="audit-month"></select><button id="audit-del-month" style="display:none"></button><input id="audit-search"/><span id="audit-count"></span><div id="audit-body"></div>',{runScripts:'outside-only'});
+  const w=dom.window;
+  Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),fmtShortDate:d=>d,emptyStateHTML:(i,t)=>`<p>${t}</p>`,openPatientRecord:()=>{},confirm:()=>true,alert:m=>{w.__alert=m;}});
+  const block=html.slice(html.indexOf('let auditRows=[]'),html.indexOf('\n}',html.indexOf('async function deleteAuditMonth('))+2);
+  w.eval(block.replace('let auditRows=[]','var auditRows=[]'));
+  return w;
+}
+test('the month picker is populated and the Delete button only shows for a chosen month', ()=>{
+  const w=monthTab();
+  w.auditMonths=['2026-10','2026-09','2026-08'];
+  w.auditRows=[{at:'2026-10-08T08:00:00Z',actor:'A',action:'create',patient_name:'X',summary:'Added patient'}];
+  w.auditMonth='all';w.renderAuditTrail();
+  assert.deepEqual([...w.document.querySelectorAll('#audit-month option')].map(o=>o.value),['all','2026-10','2026-09','2026-08']);
+  assert.equal([...w.document.querySelectorAll('#audit-month option')].find(o=>o.value==='2026-09').textContent,'September 2026');
+  assert.equal(w.document.getElementById('audit-del-month').style.display,'none');
+  w.auditMonth='2026-09';w.renderAuditTrail();
+  assert.notEqual(w.document.getElementById('audit-del-month').style.display,'none');
+});
+test('Delete this month clears exactly that month on the server, after a confirmation', async ()=>{
+  const w=monthTab();const calls=[];
+  w.SB={from:t=>({delete:()=>({gte:(k,v)=>({lt:(k2,v2)=>{calls.push([t,v,v2]);return Promise.resolve({error:null});}})})})};
+  w.loadAuditTrail=()=>{w.__reloaded=true;};
+  w.auditMonth='2026-09';
+  await w.deleteAuditMonth();
+  assert.deepEqual(calls,[['audit_log','2026-09-01','2026-10-01']]);
+  assert.equal(w.auditMonth,'all');assert.equal(w.__reloaded,true);
+  // December rolls into next January.
+  w.auditMonth='2026-12';calls.length=0;await w.deleteAuditMonth();
+  assert.deepEqual(calls,[['audit_log','2026-12-01','2027-01-01']]);
 });

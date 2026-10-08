@@ -4,11 +4,13 @@
 -- Run ONCE in Supabase: SQL Editor -> New query (empty) -> paste -> Run.
 -- Safe to re-run: nothing here deletes a row, and every object is guarded.
 --
--- Every create, edit and delete of a PATIENT record is written here as its own
--- line: when, who (the signed-in nurse), the patient, and what changed. The
--- Audit Trail tab (Audit & Reports) reads it newest-first. Rows are immutable:
--- the app is granted INSERT and SELECT only — never UPDATE or DELETE — so the
--- trail cannot be rewritten from the app.
+-- Every create, edit and delete of a PATIENT record or a ROSTER entry (duty,
+-- overtime, TIL, leave, change of duty) is written here as its own line: when,
+-- who (the signed-in nurse), the record, and what changed. The Audit Trail tab
+-- (Audit & Reports) reads it newest-first, a month at a time, and can clear a
+-- whole month to free space. The app can SELECT, INSERT and DELETE — never
+-- UPDATE — so a logged line can never be quietly rewritten, only added or (a
+-- whole month at a time) cleared.
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -32,7 +34,7 @@ CREATE INDEX IF NOT EXISTS audit_log_patient_idx ON public.audit_log (patient_id
 
 REVOKE ALL ON public.audit_log FROM anon;
 REVOKE ALL ON public.audit_log FROM authenticated;
-GRANT SELECT, INSERT ON public.audit_log TO authenticated;   -- immutable: no UPDATE/DELETE
+GRANT SELECT, INSERT, DELETE ON public.audit_log TO authenticated;   -- no UPDATE: lines are never rewritten, only added or cleared
 
 ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
@@ -43,6 +45,11 @@ CREATE POLICY audit_log_read ON public.audit_log
 DROP POLICY IF EXISTS audit_log_add ON public.audit_log;
 CREATE POLICY audit_log_add ON public.audit_log
   FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Clearing a whole month from the Audit Trail tab to free space.
+DROP POLICY IF EXISTS audit_log_clear ON public.audit_log;
+CREATE POLICY audit_log_clear ON public.audit_log
+  FOR DELETE TO authenticated USING (true);
 
 -- Confirm it is there.
 SELECT column_name, data_type
