@@ -47,17 +47,17 @@ test('a failed dashboard source shows an unknown count and an error, while indep
   assert.match(el.innerHTML,/Could not load this list/);assert.equal(el.querySelector('[data-jump="appointments"] strong').textContent,'—');
   assert.equal(el.querySelector('[data-jump="ward"] strong').textContent,'1');assert.ok(el.querySelector('[data-patient="ok"]'));
 });
-test('sidebar and phone shortcuts use the existing guarded navigation, and collapse stores only a UI preference',t=>{
-  const w=boot(t);w.document.body.innerHTML='<div id="app"><main class="main"></main></div>';
-  w.TAB_GROUPS=[{key:'today',label:'Today',pages:[{tab:'today',label:'Today'}]},{key:'patients',label:'Registry',pages:[{tab:'patients',label:'Patient Registry'}]}];
-  w.TAB_LABELS={today:'Today',patients:'Patient Registry'};w.groupForTab=x=>w.TAB_GROUPS.find(g=>g.pages.some(p=>p.tab===x));
-  w.tabIconHTML=()=>'<span class="tab-icon"></span>';w.badgeHTML=()=>'';w.updateReminderBadges=()=>{};w.clinicReminderBadgeTotal=()=>0;
-  let selected='today',asks=0;w.currentTabName=()=>selected;w.switchTab=x=>{asks++;};
-  w.ClinicWorkspace.navigation('today');w.document.querySelector('#cw-sidebar [data-nav="patients"]').click();
-  assert.equal(asks,1);assert.equal(selected,'today');assert.ok(w.document.querySelector('#cw-mobile-quick [data-nav="handover"]'));
-  w.ClinicWorkspace.toggleSidebar();assert.equal(w.localStorage.getItem('clinic-navigation-collapsed'),'1');
-  assert.equal(w.document.querySelector('[data-collapse]').getAttribute('aria-expanded'),'false');
-  w.ClinicWorkspace.navigation('patient-record');assert.match(w.document.getElementById('cw-breadcrumbs').textContent,/Registry.*Patient record/);
+test('save and connection feedback remains available with the original navigation and across patient changes',t=>{
+  const w=boot(t);w.document.body.innerHTML='<div id="app"><nav class="tabs">Original area tabs</nav><nav class="subtabs">Original page tabs</nav><main class="main"><section id="page">Patient work</section></main></div>';
+  w.ClinicWorkspace.navigation('today');w.ClinicWorkspace.beginSave();
+  assert.match(w.document.querySelector('#cw-status-strip').textContent,/Saving/);
+  w.ClinicWorkspace.endSave({message:'Offline'});w.ClinicWorkspace.connection('SUBSCRIBED');w.ClinicWorkspace.navigation('patient-record');
+  assert.equal(w.document.querySelectorAll('#cw-status-strip').length,1);
+  assert.match(w.document.querySelector('#cw-status-strip').textContent,/Updates connected.*Not saved/);
+  assert.equal(w.document.querySelector('.tabs').textContent,'Original area tabs');
+  assert.equal(w.document.querySelector('.subtabs').textContent,'Original page tabs');
+  assert.equal(w.document.querySelector('#page').textContent,'Patient work');
+  assert.equal(w.document.querySelector('#cw-sidebar,#cw-breadcrumbs,#cw-mobile-quick'),null);
 });
 test('timeline keeps distinct stoma identities, uncertain appliance links and original signed revisions',t=>{
   const w=boot(t),stomas=[{uid:'old',code:'S1',type:'Ileostomy',formed:'2026-01-01',ended:'2026-02-01',endedBy:'refashioned'},{uid:'new',code:'S2',type:'Ileostomy',formed:'2026-02-01',origin:'refashion',target:'old'}];

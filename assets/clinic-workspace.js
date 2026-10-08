@@ -7,7 +7,7 @@
   const name=p=>[p?.first_name,p?.surname].filter(Boolean).join(' ')||'Patient';
   const state={scope:'all',user:null,patients:[],appointments:[],tasks:[],reminders:null,errors:{},loaded:false,request:0,saveText:'Ready',saveKind:'neutral',connection:'Connecting updates',connectionKind:'neutral',saves:0};
   function renderStatus(){
-    let el=document.getElementById('cw-status-strip');if(!el){el=document.createElement('div');el.id='cw-status-strip';el.className='cw-status-strip';document.getElementById('cw-breadcrumbs')?.append(el);}
+    let el=document.getElementById('cw-status-strip');if(!el){el=document.createElement('div');el.id='cw-status-strip';el.className='cw-status-strip';el.setAttribute('aria-label','Saving and connection status');document.querySelector('#app .main')?.prepend(el);}
     el.innerHTML='<span class="cw-connection '+state.connectionKind+'" aria-label="Connection status">'+esc(state.connection)+'</span><span class="cw-save-note '+state.saveKind+'" role="status" aria-live="polite">'+esc(state.saveText)+'</span>';
   }
   function saveStatus(text,kind='neutral'){state.saveText=text;state.saveKind=kind;renderStatus();}
@@ -45,11 +45,6 @@
   function icon(key){
     const alias={roster:'calendar',cod:'refresh','daily-attendance':'task','attendance-records':'archive','staff-audit':'refresh',stomaperformed:'document',nostoma:'document',postop:'document',snapshots:'archive','new-patients':'patients','add-patient':'add',duplicates:'search',fistulas:'bagging',reports:'audit','data-analysis':'audit','annual-report':'document','registry-map':'siting','dntu-policy':'document','audit-trail':'document','clinical-tasks':'task'};
     return '<svg class="cw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+(ICONS[alias[key]||key]||ICONS.document)+'</svg>';
-  }
-  function decorateToolbar(){
-    for(const [id,key] of [['help-btn','help'],['task-btn','task'],['bell-btn','bell']]){
-      const el=document.getElementById(id);if(!el)continue;const badge=el.querySelector('.bell-badge');el.innerHTML=icon(key);if(badge)el.append(badge);
-    }
   }
   function contextHTML(p,appointments){
     if(!p)return '';
@@ -131,26 +126,11 @@
     state.loaded=true;state.updated=new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/Malta',hour:'2-digit',minute:'2-digit'});renderDashboard();
   }
   function navigation(activeTab){
-    const groups=TAB_GROUPS,patientPage=activeTab==='patient-record',encounterPage=activeTab==='jason-encounters';
-    const group=patientPage?groups.find(g=>g.key==='patients'):encounterPage?groups.find(g=>g.key==='handover'):groupForTab(activeTab);
-    const label=patientPage?'Patient record':encounterPage?'Encounter':TAB_LABELS[activeTab]||'Today';
-    let side=document.getElementById('cw-sidebar');if(!side){
-      side=document.createElement('aside');side.id='cw-sidebar';side.className='cw-sidebar';side.setAttribute('aria-label','Clinic navigation');document.getElementById('app')?.append(side);
-      side.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.hasAttribute('data-collapse'))toggleSidebar();if(b.dataset.nav)switchTab(b.dataset.nav);});
-    }
-    side.innerHTML='<div class="cw-side-top"><span>WORKSPACE</span><button type="button" class="cw-collapse" data-collapse aria-label="'+(document.body.classList.contains('cw-nav-collapsed')?'Expand':'Collapse')+' navigation" aria-expanded="'+!document.body.classList.contains('cw-nav-collapsed')+'">'+(document.body.classList.contains('cw-nav-collapsed')?'›':'‹')+'</button></div><nav>'+groups.map(g=>
-      '<section class="cw-nav-group"><button type="button" class="cw-nav-heading '+(g.key===group?.key?'is-current':'')+'" data-nav="'+g.pages[0].tab+'" title="'+esc(g.label)+'">'+tabIconHTML(g)+'<span class="cw-nav-label">'+esc(g.label)+'</span></button>'+g.pages.map(p=>'<button type="button" class="cw-nav-page" data-nav="'+p.tab+'" '+(activeTab===p.tab?'aria-current="page"':'')+' title="'+esc(p.label)+'">'+tabIconHTML(p)+'<span class="cw-nav-label">'+esc(p.label)+'</span>'+badgeHTML(p)+'</button>').join('')+'</section>').join('')+'</nav>';
-    let crumbs=document.getElementById('cw-breadcrumbs');if(!crumbs){crumbs=document.createElement('nav');crumbs.id='cw-breadcrumbs';crumbs.className='cw-breadcrumbs';crumbs.setAttribute('aria-label','Breadcrumb');document.querySelector('#app .main')?.prepend(crumbs);crumbs.addEventListener('click',e=>{const b=e.target.closest('[data-nav]');if(b)switchTab(b.dataset.nav);});}
-    crumbs.innerHTML='<button type="button" data-nav="today">Today</button>'+(activeTab!=='today'?'<span aria-hidden="true">/</span>'+(group?.key!=='today'&&group?.pages[0].tab!==activeTab?'<button type="button" data-nav="'+group.pages[0].tab+'">'+esc(group.label)+'</button><span aria-hidden="true">/</span>':'')+'<span aria-current="page">'+esc(label)+'</span>':'');
-    let quick=document.getElementById('cw-mobile-quick');if(!quick){quick=document.createElement('nav');quick.id='cw-mobile-quick';quick.setAttribute('aria-label','Quick navigation');document.getElementById('app')?.append(quick);quick.addEventListener('click',e=>{const b=e.target.closest('[data-nav]');if(b)switchTab(b.dataset.nav);});}
-    quick.innerHTML=[['today','Today'],['appointments','Clinic'],['handover','Handover'],['phone','Quick Look']].map(([tab,title])=>'<button type="button" data-nav="'+tab+'" '+(activeTab===tab?'aria-current="page"':'')+'>'+esc(title)+'</button>').join('');
-    updateReminderBadges(clinicReminderBadgeTotal());renderStatus();
+    // The original area tabs, page tabs and mobile drawer own navigation.
+    // Keep save feedback independent of any particular navigation layout.
+    renderStatus();
   }
-  function toggleSidebar(){
-    const collapsed=document.body.classList.toggle('cw-nav-collapsed');try{localStorage.setItem('clinic-navigation-collapsed',collapsed?'1':'0');}catch(_){}
-    navigation(currentTabName());
-  }
-  function init(){state.user=null;state.loaded=false;state.saveText='Ready';state.saveKind='neutral';try{document.body.classList.toggle('cw-nav-collapsed',localStorage.getItem('clinic-navigation-collapsed')==='1');}catch(_){}navigation(currentTabName());decorateToolbar();watchWriters();window.ClinicTasks?.reset();}
+  function init(){state.user=null;state.loaded=false;state.saveText='Ready';state.saveKind='neutral';navigation(currentTabName());watchWriters();window.ClinicTasks?.reset();}
   function boot(){
     window.addEventListener('offline',()=>connection('offline'));window.addEventListener('online',()=>connection('connecting'));
     document.getElementById('cw-dashboard')?.addEventListener('click',e=>{
@@ -163,6 +143,6 @@
       if(b.hasAttribute('data-reminders'))toggleReminderPanel();
     });
   }
-  window.ClinicWorkspace={init,loadDashboard,renderDashboard,model,mine,appointmentMine,state,esc,arr,name,navigation,toggleSidebar,icon,contextHTML,loadContext,saveStatus,beginSave,endSave,connection};
+  window.ClinicWorkspace={init,loadDashboard,renderDashboard,model,mine,appointmentMine,state,esc,arr,name,navigation,icon,contextHTML,loadContext,saveStatus,beginSave,endSave,connection};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();

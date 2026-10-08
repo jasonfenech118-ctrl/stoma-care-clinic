@@ -1,10 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{JSDOM,VirtualConsole}=require('jsdom');
 function setup(t){const virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',e=>{if(!/Could not parse CSS stylesheet/.test(e.message))throw e;});const dom=new JSDOM('<!doctype html><html><head><title>Ward report</title></head><body><h1>Ward report</h1><div id="clinical">Signed by Nurse A · 1 October 2026</div></body></html>',{runScripts:'outside-only',virtualConsole});t.after(()=>dom.window.close());dom.window.eval(fs.readFileSync(path.join(__dirname,'../../assets/clinic-print.js'),'utf8'));return dom.window;}
-test('print chrome escapes identity, preserves clinical sign-off and decorates a document only once',t=>{
+test('print metadata preserves the original heading and clinical sign-off and is installed only once',t=>{
  const w=setup(t),P=w.ClinicPrint;P.decorateDocument(w.document,{patientName:'Alex <Sample>',patientId:'DEMO-001',preparedBy:'Nurse A'});P.decorateDocument(w.document);
- assert.equal(w.document.querySelectorAll('.cp-header').length,1);assert.equal(w.document.querySelectorAll('.cp-footer').length,1);
- assert.equal(w.document.getElementById('clinical').textContent,'Signed by Nurse A · 1 October 2026');assert.match(w.document.querySelector('.cp-patient').textContent,/Alex <Sample>.*DEMO-001/);
- assert.match(w.document.querySelector('.cp-footer').textContent,/Generated.*Malta time.*Prepared by Nurse A/);assert.match(P.pageCSS(),/counter\(page\).*counter\(pages\)/);
+ assert.equal(w.document.querySelectorAll('[data-clinic-print]').length,1);assert.equal(w.document.querySelector('.cp-header,.cp-footer,.cp-patient'),null);
+ assert.equal(w.document.querySelector('h1').textContent,'Ward report');assert.equal(w.document.getElementById('clinical').textContent,'Signed by Nurse A · 1 October 2026');
+ assert.match(w.document.querySelector('[data-clinic-print]').textContent,/Generated.*Malta time/);assert.match(P.pageCSS(),/counter\(page\).*counter\(pages\)/);
 });
 test('long raster sheets cover all source pixels while reserving the footer on every PDF page',t=>{
  const w=setup(t),slices=[],images=[];w.HTMLCanvasElement.prototype.getContext=function(){return {drawImage:(...args)=>slices.push(args.slice(1))};};w.HTMLCanvasElement.prototype.toDataURL=()=> 'data:image/jpeg;base64,test';

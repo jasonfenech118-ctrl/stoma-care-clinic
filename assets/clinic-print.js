@@ -22,14 +22,8 @@
   function decorateDocument(doc,opt={}){
     if(!doc?.body||doc.querySelector('[data-clinic-print]'))return;
     const style=doc.createElement('style');style.dataset.clinicPrint='1';style.textContent=pageCSS(opt);doc.head.appendChild(style);
-    // A supplied clinic header (attendance) already carries the document title.
-    if(!doc.querySelector('.cp-header')){
-      const title=opt.title||doc.title||'Clinic document';
-      const old=doc.body.querySelector('h1');
-      if(old&&opt.replaceHeading!==false)old.remove();
-      doc.body.insertAdjacentHTML('afterbegin',headerHTML(title,opt));
-    }
-    doc.body.insertAdjacentHTML('beforeend',footerHTML(opt));
+    // Preserve each document's original heading, patient line and footer.
+    // Generation metadata and page numbers live in the print margins only.
   }
   function stampPdf(pdf,opt={}){
     const m=metadata(opt),k=pdf.internal.scaleFactor||1;
