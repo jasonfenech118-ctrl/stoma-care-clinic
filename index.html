@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-464"/>
-<script src="assets/manual.js?v=2026.10.08-464"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-465"/>
+<script src="assets/manual.js?v=2026.10.08-465"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -978,6 +978,8 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-appt-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;font-weight:700;color:var(--navy);}
 .psm-appt-by{font-size:12.5px;font-weight:600;color:var(--muted);}
 .psm-audit{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:4px;}
+.psm-sig{flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);color:#475569;}
+.psm-sig strong{color:var(--navy);font-weight:800;}
 .psm-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff;color:var(--navy);}
 .psm-btn:hover{background:#f4f6f8;}
 .psm-btn-primary{background:var(--teal);border-color:var(--teal);color:#fff;}
@@ -3626,7 +3628,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.08-464';
+const APP_BUILD='2026.10.08-465';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11426,6 +11428,25 @@ function statusLabel(status,appointment){return status==='cancelled'&&appointmen
 function patientName(a){return `${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'—';}
 function dateAddStr(dateStr,days){const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+days);return fmt(d);}
 
+// The signed-in nurse's display name for a "who entered this" signature on a
+// patient. Empty when nobody is resolvable, so a stamp is only written when
+// there is a real name. Never throws (safe where the audit helpers are absent).
+async function patientSignatureName(){
+  try{return attDisplayName(await getCurrentUserForAudit())||'';}catch(e){return '';}
+}
+// The signature line on the patient details card: who entered the record, and
+// who last edited it. Older records with nothing recorded say so plainly.
+function patientSignatureHTML(pat){
+  const day=v=>{const d=String(v||'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(d)?fmtShortDate(d):'';};
+  const by=String(pat&&pat.created_by||'').trim(),on=day(pat&&pat.created_at);
+  const eby=String(pat&&pat.updated_by||'').trim(),eon=day(pat&&pat.updated_at);
+  const parts=[];
+  if(by)parts.push(`Entered by <strong>${htmlSafe(by)}</strong>${on?' · '+htmlSafe(on):''}`);
+  // "Last edited" only adds a line when it says something new.
+  if(eby&&(eby!==by||(eon&&eon!==on)))parts.push(`last edited by <strong>${htmlSafe(eby)}</strong>${eon?' · '+htmlSafe(eon):''}`);
+  if(!parts.length)return `<div class="psm-audit psm-sig">✍ <span style="color:var(--muted);">Author not recorded — entered before signatures were kept</span></div>`;
+  return `<div class="psm-audit psm-sig">✍ ${parts.join(' · ')}</div>`;
+}
 async function getCurrentUserForAudit(){
   try{
     const{data}=await SB.auth.getUser();
@@ -12522,7 +12543,7 @@ async function stomaPatientCount(){
 }
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category';
+const PATIENT_DATE_COLS='updated_at,created_at,created_by,updated_by,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -15265,6 +15286,9 @@ async function persistPatientDetailsForm(patientId,requireComplete){
   const{matches:clashes,error:clashErr}=await findRegistryPatientsByIdCard(record.id_card,patientId);
   if(clashErr)return fail('Could not check the registry for another copy of this ID card.');
   if(clashes.length)return fail('Another patient already has that ID card.');
+  const editedBy=await patientSignatureName();
+  payload.updated_at=new Date().toISOString();
+  if(editedBy)payload.updated_by=editedBy;
   const{error,dropped}=await updatePatientTolerant(patientId,payload);
   if(error)return fail(htmlSafe(patientSaveError(error)));
   if(err)err.innerHTML='';
@@ -18953,7 +18977,7 @@ async function openPatientRecord(patientId){
           <div class="psm-ditem psm-loc-item wide"><dt>Locality</dt>${pat.locality?`<dd class="psm-loc-val">${localityFlagHTML(pat.locality,'small',false)||'<span class="psm-loc-pin">📍</span>'}<span class="psm-loc-name">${htmlSafe(pat.locality)}</span></dd>`:'<dd class="na">Not recorded</dd>'}</div>
           ${dItem('Address',pat.address,true)}
           ${dItem('Firm',pat.consultant)}
-        </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}</div>
+        </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}${patientSignatureHTML(pat)}</div>
       </div>
       <div>
         <div class="psm-sec-head"><h3>Complications</h3><span class="psm-badge">Tied to a stoma · with a timeline</span></div>
@@ -19103,6 +19127,9 @@ async function saveNewPatient(){
       <button class="ncb-btn" style="background:#0369a1;color:white;margin-left:8px;" onclick="openPatientDatesModal('${existing.id}')">Open that patient</button></div>`);
     return;
   }
+  const by=await patientSignatureName();const nowIso=new Date().toISOString();
+  payload.created_at=nowIso;payload.updated_at=nowIso;
+  if(by){payload.created_by=by;payload.updated_by=by;}
   const{data:made,error,dropped}=await insertPatientTolerant(payload);
   if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
   if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
@@ -21419,7 +21446,10 @@ async function saveSitingStomaPatient(){
     if(uDrop&&uDrop.length)alert(`Saved, except for: ${uDrop.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
     pid=existing.id;
   }else{
-    const{data:made,error,dropped}=await insertPatientTolerant(payload);
+    const by=await patientSignatureName();const nowIso=new Date().toISOString();
+  payload.created_at=nowIso;payload.updated_at=nowIso;
+  if(by){payload.created_by=by;payload.updated_by=by;}
+  const{data:made,error,dropped}=await insertPatientTolerant(payload);
     if(error){say(`<div class="registry-lookup-note error">${htmlSafe(patientSaveError(error))}</div>`);return;}
     if(dropped.length)alert(`Added, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
     if(!made||!made.id){say('<div class="registry-lookup-note error">Saved, but the new patient id could not be read.</div>');return;}
@@ -22369,17 +22399,20 @@ async function saveFistulaPatient(patientId){
   if(clashErr)return fail('Could not check the registry for this ID card. Please try again.');
   if(matches.length){const m=matches[0];
     return fail(`${htmlSafe(`${m.first_name||''} ${m.surname||''}`.trim()||'Another patient')} already has ID card ${htmlSafe(idc)} in the registry. <button type="button" class="ncb-btn" style="background:#0369a1;color:white;margin-left:6px;" onclick="closeModal();openPatientRecord('${jsSafe(String(m.id))}')">Open that patient</button>`);}
+  const by=await patientSignatureName();
   const record={first_name:first,surname,id_card:idc,consultant:(firm&&firm!=='__add__')?firm:null,fistula_category:kind,
     fistula_operation_date:opDate||null,procedure_performed:g('fis-operation')||null,findings:null};
+  if(by)record.updated_by=by;
   const sqlNote='This needs one database change first: run sql/add-fistula-patients.sql once in Supabase, then try again.';
   let pid=patientId;
   if(patientId){
-    const{error,dropped}=await updatePatientTolerant(patientId,record);
+    const{error,dropped}=await updatePatientTolerant(patientId,{...record,updated_at:new Date().toISOString()});
     if(error)return fail(htmlSafe(error.message||String(error)));
     if((dropped||[]).includes('fistula_operation_date')||(kind==='bagging'&&(dropped||[]).includes('fistula_category')))return fail(htmlSafe(sqlNote));
   }else{
     // No nurse owner and no due month: never in the stoma recall lists.
     const body={...record,patient_kind:'fistula',followup_status:'paused'};
+    if(by){body.created_by=by;body.created_at=new Date().toISOString();}
     let made=null;
     for(let i=0;i<8;i++){
       const r=await SB.from('patients').insert(body).select('id').single();

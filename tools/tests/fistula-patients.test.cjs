@@ -97,7 +97,7 @@ function fistulaForm(t,{matches=[],insertErrors=[]}={}){
     fetchPatientById:async id=>({data:{id,first_name:'Maria',is_inpatient:false},error:null}),openInpatientVisitFor:async(id)=>log.admitted.push(id),
     SB:{from:()=>({insert:body=>({select:()=>({single:async()=>{log.inserts.push(JSON.parse(JSON.stringify(body)));const e=insertErrors.shift();return e?{data:null,error:e}:{data:{id:'new-1'},error:null};}})})})}});
   w.eval(fistulaHelpers);
-  w.eval(['openFistulaPatientModal','openFistulaPatientForm','saveFistulaPatient','admitFistulaPatient'].map(fn).join('\n'));
+  w.eval(['openFistulaPatientModal','openFistulaPatientForm','saveFistulaPatient','admitFistulaPatient','patientSignatureName'].map(fn).join('\n'));
   // The Add flow now opens a pathway chooser first; a kind picks that pathway.
   return {w,log,set:(id,v)=>{w.document.getElementById(id).value=v;},kind:k=>w.openFistulaPatientForm(null,k)};
 }
