@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.07-461"/>
-<script src="assets/manual.js?v=2026.10.07-461"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.08-462"/>
+<script src="assets/manual.js?v=2026.10.08-462"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.07-458"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -3708,7 +3708,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.07-461';
+const APP_BUILD='2026.10.08-462';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22526,7 +22526,8 @@ function renderFistulaPatients(){
     const acts=p.is_inpatient===true?[btn('#ffedd5','#9a3412','Handover',"switchTab('handover')")]
       :fistulaCaseClosed(p)?[btn('#e0f2fe','#075985','↺ Reopen case',`reopenFistulaCase('${id}')`)]
       :[btn('#f3e8ff','#6b21a8','🏥 Admit to handover',`admitFistulaPatient('${id}')`),btn('#ecfdf5','#047857','✓ Close case',`openCloseFistulaCase('${id}')`)];
-    acts.push(btn('#eef2f6','var(--navy)','Edit',`openFistulaPatientModal('${id}')`),btn('#e8f5f4','var(--teal)','Record',`openPatientRecord('${id}')`));
+    acts.push(btn('#eef2f6','var(--navy)','Edit',`openFistulaPatientModal('${id}')`),btn('#e8f5f4','var(--teal)','Record',`openPatientRecord('${id}')`),
+      btn('#fef2f2','#b91c1c','🗑 Delete',`confirmDeleteFistulaPatient('${id}','${jsSafe(nm)}')`));
     return `<tr class="${fistulaCaseClosed(p)?'fis-row-closed':''}">
       <td data-label="Patient">${patientNameAvatarHTML(p,nm,fistulaTagHTML(p),'sm')}</td>
       <td data-label="ID card" style="font-family:monospace;">${t(p.id_card)}</td>
@@ -22700,6 +22701,36 @@ async function afterFistulaCaseChange(pid){
   if(document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(pid);
 }
 // A fistula patient who later has a stoma formed joins the stoma registry.
+/* Delete a fistula / bagging-advice patient and everything tied to them. Unlike
+   a stoma patient (clinical_records cascades on the patient delete, encounters
+   do not — they key on a text patient_id with no foreign key), so the episodes
+   and encounters are removed explicitly as well. There is no going back. */
+function confirmDeleteFistulaPatient(pid,name){
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2 style="color:#b91c1c;">Delete patient</h2>
+    <div class="msub">Delete <strong>${htmlSafe(name||'this patient')}</strong>? This removes the patient and <strong>all their episodes and encounters</strong>. It cannot be undone. If they are only finished with, use <strong>Close case</strong> instead so the record is kept.</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">No</button>
+      <button class="btn-save" id="fis-del-save" style="background:#b91c1c;" onclick="executeDeleteFistulaPatient('${jsSafe(String(pid))}')">Yes, delete</button></div>`;
+  openMo();
+}
+async function executeDeleteFistulaPatient(pid){
+  const btn=document.getElementById('fis-del-save');if(btn)btn.disabled=true;
+  try{
+    // Children first; encounters have no cascade, clinical_records does but is
+    // cleared explicitly so an older database without the cascade still tidies up.
+    await SB.from('encounters').delete().eq('patient_id',String(pid));
+    await SB.from('appointments').delete().eq('patient_id',pid);
+    await SB.from('clinical_records').delete().eq('patient_id',pid);
+    const{error}=await SB.from('patients').delete().eq('id',pid);
+    if(error){if(btn)btn.disabled=false;alert('Could not delete: '+(error.message||error));return;}
+  }catch(e){if(btn)btn.disabled=false;alert('Could not delete: '+(e&&e.message||e));return;}
+  fistulaIdCache.at=0;
+  closeModal();
+  if(document.getElementById('page-fistulas')?.classList.contains('active'))loadFistulaPatients();
+  if(document.getElementById('page-patient-record')?.classList.contains('active'))switchTab('fistulas');
+  try{refreshReminders();}catch(e){}
+}
 async function convertFistulaToStoma(pid){
   if(!confirm('Move this patient to the Patient Registry as a stoma patient?\n\nThey join the registry, follow-up planning and the stoma counts, and the FISTULA / BAGGING tag comes off the handover. Their appliance history and encounters stay on the record. Record the stoma next in Edit patient.'))return;
   const{error}=await SB.from('patients').update({patient_kind:'stoma',followup_status:'active'}).eq('id',pid);

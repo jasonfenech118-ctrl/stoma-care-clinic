@@ -193,11 +193,12 @@ test('the Fistula Registry shows open cases first by default, with closed cases 
   assert.match(ward.querySelector('[onclick^="openFistulaEpisodes"]').getAttribute('onclick'),/'f3'/);
   const abela=w.document.querySelectorAll('tbody tr')[1];
   assert.match(abela.textContent,/No admission yet/);assert.match(abela.textContent,/Not admitted yet/);
-  assert.deepEqual([...abela.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['🏥 Admit to handover','✓ Close case','Edit','Record']);
+  assert.deepEqual([...abela.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['🏥 Admit to handover','✓ Close case','Edit','Record','🗑 Delete']);
+  assert.match(abela.querySelector('[onclick^="confirmDeleteFistulaPatient"]').getAttribute('onclick'),/'f2','Maria Abela'/);
   w.setFistulaView('closed');
   assert.deepEqual(names(),['Maria Camilleri']);const closed=w.document.querySelector('tbody tr');
   assert.match(closed.textContent,/Closed 2026-09-20/);assert.match(closed.textContent,/Healed \/ resolved/);assert.match(closed.textContent,/discharged 2026-09-20/);
-  assert.deepEqual([...closed.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['↺ Reopen case','Edit','Record']);
+  assert.deepEqual([...closed.querySelectorAll('.fis-actions button')].map(b=>b.textContent),['↺ Reopen case','Edit','Record','🗑 Delete']);
   w.setFistulaView('all');w.document.getElementById('fis-search').value='hartmann';w.renderFistulaPatients();assert.deepEqual(names(),['Maria Abela']);
   // A patient back on the ward is an open case, whatever an older closure says.
   const back=registry(t,[{...FIS,is_inpatient:true,fistula_closed_date:'2026-09-01'}]);back.renderFistulaPatients();
@@ -329,4 +330,36 @@ test('editing a patient skips the chooser and opens straight into their pathway'
   assert.equal(w.document.getElementById('fis-first').value,'Paul');
   assert.equal(w.document.querySelector('.fis-path-chip .fis-change'),null,'no change link when editing');
   assert.match(w.document.querySelector('.mact .btn-cancel').textContent,/Cancel/);
+});
+
+test('Delete removes the patient and all their episodes and encounters, after a confirmation', async t=>{
+  const dom=new JSDOM('<div id="mb"></div><div id="page-fistulas" class="page active"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
+  const deletes=[];
+  Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>{w.__closed=true;},alert:m=>{w.__alert=m;},
+    loadFistulaPatients:()=>{w.__reloaded=true;},refreshReminders:()=>{},switchTab:()=>{},
+    SB:{from:t=>({delete:()=>({eq:async(k,v)=>{deletes.push([t,k,String(v)]);return {error:null};}})})},
+    fistulaIdCache:{at:Date.now(),ids:new Set()}});
+  w.eval([fn('confirmDeleteFistulaPatient'),fn('executeDeleteFistulaPatient')].join('\n'));
+  w.confirmDeleteFistulaPatient('f1','Maria Borg');
+  const mb=w.document.getElementById('mb');
+  assert.match(mb.querySelector('h2').textContent,/Delete patient/);
+  assert.match(mb.textContent,/all their episodes and encounters/);assert.match(mb.textContent,/cannot be undone/);
+  assert.match(mb.querySelector('#fis-del-save').getAttribute('onclick'),/executeDeleteFistulaPatient\('f1'\)/);
+  await w.executeDeleteFistulaPatient('f1');
+  // Children before the patient, encounters by the text id.
+  assert.deepEqual(deletes,[['encounters','patient_id','f1'],['appointments','patient_id','f1'],['clinical_records','patient_id','f1'],['patients','id','f1']]);
+  assert.equal(w.__closed,true);assert.equal(w.__reloaded,true);assert.equal(w.fistulaIdCache.at,0);
+});
+
+test('a failed Delete keeps the patient and re-enables the button', async t=>{
+  const dom=new JSDOM('<div id="mb"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
+  Object.assign(w,{htmlSafe:esc,jsSafe:v=>String(v??''),openMo:()=>{},closeModal:()=>{w.__closed=true;},alert:m=>{w.__alert=m;},
+    loadFistulaPatients:()=>{},refreshReminders:()=>{},switchTab:()=>{},fistulaIdCache:{at:1,ids:new Set()},
+    SB:{from:t=>({delete:()=>({eq:async()=>t==='patients'?{error:{message:'nope'}}:{error:null}})})}});
+  w.eval([fn('confirmDeleteFistulaPatient'),fn('executeDeleteFistulaPatient')].join('\n'));
+  w.confirmDeleteFistulaPatient('f1','Maria Borg');
+  await w.executeDeleteFistulaPatient('f1');
+  assert.match(w.__alert,/Could not delete: nope/);
+  assert.notEqual(w.__closed,true);
+  assert.equal(w.document.getElementById('fis-del-save').disabled,false);
 });
