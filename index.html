@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-493"/>
-<script src="assets/manual.js?v=2026.10.09-493"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-494"/>
+<script src="assets/manual.js?v=2026.10.09-494"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -3085,9 +3085,8 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 
     <div class="page" id="page-snapshots">
       <div class="phdr">
-        <div><h2><span class="page-heading-icon" aria-hidden="true">💾</span><span>Archived Handover</span></h2><p>A read-only copy of the handover sheet, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab. Saved as lightweight data (a few KB), not a picture.</p></div>
+        <div><h2><span class="page-heading-icon" aria-hidden="true">💾</span><span>Archived Handover</span></h2><p>Previously saved handover sheets — open or download an existing copy. New handovers are no longer archived.</p></div>
         <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">💾 Save now</button>
           <button class="btn-add" onclick="loadHandoverSnapshots()">Refresh</button>
         </div>
       </div>
@@ -3727,7 +3726,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-493';
+const APP_BUILD='2026.10.09-494';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3774,8 +3773,6 @@ async function startApp(){
   // Reminders load last so the roster is already on screen, then the daily prompt appears.
   await refreshReminders();
   startClinicRealtime();
-  // The 4pm handover snapshot runs quietly in the background from here on.
-  startHandoverSnapshotScheduler();
   // Quick Look was already activated before the awaited startup work above.
   // Handle the other direct routes now that their supporting data is ready.
   if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
@@ -22568,8 +22565,7 @@ async function closeOpenInpatientEpisode(pid,opts){
   }catch(e){}
 }
 // Build the handover ward sheet as one self-contained HTML document (flattened
-// text — no inputs or buttons — with its own styles). Used both to print and,
-// with autoPrint:false, to archive the day as data instead of a heavy picture.
+// text — no inputs or buttons — with its own styles) for Print / PDF.
 function handoverSheetDocHTML(opts){
   opts=opts||{};
   const autoPrint=opts.autoPrint!==false;
@@ -22761,15 +22757,10 @@ function printHandover(){
 }
 
 /* ------------------------------------------------------------------------- *
- * Handover snapshots — a copy of the sheet kept once a day.
- * At 4pm (local time) the app saves the handover as its own self-contained HTML
- * (the same flattened sheet it prints — a few KB, not a ~½ MB picture), one per
- * day, in the handover_snapshots table. The Snapshots tab lists them and opens
- * any day in a new browser tab. Needs sql/add-handover-snapshots.sql, plus
- * sql/add-handover-snapshot-html.sql for the html_data column.
+ * Archived handovers — read-only access to previously saved sheets.
+ * New handover copies are no longer saved manually or automatically.
  * ------------------------------------------------------------------------- */
-// Load the screenshot library only when a snapshot is actually taken, so the
-// rest of the app never pays for it. Same pattern as the spreadsheet reader.
+// Load the screenshot library only when another page needs it for a PDF export.
 function ensureHtml2Canvas(){
   if(window.html2canvas)return Promise.resolve(window.html2canvas);
   return new Promise((resolve,reject)=>{
@@ -22779,48 +22770,6 @@ function ensureHtml2Canvas(){
     s.onerror=()=>reject(new Error('Could not load the screenshot library — check the connection.'));
     document.head.appendChild(s);
   });
-}
-let _snapshotBusy=false;
-/* Take the picture. {manual:true} is the "Capture now" button and replaces the
-   day's snapshot; {auto:true} is the 4pm timer and only writes if the day has
-   none yet. */
-async function captureHandoverSnapshot(opts){
-  opts=opts||{};
-  if(_snapshotBusy)return;
-  _snapshotBusy=true;
-  const onSnapTab=document.getElementById('page-snapshots')?.classList.contains('active');
-  const setBody=h=>{const b=document.getElementById('snapshots-body');if(b&&onSnapTab)b.innerHTML=h;};
-  try{
-    if(opts.manual)setBody('<div class="report-note">Saving the handover…</div>');
-    // The handover has to be rendered before it can be saved.
-    await loadHandover();
-    const body=document.getElementById('hv-body');
-    if(!body||!document.getElementById('hv-table')){
-      if(opts.manual)alert('There is nobody on the handover to save yet.');
-      return;
-    }
-    // Save the sheet as the SAME self-contained HTML it prints as — flattened
-    // text, no picture — so a day's handover is a few KB instead of a ~½ MB PNG.
-    const count=body.querySelectorAll('#hv-table tbody tr').length;
-    const htmlDoc=handoverSheetDocHTML({autoPrint:false});
-    if(!htmlDoc){if(opts.manual)alert('There is nobody on the handover to save yet.');return;}
-    let who='4pm auto';
-    if(opts.manual){try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'Captured by hand';}catch(e){}}
-    const row={snapshot_date:TODAY,captured_at:new Date().toISOString(),html_data:htmlDoc,
-      inpatient_count:count,created_by:who};
-    // One per day: the manual button replaces the day's; the 4pm timer only
-    // reaches here when the day has none, so either way upsert on the date is
-    // right, and two machines firing at 4pm cannot make two rows.
-    const{error}=await SB.from('handover_snapshots').upsert(row,{onConflict:'snapshot_date'});
-    if(error){
-      const missing=/handover_snapshots|relation|does not exist|html_data|column|null value/i.test(String(error.message||''));
-      if(opts.manual)alert(missing
-        ? 'The saved-handover store needs one database change first. Run sql/add-handover-snapshot-html.sql once in Supabase, then try again.'
-        : 'Could not save the handover: '+error.message);
-      return;
-    }
-    if(onSnapTab)await loadHandoverSnapshots();
-  }finally{_snapshotBusy=false;}
 }
 let handoverSnapshotRows=[];
 async function loadHandoverSnapshots(){
@@ -22835,7 +22784,7 @@ async function loadHandoverSnapshots(){
   if(error){
     const missing=/handover_snapshots|relation|does not exist|column/i.test(String(error.message||''));
     body.innerHTML=missing
-      ? handoverMissingHTML('The snapshots table is not in the database yet. Run <strong>sql/add-handover-snapshots.sql</strong> once in Supabase to turn this on.')
+      ? emptyStateHTML('📸','No archived handovers','No previously saved handover copies are available. New handovers are no longer archived.','')
       : `<div class="report-note">Could not load snapshots: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
@@ -22857,8 +22806,8 @@ function renderHandoverSnapshots(){
   const body=document.getElementById('snapshots-body');
   if(!body)return;
   if(!handoverSnapshotRows.length){
-    body.innerHTML=emptyStateHTML('📸','No archived handovers yet',
-      'Each day&rsquo;s handover is archived here automatically and kept for reference.','');
+    body.innerHTML=emptyStateHTML('📸','No archived handovers',
+      'No previously saved handover copies are available. New handovers are no longer archived.','');
     return;
   }
   const day=(document.getElementById('snapf-date')?.value||'').slice(0,10);
@@ -22936,28 +22885,6 @@ async function downloadHandoverSnapshot(id){
     a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
     document.body.appendChild(a); a.click(); a.remove();
   }
-}
-/* The 4pm timer. Every minute from 4pm on it checks whether today already has a
-   snapshot (any machine), and if not, takes one. So the machine left open on
-   the ward saves the day's sheet without anyone remembering, and a machine
-   opened at 4:30 still catches up. Before 4pm it does nothing. */
-let _snapSchedulerOn=false, _snapDoneFor='';
-function startHandoverSnapshotScheduler(){
-  if(_snapSchedulerOn)return;
-  _snapSchedulerOn=true;
-  const tick=async()=>{
-    try{
-      if(new Date().getHours()<16)return;      // only from 4pm
-      if(_snapDoneFor===TODAY)return;          // handled today in this session
-      const{data,error}=await SB.from('handover_snapshots').select('id').eq('snapshot_date',TODAY).limit(1);
-      if(error)return;                         // table not there yet — leave it
-      _snapDoneFor=TODAY;                      // don't ask again today
-      if(data&&data.length)return;             // a machine already saved today
-      await captureHandoverSnapshot({auto:true});
-    }catch(e){}
-  };
-  tick();                                       // catch up now if it is already past 4pm
-  setInterval(tick,60000);
 }
 /* ── REGISTRY › FISTULAS ───────────────────────────────────────────────────────
    The fistula registry: every fistula patient, as an open or a closed case,
