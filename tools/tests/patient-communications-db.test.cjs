@@ -84,3 +84,61 @@ test('the server protects audit data and patient identity even on direct API upd
   await assert.rejects(db.query('update patient_communications set patient_id=$1 where id=$2',[HIDDEN,RID]),/cannot be moved/);
   await assert.rejects(db.query('delete from patient_communications where id=$1',[RID]),/permission denied/);
 });
+
+const CONTACT='55555555-5555-4555-8555-555555555555';
+const reminder=()=>({...payload(),reminder_enabled:true});
+async function contact(extra={},version=1,id=CONTACT){return save({...reminder(),parent_id:RID,parent_version:version,subject:'Further community contact',notes:'Follow-up conversation.',...extra},'community',id);}
+test('further contacts append to one issue and atomically update its reminder without replacing original notes',async()=>{
+  await save(reminder());const entry=await contact({followup_date:'2026-10-15',followup_action:'Check supply delivery'});
+  assert.equal(entry.parent_id,RID);assert.equal(entry.version,1);assert.equal(entry.issue.version,2);assert.equal(entry.issue.followup_date,'2026-10-15');
+  assert.equal(entry.issue.notes,'Original advice.');assert.equal(entry.issue.versions[0].snapshot.notes,'Original advice.');assert.equal((await stored()).length,2);
+  assert.equal((await db.query('select is_inpatient from patients where id=$1',[PAT])).rows[0].is_inpatient,false);
+});
+test('resolving clears the active reminder and blocks stale or new contacts until deliberately reopened',async()=>{
+  await save(reminder());const done=await save({...reminder(),status:'Completed'},'community',RID,1);
+  assert.equal(done.reminder_enabled,false);assert.ok(done.resolved_at);assert.equal(done.followup_action,'Check response');
+  await assert.rejects(contact({},1),/newer saved update/);await assert.rejects(contact({},2),/Reopen this resolved issue/);
+  const reopen=await save({...reminder(),status:'Recorded',reminder_enabled:false},'community',RID,2);
+  assert.equal(reopen.resolved_at,null);assert.equal(reopen.reminder_enabled,false);assert.equal(reopen.versions.length,3);
+  await contact({status:'Recorded',reminder_enabled:false},3);assert.equal((await stored()).length,2);
+});
+test('lost-response contact retries return the same contact even after the issue was resolved',async()=>{
+  await save(reminder());const first=await contact();await save({...reminder(),status:'Completed'},'community',RID,2);
+  const again=await contact();assert.equal(first.id,again.id);assert.equal(again.issue.status,'Completed');assert.equal(again.issue.version,3);assert.equal((await stored()).length,2);
+});
+test('a stale issue version cannot replace a changed reminder or append a duplicate contact',async()=>{
+  await save(reminder());await save({...reminder(),followup_date:'2026-10-20'},'community',RID,1);
+  await assert.rejects(contact({},1),/newer saved update/);const rows=await stored();assert.equal(rows.length,1);assert.equal(rows[0].followup_date.toISOString().slice(0,10),'2026-10-20');
+});
+test('correcting a historical contact preserves the resolved issue and its original contact wording',async()=>{
+  await save(reminder());const entry=await contact();await save({...reminder(),status:'Completed'},'community',RID,2);
+  const correction=await save({...reminder(),parent_id:RID,subject:entry.subject,notes:'Corrected follow-up wording.'},'community',CONTACT,1);
+  assert.equal(correction.issue.status,'Completed');assert.equal(correction.issue.version,3);assert.equal(correction.issue.reminder_enabled,false);
+  assert.equal(correction.versions[0].snapshot.notes,'Follow-up conversation.');assert.equal(correction.notes,'Corrected follow-up wording.');
+  await assert.rejects(save({...reminder(),parent_id:RID,subject:entry.subject,notes:'Corrected follow-up wording.',status:'Recorded'},'community',CONTACT,2),/Edit the issue/);
+});
+test('contacts cannot cross patient/category, move issues, nest under a contact, or precede their issue',async()=>{
+  await save(reminder());await contact();
+  await assert.rejects(save({...reminder(),parent_id:RID,parent_version:2},'patient','88888888-8888-4888-8888-888888888888'),/issue could not be found/);
+  await assert.rejects(contact({parent_id:CONTACT,parent_version:1},2,'88888888-8888-4888-8888-888888888888'),/issue could not be found/);
+  await assert.rejects(contact({communication_date:'2026-10-08'},2,'88888888-8888-4888-8888-888888888888'),/before the issue/);
+  await assert.rejects(db.query('update patient_communications set parent_id=null where id=$1',[CONTACT]),/cannot be moved/);
+  assert.equal((await stored()).length,2);
+});
+test('active reminders require an action and date, old-browser corrections retain configured reminders',async()=>{
+  await assert.rejects(save({...reminder(),followup_date:''}),/check constraint/);await assert.rejects(save({...reminder(),followup_action:' '}),/check constraint/);
+  await save(reminder());const corrected=await save({...payload(),notes:'A wording correction from an older browser.'},'community',RID,1);assert.equal(corrected.reminder_enabled,true);
+});
+test('re-running the setup preserves every saved contact, signature and version',async()=>{
+  await save(reminder());await contact();const before=await stored();
+  await db.exec('reset role');await db.exec(sql);await db.exec('set role authenticated');assert.deepEqual(await stored(),before);
+});
+test('correcting resolved wording preserves the actual resolution nurse/time, and reopening clears that signature',async()=>{
+  await save(reminder());const done=await save({...reminder(),status:'Completed'},'community',RID,1);
+  assert.equal(done.resolved_by_name,'Jason Fenech');assert.equal(done.resolved_by,ACTOR);
+  await db.query("select set_config('test.email','jacqueline.sammut@gov.mt',false),set_config('test.uid','66666666-6666-4666-8666-666666666666',false)");
+  const edited=await save({...reminder(),status:'Completed',notes:'Correction after resolution.'},'community',RID,2);
+  assert.equal(edited.updated_by_name,'Jacqueline Sammut');assert.equal(edited.resolved_by_name,'Jason Fenech');assert.equal(edited.resolved_at,done.resolved_at);
+  const reopened=await save({...reminder(),status:'Recorded',reminder_enabled:false},'community',RID,3);
+  assert.equal(reopened.resolved_by_name,null);assert.equal(reopened.resolved_by,null);assert.equal(reopened.resolved_at,null);
+});
