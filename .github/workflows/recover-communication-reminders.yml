@@ -1,41 +1,38 @@
-name: Recover approved communication reminder update
+name: Verify published communication reminders
 on:
   push:
     branches:
       - codex/communication-reminders-recovery
-permissions:
-  contents: read
+permissions: {}
 jobs:
-  recover:
+  verify-live:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: a3421505c7c829a720c07b247b3e6d000a85e6d2
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Recover and verify the approved patch
-        env:
-          APPROVED_PATCH_URL: "https://sdmntprpolandcentral.oaiusercontent.com/files/00000000-9754-820a-b275-fe801af33c33/raw?se=2026-10-09T16%3A26%3A55Z&sp=r&sv=2026-02-06&sr=b&scid=01a12140-3ed2-7e27-bd3c-38347d2473df&skoid=e32cbaad-a1eb-4299-9f16-1b364ab43781&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-09T03%3A45%3A59Z&ske=2026-10-10T03%3A45%3A59Z&sks=b&skv=2026-02-06&sig=MiuIjMBMD%2BJ3YHSin3yD8nlkUNxwWN26Z7g0NkkpJRA%3D"
+      - name: Verify live build and published assets
         run: |
-          curl --fail --silent --show-error --location --max-time 60 "$APPROVED_PATCH_URL" --output "$RUNNER_TEMP/approved.patch"
           python3 - <<'PY'
-          import base64, hashlib, os, pathlib
-          data = pathlib.Path(os.environ['RUNNER_TEMP'], 'approved.patch').read_bytes()
-          assert len(data) == 120537, 'Saved patch length mismatch'
-          assert data.startswith(b'From 2e3f0a5ea020135d397868f563a0c2e322875300 '), 'Saved commit mismatch'
-          assert b'base-commit: a3421505c7c829a720c07b247b3e6d000a85e6d2' in data, 'Saved base mismatch'
-          print('APPROVED_PATCH_SHA256:' + hashlib.sha256(data).hexdigest())
-          assert hashlib.sha256(data).hexdigest() == '5d6f0caf46ad0999a30875cf865be61c49aa737639f4de6872078d39a575584f', 'Saved patch checksum mismatch'
+          import hashlib, time, urllib.request
+          base = 'https://jasonfenech118-ctrl.github.io/stoma-care-clinic/'
+          expected = {"index.html":"d449f0455bf56843cdbe880d79a0c125580e1810","assets/manual.js":"9a813e3e1944e30350d57d3d19e7aaa218fd5e13","assets/patient-communications.css":"3316c33b79535d4ccf876c79b9583c7261948b16","assets/patient-communications.js":"822a58c96a2892a7c2b9b7ee938cada7a783a272"}
+          commit = '3ee4ada4d222a1a358894a96d6156eba417fe226'
+          for attempt in range(30):
+              try:
+                  for path, wanted in expected.items():
+                      req = urllib.request.Request(base + path + '?verify=' + commit, headers={'Cache-Control':'no-cache'})
+                      with urllib.request.urlopen(req, timeout=20) as response:
+                          assert response.status == 200, 'HTTP status mismatch'
+                          data = response.read()
+                      actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\x00' + data).hexdigest()
+                      assert actual == wanted, 'Waiting for published asset: ' + path
+                      if path == 'index.html':
+                          assert b'2026.10.09-490' in data, 'Published build mismatch'
+                  print('LIVE_BUILD_VERIFIED:2026.10.09-490')
+                  print('LIVE_ASSETS_VERIFIED:' + ', '.join(expected))
+                  break
+              except Exception as exc:
+                  if attempt == 29:
+                      raise
+                  print('Deployment pending: ' + str(exc), flush=True)
+                  time.sleep(5)
           PY
-          git apply --check "$RUNNER_TEMP/approved.patch"
-          git apply --index "$RUNNER_TEMP/approved.patch"
-          git diff --cached --stat
-          python3 -c "import subprocess; print('APPROVED_TREE:' + subprocess.check_output(['git','write-tree'],text=True).strip())"
-      - name: Install isolated test dependency
-        run: npm install --prefix "$RUNNER_TEMP/reminder-test-deps" --no-audit --no-fund @electric-sql/pglite jsdom@26.1.0
-      - name: Run workflow and database regression tests
-        run: NODE_PATH="$RUNNER_TEMP/reminder-test-deps/node_modules" node --test --test-concurrency=2 tools/tests/*.test.cjs
