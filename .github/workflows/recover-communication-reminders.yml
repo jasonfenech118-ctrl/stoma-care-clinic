@@ -29,15 +29,13 @@ jobs:
           assert data.startswith(b'From 2e3f0a5ea020135d397868f563a0c2e322875300 '), 'Saved commit mismatch'
           assert b'base-commit: a3421505c7c829a720c07b247b3e6d000a85e6d2' in data, 'Saved base mismatch'
           print('APPROVED_PATCH_SHA256:' + hashlib.sha256(data).hexdigest())
-          encoded = base64.b64encode(data).decode('ascii')
-          for start in range(0, len(encoded), 120):
-              print('APPROVED_PATCH_DATA:' + encoded[start:start+120])
-          print('APPROVED_PATCH_END')
+          assert hashlib.sha256(data).hexdigest() == '5d6f0caf46ad0999a30875cf865be61c49aa737639f4de6872078d39a575584f', 'Saved patch checksum mismatch'
           PY
           git apply --check "$RUNNER_TEMP/approved.patch"
           git apply --index "$RUNNER_TEMP/approved.patch"
           git diff --cached --stat
+          python3 -c "import subprocess; print('APPROVED_TREE:' + subprocess.check_output(['git','write-tree'],text=True).strip())"
       - name: Install isolated test dependency
-        run: npm install --prefix "$RUNNER_TEMP/reminder-test-deps" --no-audit --no-fund @electric-sql/pglite
+        run: npm install --prefix "$RUNNER_TEMP/reminder-test-deps" --no-audit --no-fund @electric-sql/pglite jsdom@26.1.0
       - name: Run workflow and database regression tests
         run: NODE_PATH="$RUNNER_TEMP/reminder-test-deps/node_modules" node --test --test-concurrency=2 tools/tests/*.test.cjs
