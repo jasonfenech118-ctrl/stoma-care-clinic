@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-481"/>
-<script src="assets/manual.js?v=2026.10.09-481"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-482"/>
+<script src="assets/manual.js?v=2026.10.09-482"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-481"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -3672,7 +3672,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-481';
+const APP_BUILD='2026.10.09-482';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20967,6 +20967,7 @@ function addHour(hhmm){
   let h=(+m[1]+1)%24; return String(h).padStart(2,'0')+':'+m[2];
 }
 function sitingStatusLabel(r){
+  if(r.status==='cancelled'){const why=sitingCancelReasonLabel(r);return why?'Cancelled — '+why:'Cancelled';}
   if(r.surgery_performed===true)return r.stoma_formed?'Stoma formed':'Operated — no stoma';
   if(r.status==='did_not_attend')return r.surgery_date?'Did not attend':'Did not attend — rebook';
   if(r.status==='seen')return r.surgery_date?'Seen':'Seen — awaiting date';
@@ -21004,7 +21005,9 @@ async function openPatientSiting(patientId,idCard,name){
   }
   if(!body)return;
   if(missing){body.innerHTML=handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.');return;}
-  const rows=[...byId.values()].filter(r=>r.status!=='cancelled')
+  // Cancelled sessions are kept here (greyed, with the recorded reason) so the
+  // patient's siting history and why a session fell through are never lost.
+  const rows=[...byId.values()]
     .sort((a,b)=>String(b.session_date||'').localeCompare(String(a.session_date||'')));
   if(!rows.length){
     body.innerHTML=`<div class="report-note">${failed?('Could not load: '+htmlSafe(failed)):'No siting sessions on record for this patient. Book one from the <strong>Siting Session</strong> tab.'}</div>`;
@@ -21012,8 +21015,9 @@ async function openPatientSiting(patientId,idCard,name){
   }
   const cards=rows.map(r=>{
     const st=sitingStatusLabel(r);
-    const stColor=r.surgery_performed===true?(r.stoma_formed?'#0d7377':'#8a6d3b'):(r.surgery_performed===false?'#8a6d3b':'#0d7377');
-    return `<div class="ap-card" style="margin:0 0 10px;">
+    const cancelled=r.status==='cancelled';
+    const stColor=cancelled?'#b42318':(r.surgery_performed===true?(r.stoma_formed?'#0d7377':'#8a6d3b'):(r.surgery_performed===false?'#8a6d3b':'#0d7377'));
+    return `<div class="ap-card" style="margin:0 0 10px;${cancelled?'opacity:.9;':''}">
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;">
         <strong>${htmlSafe(r.siting_for||'Siting')}</strong>
         <span style="font-weight:700;color:${stColor};">${htmlSafe(st)}</span>
@@ -21022,6 +21026,7 @@ async function openPatientSiting(patientId,idCard,name){
         <span style="color:#6b7280;">Siting date</span><span>${r.session_date?htmlSafe(fmtShortDate(r.session_date)):'—'}${r.session_slot?' · '+htmlSafe(sitingSlotLabel(r.session_slot)):''}</span>
         <span style="color:#6b7280;">Surgery date</span><span>${r.surgery_date?htmlSafe(fmtShortDate(r.surgery_date)):'—'}</span>
         <span style="color:#6b7280;">Firm</span><span>${htmlSafe(r.consultant||'—')}</span>
+        ${cancelled&&r.cancellation_note?`<span style="color:#6b7280;">Cancellation note</span><span>${htmlSafe(r.cancellation_note)}</span>`:''}
       </div>
     </div>`;
   }).join('');
@@ -21210,11 +21215,54 @@ async function saveSitingSession(){
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
   refreshRecordSiting();
 }
-async function cancelSitingSession(id,name){
-  if(!confirm(`Cancel the siting session for ${name||'this patient'}?`))return;
-  const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
-  if(error){alert('Could not cancel: '+error.message);return;}
-  sitingLocalPatches[id]={status:'cancelled'};
+// Cancelling a siting session records WHY — due to the patient, or a hospital
+// complication — the same split the clinic records on a cancelled appointment.
+const SITING_CANCEL_REASONS={patient:'due to patient',hospital:'hospital complication'};
+function sitingCancelReasonLabel(r){return SITING_CANCEL_REASONS[r&&r.cancellation_reason]||'';}
+let siteCancelState=null;
+// A plain update that quietly drops any cancellation column the database does
+// not have yet, so a session still cancels before the one-off SQL has been run.
+async function updateSitingTolerant(id,payload){
+  const body={...payload},dropped=[];
+  for(let i=0;i<8;i++){
+    const{error}=await SB.from('siting_sessions').update(body).eq('id',id);
+    if(!error)return {error:null,dropped};
+    const col=missingColumnFromError(error);
+    if(col&&col in body){delete body[col];dropped.push(col);continue;}
+    return {error,dropped};
+  }
+  return {error:new Error('too many missing columns'),dropped};
+}
+function cancelSitingSession(id,name){
+  const mb=document.getElementById('mb');if(!mb)return;
+  siteCancelState={id,name:name||''};
+  mb.className='mb cancellation-modal';
+  mb.innerHTML=`<h2>Cancel siting session</h2>
+    <div class="cancel-patient"><strong>${htmlSafe(name||'Patient')}</strong><span>Siting session</span></div>
+    <fieldset class="cancel-choices"><legend>Why is it being cancelled? *</legend>
+      <label><input type="radio" name="siting-cancel-reason" value="patient"/><span><strong>Due to the patient</strong><small>The patient cancelled, could not attend, was unwell or declined.</small></span></label>
+      <label><input type="radio" name="siting-cancel-reason" value="hospital"/><span><strong>Hospital complication</strong><small>Surgery postponed or cancelled, or a theatre, clinic or staffing reason.</small></span></label>
+    </fieldset>
+    <div class="fg"><label for="siting-cancel-note">Note (optional)</label><textarea id="siting-cancel-note" maxlength="500" rows="3"></textarea></div>
+    <p id="siting-cancel-error" role="alert" hidden style="color:#b42318;font-weight:600;font-size:13px;margin:6px 0;"></p>
+    <div class="mact"><button type="button" class="btn-cancel" onclick="closeModal()">Back</button><button type="button" class="btn-save" id="siting-cancel-save" onclick="saveSitingCancellation()">Cancel session</button></div>`;
+  openMo();
+}
+async function saveSitingCancellation(){
+  const s=siteCancelState;if(!s)return;
+  const reason=document.querySelector('input[name="siting-cancel-reason"]:checked')?.value||'';
+  const errorBox=document.getElementById('siting-cancel-error');
+  if(!reason){if(errorBox){errorBox.hidden=false;errorBox.textContent='Choose whether it is due to the patient or a hospital complication.';}return;}
+  const note=String(document.getElementById('siting-cancel-note')?.value||'').trim();
+  const btn=document.getElementById('siting-cancel-save');if(btn)btn.disabled=true;
+  let who='';try{who=attDisplayName(await getCurrentUserForAudit())||'';}catch(e){}
+  const now=new Date().toISOString();
+  const{error,dropped}=await updateSitingTolerant(s.id,{status:'cancelled',cancellation_reason:reason,cancellation_note:note||null,cancelled_by:who||null,cancelled_at:now,updated_at:now});
+  if(error){if(btn)btn.disabled=false;if(errorBox){errorBox.hidden=false;errorBox.textContent='Could not cancel: '+(error.message||error);}return;}
+  const reasonSaved=!dropped.includes('cancellation_reason');
+  closeModal();
+  sitingLocalPatches[s.id]=reasonSaved?{status:'cancelled',cancellation_reason:reason,cancellation_note:note||null}:{status:'cancelled'};
+  if(!reasonSaved)alert('The siting session was cancelled, but the reason could not be saved yet. Run sql/add-siting-cancellation.sql once in Supabase to record cancellation reasons.');
   refreshSitingViews();
 }
 function refreshSitingViews(){
