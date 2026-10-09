@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
-const block=html.slice(html.indexOf('function deceasedArchiveHTML('),html.indexOf('async function deceasedSitingIds('));
+const block=html.slice(html.indexOf('function deceasedArchiveHTML('),html.indexOf('function deceasedMinimiseCardHTML('));
 
 function build(){
   const sandbox={

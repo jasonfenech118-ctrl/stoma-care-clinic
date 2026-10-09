@@ -21,10 +21,12 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-495"/>
-<script src="assets/manual.js?v=2026.10.09-496"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-497"/>
+<script src="assets/manual.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
+<link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
+<script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-496"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-496"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -2896,6 +2898,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
         <span class="pd-count" id="pd-count"></span>
       </div>
       <div id="pd-setup-note"></div>
+      <div id="pd-deceased-controls" hidden></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
         <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th></tr></thead>
         <tbody id="pd-tbody"><tr><td colspan="7" class="empty">Loading patients…</td></tr></tbody>
@@ -3721,7 +3724,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-496';
+const APP_BUILD='2026.10.09-497';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12906,7 +12909,7 @@ async function stomaPatientCount(){
 }
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,created_at,created_by,updated_by,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category';
+const PATIENT_DATE_COLS='updated_at,created_at,created_by,updated_by,stoma_operation_history,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category,minimised_at,minimised_by';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -13556,6 +13559,26 @@ function registryStomaType(p){
   try{const types=[...new Set(stomaTimeline(p).map(s=>String(s.type||'').trim()).filter(Boolean))];if(types.length)return types.join(', ');}catch(e){}
   return '';
 }
+function configureDeceasedRegistry(){
+  window.DeceasedRegistry?.configure({
+    db:()=>SB,isDeceased:patientIsDeceased,formatDate:fmtShortDate,
+    avatar:(p,nm)=>patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p),'sm'),
+    surgeryDate:registrySurgeryDate,stomaType:registryStomaType,
+    rerender:renderPatientDirectory,refresh:loadPatientDirectory,
+    pager:(total,size,page,onMove)=>renderPager('pd-pager',total,size,page,onMove),
+    onFilteredCount:total=>{const el=document.getElementById('pd-count');if(el)el.innerHTML=el.innerHTML.replace(/^\d+ of /,total+' of ');},
+    openPatient:openPatientRecord,openHistory:openFollowupHistory,restore:restorePatient,
+    summary:deceasedArchiveHTML,audit:logAudit,
+    auditName:async()=>{const u=await getCurrentUserForAudit();return (u&&(u.name||u.email))||'';},
+    onMinimised:pat=>{
+      const row=patientDirectoryRows.find(p=>String(p.id)===String(pat.id));
+      if(row){row.minimised_at=pat.minimised_at;row.minimised_by=pat.minimised_by;}
+      if(clrState.patient&&String(clrState.patient.id)===String(pat.id)){
+        Object.assign(clrState.patient,pat);if(clrState.siting)clrState.siting.image_data=null;
+      }
+    }
+  });
+}
 function renderPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   const countEl=document.getElementById('pd-count');
@@ -13598,6 +13621,10 @@ function renderPatientDirectory(){
   if(note)note.innerHTML=!patientDatesAvailable
     ? '<div class="report-note" style="color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:9px 12px;">The clinical date, stoma type and sex columns are not in the database yet. Run <strong>sql/add-registry-columns.sql</strong> once in Supabase to enable them — the rest of the directory works without it.</div>'
     : incompleteCount?'<div class="report-note" style="color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 12px;">Rows with an <strong>amber left stripe</strong> are missing one or more clinical fields (including the new post-op discharge date). Open a patient to see exactly what is still to fill in.</div>':'';
+  if(window.DeceasedRegistry){
+    if(status==='deceased'){configureDeceasedRegistry();window.DeceasedRegistry.render(rows,pdKey);return;}
+    window.DeceasedRegistry.hide();
+  }
   // For patients no longer in active recall — reversed, deceased, moved away —
   // a phone number is not what the nurse needs. Those views swap the Phone
   // column for the clinical Operation Performed and Findings instead.
@@ -19342,78 +19369,14 @@ function deceasedArchiveHTML(pat,extras){
 <p class="foot">Saved ${esc(fmtLabel(new Date().toISOString()))}${extras.generatedBy?' by '+esc(extras.generatedBy):''}. Clinical rows remain on the live record; only the photographs were removed.</p>
 </body></html>`;
 }
-// Every siting session for this patient (by id and, as a siting can predate the
-// patient record, by id card), so no photograph is missed.
-async function deceasedSitingIds(pat){
-  const ids=new Set();
-  try{const{data}=await SB.from('siting_sessions').select('id').eq('patient_id',pat.id);(data||[]).forEach(r=>ids.add(String(r.id)));}catch(e){}
-  if(pat.id_card){try{const{data}=await SB.from('siting_sessions').select('id').eq('id_card',pat.id_card);(data||[]).forEach(r=>ids.add(String(r.id)));}catch(e){}}
-  return [...ids];
-}
-async function minimiseDeceasedRecord(patientId){
-  let pat=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
-  if(!pat){const r=await fetchPatientById(patientId);pat=r&&r.data;}
-  if(!pat){alert('Could not open this patient.');return;}
-  if(!patientIsDeceased(pat)){alert('Only a deceased patient’s record can be minimised.');return;}
-  if(pat.minimised_at){alert('This record has already been minimised.');return;}
-  const sitingIds=await deceasedSitingIds(pat);
-  let photoIds=[];
-  if(sitingIds.length){
-    try{const{data}=await SB.from('siting_images').select('siting_id').in('siting_id',sitingIds);
-      photoIds=[...new Set((data||[]).map(r=>String(r.siting_id)))];}catch(e){}
-  }
-  const n=photoIds.length;
-  const msg=n
-    ? `Minimise this deceased patient’s record?\n\nThis permanently removes ${n} stored stoma-siting photograph${n===1?'':'s'} to free database space. Everything else — details, stomas, visits, encounters — is kept, and a compact summary is saved first.\n\nThis cannot be undone.`
-    : `This deceased patient has no stored siting photographs to remove. A compact summary will still be saved and the record marked as minimised. Continue?`;
-  if(!confirm(msg))return;
-  let who='';try{const u=await getCurrentUserForAudit();who=(u&&(u.name||u.email))||'';}catch(e){}
-  const archive=deceasedArchiveHTML(pat,{photoCount:n,
-    apptCount:(clrState.appts||[]).length,
-    encounterCount:(clrState.encounters||[]).length,
-    episodeCount:(clrState.rows||[]).filter(r=>r.kind==='episode').length,
-    generatedBy:who});
-  // Save the summary + stamps FIRST. If the columns are not in the DB yet they
-  // are dropped tolerantly — abort before deleting anything.
-  const stampedAt=new Date().toISOString();
-  const{error,dropped}=await updatePatientTolerant(patientId,{minimised_at:stampedAt,minimised_by:who,minimised_archive:archive});
-  if(dropped&&dropped.some(c=>c==='minimised_at'||c==='minimised_by'||c==='minimised_archive')){
-    alert('The database needs one change first.\n\nRun sql/add-deceased-minimise.sql once in Supabase, then try again. Nothing was removed.');return;}
-  if(error){alert('Could not save the summary: '+error.message+'\n\nNothing was removed.');return;}
-  let removed=0;
-  if(photoIds.length){
-    const{error:delErr}=await SB.from('siting_images').delete().in('siting_id',photoIds);
-    if(delErr){alert('The summary was saved, but the photographs could not be removed: '+delErr.message);}
-    else removed=photoIds.length;
-  }
-  if(clrState.patient&&String(clrState.patient.id)===String(patientId)){
-    clrState.patient.minimised_at=stampedAt;clrState.patient.minimised_by=who;clrState.patient.minimised_archive=archive;
-    if(clrState.siting)clrState.siting.image_data=null;
-  }
-  logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),
-    patient_name:`${pat.first_name||''} ${pat.surname||''}`.trim(),
-    summary:`Minimised deceased record — removed ${removed} siting photograph${removed===1?'':'s'} to free space`,
-    details:{removed_photos:removed}});
-  alert(removed?`Done. Removed ${removed} siting photograph${removed===1?'':'s'}. The record and a saved summary are kept.`:'Done. The record is marked as minimised and a summary saved.');
-  await openPatientRecord(patientId,{fromBack:true});
+// The Overview keeps the completion note; the action lives in the Registry.
+function deceasedMinimiseCardHTML(pat){
+  if(!pat||!patientIsDeceased(pat)||!pat.minimised_at)return '';
+  const id=jsSafe(String(pat.id));
+  return `<div class="psm-min-card done"><div class="psm-min-txt">✓ <strong>Stored data minimised</strong> on ${htmlSafe(fmtShortDate(String(pat.minimised_at).slice(0,10)))}${pat.minimised_by?' · '+htmlSafe(pat.minimised_by):''}. Siting photographs were removed to free space; a compact summary is kept.</div><button type="button" class="psm-min-btn ghost" onclick="viewDeceasedArchive('${id}')">View saved summary</button></div>`;
 }
 function viewDeceasedArchive(patientId){
-  const pat=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
-  const html=pat&&pat.minimised_archive;
-  if(!html){alert('No saved summary is on this record.');return;}
-  const w=window.open('','_blank');
-  if(!w){alert('Please allow pop-ups to view the summary.');return;}
-  w.document.write(html);w.document.close();
-}
-// The Overview card: an action while the record still carries photos, or a quiet
-// "already minimised" note (with the saved summary) once it has been done.
-function deceasedMinimiseCardHTML(pat){
-  if(!pat||!patientIsDeceased(pat))return '';
-  const id=jsSafe(String(pat.id));
-  if(pat.minimised_at){
-    return `<div class="psm-min-card done"><div class="psm-min-txt">✓ <strong>Stored data minimised</strong> on ${htmlSafe(fmtShortDate(pat.minimised_at))}${pat.minimised_by?' · '+htmlSafe(pat.minimised_by):''}. Siting photographs were removed to free space; a compact summary is kept.</div>${pat.minimised_archive?`<button type="button" class="psm-min-btn ghost" onclick="viewDeceasedArchive('${id}')">View saved summary</button>`:''}</div>`;
-  }
-  return `<div class="psm-min-card"><div class="psm-min-txt">💾 <strong>Minimise stored data</strong> — this patient is deceased. Remove the stored stoma-siting photograph(s) to free database space. The full record is kept and a compact summary is saved first.</div><button type="button" class="psm-min-btn" onclick="minimiseDeceasedRecord('${id}')">Minimise stored data</button></div>`;
+  configureDeceasedRegistry();return window.DeceasedRegistry.viewSummary(patientId);
 }
 async function openPatientRecord(patientId,opts){
   const host=document.getElementById('page-patient-record');
