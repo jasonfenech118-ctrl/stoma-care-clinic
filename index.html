@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-491"/>
-<script src="assets/manual.js?v=2026.10.09-491"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-492"/>
+<script src="assets/manual.js?v=2026.10.09-492"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -3073,9 +3073,9 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 
     <div class="page" id="page-snapshots">
       <div class="phdr">
-        <div><h2><span class="page-heading-icon" aria-hidden="true">📸</span><span>Archived Handover</span></h2><p>A read-only picture of the handover, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab</p></div>
+        <div><h2><span class="page-heading-icon" aria-hidden="true">💾</span><span>Archived Handover</span></h2><p>A read-only copy of the handover sheet, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab. Saved as lightweight data (a few KB), not a picture.</p></div>
         <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">📸 Capture now</button>
+          <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">💾 Save now</button>
           <button class="btn-add" onclick="loadHandoverSnapshots()">Refresh</button>
         </div>
       </div>
@@ -3715,7 +3715,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-491';
+const APP_BUILD='2026.10.09-492';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22423,9 +22423,14 @@ async function closeOpenInpatientEpisode(pid,opts){
     }
   }catch(e){}
 }
-function printHandover(){
+// Build the handover ward sheet as one self-contained HTML document (flattened
+// text — no inputs or buttons — with its own styles). Used both to print and,
+// with autoPrint:false, to archive the day as data instead of a heavy picture.
+function handoverSheetDocHTML(opts){
+  opts=opts||{};
+  const autoPrint=opts.autoPrint!==false;
   const table=document.getElementById('hv-table');
-  if(!table){alert('There is nobody on the handover list to print.');return;}
+  if(!table)return null;
   // Discharge letter and Schedule 5 permit print as marks that stay distinct on a
   // black-and-white printout: a tick for done/signed, a filled square for a permit
   // left in the ward, an empty box for not done.
@@ -22509,14 +22514,12 @@ function printHandover(){
   ).join('');
   const fpx=handoverManualFont??HANDOVER_FONT_PX;
   const autoFit=handoverManualFont===null;
-  const w=window.open('','_blank');
-  if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
   /* Every size on the sheet keys off one CSS variable (--fs). The front-page-only
      rule means the whole list has to land on a single A4 sheet, so after the
      window lays out, a small script measures the sheet and shrinks --fs — which
      scales the type, the row height and everything with it — until it fits one
      page. When the list is short it never shrinks and prints at the usual size. */
-  w.document.write(`<!DOCTYPE html><html><head><title>Inpatients Handover ${htmlSafe(TODAY)}</title><style>
+  return `<!DOCTYPE html><html><head><title>Inpatients Handover ${htmlSafe(TODAY)}</title><style>
     @page{size:A4 landscape;margin:7mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     *{box-sizing:border-box}
     :root{--fs:${fpx}px;}
@@ -22595,21 +22598,31 @@ function printHandover(){
           fs-=0.5; root.style.setProperty('--fs',fs+'px'); guard++;
         }
         sheet.style.width='';                 // hand the width back to the page box for print
-        setTimeout(function(){window.focus();window.print();},60);
+        if(${autoPrint})setTimeout(function(){window.focus();window.print();},60);
       }
       if(document.readyState==='complete')fit();
       else window.addEventListener('load',fit);
     })();
     <\/script>
-  </body></html>`);
+  </body></html>`;
+}
+// Open the ward sheet in a new tab and print it.
+function printHandover(){
+  const html=handoverSheetDocHTML({autoPrint:true});
+  if(!html){alert('There is nobody on the handover list to print.');return;}
+  const w=window.open('','_blank');
+  if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
+  w.document.write(html);
   w.document.close();
 }
 
 /* ------------------------------------------------------------------------- *
- * Handover snapshots — a picture of the sheet kept once a day.
- * At 4pm (local time) the app takes a screenshot of the handover and saves it,
- * one per day, in the handover_snapshots table. The Snapshots tab lists them
- * and opens any day in a new browser tab. Needs sql/add-handover-snapshots.sql.
+ * Handover snapshots — a copy of the sheet kept once a day.
+ * At 4pm (local time) the app saves the handover as its own self-contained HTML
+ * (the same flattened sheet it prints — a few KB, not a ~½ MB picture), one per
+ * day, in the handover_snapshots table. The Snapshots tab lists them and opens
+ * any day in a new browser tab. Needs sql/add-handover-snapshots.sql, plus
+ * sql/add-handover-snapshot-html.sql for the html_data column.
  * ------------------------------------------------------------------------- */
 // Load the screenshot library only when a snapshot is actually taken, so the
 // rest of the app never pays for it. Same pattern as the spreadsheet reader.
@@ -22634,48 +22647,32 @@ async function captureHandoverSnapshot(opts){
   const onSnapTab=document.getElementById('page-snapshots')?.classList.contains('active');
   const setBody=h=>{const b=document.getElementById('snapshots-body');if(b&&onSnapTab)b.innerHTML=h;};
   try{
-    if(opts.manual)setBody('<div class="report-note">Taking the snapshot…</div>');
-    // The handover has to be rendered before it can be photographed.
+    if(opts.manual)setBody('<div class="report-note">Saving the handover…</div>');
+    // The handover has to be rendered before it can be saved.
     await loadHandover();
     const body=document.getElementById('hv-body');
     if(!body||!document.getElementById('hv-table')){
-      if(opts.manual)alert('There is nobody on the handover to snapshot yet.');
+      if(opts.manual)alert('There is nobody on the handover to save yet.');
       return;
     }
-    let H;
-    try{H=await ensureHtml2Canvas();}
-    catch(e){if(opts.manual)alert(e.message||'Could not load the screenshot library.');return;}
-    // The sheet lives on a hidden tab, which cannot be photographed, so a copy
-    // is rendered off-screen at a fixed width and the copy is the one captured.
+    // Save the sheet as the SAME self-contained HTML it prints as — flattened
+    // text, no picture — so a day's handover is a few KB instead of a ~½ MB PNG.
     const count=body.querySelectorAll('#hv-table tbody tr').length;
-    const wrap=document.createElement('div');
-    wrap.style.cssText='position:fixed;left:-10000px;top:0;width:1500px;background:#fff;padding:18px;z-index:-1;';
-    wrap.innerHTML=`<div style="font:700 16px Inter,Arial,sans-serif;color:#1a2e4a;margin-bottom:10px;">`
-      +`MDH Stoma Care — Handover — ${htmlSafe(fmtLabel(TODAY))}</div>`+body.innerHTML;
-    document.body.appendChild(wrap);
-    let dataUrl='';
-    try{
-      const canvas=await H(wrap,{backgroundColor:'#ffffff',scale:1,logging:false,useCORS:true,
-        windowWidth:1536,width:1500});
-      dataUrl=canvas.toDataURL('image/png');
-    }catch(e){
-      if(opts.manual)alert('Could not take the screenshot: '+(e.message||e));
-      return;
-    }finally{wrap.remove();}
-    if(!dataUrl){if(opts.manual)alert('The screenshot came out empty.');return;}
+    const htmlDoc=handoverSheetDocHTML({autoPrint:false});
+    if(!htmlDoc){if(opts.manual)alert('There is nobody on the handover to save yet.');return;}
     let who='4pm auto';
     if(opts.manual){try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'Captured by hand';}catch(e){}}
-    const row={snapshot_date:TODAY,captured_at:new Date().toISOString(),image_data:dataUrl,
+    const row={snapshot_date:TODAY,captured_at:new Date().toISOString(),html_data:htmlDoc,
       inpatient_count:count,created_by:who};
     // One per day: the manual button replaces the day's; the 4pm timer only
     // reaches here when the day has none, so either way upsert on the date is
     // right, and two machines firing at 4pm cannot make two rows.
     const{error}=await SB.from('handover_snapshots').upsert(row,{onConflict:'snapshot_date'});
     if(error){
-      const missing=/handover_snapshots|relation|does not exist|column/i.test(String(error.message||''));
+      const missing=/handover_snapshots|relation|does not exist|html_data|column|null value/i.test(String(error.message||''));
       if(opts.manual)alert(missing
-        ? 'The snapshots table is not in the database yet. Run sql/add-handover-snapshots.sql once in Supabase.'
-        : 'Could not save the snapshot: '+error.message);
+        ? 'The saved-handover store needs one database change first. Run sql/add-handover-snapshot-html.sql once in Supabase, then try again.'
+        : 'Could not save the handover: '+error.message);
       return;
     }
     if(onSnapTab)await loadHandoverSnapshots();
@@ -22764,14 +22761,20 @@ function dataUrlToBlob(d){
   for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
   return new Blob([arr],{type:mime});
 }
+// A saved day is now the sheet's HTML (html_data); days saved by the old build
+// are a PNG (image_data). Select both so either kind opens. "*" so a column the
+// database may not have yet never breaks the read.
 async function fetchSnapshotImage(id){
-  const{data,error}=await SB.from('handover_snapshots').select('image_data,snapshot_date').eq('id',id).maybeSingle();
-  if(error||!data||!data.image_data){alert('Could not open this snapshot: '+(error?error.message:'not found'));return null;}
+  const{data,error}=await SB.from('handover_snapshots').select('*').eq('id',id).maybeSingle();
+  if(error||!data||!(data.html_data||data.image_data)){alert('Could not open this handover: '+(error?error.message:'not found'));return null;}
   return data;
 }
 async function openHandoverSnapshot(id){
   const d=await fetchSnapshotImage(id); if(!d)return;
-  const url=URL.createObjectURL(dataUrlToBlob(d.image_data));
+  // HTML days render in a new tab as the ward sheet; picture days open the image.
+  const url=d.html_data
+    ? URL.createObjectURL(new Blob([d.html_data],{type:'text/html'}))
+    : URL.createObjectURL(dataUrlToBlob(d.image_data));
   const w=window.open(url,'_blank');
   if(!w)alert('The new tab was blocked. Allow pop-ups for this site and try again.');
   // The tab holds its own reference to the blob; this page can let go of it.
@@ -22780,8 +22783,15 @@ async function openHandoverSnapshot(id){
 async function downloadHandoverSnapshot(id){
   const d=await fetchSnapshotImage(id); if(!d)return;
   const a=document.createElement('a');
-  a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
-  document.body.appendChild(a); a.click(); a.remove();
+  if(d.html_data){
+    const url=URL.createObjectURL(new Blob([d.html_data],{type:'text/html'}));
+    a.href=url; a.download=`handover-${d.snapshot_date}.html`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }else{
+    a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
 }
 /* The 4pm timer. Every minute from 4pm on it checks whether today already has a
    snapshot (any machine), and if not, takes one. So the machine left open on
