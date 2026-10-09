@@ -294,7 +294,7 @@
     if(edit&&!editableToday(rec))edit=false;
     const vs=versions(rec),v=index===null?vs.slice(-1)[0]:vs[index];if(!v)return;
     const ep=ctx.episodes.find(e=>String(e.id)===String(rec.episode_id));if(!ep)return error('The linked episode could not be loaded.');
-    ctx.episode=ep;ctx.record=rec;ctx.viewVersion=v;ctx.expectedVersion=vs.slice(-1)[0].version;ctx.editable=edit;ctx.mode='form';ctx.openSections=new Set();ctx.message='';
+    ctx.episode=ep;ctx.record=rec;ctx.viewVersion=v;ctx.expectedVersion=vs.slice(-1)[0].version;ctx.editable=edit;ctx.compare=edit;ctx.mode='form';ctx.openSections=new Set();ctx.message='';
     ctx.draft=editableSnapshot(v.snapshot);if(!ctx.draft.stomas?.length){const legacy=seed(ctx.patient,ep,String(rec.encounter_date));ctx.draft={...legacy,notes:v.snapshot.notes||''};}
     // Every stoma is assessed on one screen, so an encounter always covers them all.
     ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
@@ -431,6 +431,10 @@
     const d=ctx.draft,n=ctx.expectedVersion;
     const editReport=rec&&!ctx.editable&&editableToday(rec)?'<button type="button" class="jenc-btn primary jenc-no-print" data-action="edit">Edit report as V'+(n+1)+'</button>':'';
     const versionBar=rec?'<div class="jenc-version"><strong>'+esc(encounterCode(rec,p,ctx.rows))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong>'+(!ctx.editable?'<span class="jenc-state">Read only</span>':'')+'<div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+editReport+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
+    if(rec&&!ctx.editable){
+      page.innerHTML=top+versionBar+'<article class="jenc-document" aria-labelledby="jenc-document-title"><header><h3 id="jenc-document-title">Clinical encounter report</h3><p class="jenc-document-date">'+esc(showDay(recordDay(rec)))+' · Episode '+esc(episodeLabel)+'</p></header><div id="jenc-report" class="jenc-report"></div><footer class="jenc-signature">Signed by: '+esc(ver.author_name||ver.author_email||'')+' · '+esc(stamp(ver.saved_at))+'</footer></article><div class="jenc-actions jenc-no-print">'+(!editableToday(rec)?'<span class="jenc-locked">Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>':'')+'<button class="jenc-btn" data-action="print">Print / PDF</button><button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
+      refreshReport();return;
+    }
     const inf=d.infection||{status:'',organism:''};
     const infectionText=x=>[x?.organism,x?.status].filter(Boolean).join(' · ')||'Not recorded';
     const infectionSummary=ctx.compare&&ctx.comparison?diffHTML(infectionText(ctx.comparison.infection),infectionText(inf),true):esc(infectionText(inf));
@@ -467,6 +471,15 @@
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
     if(ctx.saving){const saveButton=page.querySelector('#jenc-save');if(saveButton)saveButton.textContent=ctx.savePhase||'Saving…';page.querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);}
   }
+  // Display the saved report itself, including legacy wording, as flowing prose.
+  // Escaping happens before adding headings, so clinical notes remain plain text.
+  function documentReport(text){
+    return String(text||'No report recorded.').split('\n').map(line=>{
+      const cut=line.indexOf(' — ')>=0?line.indexOf(' — '):line.indexOf(': ');
+      const body=cut>=0?'<strong>'+esc(line.slice(0,cut))+'</strong>'+esc(line.slice(cut)):esc(line);
+      return '<p>'+body+'</p>';
+    }).join('\n');
+  }
   function refreshReport(){
     if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,showDiff=!!(ctx.compare&&old);
     document.querySelectorAll('#page-jason-encounters textarea[data-note]').forEach(ta=>{
@@ -477,7 +490,7 @@
       const diff=box?.querySelector('.jenc-note-diff');if(diff)diff.innerHTML=showDiff&&before!==notes?'Changes: '+diffHTML(before,notes,true):'';
     });
     const r=document.getElementById('jenc-report');if(r){const now=ctx.record&&!ctx.editable&&ctx.viewVersion?.report?ctx.viewVersion.report:report(ctx.draft);
-      const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.innerHTML=showDiff?diffHTML(was,now,true):esc(now);}
+      const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.classList.toggle('jenc-document-prose',!ctx.editable&&!showDiff);r.innerHTML=showDiff?diffHTML(was,now,true):ctx.editable?esc(now):documentReport(now);}
   }
   function input(e){
     if(!ctx?.editable)return;const key=e.target.dataset?.note;if(e.target.tagName!=='TEXTAREA'||key===undefined)return;
@@ -624,7 +637,7 @@
       if(ctx!==savedCtx)return;
       const currentIndex=ctx.rows.findIndex(r=>r.id===data.id);if(currentIndex<0)ctx.rows.unshift(data);else ctx.rows[currentIndex]=data;
       const localDraft=copy(ctx.draft),hasLaterChanges=!same(localDraft,pending.draft);
-      ctx.pendingSave=null;ctx.editable=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
+      ctx.pendingSave=null;ctx.editable=false;ctx.compare=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
       selectRecord(data.id,null,hasLaterChanges);
       if(hasLaterChanges)ctx.draft=localDraft;
       const success='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.';
