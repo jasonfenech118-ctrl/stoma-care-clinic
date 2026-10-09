@@ -23,7 +23,7 @@ test('Nil is exclusive, other outputs can be combined, and the dropdown closes o
 
 test('each stoma keeps its own notes, saved with the episode and every stoma, with automatic signature and no appliance writes',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Patient comfortable.\nTeaching given <today>.');notes(w,'Urine clear.','jenc-notes-1');await w.JasonEncounters.save();const args=w.fixture.calls[0].args;assert.equal(args.p_episode_id,w.fixture.episode.id);assert.deepEqual(args.p_snapshot.scope,['stoma-one','stoma-two']);assert.equal(args.p_snapshot.stomas[0].notes,'Patient comfortable.\nTeaching given <today>.');assert.equal(args.p_snapshot.stomas[1].notes,'Urine clear.');assert.match(args.p_report,/Loop Ileostomy notes: Patient comfortable/);assert.match(args.p_report,/Urostomy notes: Urine clear\./);assert.doesNotMatch(args.p_report,/\bS[12]\b/);assert.deepEqual(args.p_impact.appliances,[]);assert.deepEqual(args.p_impact.patient_patch,{});assert.equal(w.JasonEncounters.state.editable,false);assert.match(w.document.querySelector('.jenc-signature').textContent,/Signed by: Jason Fenech/);assert.equal(w.document.querySelector('#jenc-report today'),null);});
 
-test('editing saved wording and a dropdown makes V2 on the same encounter with only changes red',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-field="colour"]','Healthy pink');notes(w,'Patient comfotable today.');await w.JasonEncounters.save();const id=w.JasonEncounters.state.record.id;click(w,'edit');notes(w,'Patient comfortable today.');change(w,'[data-field="colour"]','Dusky');assert.equal(w.document.querySelector('.jenc-note-mirror .jenc-change').textContent,'comfortable');assert.ok(w.document.querySelector('[data-field="colour"]').classList.contains('jenc-changed'));assert.match(w.document.querySelector('.jenc-note-diff del').textContent,/comfotable/);await w.JasonEncounters.save();const state=w.JasonEncounters.state;assert.equal(state.record.id,id);assert.equal(state.record.assessment.versions.length,2);assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].notes,'Patient comfotable today.');assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].colour,'Healthy pink');assert.equal(w.fixture.calls[1].args.p_encounter_id,id);assert.equal(w.fixture.calls[1].args.p_expected_version,1);assert.equal(state.expectedVersion,2);click(w,'version','[data-index="0"]');assert.match(w.document.querySelector('#jenc-report').textContent,/Patient comfotable today/);assert.match(w.document.querySelector('#jenc-report').textContent,/healthy pink/);assert.equal(w.document.querySelector('#jenc-report .jenc-change'),null);click(w,'version','[data-index="1"]');assert.equal(w.document.querySelector('#jenc-report .jenc-change'),null);change(w,'[data-kind="compare"]',true);assert.equal(w.document.querySelectorAll('#jenc-report .jenc-change').length>0,true);});
+test('editing saved wording and a dropdown makes V2 on the same encounter with only changes red',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-field="colour"]','Healthy pink');notes(w,'Patient comfotable today.');await w.JasonEncounters.save();const id=w.JasonEncounters.state.record.id;click(w,'edit');notes(w,'Patient comfortable today.');change(w,'[data-field="colour"]','Dusky');assert.equal(w.document.querySelector('.jenc-note-mirror .jenc-change').textContent,'comfortable');assert.ok(w.document.querySelector('[data-field="colour"]').classList.contains('jenc-changed'));assert.match(w.document.querySelector('.jenc-note-diff del').textContent,/comfotable/);await w.JasonEncounters.save();const state=w.JasonEncounters.state;assert.equal(state.record.id,id);assert.equal(state.record.assessment.versions.length,2);assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].notes,'Patient comfotable today.');assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].colour,'Healthy pink');assert.equal(w.fixture.calls[1].args.p_encounter_id,id);assert.equal(w.fixture.calls[1].args.p_expected_version,1);assert.equal(state.expectedVersion,2);click(w,'version','[data-index="0"]');assert.match(w.document.querySelector('#jenc-report').textContent,/Patient comfotable today/);assert.match(w.document.querySelector('#jenc-report').textContent,/Healthy pink/);assert.equal(w.document.querySelector('#jenc-report .jenc-change'),null);click(w,'version','[data-index="1"]');assert.equal(w.document.querySelector('#jenc-report .jenc-change'),null);change(w,'[data-kind="compare"]',true);assert.equal(w.document.querySelectorAll('#jenc-report .jenc-change').length>0,true);});
 
 test('a failed save keeps the editable draft and leaves appliances untouched for retry',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Keep this draft.');w.fixture.failSave=true;await w.JasonEncounters.save();assert.equal(w.JasonEncounters.state.editable,true);assert.equal(w.document.getElementById('jenc-notes-0').value,'Keep this draft.');assert.match(w.document.querySelector('[role="alert"]').textContent,/changes remain/);assert.equal(w.document.getElementById('jenc-save').disabled,false);assert.equal(w.fixture.records.length,0);assert.deepEqual(w.fixture.calls[0].args.p_impact.appliances,[]);});
 test('a hanging save is cancelled, restores every form control and retries the same request',async t=>{
@@ -109,7 +109,7 @@ test('an older encounter with one set of episode notes still shows them as Gener
   w.fixture.records.push({id:'44444444-4444-4444-8444-444444444444',patient_id:w.fixture.patient.id,episode_id:w.fixture.episode.id,episode_ref:'EP-DEMO',encounter_date:'2026-10-05',created_at:'2026-10-05T08:00:00Z',created_by_name:'Jason Fenech',assessment:{schema:2,current_version:1,snapshot:snap,versions:[{version:1,saved_at:'2026-10-04T10:00:00Z',author_name:'Jason Fenech',snapshot:snap,report:'S1 — Loop ileostomy: function / output: Gas.\nNotes: Old episode notes.'}]}});
   await w.JasonEncounters.open(w.fixture.patient.id);click(w,'history');click(w,'view');
   assert.match(w.document.querySelector('#jenc-report').textContent,/Old episode notes/);
-  assert.match(w.document.getElementById('jenc-report').textContent,/S1 — Loop ileostomy/);assert.match(w.document.querySelector('#jenc-report').textContent,/Gas/);
+  assert.match(w.document.getElementById('jenc-report').textContent,/Loop Ileostomy/);assert.match(w.document.querySelector('#jenc-report').textContent,/Gas/);
   click(w,'edit');assert.deepEqual(plain(w.JasonEncounters.state.draft.scope),['stoma-one','stoma-two']);await w.JasonEncounters.save();assert.match(w.document.querySelector('[role="alert"]').textContent,/no changes/);});
 
 test('General notes are separate from each stoma and survive saving, reading and revisions without replacing earlier versions',async t=>{
@@ -262,7 +262,7 @@ test('the rod question is asked only at the first encounter for a stoma, not at 
   assert.equal(w.JasonEncounters.state.record,null);assert.equal(q('[data-kind="rod"]'),null,'second encounter: no rod question');
   notes(w,'Second review.');await w.JasonEncounters.save();assert.doesNotMatch(w.fixture.calls[0].args.p_report,/rod/);assert.deepEqual(plain(w.fixture.calls[0].args.p_impact.patient_patch),{});
   click(w,'history');[...w.document.querySelectorAll('[data-action="view"]')].find(b=>b.dataset.id==='55555555-5555-4555-8555-555555555555').click();
-  assert.equal(w.JasonEncounters.state.draft.stomas[0].rod.status,'In place','the original snapshot retains its rod answer');assert.equal(q('[data-kind="rod"]'),null,'saved report has no form control');assert.equal(q('#jenc-report').textContent,'r','stored historical report is preserved');});
+  assert.equal(w.JasonEncounters.state.draft.stomas[0].rod.status,'In place','the original snapshot retains its rod answer');assert.equal(q('[data-kind="rod"]'),null,'saved report has no form control');assert.equal(w.JasonEncounters.state.viewVersion.report,'r','stored historical report is preserved');assert.match(q('#jenc-report').textContent,/Present/);});
 test('an open skin complication on record pre-fills the peristomal skin as Not healthy',async t=>{const w=setup(t);w.fixture.patient.complications=JSON.stringify([{id:'c1',text:'Mucocutaneous separation',stoma_uid:'stoma-one',status:'open'},{id:'c2',text:'Retraction',stoma_uid:'stoma-one',status:'open'}]);
   await w.JasonEncounters.open(w.fixture.patient.id);const k=w.JasonEncounters.state.draft.stomas[0].skin;assert.deepEqual(plain(k),{status:'Not healthy',problems:['Mucocutaneous separation']});
   assert.deepEqual(plain(w.JasonEncounters.state.draft.stomas[1].skin),{status:'',problems:[]});});
@@ -370,12 +370,39 @@ test('saved encounters are flowing documents without care controls, and Edit res
   assert.equal(doc.querySelectorAll('input,select,textarea,details,.jenc-card,.jenc-setup').length,0);
   assert.equal(w.document.querySelectorAll('#page-jason-encounters select, #page-jason-encounters textarea').length,0);
   assert.equal(doc.querySelector('h3').textContent,'Clinical encounter report');
-  assert.ok(doc.querySelectorAll('#jenc-report p').length>=4);
-  assert.match(doc.textContent,/healthy pink/);assert.match(doc.textContent,/Liquid stools/);assert.match(doc.textContent,/General notes: Family present/);
+  assert.equal(doc.querySelectorAll('.jenc-document-stoma').length,2);
+  assert.match(doc.textContent,/Healthy pink/);assert.match(doc.textContent,/Liquid stools/);assert.match(doc.textContent,/General notesFamily present/);
   assert.match(doc.querySelector('.jenc-signature').textContent,/Jason Fenech/);
-  assert.equal(doc.querySelector('#jenc-report strong').textContent,'Loop Ileostomy');
+  assert.equal(doc.querySelector('#jenc-report h4').textContent,'Loop Ileostomy');assert.equal(doc.querySelector('#jenc-report dd strong').textContent,'Healthy pink');
   click(w,'edit');assert.equal(w.document.querySelector('.jenc-document'),null);
   assert.equal(w.document.querySelector('[data-field="colour"]').value,'Healthy pink');
   assert.equal(w.document.getElementById('jenc-notes').value,'Family present.');
   click(w,'cancel');assert.ok(w.document.querySelector('.jenc-document'));assert.equal(w.fixture.calls.length,1);
+});
+
+
+test('structured saved and history reports separate each stoma, bold clinical values and show explicit empty notes',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);
+  change(w,'[data-field="colour"]','Healthy pink');change(w,'[data-field="output"][value="Liquid stools"]',true);
+  change(w,'[data-kind="skin"][value="Healthy skin"][data-uid="stoma-one"]',true);
+  notes(w,'Teaching <script>alert(1)</script> completed.');await w.JasonEncounters.save();
+  const check=root=>{
+    const stomas=root.querySelectorAll('.jenc-document-stoma');assert.equal(stomas.length,2);
+    assert.deepEqual([...stomas].map(s=>s.querySelector('h4').textContent),['Loop Ileostomy','Urostomy']);
+    assert.ok(stomas[0].classList.contains('jenc-document-tone-0'));assert.ok(stomas[1].classList.contains('jenc-document-tone-1'));
+    assert.deepEqual([...stomas[0].querySelectorAll('dt')].slice(0,3).map(x=>x.textContent),['Colour / appearance','Function / output','Peristomal skin']);
+    assert.deepEqual([...stomas[0].querySelectorAll('dd strong')].slice(0,3).map(x=>x.textContent),['Healthy pink','Liquid stools','Healthy']);
+    assert.match(stomas[0].querySelector('.jenc-document-notes').textContent,/Teaching <script>/);
+    assert.match(stomas[0].textContent,/AppliancesDrainable pouchAccessoriesBarrier ring/);
+    assert.equal(stomas[1].querySelector('.jenc-document-notes').textContent,'No written notes recorded.');
+    assert.match(stomas[1].textContent,/AppliancesUrostomy pouchAccessoriesNight drainage bag/);
+    assert.equal(root.querySelector('.jenc-document-general h4').textContent,'General notes');
+    assert.equal(root.querySelector('.jenc-document-general p').textContent,'No written notes recorded.');
+    assert.equal(root.querySelector('script,input,select,textarea'),null);
+  };
+  check(w.document.querySelector('#jenc-report'));click(w,'history');check(w.document.querySelector('.jenc-history-report'));
+  click(w,'view');click(w,'edit');notes(w,'Corrected teaching.');notes(w,'Family informed.','jenc-notes');await w.JasonEncounters.save();
+  assert.equal(w.document.querySelector('.jenc-document-general p').textContent,'Family informed.');
+  click(w,'version','[data-index="0"]');assert.equal(w.document.querySelector('.jenc-document-general p').textContent,'No written notes recorded.');
+  assert.match(w.document.querySelector('.jenc-document-notes').textContent,/Teaching <script>/);
 });
