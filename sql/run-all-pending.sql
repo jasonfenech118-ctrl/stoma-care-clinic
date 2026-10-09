@@ -16,6 +16,7 @@
 --   3. Patient signature       (patients: created_by/at, updated_by/at)
 --   4. Siting cancellation     (siting_sessions: cancellation_* columns)
 --   5. Handover saved as data  (handover_snapshots: html_data column)
+--   6. Deceased minimise       (patients: minimised_* columns)
 -- =============================================================================
 
 
@@ -102,6 +103,15 @@ ALTER TABLE public.siting_sessions ADD COLUMN IF NOT EXISTS cancelled_at        
 ALTER TABLE public.handover_snapshots ADD COLUMN IF NOT EXISTS html_data text;
 ALTER TABLE public.handover_snapshots ALTER COLUMN image_data DROP NOT NULL;
 
+
+-- -----------------------------------------------------------------------------
+-- 6. DECEASED MINIMISE — save a deceased patient's profile as minimal data
+-- -----------------------------------------------------------------------------
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS minimised_at      timestamptz;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS minimised_by      text;
+ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS minimised_archive text;
+
+
 -- Optional space reclaim — run LATER, only once you are happy the HTML archive
 -- works. Clears the old PNG pictures (keeps each row and its date) and frees the
 -- space. Uncomment both lines to use.
@@ -125,4 +135,6 @@ UNION ALL
 SELECT 'siting_sessions.cancellation_reason', EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='siting_sessions' AND column_name='cancellation_reason')
 UNION ALL
 SELECT 'handover_snapshots.html_data',    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='handover_snapshots' AND column_name='html_data')
+UNION ALL
+SELECT 'patients.minimised_at',           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='patients'           AND column_name='minimised_at')
 ORDER BY piece;

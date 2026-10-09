@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-492"/>
-<script src="assets/manual.js?v=2026.10.09-492"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-493"/>
+<script src="assets/manual.js?v=2026.10.09-493"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -992,6 +992,18 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-foot-right{display:flex;gap:8px;}
 .psm-missing{display:flex;gap:8px;align-items:flex-start;background:#fff6dc;border:1px solid #efdaa3;color:#765117;border-radius:12px;padding:10px 12px;font-size:12.5px;}
 .psm-missing strong{color:#5c3f10;}
+/* Deceased patient — "minimise stored data" card on the Overview tab. Removes the
+   siting photographs to free space; everything else and a summary are kept. */
+.psm-min-card{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
+  background:#f3f4f6;border:1px solid #d1d5db;color:#374151;border-radius:12px;padding:11px 13px;font-size:12.5px;margin-bottom:12px;}
+.psm-min-card.done{background:#eef2f7;border-color:#cbd5e1;color:#475569;}
+.psm-min-txt{flex:1;min-width:200px;line-height:1.5;}
+.psm-min-card strong{color:#1f2937;}
+.psm-min-btn{border:0;border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;
+  background:#1a1a1a;color:#fff;white-space:nowrap;}
+.psm-min-btn:hover{background:#000;}
+.psm-min-btn.ghost{background:#fff;color:#334155;border:1px solid #cbd5e1;}
+.psm-min-btn.ghost:hover{background:#f8fafc;}
 /* The patient record is colour-coded by sex — a blue wash for male, a vivid pink
    for female — so the reader can tell the patient's sex at a glance without a
    separate "Sex" field. The tint is applied to the whole record page, the record
@@ -3715,7 +3727,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-492';
+const APP_BUILD='2026.10.09-493';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -11744,7 +11756,7 @@ async function patientSignatureName(){
    Every change to a patient record is written to audit_log (who, when, what).
    logAudit never throws and never blocks a save — it is fire-and-forget, so a
    missing table or a slow write can never stop a patient being saved. */
-const AUDIT_STAMP_COLS=new Set(['updated_at','updated_by','created_at','created_by']);
+const AUDIT_STAMP_COLS=new Set(['updated_at','updated_by','created_at','created_by','minimised_at','minimised_by','minimised_archive']);
 const PATIENT_AUDIT_LABELS={first_name:'First name',surname:'Surname',id_card:'ID card',phone_number:'Phone',sex:'Sex',
   locality:'Locality',address:'Address',date_of_birth:'Date of birth',consultant:'Firm',
   followup_owner:'Follow-up owner',followup_due_month:'Due month',followup_year:'Due year',followup_type:'Follow-up type',
@@ -19279,6 +19291,137 @@ async function openSurgeryDetail(patientId,stomaUid){
     </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>${slot?`<button class="btn-save" onclick="openStomaModal('${jsSafe(patientId)}','${jsSafe(slot)}')">✏️ Edit this surgery</button>`:''}</div>`;
 }
+/* ===========================================================================
+   Deceased patient — minimise stored data (photos only)
+   ---------------------------------------------------------------------------
+   A deceased patient is never followed up again, so their biggest stored cost —
+   the base64 stoma-siting photograph(s) — is pure weight once encounters start
+   piling up. "Minimise stored data" saves a compact self-contained HTML summary
+   of the whole profile first, then permanently deletes only those photographs.
+   Every other row (details, stomas, visits, encounters, appointments) is kept.
+   Guarded, confirmed, and written to the audit trail. Needs
+   sql/add-deceased-minimise.sql for the minimised_* columns.
+=========================================================================== */
+// A small, self-contained summary of a deceased patient's profile — a few KB of
+// text, kept on the record so nothing reads as lost after the photos are gone.
+function deceasedArchiveHTML(pat,extras){
+  extras=extras||{};
+  const esc=htmlSafe;
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const[outText]=patientOutcome(pat);
+  const row=(l,v)=>`<tr><th>${esc(l)}</th><td>${v?esc(v):'<em>Not recorded</em>'}</td></tr>`;
+  const stomas=(typeof stomaTimeline==='function'?stomaTimeline(pat):[])
+    .slice().sort((a,b)=>String(b.formed||'').localeCompare(String(a.formed||'')));
+  const stomaRows=stomas.length?stomas.map(s=>`<li>${esc(fmtShortDate(s.formed)||'date not recorded')} — ${esc(s.typeLabel||s.type||'Stoma')}${s.location?' · '+esc(s.location):''}${s.ended?' · ended '+esc(fmtShortDate(s.ended)):''}</li>`).join(''):'<li><em>No surgery recorded</em></li>';
+  const age=(typeof psmAge==='function'?psmAge(pat.date_of_birth):null);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Deceased patient summary — ${esc(nm)}</title>
+<style>
+ body{font:14px/1.6 'Inter',system-ui,Arial,sans-serif;color:#1f2937;margin:24px;max-width:640px;}
+ h1{font-size:19px;margin:0 0 2px;} .sub{color:#6b7280;font-size:12.5px;margin:0 0 16px;}
+ table{border-collapse:collapse;width:100%;margin:0 0 16px;} th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top;}
+ th{width:34%;color:#374151;font-weight:600;} em{color:#9ca3af;}
+ h2{font-size:14px;margin:16px 0 6px;color:#111827;} ul{margin:0;padding-left:18px;} li{margin:2px 0;}
+ .foot{color:#9ca3af;font-size:11.5px;margin-top:20px;border-top:1px solid #e5e7eb;padding-top:10px;}
+</style></head><body>
+<h1>${esc(nm)}</h1>
+<p class="sub">Deceased patient — stored-data summary (${esc(outText)})</p>
+<table>
+ ${row('ID card',pat.id_card)}
+ ${row('Date of birth',pat.date_of_birth?fmtShortDate(pat.date_of_birth):'')}
+ ${age!=null?row('Age',age+' years'):''}
+ ${row('Sex',pat.sex)}
+ ${row('Locality',pat.locality)}
+ ${row('Telephone',pat.phone_number)}
+ ${row('Firm / consultant',pat.consultant)}
+ ${row('Outcome',outText)}
+</table>
+<h2>Stoma history</h2>
+<ul>${stomaRows}</ul>
+<h2>On file</h2>
+<ul>
+ <li>${Number(extras.apptCount||0)} appointment${Number(extras.apptCount)===1?'':'s'}</li>
+ <li>${Number(extras.episodeCount||0)} ward episode${Number(extras.episodeCount)===1?'':'s'}</li>
+ <li>${Number(extras.encounterCount||0)} encounter${Number(extras.encounterCount)===1?'':'s'}</li>
+ <li>${Number(extras.photoCount||0)} stoma-siting photograph${Number(extras.photoCount)===1?'':'s'} removed to free space</li>
+</ul>
+<p class="foot">Saved ${esc(fmtLabel(new Date().toISOString()))}${extras.generatedBy?' by '+esc(extras.generatedBy):''}. Clinical rows remain on the live record; only the photographs were removed.</p>
+</body></html>`;
+}
+// Every siting session for this patient (by id and, as a siting can predate the
+// patient record, by id card), so no photograph is missed.
+async function deceasedSitingIds(pat){
+  const ids=new Set();
+  try{const{data}=await SB.from('siting_sessions').select('id').eq('patient_id',pat.id);(data||[]).forEach(r=>ids.add(String(r.id)));}catch(e){}
+  if(pat.id_card){try{const{data}=await SB.from('siting_sessions').select('id').eq('id_card',pat.id_card);(data||[]).forEach(r=>ids.add(String(r.id)));}catch(e){}}
+  return [...ids];
+}
+async function minimiseDeceasedRecord(patientId){
+  let pat=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
+  if(!pat){const r=await fetchPatientById(patientId);pat=r&&r.data;}
+  if(!pat){alert('Could not open this patient.');return;}
+  if(!patientIsDeceased(pat)){alert('Only a deceased patient’s record can be minimised.');return;}
+  if(pat.minimised_at){alert('This record has already been minimised.');return;}
+  const sitingIds=await deceasedSitingIds(pat);
+  let photoIds=[];
+  if(sitingIds.length){
+    try{const{data}=await SB.from('siting_images').select('siting_id').in('siting_id',sitingIds);
+      photoIds=[...new Set((data||[]).map(r=>String(r.siting_id)))];}catch(e){}
+  }
+  const n=photoIds.length;
+  const msg=n
+    ? `Minimise this deceased patient’s record?\n\nThis permanently removes ${n} stored stoma-siting photograph${n===1?'':'s'} to free database space. Everything else — details, stomas, visits, encounters — is kept, and a compact summary is saved first.\n\nThis cannot be undone.`
+    : `This deceased patient has no stored siting photographs to remove. A compact summary will still be saved and the record marked as minimised. Continue?`;
+  if(!confirm(msg))return;
+  let who='';try{const u=await getCurrentUserForAudit();who=(u&&(u.name||u.email))||'';}catch(e){}
+  const archive=deceasedArchiveHTML(pat,{photoCount:n,
+    apptCount:(clrState.appts||[]).length,
+    encounterCount:(clrState.encounters||[]).length,
+    episodeCount:(clrState.rows||[]).filter(r=>r.kind==='episode').length,
+    generatedBy:who});
+  // Save the summary + stamps FIRST. If the columns are not in the DB yet they
+  // are dropped tolerantly — abort before deleting anything.
+  const stampedAt=new Date().toISOString();
+  const{error,dropped}=await updatePatientTolerant(patientId,{minimised_at:stampedAt,minimised_by:who,minimised_archive:archive});
+  if(dropped&&dropped.some(c=>c==='minimised_at'||c==='minimised_by'||c==='minimised_archive')){
+    alert('The database needs one change first.\n\nRun sql/add-deceased-minimise.sql once in Supabase, then try again. Nothing was removed.');return;}
+  if(error){alert('Could not save the summary: '+error.message+'\n\nNothing was removed.');return;}
+  let removed=0;
+  if(photoIds.length){
+    const{error:delErr}=await SB.from('siting_images').delete().in('siting_id',photoIds);
+    if(delErr){alert('The summary was saved, but the photographs could not be removed: '+delErr.message);}
+    else removed=photoIds.length;
+  }
+  if(clrState.patient&&String(clrState.patient.id)===String(patientId)){
+    clrState.patient.minimised_at=stampedAt;clrState.patient.minimised_by=who;clrState.patient.minimised_archive=archive;
+    if(clrState.siting)clrState.siting.image_data=null;
+  }
+  logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),
+    patient_name:`${pat.first_name||''} ${pat.surname||''}`.trim(),
+    summary:`Minimised deceased record — removed ${removed} siting photograph${removed===1?'':'s'} to free space`,
+    details:{removed_photos:removed}});
+  alert(removed?`Done. Removed ${removed} siting photograph${removed===1?'':'s'}. The record and a saved summary are kept.`:'Done. The record is marked as minimised and a summary saved.');
+  await openPatientRecord(patientId,{fromBack:true});
+}
+function viewDeceasedArchive(patientId){
+  const pat=(clrState.patient&&String(clrState.patient.id)===String(patientId))?clrState.patient:null;
+  const html=pat&&pat.minimised_archive;
+  if(!html){alert('No saved summary is on this record.');return;}
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to view the summary.');return;}
+  w.document.write(html);w.document.close();
+}
+// The Overview card: an action while the record still carries photos, or a quiet
+// "already minimised" note (with the saved summary) once it has been done.
+function deceasedMinimiseCardHTML(pat){
+  if(!pat||!patientIsDeceased(pat))return '';
+  const id=jsSafe(String(pat.id));
+  if(pat.minimised_at){
+    return `<div class="psm-min-card done"><div class="psm-min-txt">✓ <strong>Stored data minimised</strong> on ${htmlSafe(fmtShortDate(pat.minimised_at))}${pat.minimised_by?' · '+htmlSafe(pat.minimised_by):''}. Siting photographs were removed to free space; a compact summary is kept.</div>${pat.minimised_archive?`<button type="button" class="psm-min-btn ghost" onclick="viewDeceasedArchive('${id}')">View saved summary</button>`:''}</div>`;
+  }
+  return `<div class="psm-min-card"><div class="psm-min-txt">💾 <strong>Minimise stored data</strong> — this patient is deceased. Remove the stored stoma-siting photograph(s) to free database space. The full record is kept and a compact summary is saved first.</div><button type="button" class="psm-min-btn" onclick="minimiseDeceasedRecord('${id}')">Minimise stored data</button></div>`;
+}
 async function openPatientRecord(patientId,opts){
   const host=document.getElementById('page-patient-record');
   // Remember the page we came from (the list, handover, a search…) so Back
@@ -19384,6 +19527,7 @@ async function openPatientRecord(patientId,opts){
       <div class="psm-card"><div class="psm-next">${nextCopy}
         ${scheduleBtn}</div></div>
       ${missingBlock}
+      ${deceasedMinimiseCardHTML(pat)}
       ${fistula?`<div class="psm-fistula${isBaggingPatient(pat)?' psm-bagging':''}"><h3>${isBaggingPatient(pat)?'👜 Bagging advice — no stoma':'🩹 Fistula patient — no stoma'}</h3>
         <dl><dt>${isBaggingPatient(pat)?'Date of procedure':'Date of operation'}</dt><dd>${htmlSafe(pat.fistula_operation_date?fmtShortDate(pat.fistula_operation_date):'Not recorded')}</dd>
         <dt>${isBaggingPatient(pat)?'Drain / wound &amp; reason':'Operation &amp; findings'}</dt><dd>${htmlSafe(fistulaOpText(pat)||'Not recorded')}</dd>
