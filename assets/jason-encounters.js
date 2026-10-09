@@ -41,7 +41,11 @@
   const isSkinProblem=t=>!!skinName(t)&&lower(t)!==lower(HEALTHY_SKIN);
   // A rod is only ever used with a loop stoma — never an end stoma or a urostomy.
   const rodCapable=type=>typeof stomaTypeCanHaveRod==='function'?stomaTypeCanHaveRod(type):/loop|transverse/i.test(String(type||''));
-  const INFECTION_STATUS=['Not recorded','None recorded','Recorded','Colonisation','Infection','Resolved'];
+  // Infection status is deliberately just two states: it is either an active
+  // Infection (note the organism alongside) or Resolved. Leaving it on the
+  // blank "— choose —" means nothing to record. Older notes that used the wider
+  // wording (Colonisation, Recorded, …) fold into Infection when re-opened.
+  const INFECTION_STATUS=['Infection','Resolved'];
   const ORGANISMS=['CRE','VRE','MRSA','C. difficile','ESBL','Other'];
   const PROFESSIONS=['Psychologist','Dietitian','Doctor / surgeon','Social worker'];
   // Support referrals belong to the PATIENT, not one episode: who they were
@@ -87,7 +91,7 @@
     const a=assessment(e);
     if(Array.isArray(a.versions)&&a.versions.length)return a.versions;
     return [{version:1,saved_at:e.created_at,author_name:e.created_by_name,author_email:e.created_by_email,
-      snapshot:{notes:[a.notes,e.nursing_report].filter(Boolean).join('\n\n'),scope:[],stomas:[],infection:{status:'Not recorded',organism:''},referrals:[]},
+      snapshot:{notes:[a.notes,e.nursing_report].filter(Boolean).join('\n\n'),scope:[],stomas:[],infection:{status:'',organism:''},referrals:[]},
       report:e.nursing_report||'',legacy_assessment:copy(a)}];
   }
   function currentVersion(e){return versions(e).slice(-1)[0];}
@@ -184,7 +188,7 @@
     // Legacy ward notes can mention an organism, but unrelated words such as
     // "secretion" must never be treated as CRE or as an infection assessment.
     const org=ORGANISMS.filter(o=>o!=='Other').find(o=>new RegExp('\\b'+o.replaceAll('.','\\.')+'\\b','i').test(text))||'';
-    return {status:org?'Recorded':'Not recorded',organism:org};
+    return {status:org?'Infection':'',organism:org};
   }
   function seed(p,ep,date){
     const stomas=stomaSeed(p,ep,date);
@@ -393,8 +397,8 @@
     }
     const d=ctx.draft,n=ctx.expectedVersion;
     const versionBar=rec?'<div class="jenc-version"><strong>'+esc(encounterCode(rec,p,ctx.rows))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong><div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
-    const inf=d.infection||{status:'Not recorded',organism:''};
-    const infectionText=x=>[x?.organism,x?.status||'Not recorded'].filter(Boolean).join(' · ');
+    const inf=d.infection||{status:'',organism:''};
+    const infectionText=x=>[x?.organism,x?.status].filter(Boolean).join(' · ')||'Not recorded';
     const infectionSummary=ctx.compare&&ctx.comparison?diffHTML(infectionText(ctx.comparison.infection),infectionText(inf),true):esc(infectionText(inf));
     const infBody='<div class="jenc-fields">'+select('Status',inf.status,INFECTION_STATUS,'infection','status','',ctx.comparison?.infection?.status)+select('Organism',inf.organism,ORGANISMS,'infection','organism','',ctx.comparison?.infection?.organism)+'</div>';
     const previousRefs=list(ctx.comparison?.referrals).map(normReferral).filter(Boolean);
@@ -530,7 +534,7 @@
     if(rod){
       Object.assign(patch,{rod_stoma_uid:rod.uid,rod_removal_date:rod.rod.due||null,rod_removed_date:rod.rod.status==='Removed'?(rod.rod.removed||TODAY):null});
       ['rod_stoma_uid','rod_removal_date','rod_removed_date'].forEach(k=>expected[k]=p[k]??null);}
-    if(!same(draft.infection,base.infection)){patch.inpatient_nurse_notes=['Resolved','None recorded','Not recorded'].includes(draft.infection.status)?'Infection status: '+draft.infection.status:[draft.infection.organism,draft.infection.status].filter(Boolean).join(' · ');expected.inpatient_nurse_notes=p.inpatient_nurse_notes??null;}
+    if(!same(draft.infection,base.infection)){patch.inpatient_nurse_notes=!draft.infection.status?'':draft.infection.status==='Resolved'?'Infection status: Resolved':[draft.infection.organism,draft.infection.status].filter(Boolean).join(' · ');expected.inpatient_nurse_notes=p.inpatient_nurse_notes??null;}
     const appliances=changedAppliances(base,draft);
     const merged=parseEpisodeApplianceRows(ctx.episode).concat(appliances.map(a=>({...a,changed_on:ctx.record?.encounter_date||TODAY})));
     const current=currentApplianceNoteRows(p,merged).concat(looseApplianceRows(p,merged));
