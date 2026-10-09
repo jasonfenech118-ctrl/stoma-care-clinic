@@ -22,9 +22,9 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
 <link rel="stylesheet" href="assets/manual.css?v=2026.10.09-489"/>
-<script src="assets/manual.js?v=2026.10.09-489"></script>
-<link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-487"/>
-<script defer src="assets/patient-communications.js?v=2026.10.09-487"></script>
+<script src="assets/manual.js?v=2026.10.09-490"></script>
+<link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
+<script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-484"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -402,7 +402,7 @@ body.manual-docked .help-btn{background:#0d7377;border-color:#0d7377;}
 .bell-panel-body{padding:10px 12px 14px;}
 /* Reminder category tabs — every category is a pill with its count always shown,
    so nothing is hidden below the scroll. The strip sticks under the panel head. */
-.rem-tabs{position:sticky;top:0;display:flex;gap:5px;overflow-x:auto;padding:8px 2px;margin:-10px -12px 8px;padding-left:12px;padding-right:12px;background:#fff;border-bottom:1px solid var(--border);z-index:1;-webkit-overflow-scrolling:touch;}
+.rem-tabs{position:sticky;top:0;display:flex;flex-wrap:wrap;gap:5px;padding:8px 2px;margin:-10px -12px 8px;padding-left:12px;padding-right:12px;background:#fff;border-bottom:1px solid var(--border);z-index:1;}
 .rem-tab{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--border);border-radius:999px;background:#f4f6f8;color:var(--navy);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;}
 .rem-tab:hover{background:#eaeef2;}
 .rem-tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
@@ -3715,7 +3715,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-489';
+const APP_BUILD='2026.10.09-490';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4014,7 +4014,7 @@ const CLINIC_REALTIME_TABLES=new Set([
 ]);
 let clinicRealtimeChannel=null,clinicRealtimeTimer=null,clinicHandoverPoll=null,clinicRealtimeDirty=new Set();
 const CLINIC_ROSTER_TABLES=new Set(['roster','staff','bank_staff','bank_staff_assignments','leave_records','public_holidays']);
-const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','clinical_records','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders']);
+const CLINIC_REMINDER_TABLES=new Set(['appointments','patients','clinical_records','siting_sessions','roster','staff','bank_staff_assignments','leave_records','clinic_pending_tasks','clinic_dated_reminders','patient_communications']);
 function clinicRealtimeBusy(){
   // An encounter is a full-page form, including loading, history and saving.
   // Defer redraws until it closes even when no input currently has focus.
@@ -9456,6 +9456,10 @@ function showReminderLoadError(message){
 let sitingReminders={items:[],total:0,today:0};
 let pendingReminderTasks={items:[],error:null};
 let datedClinicReminders={items:[],error:null};
+let communicationReminders={items:[],error:null};
+function communicationReminderCount(){
+  return typeof communicationReminders==='undefined'?0:(communicationReminders.items||[]).length;
+}
 function pendingTaskVisibleOnDate(task,dateStr){
   return !task?.is_completed||String(task.completed_on||'')===String(dateStr||'');
 }
@@ -9463,7 +9467,7 @@ function pendingReminderOpenCount(){
   return (pendingReminderTasks.items||[]).filter(t=>!t.is_completed).length;
 }
 function clinicReminderBadgeTotal(){
-  return Number(sitingReminders?.total||0)+pendingReminderOpenCount()+
+  return Number(sitingReminders?.total||0)+pendingReminderOpenCount()+communicationReminderCount()+
     (datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
 }
 async function getDatedClinicReminders(){
@@ -9565,7 +9569,9 @@ function renderReminderTabs(){
     {key:'ward',    label:'🏥 Ward',      count:ward.length,     urgent:ward.some(isDue)},
     {key:'siting',  label:'📍 Siting',    count:siting.length,   urgent:siting.some(isDue)},
     {key:'reversal',label:'🔄 Reversals', count:reversal.length, urgent:reversal.some(isDue)},
-    {key:'tasks',   label:'☑ Tasks',      count:tasksCount,      urgent:datedDue>0}
+    {key:'tasks',   label:'☑ Tasks',      count:tasksCount,      urgent:datedDue>0},
+    {key:'community',label:'✉ Community',count:(communicationReminders.items||[]).filter(r=>r.kind==='community').length,urgent:(communicationReminders.items||[]).some(r=>r.kind==='community')},
+    {key:'patient',label:'💬 Patient',count:(communicationReminders.items||[]).filter(r=>r.kind==='patient').length,urgent:(communicationReminders.items||[]).some(r=>r.kind==='patient')}
   ];
   const byKey=k=>tabs.find(t=>t.key===k);
   // Keep the user's chosen tab while it still has items; otherwise show the first
@@ -9578,11 +9584,14 @@ function renderReminderTabs(){
   if(active==='tasks'){
     content=pendingReminderSectionHTML(pendingReminderTasks,false)+datedReminderSectionHTML(datedClinicReminders,false)+
       '<div class="registry-lookup-note" style="margin-top:4px;">Add a task or dated reminder with the <strong>📝</strong> button next to the bell.</div>';
+  }else if(active==='community'||active==='patient'){
+    content=PatientCommunications.remindersHTML(communicationReminders,active);
   }else{
     const list=active==='ward'?ward:active==='reversal'?reversal:siting;
     content=list.length?renderSitingReminderList(list):'<div class="rem-empty">Nothing in this category right now.</div>';
   }
-  return `<div class="rem-tabs" role="tablist">${strip}</div><div class="rem-tab-body">${content}</div>`;
+  const communicationError=communicationReminders.error?'<div class="rem-empty pc-error" role="alert">Communication reminders could not be checked. Reopen the bell to retry.</div>':'';
+  return `<div class="rem-tabs" role="tablist">${strip}</div><div class="rem-tab-body">${content}</div>${communicationError}`;
 }
 function switchReminderTab(key){
   reminderActiveTab=key;
@@ -9972,13 +9981,15 @@ let reminderRefreshVersion=0;
 async function refreshReminders(){
   const version=++reminderRefreshVersion;
   // Load ward dates independently so a siting-table error cannot hide them.
-  const[clinical,pending,dated,handover]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders(),getHandoverDueReminders()]);
+  const[clinical,pending,dated,handover,communications]=await Promise.all([getSitingReminders(),getPendingReminderTasks(),getDatedClinicReminders(),getHandoverDueReminders(),
+    typeof PatientCommunications==='object'?PatientCommunications.loadReminders({db:SB,fetchRows:fetchAllRows,today:TODAY}):Promise.resolve({items:[],error:null})]);
   // A read started before a flange-date save must not overwrite its new alert.
   if(version!==reminderRefreshVersion)return sitingReminders;
   const items=[...(clinical.items||[]),...(handover.items||[])].sort((a,b)=>String(a.eff).localeCompare(String(b.eff)));
   sitingReminders={items,total:items.length,today:items.filter(r=>r.eff===TODAY).length,handoverError:handover.error||''};
   pendingReminderTasks=pending;
   datedClinicReminders=dated;
+  communicationReminders={...communications,today:TODAY};
   updateReminderBadges(clinicReminderBadgeTotal());
   // The 📝 input button carries its own count: open to-do tasks + dated reminders due.
   const taskBadge=document.getElementById('task-badge');
@@ -9999,6 +10010,7 @@ async function refreshReminders(){
     if(open)parts.push(`${open} pending`);
     const datedDue=(datedClinicReminders.items||[]).filter(r=>!r.is_completed&&r.reminder_date<=TODAY).length;
     if(datedDue)parts.push(`${datedDue} dated due`);
+    if(communicationReminderCount())parts.push(`${communicationReminderCount()} communication due`);
     if(sitingReminders.total)parts.push(`${sitingReminders.total} clinical reminder${sitingReminders.total!==1?'s':''}`);
     bsub.textContent=parts.join(' · ')||'No reminders or pending tasks';
   }
@@ -10040,6 +10052,13 @@ function toggleReminderPanel(){
   refreshReminders();
 }
 function closeReminderPanel(){document.getElementById('bell-panel')?.classList.remove('open');}
+async function openCommunicationReminder(patientId,issueId){
+  if(modalCloseGuard&&!modalCloseGuard())return;
+  closeReminderPanel();closeModal();
+  await openPatientRecord(patientId);
+  switchPatientPanel('episodes');
+  PatientCommunications.focus(issueId);
+}
 /* The to-do / dated-reminder INPUT panel, opened by its own 📝 button. The bell
    just displays the items; adding is done here (so the inputs are never buried in
    a tab). Both panels are mutually exclusive. */
@@ -18527,7 +18546,7 @@ function renderEpisodesPanel(){
 // single entry point so every add / edit / delete caller still just calls this.
 function renderClinicalPanel(){renderStomasPanel();renderEpisodesPanel();}
 async function loadPatientCommunications(patient){
-  await PatientCommunications.load(patient.id,{patient,db:SB,fetchRows:fetchAllRows,onChange:renderEpisodesPanel,
+  await PatientCommunications.load(patient.id,{patient,db:SB,fetchRows:fetchAllRows,onChange:renderEpisodesPanel,onSaved:refreshReminders,
     setGuard:guard=>{modalCloseGuard=guard;},openModal:openMo,closeModal});
 }
 function toggleClinicalCategory(kind){clrState.expanded[kind]=!clrState.expanded[kind];renderClinicalPanel();}

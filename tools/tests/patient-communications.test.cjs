@@ -20,6 +20,7 @@ function setup(t, rows = []) {
       f.calls.push({name, args});
       if (f.pending) await f.pending;
       if (f.fail) return {data: null, error: f.failure || {message: 'Simulated save failure'}};
+      if (f.savedResult) return {data: f.savedResult, error: null};
       return {data: {id: args.p_record_id, patient_id: args.p_patient_id, kind: args.p_kind, version: args.p_expected_version + 1, created_by_name: 'Test Nurse', created_at: '2026-10-09T10:00:00Z', versions: [], ...args.p_payload}, error: null};
     }}, onChange: () => f.renders++, setGuard: value => f.guard = value,
     openModal: () => {}, closeModal: () => f.closed++};
@@ -27,7 +28,7 @@ function setup(t, rows = []) {
 }
 function fill(w, values) {
   const form = w.document.getElementById('pc-form');
-  Object.entries(values).forEach(([key, value]) => form.elements.namedItem(key).value = value);
+  Object.entries(values).forEach(([key, value]) => {const el=form.elements.namedItem(key);if(key==='reminder_enabled')el.checked=value;else el.value=value;});
 }
 const required = {contact_name: 'Community Nurse', service: 'Community nursing', subject: 'Appliance advice', notes: 'Advice recorded.', communication_date: '2026-10-09'};
 
@@ -105,9 +106,69 @@ test('a conflict loads the latest history while preserving the unsaved correctio
   assert.equal(w.document.querySelector('[name="notes"]').value,'My unsaved correction.');assert.equal(f.closed,0);assert.match(api.historyHTML(),/Another nurse saved this/);assert.match(w.document.getElementById('pc-form-error').textContent,/newer saved version/);
 });
 test('communication broadcasts wait for an open form and update only the history after closing', async t => {
-  const {w,f} = setup(t);let loads=0,opened=0;
+  const {w,f} = setup(t);let loads=0,opened=0,reminderRefreshes=0;
+  w.refreshReminders=async()=>reminderRefreshes++;
   w.currentTabName=()=> 'patient-record';w.clrState={patient:{id:PAT}};w.loadPatientCommunications=async()=>loads++;w.renderEpisodesPanel=()=>f.renders++;w.openPatientRecord=()=>opened++;
   const start=html.indexOf('const CLINIC_REALTIME_TABLES=');const end=html.indexOf('async function loadHolidays(',start);w.eval(html.slice(start,end));
-  w.document.getElementById('mo').classList.add('open');w.queueClinicRealtime('patient_communications');w.flushClinicRealtime();assert.equal(loads,0);
-  w.document.getElementById('mo').classList.remove('open');w.flushClinicRealtime();await Promise.resolve();assert.equal(loads,1);assert.equal(f.renders,1);assert.equal(opened,0);
+  w.document.getElementById('mo').classList.add('open');w.queueClinicRealtime('patient_communications');w.flushClinicRealtime();assert.equal(loads,0);assert.equal(reminderRefreshes,0);
+  w.document.getElementById('mo').classList.remove('open');w.flushClinicRealtime();await Promise.resolve();assert.equal(loads,1);assert.equal(f.renders,1);assert.equal(opened,0);assert.equal(reminderRefreshes,1);
+});
+
+const ISSUE='33333333-3333-4333-8333-333333333333',CONTACT='55555555-5555-4555-8555-555555555555';
+function issue(extra={}) {return {id:ISSUE,patient_id:PAT,kind:'community',parent_id:null,version:1,...required,communication_time:'13:00',method:'Telephone',direction:'Outgoing',status:'Awaiting response',followup_action:'Check response from community nurse',followup_date:'2026-10-12',reminder_enabled:true,created_at:'2026-10-09T10:00:00Z',updated_at:'2026-10-09T10:00:00Z',created_by_name:'Test Nurse',updated_by_name:'Test Nurse',versions:[],...extra};}
+test('contacts group under one open issue and completed issues retain their separate history',async t=>{
+  const root=issue(),child={...issue(),id:CONTACT,parent_id:ISSUE,subject:'Community reply',notes:'Reply received.',created_at:'2026-10-10T10:00:00Z'},resolved=issue({id:'77777777-7777-4777-8777-777777777777',kind:'patient',status:'Completed',reminder_enabled:false});
+  const {w,api,config}=setup(t,[root,child,resolved]);await api.load(PAT,config);
+  const el=w.document.createElement('div');el.innerHTML=api.historyHTML();
+  assert.equal(el.querySelectorAll('.pc-issue').length,2);assert.equal(el.querySelectorAll('.pc-record').length,3);
+  assert.equal(el.querySelector('#pc-issue-'+ISSUE).querySelectorAll('.pc-record').length,2);
+  assert.match(el.querySelector('#pc-issue-'+ISSUE+' > summary').textContent,/2 contacts/);
+  assert.equal(el.querySelectorAll('.pc-reminder-link').length,1);assert.equal(el.querySelectorAll('.pc-resolved .pc-issue').length,1);
+  assert.match(el.textContent,/Reply received/);assert.match(el.textContent,/Open issues/);
+});
+test('adding a contact retains the issue id, checks its version and refreshes the current reminder',async t=>{
+  const root=issue({version:3}),{w,f,api,config}=setup(t,[root]);await api.load(PAT,config);api.open('community',null,ISSUE);
+  assert.equal(w.document.querySelector('[name="notes"]').value,'');assert.equal(w.document.querySelector('[name="service"]').value,root.service);assert.equal(w.document.querySelector('[name="reminder_enabled"]').checked,true);
+  fill(w,{...required,subject:'Community reply',notes:'The nurse will review supplies.',followup_date:'2026-10-15',followup_action:'Call community nurse again'});
+  const updated=issue({version:4,followup_date:'2026-10-15',followup_action:'Call community nurse again'});
+  f.savedResult={...updated,id:CONTACT,parent_id:ISSUE,version:1,subject:'Community reply',notes:'The nurse will review supplies.',issue:updated};
+  await api.save();const payload=f.calls[0].args.p_payload;
+  assert.equal(payload.parent_id,ISSUE);assert.equal(payload.parent_version,3);assert.equal(f.calls[0].args.p_expected_version,0);
+  const el=w.document.createElement('div');el.innerHTML=api.historyHTML();assert.equal(el.querySelectorAll('.pc-issue').length,1);assert.equal(el.querySelectorAll('.pc-record').length,2);assert.match(el.querySelector('.pc-reminder-link').textContent,/2026-10-15/);
+});
+test('reminders require action and date; resolving clears them and reopening keeps the saved history',async t=>{
+  const root=issue(),{w,f,api,config}=setup(t,[root]);await api.load(PAT,config);api.open('community',ISSUE);
+  fill(w,{followup_action:'   '});await api.save();assert.equal(f.calls.length,0);assert.match(w.document.getElementById('pc-form-error').textContent,/Enter a reminder/);
+  fill(w,{followup_action:root.followup_action});api.cancel();w.confirm=()=>true;
+  f.savedResult={...root,status:'Completed',reminder_enabled:false,version:2,resolved_at:'2026-10-09T14:00:00Z'};
+  await api.setResolved(ISSUE,true);assert.equal(f.calls[0].args.p_payload.status,'Completed');assert.equal(f.calls[0].args.p_payload.reminder_enabled,false);
+  const el=w.document.createElement('div');el.innerHTML=api.historyHTML();assert.equal(el.querySelectorAll('.pc-reminder-link').length,0);assert.equal(el.querySelectorAll('.pc-resolved .pc-issue').length,1);assert.match(el.textContent,/Advice recorded/);
+  f.savedResult={...root,status:'Recorded',reminder_enabled:false,version:3,resolved_at:null};await api.setResolved(ISSUE,false);
+  assert.equal(f.calls[1].args.p_payload.reminder_enabled,false);assert.match(api.historyHTML(),/1 open · 0 resolved/);
+});
+test('correcting a historical contact cannot change current issue status or reminder',async t=>{
+  const root=issue({status:'Completed',reminder_enabled:false,version:4}),child=issue({id:CONTACT,parent_id:ISSUE,subject:'Earlier contact'});
+  const {w,f,api,config}=setup(t,[root,child]);await api.load(PAT,config);api.open('community',CONTACT);
+  assert.equal(w.document.querySelector('[name="status"]').disabled,true);assert.equal(w.document.querySelector('[name="reminder_enabled"]').disabled,true);
+  fill(w,{notes:'Corrected historical wording.'});f.savedResult={...child,version:2,notes:'Corrected historical wording.',issue:root};await api.save();
+  assert.equal(f.calls[0].args.p_payload.parent_id,ISSUE);assert.equal(f.calls[0].args.p_payload.parent_version,undefined);assert.match(api.historyHTML(),/0 open · 1 resolved/);assert.match(api.historyHTML(),/Corrected historical wording/);
+});
+test('bell reminders include only due open issue roots and keep both categories distinguishable',async t=>{
+  const {api,config}=setup(t),root=issue({followup_date:'2026-10-09',patient:{first_name:'Alex',surname:'Sample',id_card:'DEMO-001'}});
+  const result=await api.loadReminders({...config,today:'2026-10-09',fetchRows:async()=>({rows:[root,{...root,id:'patient-issue',kind:'patient'},{...root,id:'future',followup_date:'2026-10-10'},{...root,id:'closed',status:'Completed'},{...root,id:'disabled',reminder_enabled:false},{...root,id:'contact',parent_id:ISSUE}],error:null})});
+  assert.equal(result.items.length,2);assert.match(api.remindersHTML(result,'community'),/Community correspondence/);assert.doesNotMatch(api.remindersHTML(result,'community'),/Patient communication/);
+  const failure=await api.loadReminders({...config,today:'2026-10-09',fetchRows:async()=>({rows:[],error:{message:'Permission denied'}})});assert.match(api.remindersHTML(failure),/could not be checked/);
+});
+test('clinic bell counts both communication types and displays each category with a direct issue link',async t=>{
+  const {w,api}=setup(t),root=issue({patient:{first_name:'Alex',surname:'Sample',id_card:'DEMO-001'}});
+  w.TODAY='2026-10-12';w.communicationReminders={items:[root,{...root,id:'patient-issue',kind:'patient'}],error:null,today:w.TODAY};
+  w.sitingReminders={total:0};w.datedClinicReminders={items:[]};w.pendingReminderOpenCount=()=>0;w.remItemsByCategory=()=>({ward:[],reversal:[],siting:[]});w.reminderActiveTab='community';
+  for(const name of ['communicationReminderCount','clinicReminderBadgeTotal','renderReminderTabs']){const start=html.indexOf('function '+name+'(');w.eval(html.slice(start,html.indexOf('\n}',start)+2));}
+  assert.equal(w.clinicReminderBadgeTotal(),2);
+  const el=w.document.createElement('div');el.innerHTML=w.renderReminderTabs();assert.equal(el.querySelectorAll('.rem-tab').length,6);
+  assert.match(el.querySelector('.rem-tab-body').textContent,/Community correspondence/);assert.doesNotMatch(el.querySelector('.rem-tab-body').textContent,/Patient communication/);
+  assert.match(el.querySelector('.rem-tab-body button').getAttribute('onclick'),/openCommunicationReminder/);
+  w.reminderActiveTab='patient';el.innerHTML=w.renderReminderTabs();assert.match(el.querySelector('.rem-tab-body').textContent,/Patient communication/);
+  w.communicationReminders={items:[],error:{message:'Read failed'}};w.renderSitingReminderList=()=>'<p>Ward reminder retained</p>';w.remItemsByCategory=()=>({ward:[{eff:w.TODAY}],reversal:[],siting:[]});
+  el.innerHTML=w.renderReminderTabs();assert.match(el.textContent,/Ward reminder retained/);assert.match(el.textContent,/could not be checked/);
 });
