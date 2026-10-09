@@ -603,7 +603,7 @@
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
-  if(priorSwitch)window.switchTab=function(name){if(name!=='manual'&&document.body.classList.contains('jenc-open')&&!dismiss())return;return priorSwitch(name);};
+  if(priorSwitch)window.switchTab=function(name){if(name!=='manual'&&document.body.classList.contains('jenc-open')&&!dismiss())return;return priorSwitch.apply(this,arguments);};
   const priorLogout=window.doLogout;
   if(priorLogout)window.doLogout=async function(){if(!dismiss())return;latestByPatient.clear();return priorLogout();};
   window.addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue='';}});

@@ -19,6 +19,8 @@ function setup(t){
  w.setTimeout=fn=>{const id=next++;timers.set(id,fn);return id;};w.clearTimeout=id=>timers.delete(id);
  w.setInterval=fn=>{const id=next++;intervals.set(id,fn);return id;};w.clearInterval=id=>intervals.delete(id);
  w.renderPrimaryTabs=w.renderSubTabs=w.renderMobileNav=w.loadPatientDirectory=w.invalidateAvailabilityCaches=()=>{};
+ // The top-bar Back history lives outside the sliced switchTab; stub it here.
+ w.pushNavHistory=w.renderNavBack=()=>{};w.currentView=()=>({type:'tab',name:w.currentTabName()});
  w.loadHandover=async()=>{refreshes++;};w.refreshReminders=async()=>{reminders++;};w.confirm=()=>{confirms++;return true;};w.clrState={patient:null};w.TAB_LABELS={};
  w.SB.realtime={setAuth:async()=>{}};
  w.SB.channel=()=>{const ch={on(_type,_filter,fn){broadcast=fn;return ch;},subscribe(fn){fn('SUBSCRIBED');return ch;}};return ch;};w.SB.removeChannel=()=>{};

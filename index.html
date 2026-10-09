@@ -21,10 +21,10 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-480"/>
-<script src="assets/manual.js?v=2026.10.09-480"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-481"/>
+<script src="assets/manual.js?v=2026.10.09-481"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.07-457"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.09-480"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.09-481"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
 <style>
 :root{
@@ -48,7 +48,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 #app{display:none;min-height:100vh;}
 .topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--navy);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.2);}
-.tb-logo{font-size:15px;font-weight:700;color:white;}.tb-logo span{color:var(--gold);}
+.tb-logo{font-size:15px;font-weight:700;color:white;white-space:nowrap;}.tb-logo span{color:var(--gold);}
 .tb-build{margin-left:8px;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;}
 .tb-date{font-size:12px;color:rgba(255,255,255,.55);margin-left:16px;}
 .btn-so{padding:6px 14px;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);background:none;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;}
@@ -2141,6 +2141,17 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .mob-ham span{display:block;width:100%;height:2.5px;background:white;border-radius:2px;transition:all .2s;}
 .mob-ham:hover{background:rgba(255,255,255,.22);}
 .mob-current-tab{display:none;font-size:12px;color:rgba(255,255,255,.65);margin-left:10px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+/* A universal return button in the top bar: appears on every page once you have
+   navigated somewhere, and takes you back to the page you came from. */
+.nav-back-btn{align-items:center;gap:4px;margin-left:8px;padding:7px 12px;border:none;border-radius:9px;background:rgba(255,255,255,.16);color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap;}
+.nav-back-btn:hover{background:rgba(255,255,255,.28);}
+/* The encounter is a focused full-screen task with its own Back (and unsaved-
+   changes guard), so the global Back steps aside while it is open. */
+body.jenc-open #nav-back{display:none!important;}
+@media screen and (max-width:860px){.nav-back-btn{margin-left:6px;padding:7px 10px;font-size:12.5px;}}
+/* On a small phone the hamburger + current-page label already name the app, so
+   the brand text gives way to keep the Back button and controls on one line. */
+@media screen and (max-width:600px){.topbar .tb-logo{display:none;}}
 .mob-drawer-overlay{position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:500;opacity:0;pointer-events:none;transition:opacity .25s;backdrop-filter:blur(3px);}
 .mob-drawer-overlay.open{opacity:1;pointer-events:all;}
 .mob-drawer{position:fixed;top:0;left:-100%;width:290px;max-width:88vw;height:100%;background:white;z-index:600;transition:left .26s cubic-bezier(.4,0,.2,1);box-shadow:8px 0 32px rgba(0,0,0,.2);display:flex;flex-direction:column;overflow-y:auto;}
@@ -2359,6 +2370,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
   <div class="topbar">
     <div class="tb-identity" style="display:flex;align-items:center;gap:0;min-width:0;">
       <button class="mob-ham" onclick="openMobileNav()" aria-label="Open navigation menu"><span></span><span></span><span></span></button>
+      <button class="nav-back-btn" id="nav-back" onclick="navBack()" style="display:none;" aria-label="Go back to the previous page" title="Back to the previous page">‹ Back</button>
       <div class="tb-logo" style="margin-left:10px;">MDH <span>Stoma Care</span> Clinic</div>
       <div class="tb-date" id="tb-date"></div>
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
@@ -3660,7 +3672,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-480';
+const APP_BUILD='2026.10.09-481';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3851,11 +3863,44 @@ function switchGroup(key){
   if(group.pages.some(p=>p.tab===active)){renderSubTabs(active);return;}
   switchTab(group.pages[0].tab);
 }
-function switchTab(name){
+/* ── RETURN / BACK NAVIGATION ─────────────────────────────────────────────
+   A light history of the pages visited so EVERY screen offers one tap back to
+   wherever you came from — the top-bar "‹ Back" button. A page is either a tab
+   or an open patient record; drilling in pushes the page you are leaving, and
+   Back pops it and re-opens it. */
+let navHistory=[];
+function currentView(){
+  if(document.getElementById('page-patient-record')?.classList.contains('active')&&clrState?.patient)
+    return {type:'patient',id:String(clrState.patient.id)};
+  return {type:'tab',name:currentTabName()};
+}
+function sameView(a,b){return !!a&&!!b&&a.type===b.type&&(a.type==='patient'?a.id===b.id:a.name===b.name);}
+function pushNavHistory(view){
+  if(!view)return;
+  if(sameView(navHistory[navHistory.length-1],view))return;   // never stack a page on itself
+  navHistory.push(view);
+  if(navHistory.length>50)navHistory.shift();
+  renderNavBack();
+}
+function renderNavBack(){
+  const btn=document.getElementById('nav-back');
+  if(btn)btn.style.display=navHistory.length?'inline-flex':'none';
+}
+function navBack(){
+  const view=navHistory.pop();
+  renderNavBack();
+  if(!view)return;
+  if(view.type==='patient')openPatientRecord(view.id,{fromBack:true});
+  else switchTab(view.name,{fromBack:true});
+}
+function switchTab(name,opts){
   // The User Manual opens as a docked side panel (split screen) beside whatever
   // page you are on, so staff can read it and act on the app at the same time —
   // it does not replace the working page.
   if(name==='manual'){openManualDock();return;}
+  // Remember the page we are leaving so Back can return to it — but never on a
+  // plain refresh of the same page (realtime updates re-call switchTab).
+  if(!(opts&&opts.fromBack)&&name!==currentTabName())pushNavHistory(currentView());
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const page=document.getElementById('page-'+name);
   if(page)page.classList.add('active');
@@ -3892,6 +3937,7 @@ function switchTab(name){
   if(name==='daily-attendance')loadDailyAttendance();
   if(name==='attendance-records')loadAttendanceRecords();
   if(name==='cod'){populateCODDropdowns();loadCOD();}
+  renderNavBack();
 }
 // ── MOBILE NAV ──
 function openMobileNav(){
@@ -19103,12 +19149,17 @@ async function openSurgeryDetail(patientId,stomaUid){
     </div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>${slot?`<button class="btn-save" onclick="openStomaModal('${jsSafe(patientId)}','${jsSafe(slot)}')">✏️ Edit this surgery</button>`:''}</div>`;
 }
-async function openPatientRecord(patientId){
+async function openPatientRecord(patientId,opts){
   const host=document.getElementById('page-patient-record');
+  // Remember the page we came from (the list, handover, a search…) so Back
+  // returns there — but not when simply refreshing the record already open.
+  const onSameRecord=host.classList.contains('active')&&clrState?.patient&&String(clrState.patient.id)===String(patientId);
+  if(!(opts&&opts.fromBack)&&!onSameRecord)pushNavHistory(currentView());
   const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="goRegistry()">'+psmIc('chevleft')+' Registry</button>'+(isEncounterUser()?'<button class="psm-btn" onclick="openEncounter(\''+jsSafe(patientId)+'\')">📝 Encounters</button>':'')+'</div>';
   host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient card…</div></div>';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   host.classList.add('active');
+  renderNavBack();
   window.scrollTo(0,0);
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note" style="color:#b91c1c;">Could not load this patient.</div></div>';return;}
