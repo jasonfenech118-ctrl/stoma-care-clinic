@@ -298,7 +298,7 @@
 
   /* ---------- PRINT ---------- */
   @media print{
-    @page{ size:A4; margin:14mm 18mm 30mm 18mm; }
+    @page{ size:A4; margin:14mm 18mm 24mm 18mm; }
     body{background:#fff;padding:0}
     .toolbar,.catalogue-card,.format-tools{display:none !important}
     .page{
@@ -328,17 +328,15 @@
     /* keep the bulleted care plan exactly like the on-screen form */
     ul.plan-list{list-style:disc outside !important;margin:0 0 10px !important;padding-left:24px !important;min-height:0}
     ul.plan-list li{margin:0 0 5px !important;padding:0 !important}
-    /* Older browsers keep the address after the sign-off. Modern page-margin
-       boxes repeat it outside the letter content, without covering signatures. */
+    /* footer repeats at the bottom of every printed page */
     .l-footer{
-      position:static;margin-top:18px;padding-top:6px;break-inside:avoid;
+      position:fixed;left:0;right:0;bottom:6mm;margin:0;padding-top:6px;
     }
     .l-header,.l-sign{break-inside:avoid}
     .body p,.plan-list li{break-inside:avoid}
   }
 </style>
 <link rel="stylesheet" href="assets/clinic-visuals.css?v=2" media="screen">
-<script src="assets/clinic-print.js?v=2026.10.09-477"></script>
 </head>
 <body>
 
@@ -518,17 +516,6 @@
     var id = _v('.fld-id');
     el.textContent = name + (id ? '  ID No: ' + id : '');
   }
-  window.addEventListener('beforeprint', function(){
-    updatePatientPrint();
-    if(!window.ClinicPrint)return;
-    var style=document.getElementById('letter-print-metadata');
-    if(!style){style=document.createElement('style');style.id='letter-print-metadata';document.head.appendChild(style);}
-    style.textContent=ClinicPrint.pageCSS({preparedBy:_v('.fld-name')});
-    if(typeof window.CSSMarginRule==='function'){
-      var text=[LETTER.footerAddress,LETTER.footerContact,LETTER.footerMinistry,'Stoma Care Clinic · Generated '+ClinicPrint.metadata().generated+' · Malta time · Page '].map(function(s){return String(s||'').replace(/\*\*/g,'').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n\f]/g,' ');}).join('\\A ');
-      style.textContent+='@media print{.l-footer{display:none!important}}@page{@bottom-left{content:none}@bottom-right{content:none}@bottom-center{content:"'+text+'" counter(page) " of " counter(pages);white-space:pre-line;font:9pt/1.35 Arial;color:#415768;text-align:center;vertical-align:top;padding-top:2mm}}';
-    }
-  });
   function _v(sel){ var el = document.querySelector(sel); return el ? (el.value || '') : ''; }
   function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
@@ -2723,8 +2710,6 @@
       + _wp(_mdRunsX(LETTER.footerAddress, footerBase), '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="9AA3AD"/></w:pBdr>' + footerPPr)
       + _wp(_mdRunsX(LETTER.footerContact, footerBase), footerPPr)
       + _wp(_mdRunsX(LETTER.footerMinistry, footerBase), footerPPr)
-      + _wp(_wrun('Stoma Care Clinic · Generated '+(window.ClinicPrint?ClinicPrint.metadata().generated:new Date().toLocaleString('en-GB',{timeZone:'Europe/Malta'}))+' · Malta time', {font:'Arial Narrow',sz:14,color:'415768'}),footerPPr)
-      + _wp(_wrun('Page ',{font:'Arial Narrow',sz:14})+'<w:fldSimple w:instr="PAGE"><w:r><w:t>1</w:t></w:r></w:fldSimple>'+_wrun(' of ',{font:'Arial Narrow',sz:14})+'<w:fldSimple w:instr="NUMPAGES"><w:r><w:t>1</w:t></w:r></w:fldSimple>',footerPPr)
       + '</w:ftr>';
 
     var stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -2873,9 +2858,7 @@
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css'], avoid: ['p','li','.lh-tbl'] }
-        }).from(doc.body).toPdf().get('pdf').then(function(pdf){
-          if(window.ClinicPrint)ClinicPrint.stampPdf(pdf,{preparedBy:_v('.fld-name')});
-        }).outputPdf('blob')
+        }).from(doc.body).outputPdf('blob')
           .then(function(blob){ cleanup(); cb(blob); },
                 function(){ cleanup(); fail(); });
       }catch(e){ cleanup(); fail(); }
