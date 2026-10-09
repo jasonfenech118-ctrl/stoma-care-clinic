@@ -35,7 +35,7 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'roster','staff','bank_staff','bank_staff_assignments','leave_records',
     'daily_attendance','appointments','patients','siting_sessions','siting_images',
-    'operations_no_stoma','clinical_records','handover_snapshots',
+    'operations_no_stoma','clinical_records','patient_communications','handover_snapshots',
     'public_holidays','localities','firms','complication_types',
     'clinic_pending_tasks','clinic_dated_reminders'
   ] LOOP
