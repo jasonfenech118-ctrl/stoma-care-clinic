@@ -7,7 +7,7 @@ const vm=require('node:vm');
 const {fistulaHelpers}=require('./fistula-helpers.cjs');
 const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const start=html.indexOf('let newPatientRows=[];');
-const end=html.indexOf('function renderNewPatients(){',start);
+const end=html.indexOf('function renderNewPatients(',start);
 assert.ok(start>=0&&end>start,'New Patients source block was not found');
 const source=html.slice(start,end);
 

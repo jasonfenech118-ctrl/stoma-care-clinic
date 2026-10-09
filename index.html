@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-484"/>
-<script src="assets/manual.js?v=2026.10.09-484"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-485"/>
+<script src="assets/manual.js?v=2026.10.09-485"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-484"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -1283,14 +1283,10 @@ table.np tr.np-has-ref td.np-id{border-left:3px solid #e9c77d;}
 .np-reftype{color:#8a7a5c;font-style:italic;}
 .np-kind-abroad{background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;}
 /* Stomas formed abroad read with a faint violet wash and a left accent, so they
-   are plainly not part of MDH's own operative count even when the toggle shows them. */
+   are plainly not part of MDH's own operative count on their separate tab. */
 table.np tr.np-abroad-row td{background:#faf5ff;}
 table.np tr.np-abroad-row:hover td{background:#f3e8ff;}
 table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
-.np-abroad-toggle{font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
-  padding:6px 11px;border-radius:999px;border:1.5px solid #d8b4fe;background:#faf5ff;color:#6b21a8;}
-.np-abroad-toggle:hover{background:#f3e8ff;}
-.np-abroad-toggle.on{background:#7c3aed;border-color:#7c3aed;color:#fff;}
 /* Add Patient: the single "Operated abroad" tick — unticked means the operation
    was done at Mater Dei; ticked sends the patient to the Operated-abroad list.
    It reads as a selectable card that turns green when ticked. */
@@ -2900,9 +2896,8 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
     <!-- NEW PATIENTS — the register book's own page, newest month first -->
     <div class="page" id="page-new-patients">
       <div class="phdr">
-        <div><h2><span class="page-heading-icon" aria-hidden="true">🆕</span><span>New Patients</span></h2><p>Every stoma formed, month by month, newest first — the annual register book as it is written</p></div>
+        <div><h2><span class="page-heading-icon" aria-hidden="true">🆕</span><span>New Patients</span></h2><p>Every stoma formed at MDH, month by month, newest first — the annual register book as it is written</p></div>
         <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button class="btn-add" onclick="openAbroadQuickAdd()" style="background:#7c3aed;">➕ Operated Outside MDH</button>
           <button class="btn-add" onclick="printNewPatients()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadNewPatients()">Refresh</button>
         </div>
@@ -2916,10 +2911,33 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
           <option value="all">Every stoma formed</option>
           <option value="first">First stoma only — new patients</option>
         </select>
-        <button type="button" class="np-abroad-toggle" id="np-abroad-toggle" aria-pressed="false" onclick="toggleNpAbroad()">🌍 Operated Outside MDH</button>
         <span class="pd-count" id="np-count"></span>
       </div>
       <div id="np-body"><div class="report-note">Loading the register…</div></div>
+    </div>
+
+    <!-- STOMAS FORMED OUTSIDE MDH — a separate Registry tab -->
+    <div class="page" id="page-operated-outside-mdh">
+      <div class="phdr">
+        <div><h2><span class="page-heading-icon" aria-hidden="true">🌍</span><span>Operated Outside MDH</span></h2><p>Stomas formed at another hospital, month by month, newest first</p></div>
+        <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="openAbroadQuickAdd()" style="background:#7c3aed;">➕ Operated Outside MDH</button>
+          <button class="btn-add" onclick="printNewPatients(true)" style="background:#0369a1;">🖨 Print / PDF</button>
+          <button class="btn-add" onclick="loadNewPatients(true)">Refresh</button>
+        </div>
+      </div>
+      <div class="pd-toolbar">
+        <input type="text" id="np-outside-search" placeholder="Search by name, ID card, consultant, operation or address…" oninput="renderNewPatients(true)"/>
+        <label>Year:</label>
+        <select id="np-outside-year" onchange="renderNewPatients(true)"><option value="all">All years</option></select>
+        <label>Show:</label>
+        <select id="np-outside-kind" onchange="renderNewPatients(true)">
+          <option value="all">Every stoma formed</option>
+          <option value="first">First stoma only — new patients</option>
+        </select>
+        <span class="pd-count" id="np-outside-count"></span>
+      </div>
+      <div id="np-outside-body"><div class="report-note">Loading the register…</div></div>
     </div>
 
     <!-- ADD PATIENT -->
@@ -3672,7 +3690,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-484';
+const APP_BUILD='2026.10.09-485';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3785,7 +3803,8 @@ const TAB_GROUPS=[
      {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
      {tab:'phone',label:'Quick Look',icon:'📱',color:'#4338ca'},
      {tab:'duplicates',label:'Needs Checking',icon:'🔍',color:'#d97706'},
-     {tab:'fistulas',label:'Fistulas & Bagging',icon:'🩹',color:'#7c3aed'}
+     {tab:'fistulas',label:'Fistulas & Bagging',icon:'🩹',color:'#7c3aed'},
+     {tab:'operated-outside-mdh',label:'Operated Outside MDH',icon:'🌍',color:'#7c3aed'}
    ]},
   {key:'audit',label:'Audit & Reports',icon:'📊',color:'#dc2626',  /* red */
    pages:[
@@ -3926,6 +3945,7 @@ function switchTab(name,opts){
   if(name==='annual-report')loadAnnualReport();
   if(name==='patients')loadPatientDirectory();
   if(name==='new-patients')loadNewPatients();
+  if(name==='operated-outside-mdh')loadNewPatients(true);
   if(name==='add-patient')renderAddPatientForm();
   if(name==='duplicates')loadDuplicates();
   if(name==='fistulas')loadFistulaPatients();
@@ -4009,6 +4029,7 @@ function flushClinicRealtime(){
     snapshots:new Set(['handover_snapshots']),
     patients:new Set(['patients','clinical_records','appointments']),
     'new-patients':new Set(['patients','clinical_records']),
+    'operated-outside-mdh':new Set(['patients','clinical_records']),
     phone:new Set(['patients','clinical_records']),
     duplicates:new Set(['patients']),
     fistulas:new Set(['patients','clinical_records']),
@@ -12907,9 +12928,8 @@ async function loadPatientDirectory(){
    filter narrows to first stomas only when a plain new-patient list is wanted.
    ------------------------------------------------------------------------- */
 let newPatientRows=[];
-// The New Patients register hides stomas formed abroad by default (they are not
-// MDH's operative workload). The "Operated abroad" toggle flips this.
-let npShowAbroad=false;
+// Both Registry tabs share the formation rows, with independent filters.
+// New Patients contains MDH operations; Operated Outside MDH contains the rest.
 /* The register writes some operations down twice, and the same patient can sit
    in the app under two ID cards that differ only by a letter (421160A / 421160M)
    or a leading zero — a book row and the app's own file for one person. Both
@@ -13010,8 +13030,9 @@ function patientFormationRows(p){
   });
   return rows.filter(r=>r.date);
 }
-async function loadNewPatients(){
-  const body=document.getElementById('np-body');
+async function loadNewPatients(outside=false){
+  const prefix=outside?'np-outside':'np';
+  const body=document.getElementById(prefix+'-body');
   if(body)body.innerHTML='<div class="report-note">Loading the register…</div>';
   /* Always read the full table again. patientDirectoryRows is a screen cache,
      not a reliable source for the register: after a patient or an old surgery
@@ -13025,28 +13046,26 @@ async function loadNewPatients(){
   }
   newPatientRows=dedupeFormationRows((rows||[]).flatMap(patientFormationRows))
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-  const sel=document.getElementById('np-year');
+  const sel=document.getElementById(prefix+'-year');
   if(sel){
-    const years=[...new Set(newPatientRows.map(r=>String(r.date).slice(0,4)))].sort().reverse();
+    const years=[...new Set(newPatientRows.filter(r=>!!r.operated_abroad===outside).map(r=>String(r.date).slice(0,4)))].sort().reverse();
     const cur=sel.value||'all';
     sel.innerHTML='<option value="all">All years</option>'+years.map(y=>`<option value="${htmlSafe(y)}">${htmlSafe(y)}</option>`).join('');
     sel.value=[...sel.options].some(o=>o.value===cur)?cur:'all';
   }
-  renderNewPatients();
+  renderNewPatients(outside);
 }
-function renderNewPatients(){
-  const body=document.getElementById('np-body');
-  const countEl=document.getElementById('np-count');
+function renderNewPatients(outside=false){
+  const prefix=outside?'np-outside':'np';
+  const body=document.getElementById(prefix+'-body');
+  const countEl=document.getElementById(prefix+'-count');
   if(!body)return;
-  const q=(document.getElementById('np-search')?.value||'').trim().toLowerCase();
+  const q=(document.getElementById(prefix+'-search')?.value||'').trim().toLowerCase();
   const terms=q.split(/\s+/).filter(Boolean);
-  const year=document.getElementById('np-year')?.value||'all';
-  const kind=document.getElementById('np-kind')?.value||'all';
+  const year=document.getElementById(prefix+'-year')?.value||'all';
+  const kind=document.getElementById(prefix+'-kind')?.value||'all';
   const rows=newPatientRows.filter(r=>{
-    /* The "Operated abroad" toggle switches the whole view: off (default) shows
-       only MDH-formed stomas; on shows ONLY the ones formed abroad. */
-    if(npShowAbroad){if(!r.operated_abroad)return false;}
-    else{if(r.operated_abroad)return false;}
+    if(!!r.operated_abroad!==outside)return false;
     if(year!=='all'&&String(r.date).slice(0,4)!==year)return false;
     if(kind==='first'&&r.kind!=='first')return false;
     if(terms.length){
@@ -13058,16 +13077,14 @@ function renderNewPatients(){
     return true;
   });
   if(countEl){
-    const totalAbroad=newPatientRows.filter(r=>r.operated_abroad).length;
-    countEl.textContent=npShowAbroad
+    countEl.textContent=outside
       ? `${rows.length} operated outside MDH`
-      : `${rows.length} stoma${rows.length===1?'':'s'} formed at MDH`
-        +(totalAbroad?` · ${totalAbroad} operated outside MDH (toggle to view)`:'');
+      : `${rows.length} stoma${rows.length===1?'':'s'} formed at MDH`;
   }
   if(!rows.length){
-    body.innerHTML=npShowAbroad
+    body.innerHTML=outside
       ? emptyStateHTML('🌍','No patients operated outside MDH for this filter',
-          'Nobody is marked operated outside MDH here yet. Use “➕ Operated Outside MDH” to add one, or turn the toggle off to see the MDH register.')
+          'Change the year or clear the search. Use “➕ Operated Outside MDH” to add a patient to this list.')
       : emptyStateHTML('🆕','Nothing in the register for this filter',
           'Change the year or clear the search. A patient joins this page as soon as their stoma has a date of surgery on it.');
     return;
@@ -13090,7 +13107,7 @@ function renderNewPatients(){
     return `<div class="np-month">
         <span class="np-month-name">${htmlSafe(DA_MONTH_NAMES[Number(mo)-1]||'')}</span>
         <span class="np-month-year">${htmlSafe(y)}</span>
-        <span class="np-month-n">${bandN} ${npShowAbroad?`operated outside MDH`:`stoma${bandN===1?'':'s'}`}</span>
+        <span class="np-month-n">${bandN} ${outside?`operated outside MDH`:`stoma${bandN===1?'':'s'}`}</span>
       </div>
       <div class="np-wrap"><table class="np">
         <thead><tr>
@@ -13168,16 +13185,9 @@ function toggleOutsideExtra(prefix){
   const box=document.getElementById(`${prefix}-outside-extra`);
   if(box)box.hidden=!document.getElementById(`${prefix}-abroad`)?.checked;
 }
-// The "Operated Outside MDH" toggle: reveal / hide the outside-MDH stomas.
-function toggleNpAbroad(){
-  npShowAbroad=!npShowAbroad;
-  const btn=document.getElementById('np-abroad-toggle');
-  if(btn){btn.classList.toggle('on',npShowAbroad);btn.setAttribute('aria-pressed',npShowAbroad?'true':'false');}
-  renderNewPatients();
-}
 /* Quick-add for a patient whose stoma was formed abroad. Type an ID card, the
    patient's details are looked up from the registry, add the date they were
-   operated, and it flags them operated-abroad so they show under the toggle —
+   operated, and it flags them operated-abroad so they show on their own tab —
    without the full Add Patient wizard. An ID card not on file offers to open
    Add Patient (pre-filled, already ticked "operated abroad"). */
 function openAbroadQuickAdd(){
@@ -13267,10 +13277,7 @@ async function saveAbroadForExisting(){
     alert('Saved the date, but the "operated outside MDH" flag was not stored — the operated_abroad column is not in the database yet.\n\nRun sql/add-operated-abroad.sql once in Supabase, then mark this patient again.');
   }
   closeModal();
-  npShowAbroad=true;
-  const btn=document.getElementById('np-abroad-toggle');
-  if(btn){btn.classList.add('on');btn.setAttribute('aria-pressed','true');}
-  loadNewPatients();
+  switchTab('operated-outside-mdh');
 }
 // Not found → open Add Patient, pre-filled with the ID card and already ticked
 // "operated abroad", so saving there records them as an abroad patient.
@@ -13287,12 +13294,13 @@ function startAbroadAddNew(idCard){
 }
 /* The page prints as the book reads: the month bands stay, and a month is kept
    off a page break where the paper allows it. */
-function printNewPatients(){
-  const body=document.getElementById('np-body');
+function printNewPatients(outside=false){
+  const prefix=outside?'np-outside':'np';
+  const body=document.getElementById(prefix+'-body');
   if(!body||!newPatientRows.length){alert('There is nothing in the register to print yet.');return;}
-  const year=document.getElementById('np-year')?.value||'all';
-  const kind=document.getElementById('np-kind')?.value||'all';
-  const title='New Patients — '+(year==='all'?'all years':year)+(kind==='first'?' · first stoma only':'');
+  const year=document.getElementById(prefix+'-year')?.value||'all';
+  const kind=document.getElementById(prefix+'-kind')?.value||'all';
+  const title=(outside?'Operated Outside MDH':'New Patients')+' — '+(year==='all'?'all years':year)+(kind==='first'?' · first stoma only':'');
   const w=window.open('','_blank');
   if(!w){alert('Please allow pop-ups to print the register.');return;}
   w.document.write(`<html><head><title>${htmlSafe(title)}</title><style>
@@ -15596,6 +15604,7 @@ async function savePatientDates(patientId){
   if(document.getElementById('page-patient-record')?.classList.contains('active'))openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
+  if(document.getElementById('page-operated-outside-mdh')?.classList.contains('active'))loadNewPatients(true);
   if(document.getElementById('page-duplicates')?.classList.contains('active'))loadDuplicates();
   if(document.getElementById('page-data-analysis')?.classList.contains('active'))loadDataAnalysis();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
@@ -16379,6 +16388,7 @@ async function afterStomaSaved(patientId){
   if(document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
+  if(document.getElementById('page-operated-outside-mdh')?.classList.contains('active'))loadNewPatients(true);
   if(document.getElementById('hv-body'))await loadHandover();
 }
 /* The clickable list of every stoma, for the patient record. */
