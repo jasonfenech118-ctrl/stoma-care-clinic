@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-488"/>
-<script src="assets/manual.js?v=2026.10.09-488"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-489"/>
+<script src="assets/manual.js?v=2026.10.09-489"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-487"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-487"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -1586,6 +1586,8 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
 .iv-done p{margin:8px 0;font-size:14px;color:var(--navy);}
 .iv-done .clr-code{background:var(--navy);color:#fff;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:800;}
 .iv-done-note{font-size:12.5px;color:var(--muted);}
+.iv-saved-appliances{display:grid;gap:8px;margin-bottom:8px;}
+.iv-saved-appliances .psm-card{padding:12px;}
 .iv-sys-row{display:flex;gap:10px;margin:2px 0 12px;flex-wrap:wrap;}
 .iv-sys-btn{flex:1;min-width:170px;display:flex;flex-direction:column;gap:3px;padding:18px 16px;border:1.5px solid var(--border);border-radius:12px;background:#fff;color:var(--navy);font-family:inherit;cursor:pointer;text-align:left;}
 .iv-sys-btn:hover{border-color:var(--teal);background:#f2fbfa;}
@@ -3713,7 +3715,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-488';
+const APP_BUILD='2026.10.09-489';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18553,10 +18555,9 @@ function wardOptions(selected){
     +`<optgroup label="SAMOC — Oncology Centre">${SAMOC_WARDS.map(opt).join('')}</optgroup>`;
 }
 
-/* Opening an inpatient visit is a short wizard: where on the ward, then the
-   appliances, then the accessories — one page each. On the last page it records
-   an Inpatient episode dated today and puts the patient on the Handover list. */
-let ivWizard=null;
+/* Readmission keeps saved setups and asks only for ward, bed and admission
+   date. A stoma without a saved setup can use the appliance/accessory wizard. */
+let ivWizard=null,ivOpenVersion=0;
 const ivCat=n=>APPLIANCE_CATALOGUE.find(a=>a.name===n);
 /* The stoma type(s) the patient has now, to file the appliances under. */
 function inpatientStomaType(pat){
@@ -18575,52 +18576,70 @@ function parseEpisodeApplianceRows(e){
     flange_due:r.flange_due||'',changed_on:r.changed_on||'',changed_at:r.changed_at||'',changed_by:r.changed_by||'',
     ward:r.ward||'',bed:r.bed||''}));
 }
-/* Kept for the readmission carry-over, which only needs the latest single set. */
+/* Legacy record summaries still use the first appliance row. Readmission uses
+   the merged, latest history for every current stoma instead. */
 function parseEpisodeAppliances(e){
   const rows=parseEpisodeApplianceRows(e);
   return rows.length?rows[0]:null;
 }
-/* What the patient last had in use — the most recent episode that recorded it,
-   or failing that their most recent seen visit — so a readmission need not
-   re-tick the appliances. */
+/* A saved selection belongs to its stoma identity. Choose the newest event
+   before checking its content, so a cleared selection never revives an old bag. */
+function inpatientSavedApplianceRows(patient,records,appointments){
+  const history=stomaApplianceHistory(patient,records,appointments);
+  const present=stomasPresentOn(patient,TODAY).filter(st=>!st.ended||String(st.ended)>TODAY);
+  return present.map(st=>{
+    const last=(history.get(st.uid)||[]).find(e=>!e.date||String(e.date).slice(0,10)<=TODAY);
+    if(!last?.appliances.length)return null;
+    const row={stoma_uid:st.uid,stoma_code:st.code||'',stoma_short:st.shortLabel||'',
+      stoma_type:st.typeLabel||st.type||'',appliances:last.appliances.slice(),accessories:last.accessories.slice(),
+      flange_due:last.flange_due||'',carried_from:last.date||'',carried_source:last.source||''};
+    const twoPiece=applianceRowIsTwoPiece(row)||applianceLineIsTwoPiece(row.appliances.join(', '));
+    if(!twoPiece)row.flange_due='';
+    else if(present.length===1&&patient.is_inpatient&&Object.prototype.hasOwnProperty.call(patient,'flange_due'))
+      row.flange_due=handoverReminderDate(patient.flange_due);
+    return row;
+  }).filter(Boolean);
+}
+/* Read fresh, complete history rather than the first row of a cached episode.
+   A failed read must not turn an established patient into a first review. */
 async function previousInpatientAppliances(pid){
-  const eps=(clrState.rows||[]).filter(r=>r.kind==='episode');
-  for(const e of eps){const a=parseEpisodeAppliances(e);if(a&&(a.appliances.length||a.accessories.length))return a;}
-  try{
-    const{data}=await SB.from('appointments').select('appliances,accessories,status,appt_date')
-      .eq('patient_id',pid).eq('status','attended').order('appt_date',{ascending:false}).limit(1);
-    const v=(data||[])[0];
-    if(v){const ap=parseNameList(v.appliances),ac=parseNameList(v.accessories);if(ap.length||ac.length)return {appliances:ap,accessories:ac,stoma_type:''};}
-  }catch(e){}
-  return null;
+  const [patient,records,appointments]=await Promise.all([
+    fetchPatientById(pid),
+    clrState.available?fetchAllRows(()=>SB.from('clinical_records').select('*').eq('patient_id',pid)):
+      Promise.resolve({rows:[],error:null}),
+    fetchAllRows(()=>SB.from('appointments').select('*').eq('patient_id',pid).eq('status','attended'))
+  ]);
+  const error=patient.error||records.error||appointments.error;
+  if(error||!patient.data)throw Error(error?.message||'Patient record not found.');
+  return {patient:patient.data,records:records.rows,
+    rows:inpatientSavedApplianceRows(patient.data,records.rows,appointments.rows)};
+}
+function applyInpatientApplianceSnapshot(w,snapshot){
+  w.patient=snapshot.patient;
+  w.stomas=stomasPresentOn(snapshot.patient,TODAY).filter(st=>!st.ended||String(st.ended)>TODAY);
+  w.multi=w.stomas.length>1;
+  w.prev=snapshot.rows;
+  w.reuse=w.prev.length>0;
 }
 async function openInpatientVisit(){
-  const pid=clrState.patientId, pat=clrState.patient;
+  const pid=clrState.patientId,version=++ivOpenVersion;
   if(!pid)return;
+  let snapshot;
+  try{snapshot=await previousInpatientAppliances(pid);}
+  catch(e){if(version===ivOpenVersion&&clrState.patientId===pid)alert('Could not check the saved appliances. Please try again. '+(e.message||''));return;}
+  if(version!==ivOpenVersion||clrState.patientId!==pid)return;
+  const pat=snapshot.patient;
   // A patient can only have one inpatient visit open at a time.
-  if(openEpisodeIn(clrState.rows)){
+  if(openEpisodeIn(snapshot.records)){
     alert('This patient already has an inpatient visit open. Set appliances or discharge them from the Handover before opening another.');
     return;
   }
-  // A mucus fistula (a second stoma formed at the same operation) means the
-  // patient has more than one stoma, each with its own appliance and
-  // accessories. Those are set per stoma in the appliance wizard, so the
-  // admission here just takes the ward and bed and hands over to it.
-  const stomas=stomasPresentOn(pat,TODAY);
-  const multi=stomas.length>1;
-  // If the patient already has appliances on record, a single-stoma readmission
-  // only needs the ward and bed — the appliance and accessory pages are skipped.
-  const prev=multi?null:await previousInpatientAppliances(pid);
   ivWizard={pid,patient:pat,step:'ward',ward:pat?.inpatient_ward||'',bed:pat?.inpatient_bed||'',
     // A patient is often entered a day or two after they came in, so the date of
     // admission is asked for rather than assumed to be today.
-    admitted:pat?.inpatient_since||TODAY,
-    // A new admission starts with NO appliance chosen: the patient is reviewed
-    // first, so they go on the Handover as "Awaiting first review" and the
-    // appliance is set from there once seen. The last admission's appliance is
-    // kept in `prev` so it can be reused from the appliance step if wanted.
-    system:'',appliances:[],accessories:[],notes:'',
-    reuse:false,prev,multi,stomas};
+    admitted:(pat?.is_inpatient&&pat.inpatient_since)||TODAY,
+    system:'',appliances:[],accessories:[],notes:''};
+  applyInpatientApplianceSnapshot(ivWizard,snapshot);
   renderInpatientStep();
 }
 /* The pages depend on the appliance system: one-piece is a single list, a
@@ -18656,10 +18675,17 @@ function renderInpatientStep(){
       <div class="ap-panel" id="${id}">${inner}<div class="ap-empty" data-empty="1" hidden>Nothing here matches that search.</div></div></div>`;
   let body='';
   if(w.step==='ward'){
-    const carry=w.multi
+    const saved=w.reuse?`<div class="iv-saved-appliances" style="grid-column:1 / -1;">${w.prev.map(row=>
+      `<div class="psm-card"><strong>${htmlSafe(row.stoma_type||'Stoma')}</strong>${appliancePillsHTML(row.appliances,row.accessories)}
+        ${row.flange_due?`<div class="ap-hint">Flange due ${htmlSafe(fmtShortDate(row.flange_due))}</div>`:''}</div>`).join('')}</div>`:'';
+    const missing=w.reuse?w.stomas.filter(st=>!w.prev.some(row=>row.stoma_uid===st.uid)):[];
+    const carry=w.reuse
+      ?`<div class="vw-carry" style="grid-column:1 / -1;">The <strong>latest saved appliance${w.prev.length>1?'s':''} and accessories</strong> below will be kept on the new admission. Enter the ward, bed and admission date, then press <strong>Admit</strong>.
+        ${missing.length?`<div style="margin-top:6px;">No appliance is saved for <strong>${htmlSafe(missing.map(st=>st.typeLabel||st.type||'Stoma').join(', '))}</strong> yet. Set it from the Handover when reviewed.</div>`:''}</div>`
+      :w.multi
       ?`<div class="vw-carry" style="grid-column:1 / -1;">This patient has more than one stoma (a mucus fistula). You will set the appliances and accessories for <strong>each stoma</strong> next.</div>`
       :`<div class="vw-carry" style="grid-column:1 / -1;">The patient goes on the Handover as <strong>Awaiting first review</strong> with no appliance set — review them, then set the appliance from the Handover. Or press <strong>Set appliance now</strong> to record it during admission.</div>`;
-    body=`<div class="edit-seen-grid">${carry}
+    body=`<div class="edit-seen-grid">${carry}${saved}
       <div class="fg"><label>Ward *</label><select id="iv-ward">${wardOptions(w.ward)}</select></div>
       <div class="fg"><label>Bed number</label><input type="text" id="iv-bed" value="${htmlSafe(w.bed||'')}" placeholder="e.g. 15"/></div>
       <div class="fg"><label>Date of admission *</label>
@@ -18700,12 +18726,14 @@ function renderInpatientStep(){
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>Open inpatient visit</h2>
-    <div class="msub">${htmlSafe(name)} · Step ${idx+1} of ${steps.length} — records an Inpatient episode dated ${htmlSafe(fmtShortDate(TODAY))} and puts them on the Handover list.</div>
+    <div class="msub">${htmlSafe(name)} · Step ${idx+1} of ${steps.length} — records an inpatient episode with the admission date below and puts them on the Handover list.</div>
     <div class="vw-steps">${dots}</div>
     <div class="edit-seen-section">${IV_TITLES[w.step]}</div>
     ${body}
     <div class="mact">${w.step==='ward'
-      ? (w.multi
+      ? (w.reuse
+          ? `<button class="btn-cancel" onclick="ivBack()">Cancel</button><button class="btn-save" onclick="ivNext()">Admit</button>`
+          :w.multi
           ? `<button class="btn-cancel" onclick="ivBack()">Cancel</button><button class="btn-save" onclick="ivNext()">Admit, then set appliances</button>`
           : `<button class="btn-cancel" onclick="ivBack()">Cancel</button><button class="btn-cancel" onclick="ivNext()">Set appliance now ›</button><button class="btn-save" onclick="admitAwaitingReview()">Admit — awaiting first review</button>`)
       : `<button class="btn-cancel" onclick="ivBack()">Back</button><button class="btn-save" onclick="ivNext()"${w.step==='system'&&!w.system?' disabled':''}>${(isLast&&w.step!=='system')?'Open inpatient visit':'Next'}</button>`}</div>`;
@@ -18764,11 +18792,12 @@ function ivNext(){
   if(w.step==='ward'&&!w.ward){alert('Please choose the ward.');return;}
   if(w.step==='ward'&&!w.admitted){alert('Please give the date of admission.');return;}
   if(w.step==='ward'&&w.admitted>TODAY){alert('The date of admission cannot be in the future.');return;}
-  if(w.multi&&w.step==='ward'){admitThenSetAppliances();return;}
+  if(w.reuse&&w.step==='ward')return saveInpatientVisit();
+  if(w.multi&&w.step==='ward')return admitThenSetAppliances();
   if(w.step==='system'&&!w.system){alert('Please choose one-piece, two-piece or dressing.');return;}
   if(w.step==='dressing'&&!(w.appliances||[]).length){alert('Record at least one dressing.');return;}
   const steps=ivSteps(), i=steps.indexOf(w.step);
-  if(i>=steps.length-1){saveInpatientVisit();return;}
+  if(i>=steps.length-1)return saveInpatientVisit();
   w.step=steps[i+1];
   renderInpatientStep();
 }
@@ -18776,79 +18805,101 @@ function ivNext(){
    their first review, and the appliance is chosen from the Handover once seen. */
 function admitAwaitingReview(){
   if(!ivWizard)return;
+  if(ivWizard.reuse)return ivNext();
   captureInpatientStep();
   const w=ivWizard;
   if(!w.ward){alert('Please choose the ward.');return;}
   if(!w.admitted){alert('Please give the date of admission.');return;}
   if(w.admitted>TODAY){alert('The date of admission cannot be in the future.');return;}
   w.appliances=[];w.accessories=[];w.notes='';
-  saveInpatientVisit();
+  return saveInpatientVisit();
 }
 async function saveInpatientVisit(){
   const w=ivWizard;
-  if(!w)return;
-  const pid=w.pid, pat=w.patient;
+  if(!w||w.saving)return;
+  const pid=w.pid;
   const ward=w.ward, bed=w.bed, admitted=w.admitted||TODAY;
   if(!ward){alert('Please choose the ward.');return;}
-  const app=w.appliances, acc=(w.accessories||[]).filter(a=>a!=='None');
-  const parts=[];
-  if(app.length)parts.push(app.join(', '));
-  if(acc.length)parts.push(acc.join(', '));
-  const summary=parts.join(' · ');
-  const notes=[summary,w.notes].filter(Boolean).join(' — ');
-
-  // The episode — recorded when the table exists; a missing table must not stop
-  // the patient going onto the handover. record_date is the admission date;
-  // the appliances (with the stoma type) are filed on the episode itself.
-  let epErr=null;
-  if(clrState.available){
-    const detail=`Ward ${ward}${bed?', Bed '+bed:''}`;
-    // File the appliance as a proper row tied to the patient's present stoma, so an
-    // appliance set during admission is linked and shows on the handover (it used
-    // to be stored without a stoma_uid, so it read as "Appliance not yet selected").
-    let presentStomas=[];
-    try{presentStomas=(stomasPresentOn(pat,admitted)||[]).filter(st=>!st.ended||String(st.ended)>admitted);}catch(e){}
-    const applianceData=(app.length||acc.length)
-      ?[{stoma_uid:presentStomas[0]?.uid||'',stoma_short:presentStomas[0]?.shortLabel||'',
-         stoma_type:inpatientStomaType(pat),appliances:app,accessories:(w.accessories||[]),changed_on:admitted}]
-      :[];
-    const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,notes:summary||null,appliances:applianceData};
-    try{const u=await getCurrentUserForAudit();base.created_by=u?.name||null;}catch(e){}
-    try{base.episode_ref=await nextEpisodeRef();}catch(e){}
-    let body={...base};
-    for(let i=0;i<6;i++){
-      const r=await SB.from('clinical_records').insert(body);
-      if(!r.error){epErr=null;break;}
-      if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
-      const bad=missingColumnFromError(r.error);
-      if(bad&&(bad in body)&&bad!=='patient_id'){delete body[bad];continue;}
-      console.error('saveInpatientVisit: clinical_records insert failed',r.error,body);
-      epErr=r.error;break;
+  if(admitted>TODAY){alert('The date of admission cannot be in the future.');return;}
+  w.saving=true;
+  document.querySelectorAll('#mb .mact button').forEach(button=>{button.disabled=true;});
+  try{
+    // Check again at admission: another nurse may have updated the setup or
+    // opened an episode while this form was on screen. Show changed saved care
+    // before the nurse commits it, and never create another open admission.
+    if(!w.episodeSaved){
+      const fresh=await previousInpatientAppliances(pid);
+      if(openEpisodeIn(fresh.records)){
+        alert('This patient already has an inpatient visit open. Use the Handover for the existing admission.');
+        return;
+      }
+      if(w.step==='ward'&&JSON.stringify(fresh.rows)!==JSON.stringify(w.prev||[])){
+        applyInpatientApplianceSnapshot(w,fresh);
+        renderInpatientStep();
+        alert('The saved appliance record has changed. The latest setup is now shown; check it before admitting.');
+        return;
+      }
     }
+    const pat=w.patient,app=w.appliances||[],acc=(w.accessories||[]).filter(a=>a!=='None');
+    const who=await getCurrentUserForAudit();
+    const stamp=new Date().toISOString();
+    const applianceData=w.reuse
+      ?w.prev.map(row=>({...row,changed_on:TODAY,changed_at:stamp,changed_by:who?.name||'',ward,bed:bed||''}))
+      :(app.length||acc.length)?[{stoma_uid:w.stomas[0]?.uid||'',stoma_code:w.stomas[0]?.code||'',
+        stoma_short:w.stomas[0]?.shortLabel||'',stoma_type:inpatientStomaType(pat),appliances:app,
+        accessories:w.accessories||[],changed_on:admitted,changed_at:stamp,changed_by:who?.name||'',ward,bed:bed||''}]:[];
+    const summary=episodeApplianceNote(applianceData);
+    const notes=[summary,w.notes].filter(Boolean).join(' — ');
+
+    // The episode — recorded when the table exists; a missing table must not stop
+    // the patient going onto the handover. record_date is the admission date;
+    // the appliances (with the stoma type) are filed on the episode itself.
+    if(clrState.available&&!w.episodeSaved){
+      const detail=`Ward ${ward}${bed?', Bed '+bed:''}`;
+      const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,
+        notes:summary||null,appliances:applianceData,created_by:who?.name||null};
+      try{base.episode_ref=await nextEpisodeRef();}catch(e){}
+      let body={...base};
+      for(let i=0;i<6;i++){
+        const r=await SB.from('clinical_records').insert(body);
+        if(!r.error){w.episodeSaved=true;break;}
+        if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
+        const bad=missingColumnFromError(r.error);
+        if(bad&&(bad in body)&&bad!=='patient_id'&&!(w.reuse&&bad==='appliances')){delete body[bad];continue;}
+        console.error('saveInpatientVisit: clinical_records insert failed',r.error,body);
+        reportEpisodeError('saveInpatientVisit: the episode was not recorded',r.error);return;
+      }
+      if(!w.episodeSaved){alert('The inpatient episode could not be recorded. Please try again.');return;}
+    }
+
+    const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,
+      inpatient_since:admitted,upcoming_surgery_date:null,flange_due:episodeFlangeDueDate(applianceData)};
+    const res=await updatePatientTolerant(pid,patch);
+    if(res.error){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
+    if(pat)Object.assign(pat,patch);
+
+    // Refresh the record behind the modal, then finish on a confirmation page.
+    if(clrState.patientId===pid){
+      if(clrState.patient)Object.assign(clrState.patient,patch);
+      await loadClinicalRecords(pid);
+      clrState.expanded.episode=true;
+      renderClinicalPanel();
+      const tab=document.getElementById('psm-tab-clinical');
+      if(tab){const c=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(clrState.patient).length;
+        tab.innerHTML=`${psmIc('records')} Clinical${c?` (${c})`:''}`;}
+    }
+
+    const onHandover=!res.dropped.includes('is_inpatient');
+    const epi=(clrState.rows||[]).find(r=>r.kind==='episode');
+    const code=recCode(epi)||'';
+    if(ivWizard!==w)return;
+    ivWizard=null;
+    renderInpatientDone(pat,ward,bed,code,onHandover,admitted,w.reuse);
+  }catch(e){alert('Could not complete the admission. Your details are still in the form. '+(e.message||''));}
+  finally{
+    w.saving=false;
+    if(ivWizard===w)document.querySelectorAll('#mb .mact button').forEach(button=>{button.disabled=false;});
   }
-
-  const patch={is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,
-    inpatient_since:admitted,upcoming_surgery_date:null};
-  const res=await updatePatientTolerant(pid,patch);
-  if(res.error&&!res.dropped.length){alert('Could not put the patient on the Handover list: '+res.error.message);return;}
-  if(pat)Object.assign(pat,{is_inpatient:true,inpatient_ward:ward,inpatient_bed:bed||null,inpatient_notes:notes||null,inpatient_since:admitted});
-
-  // Refresh the record behind the modal, then finish on a confirmation page.
-  await loadClinicalRecords(pid);
-  clrState.expanded.episode=true;
-  renderClinicalPanel();
-  const tab=document.getElementById('psm-tab-clinical');
-  if(tab){const c=(clrState.available?clrState.rows.length:0)+derivedStomaRecords(clrState.patient).length;
-    tab.innerHTML=`${psmIc('records')} Clinical${c?` (${c})`:''}`;}
-
-  const onHandover=!res.dropped.includes('is_inpatient');
-  const epi=(clrState.rows||[]).find(r=>r.kind==='episode');
-  const code=recCode(epi)||'';
-  // Any failure is said out loud now. It used to be hidden whenever the message
-  // merely named the table, which is true of permission and constraint errors.
-  if(epErr)reportEpisodeError('saveInpatientVisit: the episode was not recorded',epErr);
-  ivWizard=null;
-  renderInpatientDone(pat,ward,bed,code,onHandover);
 }
 /* A mucus-fistula (multi-stoma) admission: open the episode and put the patient
    on the Handover with the ward and bed, then hand straight over to the
@@ -18875,7 +18926,7 @@ async function admitThenSetAppliances(){
   await openVisitApplianceWizard({patientId:pid,apptId:null,date:TODAY,slot:'',mode:'episode',ward,bed},pat);
 }
 /* The closing page: the admission is done and the nurse is told where it went. */
-function renderInpatientDone(pat,ward,bed,code,onHandover){
+function renderInpatientDone(pat,ward,bed,code,onHandover,admitted=TODAY,reused=false){
   const name=`${pat?.first_name||''} ${pat?.surname||''}`.trim()||'The patient';
   const where=`${htmlSafe(ward)}${bed?' · Bed '+htmlSafe(bed):''}`;
   const mb=document.getElementById('mb');
@@ -18884,7 +18935,8 @@ function renderInpatientDone(pat,ward,bed,code,onHandover){
     <div class="iv-done">
       <div class="iv-done-ic">${psmIc('records')}</div>
       <p><strong>${htmlSafe(name)}</strong> is admitted to <strong>${where}</strong>.</p>
-      <p>An inpatient episode${code?` <span class="clr-code">${htmlSafe(code)}</span>`:''} dated ${htmlSafe(fmtShortDate(TODAY))} has been recorded.</p>
+      <p>An inpatient episode${code?` <span class="clr-code">${htmlSafe(code)}</span>`:''} dated ${htmlSafe(fmtShortDate(admitted))} has been recorded.</p>
+      ${reused?'<p>The saved appliances and accessories have been kept.</p>':''}
       <p class="iv-done-note">${onHandover
         ? 'The details are now on the <strong>Handover</strong> page.'
         : 'The inpatient columns are not in the database yet, so they are not yet on the Handover page — run <strong>sql/add-inpatients.sql</strong> once in Supabase.'}</p>
