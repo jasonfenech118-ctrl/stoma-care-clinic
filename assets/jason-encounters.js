@@ -6,8 +6,12 @@
   const COLOURS=['Healthy pink','Dusky','Aubergine colour','Necrotic'];
   const OUTPUTS=['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'];
   // Peristomal skin: "Healthy skin" stands alone; every other finding is a skin
-  // problem and is also recorded as a complication of that stoma.
+  // problem and is also recorded as a complication of that stoma. "Not assessed
+  // — flange in situ" also stands alone, for a two-piece appliance whose flange
+  // was left on (not due): the skin could not be seen, so it is neither healthy
+  // nor a problem, and any skin complication already on record is left untouched.
   const HEALTHY_SKIN='Healthy skin';
+  const SKIN_NOT_ASSESSED='Not assessed — flange in situ';
   const SKIN=[HEALTHY_SKIN,'Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration'];
   // Earlier skin wording, still recognised on records saved with it.
   const LEGACY_SKIN=['Erythema / redness','Irritant dermatitis (leakage)','Excoriation / erosion','Mucocutaneous separation','Allergic dermatitis','Folliculitis','Hypergranulation','Pressure ulcer / MARSI','Pyoderma gangrenosum'];
@@ -135,6 +139,7 @@
       const parts=[],skinWord=isFistulaCol(x)?'skin around the fistula':'peristomal skin';if(x.colour)parts.push('colour / appearance: '+x.colour.toLowerCase());
       if(x.output?.length)parts.push((isFistulaCol(x)?'output: ':'function / output: ')+x.output.join(', '));
       if(x.skin?.status==='Healthy')parts.push(skinWord+': healthy');
+      if(x.skin?.status==='Not assessed')parts.push(skinWord+': not assessed (flange in situ)');
       if(x.skin?.status==='Not healthy')parts.push(skinWord+': not healthy'+(list(x.skin.problems).length?' ('+x.skin.problems.join(', ')+')':''));
       if(x.appliances?.length)parts.push('appliance: '+x.appliances.join(', '));
       if(x.accessories?.length)parts.push('accessories: '+x.accessories.join(', '));
@@ -311,14 +316,22 @@
     if(changed)out+='<div class="jenc-previous">Previously: '+esc(rodText(old?.rod))+'</div>';
     return out+'</div>';
   }
-  const skinValues=k=>k?.status==='Healthy'?[HEALTHY_SKIN]:list(k?.problems);
+  const skinValues=k=>k?.status==='Healthy'?[HEALTHY_SKIN]:k?.status==='Not assessed'?[SKIN_NOT_ASSESSED]:list(k?.problems);
+  // Offered on every stoma; a hint points to it when the appliance is two-piece,
+  // where the flange is often left in situ and the skin cannot be seen.
+  const skinChoices=()=>options('skin').concat(SKIN_NOT_ASSESSED);
   function skinHTML(s,extra,old){
-    return '<div class="jenc-fields jenc-skin">'+multi(isFistulaCol(s)?'Skin around the fistula':'Peristomal skin',skinValues(s.skin),options('skin'),'skin','pick',extra,skinValues(old?.skin),'skin')+'</div>';
+    const hint=(s.system==='two'&&!isFistulaCol(s))?'<p class="jenc-skin-hint">Two-piece system — if the flange was left in situ (not due), tick <b>Not assessed — flange in situ</b>.</p>':'';
+    return '<div class="jenc-fields jenc-skin">'+multi(isFistulaCol(s)?'Skin around the fistula':'Peristomal skin',skinValues(s.skin),skinChoices(),'skin','pick',extra,skinValues(old?.skin),'skin')+hint+'</div>';
   }
-  // "Healthy skin" stands alone; ticking any finding clears it.
+  // "Healthy skin" and "Not assessed — flange in situ" each stand alone; ticking
+  // one clears the others, and ticking any finding clears both.
   function applySkin(st,values,value,checked){
-    let v=checked&&value===HEALTHY_SKIN?[HEALTHY_SKIN]:list(values).filter(x=>x!==HEALTHY_SKIN);
-    st.skin=v.includes(HEALTHY_SKIN)?{status:'Healthy',problems:[]}:{status:v.length?'Not healthy':'',problems:v};
+    const standalone=[HEALTHY_SKIN,SKIN_NOT_ASSESSED];
+    let v=checked&&standalone.includes(value)?[value]:list(values).filter(x=>!standalone.includes(x));
+    st.skin=v.includes(HEALTHY_SKIN)?{status:'Healthy',problems:[]}
+      :v.includes(SKIN_NOT_ASSESSED)?{status:'Not assessed',problems:[]}
+      :{status:v.length?'Not healthy':'',problems:v};
     linkSkin(st);
   }
   function colourSelect(s,extra,old){

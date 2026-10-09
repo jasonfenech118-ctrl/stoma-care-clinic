@@ -94,7 +94,7 @@ test('only a loop stoma offers the Rod present tick; it shows the removal date a
 
 test('peristomal skin is one list: Healthy skin stands alone, every finding becomes a complication of that stoma, Healthy resolves it',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);const q=x=>w.document.querySelector(x);
   const pick=(uid,value,on)=>change(w,'[data-kind="skin"][data-field="pick"][data-uid="'+uid+'"][value="'+value+'"]',on);
-  assert.deepEqual([...w.document.querySelectorAll('[data-kind="skin"][data-uid="stoma-one"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration']);
+  assert.deepEqual([...w.document.querySelectorAll('[data-kind="skin"][data-uid="stoma-one"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration','Not assessed — flange in situ']);
   pick('stoma-two','Excoriation',true);pick('stoma-two','Ulcerated',true);
   assert.equal(q('[data-kind="skin"][data-field="pick"][data-uid="stoma-two"]').closest('details').open,true);
   const st=w.JasonEncounters.state.draft.stomas;assert.deepEqual(plain(st[1].complications.map(c=>[c.text,c.status])),[['Excoriation','open'],['Ulcerated','open']]);assert.equal(st[0].complications.length,0);
@@ -106,6 +106,25 @@ test('peristomal skin is one list: Healthy skin stands alone, every finding beco
   const comps=JSON.parse(a.p_impact.patient_patch.complications);assert.deepEqual(comps.map(c=>[c.text,c.stoma_uid,c.status]),[['Excoriation','stoma-two','open']]);
   click(w,'edit');pick('stoma-two','Healthy skin',true);assert.equal(w.JasonEncounters.state.draft.stomas[1].complications[0].status,'resolved');
   await w.JasonEncounters.save();assert.equal(JSON.parse(w.fixture.calls[1].args.p_impact.patient_patch.complications)[0].status,'resolved');});
+
+test('"Not assessed — flange in situ" records no finding, stands alone, and leaves an existing skin complication open',async t=>{
+  const w=setup(t);
+  w.fixture.patient.complications=JSON.stringify([{id:'c1',text:'Irritation',stoma_uid:'stoma-one',status:'open',events:[]}]);
+  await w.JasonEncounters.open(w.fixture.patient.id);
+  const pick=(uid,value,on)=>change(w,'[data-kind="skin"][data-field="pick"][data-uid="'+uid+'"][value="'+value+'"]',on);
+  const st=()=>w.JasonEncounters.state.draft.stomas[0];
+  assert.deepEqual(plain(st().skin),{status:'Not healthy',problems:['Irritation']});   // seeded from the open complication
+  pick('stoma-one','Not assessed — flange in situ',true);
+  assert.deepEqual(plain(st().skin),{status:'Not assessed',problems:[]});               // stands alone, no finding recorded
+  assert.equal(st().complications.find(c=>c.id==='c1').status,'open');                  // not resolved — the skin was not seen
+  pick('stoma-one','Excoriation',true);                                                 // a finding switches away from it
+  assert.deepEqual(plain(st().skin),{status:'Not healthy',problems:['Excoriation']});
+  pick('stoma-one','Not assessed — flange in situ',true);                               // and ticking it again clears the finding
+  assert.equal(st().skin.status,'Not assessed');
+  notes(w,'Flange left in situ, skin not seen.');
+  await w.JasonEncounters.save();
+  assert.match(w.fixture.calls[0].args.p_report,/Loop Ileostomy — .*peristomal skin: not assessed \(flange in situ\)/);
+});
 
 test('"+ Add other…" adds a new skin finding, output or colour to the list for good and picks it',async t=>{const w=setup(t);const answers=['Contact allergy','Mucus','Pale pink'];w.prompt=()=>answers.shift();w.alert=()=>{};
   await w.JasonEncounters.open(w.fixture.patient.id);const q=x=>w.document.querySelector(x);
