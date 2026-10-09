@@ -503,7 +503,7 @@
     if(kind==='stoma'&&field==='colour'&&el.value==='__add__'&&st){addOptionFlow('colour',st);return;}
     if(kind==='skin'&&field==='pick'&&st){
       const v=skinValues(st.skin).filter(x=>x!==el.value);if(el.checked)v.push(el.value);applySkin(st,v,el.value,el.checked);
-      render();const next=[...document.querySelectorAll('[data-kind="skin"][data-field="pick"]')].find(x=>x.dataset.uid===st.uid);if(next)next.closest('details').open=true;return;
+      render();return;   // the picker closes on each choice; reopen it to add another
     }
     if(kind==='skin'&&st&&!st.skin)st.skin={status:'',problems:[]};
     if(kind==='stoma')obj=st;if(kind==='rod')obj=st?.rod;if(kind==='skin')obj=st?.skin;if(kind==='comp')obj=st?.complications[Number(el.dataset.index)];if(!obj)return;
@@ -513,8 +513,8 @@
     }else obj[field]=el.value;
     if(kind==='skin'){if(field==='status'&&st.skin.status!=='Not healthy')st.skin.problems=[];linkSkin(st);}
     if(kind==='rod'&&field==='status'){if(el.value==='Removed'){st.rod.removed=TODAY;}else if(el.value==='Not recorded'){st.rod.due='';st.rod.removed='';}else st.rod.removed='';}
-    const menu=el.closest('details.jenc-multi');render();
-    if(menu){const next=document.querySelector('[data-kind="'+kind+'"][data-field="'+field+'"]'+(el.dataset.uid?'[data-uid="'+el.dataset.uid+'"]':''));if(next)next.closest('details').open=true;}
+    // The multi-select picker collapses on each choice (reopen it to add another).
+    render();
   }
   async function click(e){
     const btn=e.target.closest('[data-action]');if(!btn)return;const action=btn.dataset.action;

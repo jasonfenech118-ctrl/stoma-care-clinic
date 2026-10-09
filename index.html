@@ -21,12 +21,12 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-489"/>
-<script src="assets/manual.js?v=2026.10.09-490"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-491"/>
+<script src="assets/manual.js?v=2026.10.09-491"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.09-484"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.09-491"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
 <style>
 :root{
@@ -3715,7 +3715,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-490';
+const APP_BUILD='2026.10.09-491';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13537,6 +13537,20 @@ function renderPager(id,total,size,page,onGo){
     <span class="pager-info">${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} · page ${p+1} of ${pages}</span>
     <button class="pager-btn" ${p>=pages-1?'disabled':''} onclick="window['${id}__go'](1)">Next ›</button>`;
 }
+// The Surgery Date / Stoma Type columns fall back to the patient's stoma
+// history when the top-level fields are blank — e.g. a patient whose only
+// stoma is a later / new stoma recorded in the operation history (not the
+// primary surgery_date / stoma_type fields), which otherwise read "—".
+function registrySurgeryDate(p){
+  if(p&&p.surgery_date)return p.surgery_date;
+  try{const d=stomaTimeline(p).map(s=>s.formed).filter(Boolean).sort();if(d.length)return d[0];}catch(e){}
+  return '';
+}
+function registryStomaType(p){
+  if(String(p?.stoma_type||'').trim())return String(p.stoma_type);
+  try{const types=[...new Set(stomaTimeline(p).map(s=>String(s.type||'').trim()).filter(Boolean))];if(types.length)return types.join(', ');}catch(e){}
+  return '';
+}
 function renderPatientDirectory(){
   const tbody=document.getElementById('pd-tbody');
   const countEl=document.getElementById('pd-count');
@@ -13608,8 +13622,8 @@ function renderPatientDirectory(){
     // status set in error is done from the record's Outcome tab (Back to follow-up).
     const datesBtn=(patientDatesAvailable&&p.status!=='deceased')?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
     const middle=outcomeView
-      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
-      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(p.surgery_date)}</td><td>${tcell(p.stoma_type)}</td>`;
+      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
+      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td>`;
     const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
     return `<tr class="pd-click-row ${rowCls}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
       <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p),'sm')}</td>

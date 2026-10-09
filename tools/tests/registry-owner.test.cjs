@@ -17,7 +17,8 @@ function setup(t){
     function patientEverReversed(p){return p.status==='reversed';} function patientsMarkedOtherButDeceased(){return [];}
     function patientIsIncomplete(){return false;} function isClosedFollowupStatus(){return false;} function fixText(x){return x;}
     function htmlSafe(x){return String(x??'');} function jsSafe(x){return String(x??'');} function fmtShortDate(x){return x||'';}
-    function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';}`);
+    function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';}
+    function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}`);
   w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="";const PD_PAGE_SIZE=100;'+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
   w.eval(`var patientDirectoryRows=[
     {id:'1',surname:'A',owner:'Jason',status:'active',types:['End colostomy']},
