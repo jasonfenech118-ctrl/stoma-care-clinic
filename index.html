@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-494"/>
-<script src="assets/manual.js?v=2026.10.09-494"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-495"/>
+<script src="assets/manual.js?v=2026.10.09-495"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-490"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -1695,8 +1695,7 @@ td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;
 /* An open complication, shown on the sheet so the ward sees it without opening
    the manager — amber, so it stands apart from the appliance line. */
 .hv-cmp-line{margin-top:5px;padding:4px 8px;border-radius:6px;background:#fde2c8;border:1px solid #f0c07a;color:#8a4b16;font-size:11px;font-weight:800;line-height:1.35;}
-/* The lock and the profile shortcut belong to the phone card only — the desktop
-   grid is a wide worksheet and is left exactly as it was. */
+/* The profile shortcut belongs to the phone card; fields save on change. */
 .hv-mob-only{display:none;}
 .hv-prof{display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:13px;margin:10px 0 4px;}
 .hv-prof>span:nth-child(odd){color:var(--muted);font-weight:700;font-size:11px;
@@ -1704,12 +1703,7 @@ td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;
 .hv-prof>span:nth-child(even){color:var(--navy);font-weight:600;}
 @media(max-width:640px){
   .hv-mob-only{display:inline-flex;}
-  .hv-xl tbody tr[data-locked="1"] .hv-appl{opacity:.75;cursor:default;}
-  /* Edit and Profile are what the card is for when it is locked, so they lead
-     the row and the discharge actions follow underneath. */
-  .hv-lock,.hv-profile{order:-1;flex:1 1 44%;justify-content:center;font-weight:800;}
-  .hv-lock{background:#e8f1fb;color:#0b5aa2;}
-  .hv-lock.is-editing{background:#d4edda;color:#155724;}
+  .hv-profile{order:-1;flex:1 1 100%;justify-content:center;font-weight:800;}
   .hv-profile{background:#f3effe;color:#6d28d9;}
   .hv-xl .followup-actions{flex-wrap:wrap;}
 }
@@ -3085,8 +3079,9 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 
     <div class="page" id="page-snapshots">
       <div class="phdr">
-        <div><h2><span class="page-heading-icon" aria-hidden="true">💾</span><span>Archived Handover</span></h2><p>Previously saved handover sheets — open or download an existing copy. New handovers are no longer archived.</p></div>
+        <div><h2><span class="page-heading-icon" aria-hidden="true">💾</span><span>Archived Handover</span></h2><p>A read-only copy of the handover sheet, saved automatically at 4&nbsp;pm each day and kept for reference — open any day in a new tab. Saved as lightweight data (a few KB), not a picture.</p></div>
         <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="captureHandoverSnapshot({manual:true})" style="background:#1baf7a;">💾 Save now</button>
           <button class="btn-add" onclick="loadHandoverSnapshots()">Refresh</button>
         </div>
       </div>
@@ -3726,7 +3721,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-494';
+const APP_BUILD='2026.10.09-495';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3773,6 +3768,8 @@ async function startApp(){
   // Reminders load last so the roster is already on screen, then the daily prompt appears.
   await refreshReminders();
   startClinicRealtime();
+  // The 4pm handover snapshot runs quietly in the background from here on.
+  startHandoverSnapshotScheduler();
   // Quick Look was already activated before the awaited startup work above.
   // Handle the other direct routes now that their supporting data is ready.
   if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
@@ -9867,7 +9864,6 @@ async function openFlangeReminder(patientId){
   await switchTab('handover');
   const row=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(patientId))}"]`);
   if(!row){alert('This patient is no longer on the current handover.');await refreshReminders();return;}
-  setHandoverRowLocked(row,false);
   row.scrollIntoView({block:'center',behavior:'smooth'});
   (row.querySelector('.hv-flange-date')||row.querySelector('.hv-appl'))?.focus({preventScroll:true});
 }
@@ -20115,8 +20111,6 @@ async function loadHandover(){
       <th class="icon">📨 Discharge letter</th><th class="icon">📋 Schedule 5 permit</th><th></th>
     </tr></thead><tbody>${awaitingTrs}${trs}</tbody></table></div>`;
   fitAllWardBed();
-  handoverWasPhone=handoverIsPhone();
-  applyHandoverLocks();
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
 const HANDOVER_FONT_PX=13;
@@ -20553,7 +20547,6 @@ function handoverRowHTML(p,cls){
       <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${nameArg}')">Discharge (old case)</button>
       <button class="ncb-btn" style="background:#fef9c3;color:#713f12;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','relocated_overseas')">Relocated overseas</button>
       <button class="ncb-btn" style="background:#dbeafe;color:#1e3a8a;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','discharged_gozo')">Discharged to Gozo</button>`}
-      <button class="ncb-btn hv-mob-only hv-lock" onclick="toggleHandoverLock('${p.id}')">✏️ Edit</button>
       <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Patient profile (read-only)">🪪 Profile</button>
     </div></td>
   </tr>`;
@@ -20741,47 +20734,6 @@ async function handoverSitingNoStoma(id,name){
   await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:false,status:'done',updated_at:new Date().toISOString()}).eq('id',ss.id);
   loadHandover();refreshReminders();
 }
-/* On the phone the handover is a stack of cards a nurse thumbs through on the
-   ward, so each card starts locked: a stray tap cannot change a ward, a note or
-   an appliance. "Edit" unlocks it, "Save" commits and locks it again. The
-   read-only profile is only offered while the card is locked. None of this
-   applies to the desktop grid, which stays a straight worksheet. */
-function handoverIsPhone(){
-  try{return window.matchMedia('(max-width:640px)').matches;}catch(e){return false;}
-}
-function setHandoverRowLocked(tr,locked){
-  if(!tr)return;
-  tr.dataset.locked=locked?'1':'';
-  tr.querySelectorAll('input,select,textarea,button').forEach(el=>{
-    if(el.classList.contains('hv-lock')||el.classList.contains('hv-profile'))return;
-    el.disabled=!!locked;
-  });
-  const btn=tr.querySelector('.hv-lock');
-  if(btn){btn.textContent=locked?'✏️ Edit':'✓ Save';btn.classList.toggle('is-editing',!locked);}
-  const prof=tr.querySelector('.hv-profile');
-  if(prof)prof.hidden=!locked;
-}
-function toggleHandoverLock(pid){
-  const tr=document.querySelector(`#hv-table tbody tr[data-pid="${CSS.escape(String(pid))}"]`);
-  if(!tr)return;
-  const locked=tr.dataset.locked==='1';
-  // Saving commits whatever field is still focused before the row is locked.
-  if(!locked&&document.activeElement&&tr.contains(document.activeElement))document.activeElement.blur();
-  setHandoverRowLocked(tr,!locked);
-}
-function applyHandoverLocks(){
-  const phone=handoverIsPhone();
-  document.querySelectorAll('#hv-table tbody tr[data-pid]').forEach(tr=>setHandoverRowLocked(tr,phone));
-}
-/* Re-apply only when the layout actually crosses the phone breakpoint, so a
-   card left open for editing is not slammed shut by an address-bar resize. */
-let handoverWasPhone=null;
-window.addEventListener('resize',()=>{
-  const now=handoverIsPhone();
-  if(now===handoverWasPhone)return;
-  handoverWasPhone=now;
-  if(document.getElementById('hv-table'))applyHandoverLocks();
-});
 /* A read-only look at the patient behind the card. Deliberately has no inputs
    at all — it is for checking, never for changing. */
 async function openHandoverProfile(patientId){
@@ -22565,7 +22517,8 @@ async function closeOpenInpatientEpisode(pid,opts){
   }catch(e){}
 }
 // Build the handover ward sheet as one self-contained HTML document (flattened
-// text — no inputs or buttons — with its own styles) for Print / PDF.
+// text — no inputs or buttons — with its own styles). Used both to print and,
+// with autoPrint:false, to archive the day as data instead of a heavy picture.
 function handoverSheetDocHTML(opts){
   opts=opts||{};
   const autoPrint=opts.autoPrint!==false;
@@ -22757,10 +22710,15 @@ function printHandover(){
 }
 
 /* ------------------------------------------------------------------------- *
- * Archived handovers — read-only access to previously saved sheets.
- * New handover copies are no longer saved manually or automatically.
+ * Handover snapshots — a copy of the sheet kept once a day.
+ * At 4pm (local time) the app saves the handover as its own self-contained HTML
+ * (the same flattened sheet it prints — a few KB, not a ~½ MB picture), one per
+ * day, in the handover_snapshots table. The Snapshots tab lists them and opens
+ * any day in a new browser tab. Needs sql/add-handover-snapshots.sql, plus
+ * sql/add-handover-snapshot-html.sql for the html_data column.
  * ------------------------------------------------------------------------- */
-// Load the screenshot library only when another page needs it for a PDF export.
+// Load the screenshot library only when a snapshot is actually taken, so the
+// rest of the app never pays for it. Same pattern as the spreadsheet reader.
 function ensureHtml2Canvas(){
   if(window.html2canvas)return Promise.resolve(window.html2canvas);
   return new Promise((resolve,reject)=>{
@@ -22770,6 +22728,48 @@ function ensureHtml2Canvas(){
     s.onerror=()=>reject(new Error('Could not load the screenshot library — check the connection.'));
     document.head.appendChild(s);
   });
+}
+let _snapshotBusy=false;
+/* Take the picture. {manual:true} is the "Capture now" button and replaces the
+   day's snapshot; {auto:true} is the 4pm timer and only writes if the day has
+   none yet. */
+async function captureHandoverSnapshot(opts){
+  opts=opts||{};
+  if(_snapshotBusy)return;
+  _snapshotBusy=true;
+  const onSnapTab=document.getElementById('page-snapshots')?.classList.contains('active');
+  const setBody=h=>{const b=document.getElementById('snapshots-body');if(b&&onSnapTab)b.innerHTML=h;};
+  try{
+    if(opts.manual)setBody('<div class="report-note">Saving the handover…</div>');
+    // The handover has to be rendered before it can be saved.
+    await loadHandover();
+    const body=document.getElementById('hv-body');
+    if(!body||!document.getElementById('hv-table')){
+      if(opts.manual)alert('There is nobody on the handover to save yet.');
+      return;
+    }
+    // Save the sheet as the SAME self-contained HTML it prints as — flattened
+    // text, no picture — so a day's handover is a few KB instead of a ~½ MB PNG.
+    const count=body.querySelectorAll('#hv-table tbody tr').length;
+    const htmlDoc=handoverSheetDocHTML({autoPrint:false});
+    if(!htmlDoc){if(opts.manual)alert('There is nobody on the handover to save yet.');return;}
+    let who='4pm auto';
+    if(opts.manual){try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'Captured by hand';}catch(e){}}
+    const row={snapshot_date:TODAY,captured_at:new Date().toISOString(),html_data:htmlDoc,
+      inpatient_count:count,created_by:who};
+    // One per day: the manual button replaces the day's; the 4pm timer only
+    // reaches here when the day has none, so either way upsert on the date is
+    // right, and two machines firing at 4pm cannot make two rows.
+    const{error}=await SB.from('handover_snapshots').upsert(row,{onConflict:'snapshot_date'});
+    if(error){
+      const missing=/handover_snapshots|relation|does not exist|html_data|column|null value/i.test(String(error.message||''));
+      if(opts.manual)alert(missing
+        ? 'The saved-handover store needs one database change first. Run sql/add-handover-snapshot-html.sql once in Supabase, then try again.'
+        : 'Could not save the handover: '+error.message);
+      return;
+    }
+    if(onSnapTab)await loadHandoverSnapshots();
+  }finally{_snapshotBusy=false;}
 }
 let handoverSnapshotRows=[];
 async function loadHandoverSnapshots(){
@@ -22784,7 +22784,7 @@ async function loadHandoverSnapshots(){
   if(error){
     const missing=/handover_snapshots|relation|does not exist|column/i.test(String(error.message||''));
     body.innerHTML=missing
-      ? emptyStateHTML('📸','No archived handovers','No previously saved handover copies are available. New handovers are no longer archived.','')
+      ? handoverMissingHTML('The snapshots table is not in the database yet. Run <strong>sql/add-handover-snapshots.sql</strong> once in Supabase to turn this on.')
       : `<div class="report-note">Could not load snapshots: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
@@ -22806,8 +22806,8 @@ function renderHandoverSnapshots(){
   const body=document.getElementById('snapshots-body');
   if(!body)return;
   if(!handoverSnapshotRows.length){
-    body.innerHTML=emptyStateHTML('📸','No archived handovers',
-      'No previously saved handover copies are available. New handovers are no longer archived.','');
+    body.innerHTML=emptyStateHTML('📸','No archived handovers yet',
+      'Each day&rsquo;s handover is archived here automatically and kept for reference.','');
     return;
   }
   const day=(document.getElementById('snapf-date')?.value||'').slice(0,10);
@@ -22885,6 +22885,28 @@ async function downloadHandoverSnapshot(id){
     a.href=d.image_data; a.download=`handover-${d.snapshot_date}.png`;
     document.body.appendChild(a); a.click(); a.remove();
   }
+}
+/* The 4pm timer. Every minute from 4pm on it checks whether today already has a
+   snapshot (any machine), and if not, takes one. So the machine left open on
+   the ward saves the day's sheet without anyone remembering, and a machine
+   opened at 4:30 still catches up. Before 4pm it does nothing. */
+let _snapSchedulerOn=false, _snapDoneFor='';
+function startHandoverSnapshotScheduler(){
+  if(_snapSchedulerOn)return;
+  _snapSchedulerOn=true;
+  const tick=async()=>{
+    try{
+      if(new Date().getHours()<16)return;      // only from 4pm
+      if(_snapDoneFor===TODAY)return;          // handled today in this session
+      const{data,error}=await SB.from('handover_snapshots').select('id').eq('snapshot_date',TODAY).limit(1);
+      if(error)return;                         // table not there yet — leave it
+      _snapDoneFor=TODAY;                      // don't ask again today
+      if(data&&data.length)return;             // a machine already saved today
+      await captureHandoverSnapshot({auto:true});
+    }catch(e){}
+  };
+  tick();                                       // catch up now if it is already past 4pm
+  setInterval(tick,60000);
 }
 /* ── REGISTRY › FISTULAS ───────────────────────────────────────────────────────
    The fistula registry: every fistula patient, as an open or a closed case,
