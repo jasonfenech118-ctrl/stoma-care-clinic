@@ -98,9 +98,9 @@ test('the infection Status dropdown offers only Infection and Resolved, blank by
 test('every stoma has its own column named by type, with no S-numbers, tabs or notes dropdown',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);const page=w.document.querySelector('#page-jason-encounters');
   const titles=sel=>Array.from(page.querySelectorAll('[data-step="'+sel+'"] .jenc-stoma-title'),h=>h.textContent);
   assert.deepEqual(titles('review'),['Loop Ileostomy','Urostomy']);assert.deepEqual(titles('appliances'),['Loop Ileostomy','Urostomy']);
-  assert.deepEqual(Array.from(page.querySelectorAll('[data-step="report"] .jenc-notes-label'),l=>l.textContent),['Loop Ileostomy — clinical notes','Urostomy — clinical notes']);
+  assert.deepEqual(Array.from(page.querySelectorAll('[data-step="report"] .jenc-notes-label'),l=>l.textContent),['Loop Ileostomy — clinical notes','Urostomy — clinical notes','General notes']);
   assert.equal(page.querySelectorAll('[data-kind="stoma"][data-field="colour"]').length,2);assert.equal(page.querySelectorAll('[data-section^="complications:"]').length,2);
-  assert.equal(page.querySelector('[data-action="stoma"]'),null);assert.equal(page.querySelector('[data-kind="global"]'),null);assert.equal(page.querySelector('#jenc-notes'),null);
+  assert.equal(page.querySelector('[data-action="stoma"]'),null);assert.equal(page.querySelector('[data-kind="global"]'),null);assert.equal(page.querySelector('#jenc-notes').value,'');
   assert.doesNotMatch(page.textContent,/\bS[12]\b/);
   click(w,'add-comp','[data-uid="stoma-two"]');change(w,'[data-kind="comp"][data-uid="stoma-two"][data-field="text"]','Retraction');const s=w.JasonEncounters.state.draft.stomas;assert.equal(s[0].complications.length,0);assert.equal(s[1].complications[0].text,'Retraction');});
 
@@ -112,10 +112,90 @@ test('an older encounter with one set of episode notes still shows them as Gener
   assert.match(w.document.getElementById('jenc-report').textContent,/S1 — Loop ileostomy/);assert.match(w.document.querySelector('[data-field="output"][data-uid="stoma-one"]').closest('details').textContent,/Gas/);
   click(w,'edit');assert.deepEqual(plain(w.JasonEncounters.state.draft.scope),['stoma-one','stoma-two']);await w.JasonEncounters.save();assert.match(w.document.querySelector('[role="alert"]').textContent,/no changes/);});
 
-test('an encounter is coded ENC-ID-date, and reopening it the same day continues it as V2',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Morning review.');await w.JasonEncounters.save();
+test('General notes are separate from each stoma and survive saving, reading and revisions without replacing earlier versions',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);
+  assert.equal(w.document.querySelector('.jenc-general-notes label').textContent,'General notes');
+  assert.equal(w.document.getElementById('jenc-notes').value,'');
+  notes(w,'Ileostomy teaching completed.');notes(w,'Urine clear.','jenc-notes-1');
+  const original='Patient comfortable. Family present. <script>care()</script>';
+  notes(w,original,'jenc-notes');
+  assert.equal(w.JasonEncounters.state.draft.notes,original);
+  assert.match(w.document.getElementById('jenc-report').textContent,/General notes: Patient comfortable/);
+  assert.equal(w.document.querySelector('#jenc-report script'),null);
+  await w.JasonEncounters.save();
+  const id=w.fixture.records[0].id;
+  assert.equal(w.fixture.calls[0].args.p_snapshot.notes,original);
+  assert.equal(w.fixture.calls[0].args.p_snapshot.stomas[0].notes,'Ileostomy teaching completed.');
+  assert.equal(w.fixture.calls[0].args.p_snapshot.stomas[1].notes,'Urine clear.');
+  assert.equal(w.document.getElementById('jenc-notes').readOnly,true);
+  await w.JasonEncounters.open(w.fixture.patient.id);
+  assert.equal(w.JasonEncounters.state.editable,false);
+  assert.equal(w.document.getElementById('jenc-notes').value,original);
+  assert.ok([...w.document.querySelectorAll('[data-kind="stoma"], [data-kind="skin"], [data-kind="infection"]')].every(el=>el.disabled));
+  notes(w,'Accidental input while reading.','jenc-notes');
+  assert.equal(w.JasonEncounters.state.draft.notes,original,'read-only input events cannot change the saved draft');
+  await w.JasonEncounters.save();assert.equal(w.fixture.calls.length,1);
+  click(w,'edit');assert.equal(w.document.getElementById('jenc-notes').value,original);
+  const corrected='Patient comfortable. Family informed. <script>care()</script>';
+  notes(w,corrected,'jenc-notes');
+  assert.match(w.document.querySelector('.jenc-general-notes .jenc-note-mirror .jenc-change').textContent,/informed/);
+  await w.JasonEncounters.save();
+  assert.equal(w.fixture.calls[1].args.p_encounter_id,id);
+  assert.equal(w.fixture.calls[1].args.p_expected_version,1);
+  assert.deepEqual(w.fixture.calls[1].args.p_impact.appliances,[]);
+  assert.deepEqual(w.fixture.calls[1].args.p_impact.patient_patch,{});
+  assert.equal(w.fixture.records.length,1);
+  assert.equal(w.document.querySelector('[data-action="edit"]').textContent,'Edit report as V3');
+  click(w,'edit');notes(w,'','jenc-notes');
+  assert.match(w.document.querySelector('.jenc-general-notes .jenc-note-diff del').textContent,/Patient/);
+  await w.JasonEncounters.save();
+  const vs=w.fixture.records[0].assessment.versions;
+  assert.deepEqual(vs.map(v=>v.snapshot.notes),[original,corrected,'']);
+  assert.equal(w.document.querySelector('[data-action="edit"]').textContent,'Edit report as V4');
+  assert.doesNotMatch(w.fixture.calls[2].args.p_report,/General notes:/);
+  click(w,'version','[data-index="0"]');
+  assert.equal(w.document.getElementById('jenc-notes').value,original);
+  assert.equal(w.document.getElementById('jenc-notes').readOnly,true);
+  click(w,'edit');assert.equal(w.document.getElementById('jenc-notes').value,'','editing an earlier view starts from the latest saved version');
+  assert.equal(w.document.querySelector('#jenc-save').textContent,'Save as V4');
+  click(w,'cancel');assert.equal(w.JasonEncounters.state.editable,false);
+  assert.equal(w.JasonEncounters.state.viewVersion.version,3);
+});
+
+test('an encounter can save General notes alone, and the next day starts with a fresh General notes box',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);
+  notes(w,'Patient and family education provided.','jenc-notes');await w.JasonEncounters.save();
+  assert.equal(w.fixture.calls.length,1);
+  assert.equal(w.fixture.calls[0].args.p_snapshot.notes,'Patient and family education provided.');
+  assert.ok(w.fixture.calls[0].args.p_snapshot.stomas.every(s=>s.notes===''));
+  await w.JasonEncounters.open(w.fixture.patient.id,w.fixture.records[0].id);
+  assert.equal(w.document.getElementById('jenc-notes').value,'Patient and family education provided.');
+  assert.equal(w.document.getElementById('jenc-notes').readOnly,true);
+  w.TODAY='2026-10-06';await w.JasonEncounters.open(w.fixture.patient.id);
+  assert.equal(w.JasonEncounters.state.record,null);
+  assert.equal(w.document.getElementById('jenc-notes').value,'');
+  assert.equal(w.document.getElementById('jenc-notes').readOnly,false);
+});
+
+test('General notes are available for one stoma, fistulas and encounters without recorded stomas',async t=>{
+  for(const stomas of [[{uid:'one',code:'S1',type:'End colostomy',origin:'initial'}],[{uid:'fistula',code:'F1',type:'Fistula',origin:'fistula'}],[]]){
+    const w=setup(t);w.stomaTimeline=()=>plain(stomas);w.stomasPresentOn=()=>plain(stomas);w.patientStomaList=()=>stomas.map(s=>({...s,slot:'stoma1',number:1}));
+    await w.JasonEncounters.open(w.fixture.patient.id);
+    assert.equal(w.document.querySelectorAll('.jenc-general-notes').length,1);
+    assert.equal(w.document.querySelector('.jenc-general-notes label').textContent,'General notes');
+    assert.equal(w.document.getElementById('jenc-notes').readOnly,false);
+  }
+});
+
+test('an encounter is coded ENC-ID-date, opens read only after saving, and requires Edit report as V2 to revise it',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Morning review.');await w.JasonEncounters.save();
   assert.match(w.document.querySelector('.jenc-version strong').textContent,/^ENC-DEMO-001-051026 · V1$/);assert.match(w.document.querySelector('[role="status"]').textContent,/ENC-DEMO-001-051026 saved · V1/);
-  await w.JasonEncounters.open(w.fixture.patient.id);const s=w.JasonEncounters.state;assert.equal(s.editable,true);assert.equal(s.record.id,w.fixture.records[0].id);assert.equal(w.document.getElementById('jenc-notes-0').value,'Morning review.');
-  assert.match(w.document.querySelector('[role="status"]').textContent,/already saved — your changes will be saved as V2/);
+  await w.JasonEncounters.open(w.fixture.patient.id);const s=w.JasonEncounters.state;assert.equal(s.editable,false);assert.equal(s.record.id,w.fixture.records[0].id);assert.equal(w.document.getElementById('jenc-notes-0').value,'Morning review.');
+  assert.match(w.document.querySelector('[role="status"]').textContent,/saved and opens read only.*Edit report as V2/);
+  assert.equal(w.document.querySelector('[data-action="edit"]').textContent,'Edit report as V2');
+  assert.ok(w.document.querySelector('.jenc-version [data-action="edit"]'),'revision action is visible beside the saved version');
+  assert.equal(w.document.querySelector('#jenc-save'),null);assert.equal(w.document.querySelector('#jenc-notes-0').readOnly,true);
+  await w.JasonEncounters.save();assert.equal(w.fixture.calls.length,1,'opening and reading do not save a revision');
+  click(w,'edit');assert.equal(s.editable,true);assert.equal(w.document.querySelector('#jenc-notes-0').readOnly,false);
   notes(w,'Morning review. Afternoon: output increased.');await w.JasonEncounters.save();assert.equal(w.fixture.records.length,1);assert.equal(w.fixture.calls[1].args.p_encounter_id,w.fixture.records[0].id);assert.equal(w.JasonEncounters.state.record.assessment.versions.length,2);
   assert.equal(w.JasonEncounters.code({id:'b',encounter_date:'2026-10-05',created_at:'2026-10-05T12:00:00Z'},w.fixture.patient,[{id:'a',encounter_date:'2026-10-05',created_at:'2026-10-05T09:00:00Z'},{id:'b',encounter_date:'2026-10-05',created_at:'2026-10-05T12:00:00Z'}]),'ENC-DEMO-001-051026-2');
   await w.JasonEncounters.open(w.fixture.patient.id,w.fixture.records[0].id);assert.equal(w.JasonEncounters.state.editable,false);assert.equal(w.JasonEncounters.state.viewVersion.version,2);});
@@ -248,7 +328,7 @@ test('correcting today’s encounter keeps a referral ticked Seen elsewhere sinc
   const id=patches[0].support_referrals[0].id;
   // Later the same day, the Psychologist referral is ticked Seen somewhere else.
   w.fixture.patient.support_referrals=[{...patches[0].support_referrals[0],seen:true,seen_on:'2026-10-05',seen_by:'Lorraine Marie Stivala'}];
-  await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.JasonEncounters.state.editable,true);
+  await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.JasonEncounters.state.editable,false);click(w,'edit');assert.equal(w.JasonEncounters.state.editable,true);
   assert.equal(w.JasonEncounters.state.draft.referrals[0].seen,true,'the correction starts from the patient’s current list');
   notes(w,'Afternoon review.');await w.JasonEncounters.save();
   assert.equal(patches.length,1,'nothing changed in the referrals, so the patient list is not rewritten');

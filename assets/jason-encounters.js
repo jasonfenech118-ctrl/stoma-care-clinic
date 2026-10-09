@@ -153,7 +153,7 @@
     });
     if(s.infection?.status&&s.infection.status!=='Not recorded')lines.push('Infection status: '+[s.infection.organism,s.infection.status].filter(Boolean).join(' · ')+'.');
     list(s.referrals).map(normReferral).filter(Boolean).forEach(r=>lines.push(r.seen?'Seen by '+r.profession+(r.seen_on?' on '+r.seen_on:'')+'.':'Referred to '+r.profession+(r.referred_on?' on '+r.referred_on:'')+'.'));
-    if(s.notes)lines.push('Notes: '+s.notes);
+    if(String(s.notes||'').trim())lines.push('General notes: '+s.notes);
     return lines.join('\n');
   }
   // The system, baseplate and pouch follow from the appliances themselves.
@@ -273,9 +273,10 @@
       const todays=openEpisode&&rows.find(r=>String(r.episode_id)===String(openEpisode.id)&&String(r.encounter_date||'').slice(0,10)===TODAY);
       if(recordId&&rows.some(r=>String(r.id)===String(recordId)))selectRecord(recordId);
       else if(todays){
-        // Today's encounter is already saved: reopening it continues that record.
-        selectRecord(todays.id,null,true);
-        ctx.message='Today’s encounter '+encounterCode(todays,p,rows)+' is already saved — your changes will be saved as V'+(ctx.expectedVersion+1)+'.';render();
+        // Saved encounters open for reading. Starting a revision is a separate,
+        // deliberate action; simply reopening the handover button changes nothing.
+        selectRecord(todays.id);
+        ctx.message='Today’s encounter '+encounterCode(todays,p,rows)+' is saved and opens read only. Choose Edit report as V'+(ctx.expectedVersion+1)+' to make changes.';render();
       }else if(openEpisode)newEncounter(true);else{ctx.mode='history';ctx.editable=false;ctx.historyFilter='all';render();}
     }catch(e){if(token!==request)return;page.innerHTML='<div class="jenc-card"><h2>Encounters</h2><p>'+esc(e.message)+'</p><button class="jenc-btn" data-action="back">Back to handover</button></div>';}
   }
@@ -428,7 +429,8 @@
       page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e);return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><p>'+esc(v.report||report(v.snapshot)||'No report recorded')+'</p><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
     }
     const d=ctx.draft,n=ctx.expectedVersion;
-    const versionBar=rec?'<div class="jenc-version"><strong>'+esc(encounterCode(rec,p,ctx.rows))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong><div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
+    const editReport=rec&&!ctx.editable&&editableToday(rec)?'<button type="button" class="jenc-btn primary jenc-no-print" data-action="edit">Edit report as V'+(n+1)+'</button>':'';
+    const versionBar=rec?'<div class="jenc-version"><strong>'+esc(encounterCode(rec,p,ctx.rows))+' · '+(ctx.editable?'Editing V'+(n+1):'V'+ver.version)+'</strong>'+(!ctx.editable?'<span class="jenc-state">Read only</span>':'')+'<div class="jenc-meta">Original: '+esc(stamp(rec.created_at))+'</div><div class="jenc-toolbar">'+editReport+versions(rec).map((v,i)=>'<button class="jenc-btn muted" data-action="version" data-index="'+i+'">V'+v.version+'</button>').join('')+(ctx.comparison?'<label class="jenc-meta"><input type="checkbox" data-kind="compare"'+(ctx.compare?' checked':'')+'> Show changes'+(ctx.editable?' from V'+n:' from previous version')+'</label>':'')+'</div></div>':'';
     const inf=d.infection||{status:'',organism:''};
     const infectionText=x=>[x?.organism,x?.status].filter(Boolean).join(' · ')||'Not recorded';
     const infectionSummary=ctx.compare&&ctx.comparison?diffHTML(infectionText(ctx.comparison.infection),infectionText(inf),true):esc(infectionText(inf));
@@ -450,17 +452,17 @@
     const grid=cols=>'<div class="jenc-stoma-grid" style="--jenc-cols:'+Math.min(Math.max(panels.length,1),3)+'">'+cols+'</div>';
     const column=(name,body)=>'<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(name)+'</h4>'+body+'</div>';
     const noteBox=(key,label,value,id)=>'<div class="jenc-note-col"><label class="jenc-notes-label" for="'+id+'">'+esc(label)+'</label><div class="jenc-notebox"><div class="jenc-note-mirror" aria-hidden="true"></div><textarea id="'+id+'" data-note="'+esc(key)+'" aria-label="'+esc(label)+'" placeholder="Write your observations, care provided or patient concerns…"'+(ctx.editable?'':' readonly')+'>'+esc(value||'')+'</textarea></div><div class="jenc-note-diff jenc-previous"></div></div>';
-    // Older encounters kept one set of notes for the whole episode; they still show.
-    const generalNotes=!panels.length||String(d.notes||'').trim()||String(ctx.comparison?.notes||'').trim();
+    // Patient-wide observations have their own box on every encounter. Reuse
+    // the versioned notes field so older episode notes are preserved as well.
     const notesHTML=(panels.length?grid(panels.map((x,i)=>noteBox(x.stoma.uid,x.name+' — clinical notes',x.stoma.notes,'jenc-notes-'+i)).join('')):'')+
-      (generalNotes?noteBox('',panels.length?'General notes':'Clinical notes',d.notes,'jenc-notes'):'');
+      '<div class="jenc-general-notes">'+noteBox('','General notes',d.notes,'jenc-notes')+'</div>';
     const heading=(number,title,id,badge='')=>'<h3 class="jenc-step-heading" id="'+id+'"><span class="jenc-step-number" aria-hidden="true">'+number+'</span>'+title+(badge?'<span class="jenc-state">'+badge+'</span>':'')+'</h3>';
     const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,panels.length&&panels.every(x=>isFistulaCol(x.stoma))?'Fistula review':'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
     const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+'</section>';
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','Patient · every episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
-    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(editableToday(rec)?'<button class="jenc-btn primary" data-action="edit">Edit this encounter (V'+(versions(rec).slice(-1)[0].version+1)+')</button>':'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
+    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(!editableToday(rec)?'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>':'')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
     if(ctx.saving){const saveButton=page.querySelector('#jenc-save');if(saveButton)saveButton.textContent=ctx.savePhase||'Saving…';page.querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);}
