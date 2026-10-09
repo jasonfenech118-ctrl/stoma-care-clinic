@@ -21,10 +21,10 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-486"/>
-<script src="assets/manual.js?v=2026.10.09-486"></script>
-<link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-486"/>
-<script defer src="assets/patient-communications.js?v=2026.10.09-486"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-487"/>
+<script src="assets/manual.js?v=2026.10.09-487"></script>
+<link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-487"/>
+<script defer src="assets/patient-communications.js?v=2026.10.09-487"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-484"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.07-459"></script>
@@ -3123,6 +3123,27 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
       <div id="stomaperformed-body"><div class="report-note">Loading…</div></div>
     </div>
 
+    <div class="page" id="page-siting-cancelled">
+      <div class="phdr">
+        <div><h2><span class="page-heading-icon" aria-hidden="true">🚫</span><span>Cancelled Stoma Appointments</span></h2><p>Cancelled pre-operative siting appointments and their recorded reasons</p></div>
+        <div class="page-actions">
+          <button class="btn-add" onclick="loadCancelledSitingSessions()">Refresh</button>
+        </div>
+      </div>
+      <div class="pd-toolbar">
+        <label for="siting-cancelled-search">Search:</label>
+        <input type="search" id="siting-cancelled-search" placeholder="Patient name or ID card…" oninput="renderCancelledSitingSessions()"/>
+        <label for="siting-cancelled-reason">Reason:</label>
+        <select id="siting-cancelled-reason" onchange="renderCancelledSitingSessions()">
+          <option value="all">All reasons</option>
+          <option value="patient">Due to the patient</option>
+          <option value="hospital">Hospital complication</option>
+          <option value="unrecorded">Not recorded</option>
+        </select>
+      </div>
+      <div id="siting-cancelled-body"><div class="report-note">Loading cancelled appointments…</div></div>
+    </div>
+
     <div class="page" id="page-discharge">
       <div class="phdr">
         <div><h2><span class="page-heading-icon" aria-hidden="true">📨</span><span>Discharge letters</span></h2><p>Build a stoma discharge letter on the Mater Dei letterhead — fill in, print or save as PDF</p></div>
@@ -3692,7 +3713,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-486';
+const APP_BUILD='2026.10.09-487';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3790,7 +3811,8 @@ const TAB_GROUPS=[
    pages:[
      {tab:'siting',label:'Siting Session',icon:'📍',color:'#7c3aed'},
      {tab:'stomaperformed',label:'Performed Stoma',icon:'🩺',color:'#7c3aed'},
-     {tab:'nostoma',label:'No Stomas Performed',icon:'📋',color:'#7c3aed'}
+     {tab:'nostoma',label:'No Stomas Performed',icon:'📋',color:'#7c3aed'},
+     {tab:'siting-cancelled',label:'Cancelled Stoma Appointments',icon:'🚫',color:'#7c3aed'}
    ]},
   {key:'handover',label:'Handover',icon:'🏥',color:'#ea580c',  /* orange */
    pages:[
@@ -3938,6 +3960,7 @@ function switchTab(name,opts){
   if(name==='siting')loadSitingSessions();
   if(name==='nostoma')loadNoStomaOps();
   if(name==='stomaperformed')loadStomaPerformed();
+  if(name==='siting-cancelled')loadCancelledSitingSessions();
   if(name==='postop')loadPostopDischarges();
   if(name==='snapshots')loadHandoverSnapshots();
   if(name==='discharge')loadDischargeLetters();
@@ -4028,6 +4051,7 @@ function flushClinicRealtime(){
     siting:new Set(['siting_sessions','siting_images','patients']),
     nostoma:new Set(['operations_no_stoma','siting_sessions']),
     stomaperformed:new Set(['siting_sessions','patients']),
+    'siting-cancelled':new Set(['siting_sessions','patients']),
     handover:new Set(['patients','clinical_records','siting_sessions','appointments']),
     postop:new Set(['patients','siting_sessions']),
     snapshots:new Set(['handover_snapshots']),
@@ -20996,6 +21020,79 @@ function sitingStatusLabel(r){
   if(r.surgery_performed===false)return 'No surgery';
   return 'Booked';
 }
+/* Cancellation history keeps the original siting appointment intact, including
+   people who never needed a registry record. DNTU and surgical outcomes belong
+   to their existing lists. Page the query so older cancellations are not lost. */
+let cancelledSitingState={rows:null};
+async function loadCancelledSitingSessions(){
+  const body=document.getElementById('siting-cancelled-body');
+  if(!body)return;
+  cancelledSitingState.rows=null;
+  body.innerHTML='<div class="report-note">Loading cancelled appointments…</div>';
+  try{
+    const result=await fetchAllRows(()=>SB.from('siting_sessions').select('*')
+      .eq('status','cancelled').order('session_date',{ascending:false}).order('session_slot',{ascending:false}));
+    if(result.error)throw result.error;
+    let rows=result.rows;
+    // A just-saved cancellation may not yet match the server's status filter.
+    // Read that session by ID and apply the same local patch as the active list.
+    const ids=new Set(rows.map(r=>r.id));
+    const pending=Object.keys(sitingLocalPatches).filter(id=>sitingLocalPatches[id].status==='cancelled'&&!ids.has(id));
+    if(pending.length){
+      const extra=await fetchAllRows(()=>SB.from('siting_sessions').select('*').in('id',pending));
+      if(extra.error)throw extra.error;
+      rows=rows.concat(extra.rows);
+    }
+    rows=applySitingPatches(rows).filter(r=>r.status==='cancelled');
+    rows.sort((a,b)=>String(b.session_date||'').localeCompare(String(a.session_date||''))
+      ||String(b.session_slot||'').localeCompare(String(a.session_slot||''))
+      ||String(a.id).localeCompare(String(b.id)));
+    cancelledSitingState.rows=await attachPatientProfilesByIdCard(rows);
+    renderCancelledSitingSessions();
+  }catch(error){
+    const message=String(error.message||error);
+    body.innerHTML=/42P01|PGRST205/.test(String(error.code||''))||/does not exist|could not find.*siting_sessions/i.test(message)
+      ? handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.')
+      : `<div class="report-note" role="alert">Could not load cancelled appointments: ${htmlSafe(message)}</div>`;
+  }
+}
+function renderCancelledSitingSessions(){
+  const body=document.getElementById('siting-cancelled-body');
+  const all=cancelledSitingState.rows;
+  if(!body||!Array.isArray(all))return;
+  if(!all.length){
+    body.innerHTML=emptyStateHTML('🚫','No cancelled stoma appointments',
+      'Cancelled siting appointments will appear here with their recorded reason and note.');
+    return;
+  }
+  const search=String(document.getElementById('siting-cancelled-search')?.value||'').trim().toLowerCase();
+  const reason=document.getElementById('siting-cancelled-reason')?.value||'all';
+  const rows=all.filter(r=>{
+    const hay=`${r.first_name||''} ${r.surname||''} ${r.first_name||''} ${r.id_card||''}`.toLowerCase();
+    const recorded=Object.prototype.hasOwnProperty.call(SITING_CANCEL_REASONS,r.cancellation_reason);
+    return (!search||hay.includes(search))&&(reason==='all'||(reason==='unrecorded'?!recorded:r.cancellation_reason===reason));
+  });
+  if(!rows.length){
+    body.innerHTML=emptyStateHTML('🔍','No matching cancelled appointments','Try another name, ID card or cancellation reason.');
+    return;
+  }
+  const trs=rows.map(r=>`<tr>
+    <td data-label="Appointment"><div>${r.session_date?htmlSafe(fmtShortDate(r.session_date)):'—'}<div><small>${htmlSafe(sitingSlotLabel(r.session_slot))}</small></div></div></td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;"><strong>${htmlSafe(r.id_card||'—')}</strong></td>
+    <td data-label="Surname"><span class="patient-name-avatar" style="gap:7px;">${patientAvatarHTML(r,'xs')}<strong>${htmlSafe(r.surname||'')}</strong></span></td>
+    <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
+    <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
+    <td data-label="Sited for">${htmlSafe(r.siting_for||'—')}</td>
+    <td data-label="Reason / note"><div><strong>${htmlSafe(sitingCancelReasonLabel(r)||'Not recorded')}</strong>${r.cancellation_note?`<div style="white-space:pre-wrap;margin-top:4px;">${htmlSafe(r.cancellation_note)}</div>`:''}</div></td>
+    <td data-label="Cancelled on / by"><div>${r.cancelled_at?htmlSafe(new Date(r.cancelled_at).toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric',timeZone:'Europe/Malta'})):'Not recorded'}<div><small>${htmlSafe(r.cancelled_by||'Not recorded')}</small></div></div></td>
+  </tr>`).join('');
+  body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="siting-cancelled-table">
+    <colgroup><col style="width:120px"><col style="width:104px"><col style="width:120px"><col style="width:110px"><col style="width:115px"><col style="width:115px"><col><col style="width:140px"></colgroup>
+    <thead>
+      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Cancelled Stoma Appointments</span><span class="hv-count">${rows.length} of ${all.length} cancelled</span></th></tr>
+      <tr><th>Appointment</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Sited for</th><th>Reason / note</th><th>Cancelled on / by</th></tr>
+    </thead><tbody>${trs}</tbody></table></div>`;
+}
 /* The Siting view on a patient record. A patient's siting sessions are matched
    by ID card (the key used everywhere) and by the patient_id stamped on the
    session when a stoma was formed — so every session shows here whether or not
@@ -21289,6 +21386,7 @@ async function saveSitingCancellation(){
 }
 function refreshSitingViews(){
   if(document.getElementById('siting-body'))loadSitingSessions();
+  if(document.getElementById('page-siting-cancelled')?.classList.contains('active'))loadCancelledSitingSessions();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
   refreshRecordSiting();
 }
