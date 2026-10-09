@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-487"/>
-<script src="assets/manual.js?v=2026.10.09-487"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.09-488"/>
+<script src="assets/manual.js?v=2026.10.09-488"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-487"/>
 <script defer src="assets/patient-communications.js?v=2026.10.09-487"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-483"/>
@@ -3713,7 +3713,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.09-487';
+const APP_BUILD='2026.10.09-488';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21023,10 +21023,12 @@ function sitingStatusLabel(r){
 /* Cancellation history keeps the original siting appointment intact, including
    people who never needed a registry record. DNTU and surgical outcomes belong
    to their existing lists. Page the query so older cancellations are not lost. */
-let cancelledSitingState={rows:null};
+let cancelledSitingState={rows:null,loadId:0};
+let cancelledSitingDeleteState=null;
 async function loadCancelledSitingSessions(){
   const body=document.getElementById('siting-cancelled-body');
   if(!body)return;
+  const loadId=++cancelledSitingState.loadId;
   cancelledSitingState.rows=null;
   body.innerHTML='<div class="report-note">Loading cancelled appointments…</div>';
   try{
@@ -21047,9 +21049,12 @@ async function loadCancelledSitingSessions(){
     rows.sort((a,b)=>String(b.session_date||'').localeCompare(String(a.session_date||''))
       ||String(b.session_slot||'').localeCompare(String(a.session_slot||''))
       ||String(a.id).localeCompare(String(b.id)));
-    cancelledSitingState.rows=await attachPatientProfilesByIdCard(rows);
+    rows=await attachPatientProfilesByIdCard(rows);
+    if(loadId!==cancelledSitingState.loadId)return;
+    cancelledSitingState.rows=rows;
     renderCancelledSitingSessions();
   }catch(error){
+    if(loadId!==cancelledSitingState.loadId)return;
     const message=String(error.message||error);
     body.innerHTML=/42P01|PGRST205/.test(String(error.code||''))||/does not exist|could not find.*siting_sessions/i.test(message)
       ? handoverMissingHTML('The siting sessions table is not in the database yet. Run <strong>sql/add-siting-sessions.sql</strong> once in Supabase to turn this on.')
@@ -21085,13 +21090,59 @@ function renderCancelledSitingSessions(){
     <td data-label="Sited for">${htmlSafe(r.siting_for||'—')}</td>
     <td data-label="Reason / note"><div><strong>${htmlSafe(sitingCancelReasonLabel(r)||'Not recorded')}</strong>${r.cancellation_note?`<div style="white-space:pre-wrap;margin-top:4px;">${htmlSafe(r.cancellation_note)}</div>`:''}</div></td>
     <td data-label="Cancelled on / by"><div>${r.cancelled_at?htmlSafe(new Date(r.cancelled_at).toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric',timeZone:'Europe/Malta'})):'Not recorded'}<div><small>${htmlSafe(r.cancelled_by||'Not recorded')}</small></div></div></td>
+    <td data-label="Actions" class="hv-actions-cell"><div class="followup-actions"><button type="button" class="ncb-btn ncb-del" data-siting-id="${htmlSafe(r.id)}" onclick="confirmDeleteCancelledSiting(this.dataset.sitingId)" aria-label="Delete cancelled appointment for ${htmlSafe([r.first_name,r.surname].filter(Boolean).join(' ')||'patient')}, ID card ${htmlSafe(r.id_card||'not recorded')}">🗑 Delete</button></div></td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="siting-cancelled-table">
-    <colgroup><col style="width:120px"><col style="width:104px"><col style="width:120px"><col style="width:110px"><col style="width:115px"><col style="width:115px"><col><col style="width:140px"></colgroup>
+    <colgroup><col style="width:120px"><col style="width:104px"><col style="width:120px"><col style="width:110px"><col style="width:115px"><col style="width:115px"><col><col style="width:140px"><col style="width:88px"></colgroup>
     <thead>
-      <tr class="hv-bannerrow"><th colspan="8"><span class="hv-date">Cancelled Stoma Appointments</span><span class="hv-count">${rows.length} of ${all.length} cancelled</span></th></tr>
-      <tr><th>Appointment</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Sited for</th><th>Reason / note</th><th>Cancelled on / by</th></tr>
+      <tr class="hv-bannerrow"><th colspan="9"><span class="hv-date">Cancelled Stoma Appointments</span><span class="hv-count">${rows.length} of ${all.length} cancelled</span></th></tr>
+      <tr><th>Appointment</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Sited for</th><th>Reason / note</th><th>Cancelled on / by</th><th>Actions</th></tr>
     </thead><tbody>${trs}</tbody></table></div>`;
+}
+// Delete only the selected cancelled session; registry and surgical records stay.
+function confirmDeleteCancelledSiting(id){
+  if(cancelledSitingDeleteState?.saving)return;
+  const row=(cancelledSitingState.rows||[]).find(r=>String(r.id)===String(id));
+  if(!row||row.status!=='cancelled')return;
+  cancelledSitingDeleteState={row:{...row},rows:[...cancelledSitingState.rows],saving:false};
+  const name=[row.first_name,row.surname].filter(Boolean).join(' ')||'Unnamed patient';
+  const mb=document.getElementById('mb');
+  mb.className='mb';
+  mb.innerHTML=`<h2 style="color:#b91c1c;">Delete cancelled appointment</h2>
+    <div class="msub"><strong>${htmlSafe(name)}</strong><br>ID card: <strong>${htmlSafe(row.id_card||'Not recorded')}</strong><br>Appointment: <strong>${row.session_date?htmlSafe(fmtShortDate(row.session_date)):'Not recorded'} · ${htmlSafe(sitingSlotLabel(row.session_slot))}</strong></div>
+    <p>This permanently removes this cancelled siting appointment and its saved assessment and photograph. The patient's registry record, other appointments and surgical records are kept. This cannot be undone.</p>
+    <p id="siting-delete-error" role="alert" hidden style="color:#b42318;font-weight:600;"></p>
+    <div class="mact"><button type="button" class="btn-cancel" id="siting-delete-back" onclick="closeModal()">Keep entry</button><button type="button" class="btn-save" id="siting-delete-save" style="background:#b91c1c;" onclick="executeDeleteCancelledSiting()">Yes, delete entry</button></div>`;
+  openMo();
+}
+async function executeDeleteCancelledSiting(){
+  const s=cancelledSitingDeleteState;
+  const btn=document.getElementById('siting-delete-save');
+  if(!s||s.saving||!btn||!document.getElementById('mo')?.classList.contains('open'))return;
+  s.saving=true;btn.disabled=true;btn.textContent='Deleting…';
+  const back=document.getElementById('siting-delete-back');if(back)back.disabled=true;
+  const errorBox=document.getElementById('siting-delete-error');if(errorBox)errorBox.hidden=true;
+  try{
+    // Return the deleted ID: RLS or a concurrent status change can match zero rows.
+    const{data,error}=await SB.from('siting_sessions').delete().eq('id',s.row.id).eq('status','cancelled').select('id');
+    if(error)throw error;
+    if(!data?.some(r=>String(r.id)===String(s.row.id)))throw new Error('No cancelled appointment was deleted. The entry may have changed or already been removed. Refresh the list and try again.');
+  }catch(error){
+    s.saving=false;btn.disabled=false;btn.textContent='Yes, delete entry';if(back)back.disabled=false;
+    if(errorBox){errorBox.hidden=false;errorBox.textContent='Could not delete: '+(error.message||error);}
+    return;
+  }
+  delete sitingLocalPatches[s.row.id];
+  ++cancelledSitingState.loadId; // Ignore a refresh started before the delete.
+  cancelledSitingState.rows=(cancelledSitingState.rows||s.rows).filter(r=>String(r.id)!==String(s.row.id));
+  sitingState.rows=(sitingState.rows||[]).filter(r=>String(r.id)!==String(s.row.id));
+  if(cancelledSitingDeleteState===s){cancelledSitingDeleteState=null;if(document.getElementById('siting-delete-save')===btn)closeModal();}
+  renderCancelledSitingSessions();
+  logAudit({action:'delete',entity:'siting_session',entity_id:String(s.row.id),patient_id:s.row.patient_id?String(s.row.patient_id):'',
+    patient_name:[s.row.first_name,s.row.surname].filter(Boolean).join(' '),summary:'Deleted cancelled siting appointment',
+    details:{id_card:s.row.id_card||'',session_date:s.row.session_date,session_slot:s.row.session_slot}});
+  refreshRecordSiting();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
 }
 /* The Siting view on a patient record. A patient's siting sessions are matched
    by ID card (the key used everywhere) and by the patient_id stamped on the
