@@ -7,6 +7,7 @@ const PAT='11111111-1111-4111-8111-111111111111',EP='22222222-2222-4222-8222-222
 const sql=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261005212220_jason_encounter_workspace.sql'),'utf8');
 // Encounters are now for every signed-in nurse; the later migration replaces the function.
 const openSql=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261006190000_encounters_for_all_nurses.sql'),'utf8');
+const recoverySql=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261009123322_encounter_save_recovery.sql'),'utf8');
 let db;
 const original=[{stoma_uid:'base',appliances:['Old pouch'],accessories:['Powder'],changed_on:'2026-10-01'},{stoma_uid:'second',appliances:['Uro pouch'],accessories:[],changed_on:'2026-10-01'}];
 const snapshot=(notes='Patient recieved guidance.')=>({stomas:[{uid:'base',number:'S1',type:'Loop ileostomy',colour:'Healthy pink',output:['Liquid','Gas'],appliances:['Old pouch'],accessories:['Powder'],complications:[],rod:{status:'Not recorded'}},{uid:'second',number:'S2',type:'Urostomy',colour:'',output:[],appliances:['Uro pouch'],accessories:[],complications:[],rod:{status:'Not recorded'}}],scope:['base','second'],notes,infection:{status:'',organism:''},referrals:[]});
@@ -20,7 +21,7 @@ test.before(async()=>{
     create table patients(id uuid primary key,inpatient_ward text,inpatient_bed text,inpatient_notes text,inpatient_nurse_notes text,flange_due date,complications text,rod_stoma_uid text,rod_removal_date date,rod_removed_date date);
     create table clinical_records(id uuid primary key,patient_id uuid,kind text,record_date date,is_current boolean,discharge_date date,episode_ref text,appliances jsonb);
     create table encounters(id uuid primary key default gen_random_uuid(),patient_id text,episode_id text,episode_ref text,encounter_date date default current_date,assessment jsonb default '{}'::jsonb,nursing_report text,created_by_email text,created_by_name text,created_at timestamptz default now());`);
-  await db.exec(sql);await db.exec(sql);await db.exec(openSql);await db.exec(openSql);
+  await db.exec(sql);await db.exec(sql);await db.exec(openSql);await db.exec(openSql);await db.exec(recoverySql);await db.exec(recoverySql);
 });
 test.beforeEach(async()=>{
   await db.exec('truncate encounters,clinical_records,patients;');
@@ -83,4 +84,31 @@ test('a legacy free-text encounter becomes V1 plus V2 with its original assessme
 test('patient/episode and stoma-report mismatches are rejected',async()=>{
   await assert.rejects(save(snapshot(),null,0,impact(),'44444444-4444-4444-8444-444444444444'),/episode could not be found/);
   const invalid=snapshot();invalid.scope=['another-patient-stoma'];await assert.rejects(save(invalid),/not in the encounter/);assert.equal((await state()).count,0);
+});
+test('an interrupted create can be retried without adding an encounter or applying care twice',async()=>{
+  const s=snapshot();s.save_request_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const i=impact();i.patient_patch={inpatient_nurse_notes:'New care note'};i.expected_patient={inpatient_nurse_notes:null};
+  const one=await save(s,null,0,i),again=await save(s,null,0,i);
+  assert.equal(again.id,one.id);assert.equal(again.assessment.current_version,1);assert.equal((await state()).count,1);
+});
+test('a retried amendment returns its saved version even after that expected version becomes stale',async()=>{
+  const one=await save();const s=snapshot('Corrected once.');s.save_request_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const amended=await save(s,one.id,1),retry=await save(s,one.id,1);
+  assert.equal(retry.id,one.id);assert.equal(retry.assessment.current_version,2);assert.deepEqual(retry.assessment,amended.assessment);assert.equal((await state()).count,1);
+});
+test('confirmation finds the original request in history after a later revision is saved',async()=>{
+  const s=snapshot();s.save_request_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';const one=await save(s);
+  const next=snapshot('Later note.');next.save_request_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';await save(next,one.id,1);
+  const retry=await save(s);assert.equal(retry.id,one.id);assert.equal(retry.assessment.current_version,2);assert.equal((await state()).count,1);
+});
+test('an identical retry from an older browser tab without a request ID does not create a duplicate',async()=>{
+  const one=await save(),again=await save();assert.equal(again.id,one.id);assert.equal((await state()).count,1);
+});
+test('request IDs are validated and the recovery patch preserves a legacy installation’s access control',async()=>{
+  const bad=snapshot();bad.save_request_id='not-a-request';await assert.rejects(save(bad),/Invalid encounter save request/);
+  await db.exec(sql);await db.exec(recoverySql);
+  try{
+    await db.query("select set_config('test.email','jacqueline.sammut@gov.mt',false)");await assert.rejects(save(),/Jason only/);
+    const f=(await db.query("select prosecdef,proconfig from pg_proc where proname='save_jason_encounter'")).rows[0];assert.equal(f.prosecdef,false);assert.ok(f.proconfig.includes('lock_timeout=4s'));assert.ok(f.proconfig.includes('statement_timeout=15s'));
+  }finally{await db.exec(openSql);await db.exec(recoverySql);}
 });

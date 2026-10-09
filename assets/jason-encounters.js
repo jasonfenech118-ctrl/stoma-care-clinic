@@ -220,6 +220,25 @@
     el.addEventListener('click',click);el.addEventListener('change',change);el.addEventListener('input',input);}return el;}
   function error(message){const el=document.getElementById('jenc-message');if(el)el.innerHTML='<div class="jenc-error" role="alert">'+esc(message)+'</div>';}
   function dirty(){return !!ctx&&ctx.editable&&!same(ctx.draft,ctx.baseline);}
+  function editableSnapshot(snapshot){const value=copy(snapshot);delete value.save_request_id;return value;}
+  // Bound the entire wait, including a fetch that ignores cancellation. A lost
+  // response is not proof of a failed write: its request ID is retained for retry.
+  function boundedRequest(build,ms=8000){
+    const controller=new AbortController();
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{controller.abort();const e=new Error('The clinic server did not respond in time.');e.code='CLIENT_TIMEOUT';reject(e);},ms);
+      Promise.resolve().then(()=>build(controller.signal)).then(resolve,reject).finally(()=>clearTimeout(timer));
+    });
+  }
+  function cancellable(query,signal){return typeof query?.abortSignal==='function'?query.abortSignal(signal):query;}
+  async function confirmSave(target,pending){
+    const result=await boundedRequest(signal=>cancellable(SB.from('encounters').select('*')
+      .eq('patient_id',String(target.patient.id)).eq('episode_id',String(target.episode.id))
+      .contains('assessment',{versions:[{snapshot:{save_request_id:pending.payload.p_snapshot.save_request_id}}]})
+      .order('created_at',{ascending:false}).limit(1),signal));
+    if(result.error)throw result.error;
+    return list(result.data)[0]||null;
+  }
   function canLeave(){if(ctx?.saving)return false;return !dirty()||window.confirm('Discard the unsaved encounter changes?');}
   function dismiss(force=false){if(!force&&!canLeave())return false;request++;ctx=null;document.body.classList.remove('jenc-open');document.getElementById('page-jason-encounters')?.classList.remove('active');return true;}
   async function back(){if(!canLeave())return;const pos=ctx?.returnScroll||0,pid=ctx?.patient.id,origin=ctx?.returnPage||'page-handover';dismiss(true);document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -275,7 +294,7 @@
     const vs=versions(rec),v=index===null?vs.slice(-1)[0]:vs[index];if(!v)return;
     const ep=ctx.episodes.find(e=>String(e.id)===String(rec.episode_id));if(!ep)return error('The linked episode could not be loaded.');
     ctx.episode=ep;ctx.record=rec;ctx.viewVersion=v;ctx.expectedVersion=vs.slice(-1)[0].version;ctx.editable=edit;ctx.mode='form';ctx.openSections=new Set();ctx.message='';
-    ctx.draft=copy(v.snapshot);if(!ctx.draft.stomas?.length){const legacy=seed(ctx.patient,ep,String(rec.encounter_date));ctx.draft={...legacy,notes:v.snapshot.notes||''};}
+    ctx.draft=editableSnapshot(v.snapshot);if(!ctx.draft.stomas?.length){const legacy=seed(ctx.patient,ep,String(rec.encounter_date));ctx.draft={...legacy,notes:v.snapshot.notes||''};}
     // Every stoma is assessed on one screen, so an encounter always covers them all.
     ctx.draft.scope=list(ctx.draft.stomas).map(x=>x.uid);
     list(ctx.draft.stomas).forEach(x=>{if(!x.skin)x.skin={status:'',problems:[]};});
@@ -444,6 +463,7 @@
     page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(editableToday(rec)?'<button class="jenc-btn primary" data-action="edit">Edit this encounter (V'+(versions(rec).slice(-1)[0].version+1)+')</button>':'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
+    if(ctx.saving){const saveButton=page.querySelector('#jenc-save');if(saveButton)saveButton.textContent=ctx.savePhase||'Saving…';page.querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);}
   }
   function refreshReport(){
     if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,showDiff=!!(ctx.compare&&old);
@@ -565,37 +585,70 @@
     let updates;try{updates=impact();}catch(e){return error(e.message);}
     const empty=ctx.draft.stomas.filter(s=>updates.appliances.some(a=>a.stoma_uid===s.uid&&!list(a.appliances).length));
     if(empty.length)return error('Choose the appliance for '+empty.map(s=>stomaName(s,ctx.draft.stomas)).join(', ')+' — press Modify appliance, or Keep same appliance.');
-    const target=ctx;
-    const {data:auth,error:authError}=await SB.auth.getUser();if(ctx!==target)return;
-    if(authError||!signedIn(auth?.user))return error('Sign in to save this encounter.');
-    const savedCtx=ctx;ctx.saving=true;const button=document.getElementById('jenc-save');if(button){button.textContent='Saving…';}
+    const savedCtx=ctx,owner={};ctx.saveOwner=owner;ctx.saving=true;ctx.savePhase='Saving…';const button=document.getElementById('jenc-save');if(button){button.textContent=ctx.savePhase;}
+    const message=document.getElementById('jenc-message');if(message)message.innerHTML='';
     parentPage().querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);
+    let pending=ctx.pendingSave;
     try{
-      const {data,error:saveError}=await SB.rpc('save_jason_encounter',{p_patient_id:ctx.patient.id,p_episode_id:ctx.episode.id,p_encounter_id:ctx.record?.id||null,
-        p_expected_version:ctx.expectedVersion,p_snapshot:copy(ctx.draft),p_report:report(ctx.draft),p_impact:updates});
-      if(saveError)throw new Error(saveError.message);if(!data?.id)throw new Error('The saved encounter was not returned.');
+      const {data:auth,error:authError}=await boundedRequest(()=>SB.auth.getUser(),10000);if(ctx!==savedCtx)return;
+      if(authError||!signedIn(auth?.user))throw new Error('Sign in to save this encounter.');
+      if(!pending){
+        pending={draft:copy(ctx.draft),baseline:copy(ctx.baseline),payload:{p_patient_id:ctx.patient.id,p_episode_id:ctx.episode.id,p_encounter_id:ctx.record?.id||null,
+          p_expected_version:ctx.expectedVersion,p_snapshot:{...copy(ctx.draft),save_request_id:crypto.randomUUID()},p_report:report(ctx.draft),p_impact:updates}};
+        ctx.pendingSave=pending;
+      }
+      // A retry uses the exact same payload. The database returns the original
+      // result if this request committed before its response was interrupted.
+      let data;
+      try{
+        const result=await boundedRequest(signal=>{
+          let query=SB.rpc('save_jason_encounter',pending.payload);
+          if(typeof query?.retry==='function')query=query.retry(false);
+          return cancellable(query,signal);
+        },25000);
+        if(result.error)throw Object.assign(new Error(result.error.message||'Could not save the encounter.'),{code:result.error.code});
+        if(!result.data?.id)throw new Error('The saved encounter was not returned.');
+        data=result.data;
+      }catch(saveError){
+        if(ctx!==savedCtx)return;
+        ctx.savePhase='Checking save…';const checkButton=document.getElementById('jenc-save');if(checkButton)checkButton.textContent=ctx.savePhase;
+        try{data=await confirmSave(savedCtx,pending);}catch(_){}
+        if(!data){
+          // Validation/conflict errors are definite failures, unlike a timeout.
+          if(['40001','42501','P0001','22023','22P02'].includes(saveError.code))ctx.pendingSave=null;
+          throw saveError;
+        }
+      }
       if(ctx!==savedCtx)return;
       const currentIndex=ctx.rows.findIndex(r=>r.id===data.id);if(currentIndex<0)ctx.rows.unshift(data);else ctx.rows[currentIndex]=data;
+      const localDraft=copy(ctx.draft),hasLaterChanges=!same(localDraft,pending.draft);
+      ctx.pendingSave=null;ctx.editable=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
+      selectRecord(data.id,null,hasLaterChanges);
+      if(hasLaterChanges)ctx.draft=localDraft;
+      const success='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.';
+      ctx.message=success+(hasLaterChanges?' Your later changes remain unsaved below. Press Save as V'+(ctx.expectedVersion+1)+' to record them.':'');render();
+      hvEncounteredToday.add(String(ctx.patient.id));latestByPatient.set(String(ctx.patient.id),data);
+      // Show the confirmed save immediately. Optional refreshes and the patient
+      // referral sync must never hold the Save button or disguise a committed write.
+      const savedVersion=ctx.expectedVersion;
       // Referrals live on the patient so they carry to later episodes and visits.
-      const before=patientReferrals(savedCtx.patient),after=mergedReferrals(before,savedCtx.baseline.referrals,savedCtx.draft.referrals);
+      const before=patientReferrals(savedCtx.patient),after=mergedReferrals(before,pending.baseline.referrals,pending.draft.referrals);
       let refNote='';
       if(!same(before,after)&&typeof updatePatientTolerant==='function'){
-        try{const r=await updatePatientTolerant(savedCtx.patient.id,{support_referrals:after});
+        try{const r=await boundedRequest(()=>updatePatientTolerant(savedCtx.patient.id,{support_referrals:after}));
           if(r?.error)refNote=' Referrals could not be saved to the patient: '+(r.error.message||r.error)+'.';
           else if(list(r?.dropped).includes('support_referrals'))refNote=' Referrals were kept in this encounter only — run sql/add-support-referrals.sql once in Supabase so they carry over to later episodes and visits.';
         }catch(e){refNote=' Referrals could not be saved to the patient.';}
       }
-      if(ctx!==savedCtx)return;
-      ctx.editable=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
-      const results=await Promise.allSettled([fetchPatientById(ctx.patient.id),SB.from('clinical_records').select('*').eq('patient_id',ctx.patient.id).eq('kind','episode').order('record_date',{ascending:false})]);
-      if(ctx!==savedCtx)return;
+      if(ctx!==savedCtx||ctx.expectedVersion!==savedVersion||ctx.saveOwner!==owner)return;
+      const results=await Promise.allSettled([boundedRequest(()=>fetchPatientById(ctx.patient.id)),boundedRequest(signal=>cancellable(SB.from('clinical_records').select('*').eq('patient_id',ctx.patient.id).eq('kind','episode').order('record_date',{ascending:false}),signal))]);
+      if(ctx!==savedCtx||ctx.expectedVersion!==savedVersion||ctx.saveOwner!==owner)return;
       if(results[0].status==='fulfilled'&&results[0].value.data)ctx.patient=results[0].value.data;
       if(results[1].status==='fulfilled'&&results[1].value.data)ctx.episodes=results[1].value.data;
-      selectRecord(data.id);ctx.message='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.'+refNote;render();
-      hvEncounteredToday.add(String(ctx.patient.id));latestByPatient.set(String(ctx.patient.id),data);
+      if(refNote){ctx.message+=refNote;render();}
       if(typeof refreshReminders==='function')Promise.resolve(refreshReminders()).catch(()=>{});
-    }catch(e){if(ctx===savedCtx){ctx.saving=false;render();error(e.message+' Your changes remain on this screen.');}}
-    finally{if(ctx===savedCtx)ctx.saving=false;}
+    }catch(e){if(ctx===savedCtx&&ctx.saveOwner===owner){ctx.saving=false;render();const retry=ctx.pendingSave?' The save has not been confirmed. Press Save again to check or retry the same encounter.':'';error((e.message||'Could not reach the clinic server.')+retry+' Your changes remain on this screen.');}}
+    finally{if(ctx===savedCtx&&ctx.saveOwner===owner){ctx.saving=false;ctx.saveOwner=null;}}
   }
   async function attach(rows){
     if(!enabled()||!rows.length)return;const ids=rows.map(p=>String(p.id));

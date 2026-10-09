@@ -15,8 +15,10 @@ function source(name){
 function setup(t){
  const dom=new JSDOM('<!doctype html><body><div id="app"><main class="main"><section id="page-handover" class="page active"><table><tbody id="hv-body"></tbody></table></section><section id="page-patients" class="page"></section><section id="page-patient-record" class="page"></section></main></div><div id="mo"></div></body>',{pretendToBeVisual:true,runScripts:'outside-only',url:'https://example.test'});
  t.after(()=>dom.window.close());const w=dom.window;boot(w);
- const timers=new Map(),intervals=new Map();let next=1,refreshes=0,confirms=0,reminders=0,broadcast;
- w.setTimeout=fn=>{const id=next++;timers.set(id,fn);return id;};w.clearTimeout=id=>timers.delete(id);
+ const timers=new Map(),deadlines=new Map(),intervals=new Map();let next=1,refreshes=0,confirms=0,reminders=0,broadcast;
+ // Draining a queued broadcast does not advance the clock by 8–25 seconds.
+ // Keep request deadlines separate from the short refresh debounce timers.
+ w.setTimeout=(fn,ms)=>{const id=next++;(ms>=5000?deadlines:timers).set(id,fn);return id;};w.clearTimeout=id=>{timers.delete(id);deadlines.delete(id);};
  w.setInterval=fn=>{const id=next++;intervals.set(id,fn);return id;};w.clearInterval=id=>intervals.delete(id);
  w.renderPrimaryTabs=w.renderSubTabs=w.renderMobileNav=w.loadPatientDirectory=w.invalidateAvailabilityCaches=()=>{};
  // The top-bar Back history lives outside the sliced switchTab; stub it here.

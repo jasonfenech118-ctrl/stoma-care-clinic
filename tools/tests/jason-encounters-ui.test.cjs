@@ -11,6 +11,7 @@ function setup(t){const dom=new JSDOM('<div id="app"><main class="main"><section
 function change(w,selector,value){const el=w.document.querySelector(selector);assert.ok(el,selector);if(el.type==='checkbox')el.checked=value;else el.value=value;el.dispatchEvent(new w.Event('change',{bubbles:true}));}
 function notes(w,text,box='jenc-notes-0'){const el=w.document.getElementById(box);el.value=text;el.dispatchEvent(new w.Event('input',{bubbles:true}));}
 function click(w,action,extra=''){const el=w.document.querySelector('[data-action="'+action+'"]'+extra);assert.ok(el,action);el.click();}
+function fastTimeouts(w){const timer=w.setTimeout.bind(w);w.setTimeout=(fn,ms,...args)=>timer(fn,ms>=5000?10:ms,...args);}
 
 test('every signed-in nurse can open the workspace; nobody signed in cannot',async t=>{const w=setup(t);w.fixture.email='';await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.fixture.reads,0);assert.equal(w.JasonEncounters.state,null);w.fixture.enabled=false;w.fixture.email='jacqueline.sammut@gov.mt';await w.JasonEncounters.open(w.fixture.patient.id);assert.equal(w.fixture.reads,0);w.fixture.enabled=true;await w.JasonEncounters.open(w.fixture.patient.id);assert.ok(w.fixture.reads>0);assert.ok(w.JasonEncounters.state);});
 
@@ -25,6 +26,43 @@ test('each stoma keeps its own notes, saved with the episode and every stoma, wi
 test('editing saved wording and a dropdown makes V2 on the same encounter with only changes red',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);change(w,'[data-field="colour"]','Healthy pink');notes(w,'Patient comfotable today.');await w.JasonEncounters.save();const id=w.JasonEncounters.state.record.id;click(w,'edit');notes(w,'Patient comfortable today.');change(w,'[data-field="colour"]','Dusky');assert.equal(w.document.querySelector('.jenc-note-mirror .jenc-change').textContent,'comfortable');assert.ok(w.document.querySelector('[data-field="colour"]').classList.contains('jenc-changed'));assert.match(w.document.querySelector('.jenc-note-diff del').textContent,/comfotable/);await w.JasonEncounters.save();const state=w.JasonEncounters.state;assert.equal(state.record.id,id);assert.equal(state.record.assessment.versions.length,2);assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].notes,'Patient comfotable today.');assert.equal(state.record.assessment.versions[0].snapshot.stomas[0].colour,'Healthy pink');assert.equal(w.fixture.calls[1].args.p_encounter_id,id);assert.equal(w.fixture.calls[1].args.p_expected_version,1);assert.equal(state.expectedVersion,2);click(w,'version','[data-index="0"]');assert.equal(w.document.getElementById('jenc-notes-0').value,'Patient comfotable today.');assert.equal(w.document.querySelector('[data-field="colour"]').value,'Healthy pink');assert.equal(w.document.querySelector('.jenc-note-mirror .jenc-change'),null);click(w,'version','[data-index="1"]');assert.equal(w.document.querySelector('.jenc-note-mirror .jenc-change').textContent,'comfortable');assert.equal(w.document.querySelectorAll('#jenc-report .jenc-change').length>0,true);});
 
 test('a failed save keeps the editable draft and leaves appliances untouched for retry',async t=>{const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Keep this draft.');w.fixture.failSave=true;await w.JasonEncounters.save();assert.equal(w.JasonEncounters.state.editable,true);assert.equal(w.document.getElementById('jenc-notes-0').value,'Keep this draft.');assert.match(w.document.querySelector('[role="alert"]').textContent,/changes remain/);assert.equal(w.document.getElementById('jenc-save').disabled,false);assert.equal(w.fixture.records.length,0);assert.deepEqual(w.fixture.calls[0].args.p_impact.appliances,[]);});
+test('a hanging save is cancelled, restores every form control and retries the same request',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Keep the interrupted report.');fastTimeouts(w);
+  const rpc=w.SB.rpc;let signal,retry,first;
+  w.SB.rpc=(name,payload)=>{first=plain(payload);const q={retry(v){retry=v;return q},abortSignal(s){signal=s;return q},then(){return new Promise(()=>{})}};return q};
+  await w.JasonEncounters.save();assert.equal(signal.aborted,true);assert.equal(retry,false);assert.equal(w.JasonEncounters.state.saving,false);
+  assert.equal(w.document.getElementById('jenc-save').disabled,false);assert.equal(w.document.getElementById('jenc-save').textContent,'Save encounter');assert.equal(w.document.getElementById('jenc-notes-0').disabled,false);assert.equal(w.document.getElementById('jenc-notes-0').value,'Keep the interrupted report.');
+  assert.match(w.document.querySelector('[role="alert"]').textContent,/not been confirmed/);
+  w.SB.rpc=rpc;await w.JasonEncounters.save();assert.deepEqual(w.fixture.calls[0].args,first);assert.equal(w.fixture.records.length,1);assert.equal(w.JasonEncounters.state.editable,false);
+});
+test('a committed save with a lost response is confirmed from its request ID and shown as saved',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Saved despite the lost response.');
+  const rpc=w.SB.rpc;w.SB.rpc=async(name,args)=>{await rpc(name,args);return {data:null,error:{message:'upstream request timeout',code:'504'}}};
+  await w.JasonEncounters.save();assert.equal(w.fixture.records.length,1);assert.equal(w.JasonEncounters.state.editable,false);assert.equal(w.JasonEncounters.state.pendingSave,null);assert.equal(w.document.getElementById('jenc-save'),null);assert.match(w.document.querySelector('[role="status"]').textContent,/saved · V1/);assert.equal(w.document.querySelector('[role="alert"]'),null);
+});
+test('an unavailable confirmation service leaves the draft available and an explicit unconfirmed result',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Do not lose this report.');fastTimeouts(w);w.SB.rpc=async()=>({error:{message:'upstream request timeout'}});w.SB.from=()=>{const q={select:()=>q,eq:()=>q,contains:()=>q,order:()=>q,limit:()=>q,then:()=>new Promise(()=>{})};return q};
+  await w.JasonEncounters.save();assert.equal(w.JasonEncounters.state.editable,true);assert.equal(w.document.getElementById('jenc-notes-0').value,'Do not lose this report.');assert.equal(w.document.getElementById('jenc-save').disabled,false);assert.ok(w.JasonEncounters.state.pendingSave);
+});
+test('a hanging sign-in check also releases Save without submitting an encounter',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Sign-in service unavailable.');fastTimeouts(w);w.SB.auth.getUser=()=>new Promise(()=>{});
+  await w.JasonEncounters.save();assert.equal(w.fixture.calls.length,0);assert.equal(w.JasonEncounters.state.saving,false);assert.equal(w.document.getElementById('jenc-save').disabled,false);assert.equal(w.document.getElementById('jenc-notes-0').value,'Sign-in service unavailable.');
+});
+test('rapid Save clicks submit once because the lock starts before checking sign-in',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'One submission.');let resolve,reads=0;
+  w.SB.auth.getUser=()=>{reads++;return new Promise(r=>resolve=r)};
+  const first=w.JasonEncounters.save(),second=w.JasonEncounters.save();await tick();assert.equal(reads,1);resolve({data:{user:{email:w.fixture.email}}});await Promise.all([first,second]);assert.equal(w.fixture.calls.length,1);assert.equal(w.fixture.records.length,1);
+});
+test('confirmed saves are displayed before an optional patient refresh finishes',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Confirmed immediately.');fastTimeouts(w);w.fetchPatientById=()=>new Promise(()=>{});
+  const save=w.JasonEncounters.save();await tick();assert.equal(w.document.getElementById('jenc-save'),null);assert.match(w.document.querySelector('[role="status"]').textContent,/saved · V1/);await save;assert.equal(w.JasonEncounters.state.saving,false);
+});
+test('edits made after an interrupted save remain available for the next revision',async t=>{
+  const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Original submission.');w.fixture.failSave=true;await w.JasonEncounters.save();
+  notes(w,'Later correction.');w.fixture.failSave=false;await w.JasonEncounters.save();
+  assert.equal(w.fixture.records[0].assessment.current_version,1);assert.equal(w.fixture.records[0].assessment.snapshot.stomas[0].notes,'Original submission.');assert.equal(w.JasonEncounters.state.editable,true);assert.equal(w.document.getElementById('jenc-notes-0').value,'Later correction.');assert.match(w.document.querySelector('[role="status"]').textContent,/later changes remain unsaved/);
+  await w.JasonEncounters.save();assert.equal(w.fixture.records.length,1);assert.equal(w.fixture.records[0].assessment.current_version,2);assert.equal(w.fixture.records[0].assessment.snapshot.stomas[0].notes,'Later correction.');assert.notEqual(w.fixture.calls[1].args.p_snapshot.save_request_id,w.fixture.calls[2].args.p_snapshot.save_request_id);
+});
 
 test('Modify appliance opens the appointment picker for that stoma only, and its pick is saved with the encounter',async t=>{const w=setup(t);const opened=[];w.openEncounterApplianceWizard=o=>opened.push(o);await w.JasonEncounters.open(w.fixture.patient.id);
   click(w,'modify-appliance','[data-uid="stoma-one"]');assert.equal(opened.length,1);assert.equal(opened[0].uid,'stoma-one');assert.equal(opened[0].patient.id,w.fixture.patient.id);assert.deepEqual(plain(opened[0].current),{appliances:['Drainable pouch'],accessories:['Barrier ring'],flange_due:''});

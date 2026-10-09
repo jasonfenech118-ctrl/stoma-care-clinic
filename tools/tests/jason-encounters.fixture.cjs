@@ -18,10 +18,14 @@ function boot(w) {
   w.closeModal=()=>{};w.loadHandover=async()=>{};w.refreshReminders=async()=>{};w.switchTab=()=>{};w.doLogout=async()=>{};w.confirm=()=>true;w.scrollTo=()=>{};
   w.fetchPatientById=async()=>{f.reads++;return {data:clone(patient),error:null};};
   w.fetchAllRows=async()=>({rows:clone(f.records),error:null});
-  w.SB={auth:{getUser:async()=>({data:{user:{email:f.email}},error:null})},from:()=>{
-    const q={select:()=>q,eq:()=>q,order:()=>q,then:(a,b)=>Promise.resolve({data:[clone(episode)],error:null}).then(a,b)};return q;
+  w.SB={auth:{getUser:async()=>({data:{user:{email:f.email}},error:null})},from:table=>{
+    let requestId='';
+    const q={select:()=>q,eq:()=>q,order:()=>q,limit:()=>q,contains:(key,value)=>{requestId=value.versions?.[0]?.snapshot?.save_request_id||'';return q;},
+      then:(a,b)=>Promise.resolve({data:table==='encounters'?clone(f.records.filter(r=>!requestId||r.assessment.versions.some(v=>v.snapshot.save_request_id===requestId))):[clone(episode)],error:null}).then(a,b)};return q;
   },rpc:async(name,args)=>{
     f.calls.push({name,args:clone(args)});if(f.failSave)return {data:null,error:{message:'Simulated save failure'}};
+    const done=f.records.find(r=>r.assessment?.versions?.some(v=>v.snapshot.save_request_id&&v.snapshot.save_request_id===args.p_snapshot.save_request_id));
+    if(done)return {data:clone(done),error:null};
     const old=f.records.find(r=>r.id===args.p_encounter_id),version=args.p_expected_version+1;
     const rec=old||{id:'33333333-3333-4333-8333-333333333333',patient_id:patient.id,episode_id:episode.id,episode_ref:episode.episode_ref,encounter_date:w.TODAY,created_at:'2026-10-05T10:00:00Z',created_by_name:'Jason Fenech',created_by_email:f.email};
     const revision={version,saved_at:'2026-10-05T11:00:00Z',author_name:'Jason Fenech',author_email:f.email,snapshot:clone(args.p_snapshot),report:args.p_report};
