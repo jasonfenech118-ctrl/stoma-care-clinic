@@ -12,7 +12,7 @@ const fn=name=>{
 const block=html.slice(html.indexOf('/* Cancellation history keeps'),html.indexOf('/* The Siting view on a patient record.'));
 const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 
-function setup(records=[],patches={},error=null){
+function setup(records=[],patches={},error=null,deleteOptions={}){
   const dom=new JSDOM(html,{runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window,calls=[];
   Object.assign(w,{
@@ -20,13 +20,31 @@ function setup(records=[],patches={},error=null){
     attachPatientProfilesByIdCard:async rows=>rows,
     patientAvatarHTML:()=>'<span class="test-avatar"></span>',
     handoverMissingHTML:message=>'<div class="missing">'+message+'</div>',
+    openMo(){w.document.getElementById('mo').classList.add('open');},
+    closeModal(){w.document.getElementById('mo').classList.remove('open');},
+    logAudit(entry){calls.push({action:'audit',entry});},
+    refreshRecordSiting(){calls.push({action:'refresh-record'});},
+    loadAppts(){calls.push({action:'refresh-appointments'});},
     SB:{from(table){
-      const query={table,filters:[],orders:[]};
+      const query={table,filters:[],filterValues:[],orders:[]};
       const q={
-        select(){return q;},
-        eq(column,value){query.filters.push(r=>r[column]===value);return q;},
+        select(columns){query.columns=columns;return q;},
+        delete(){query.action='delete';return q;},
+        eq(column,value){query.filters.push(r=>r[column]===value);query.filterValues.push([column,value]);return q;},
         in(column,values){query.filters.push(r=>values.includes(r[column]));return q;},
         order(column,{ascending}){query.orders.push({column,ascending});return q;},
+        then(resolve,reject){
+          return (async()=>{
+            calls.push({table,action:query.action,filters:query.filterValues,columns:query.columns});
+            if(deleteOptions.beforeDelete)await deleteOptions.beforeDelete();
+            if(deleteOptions.throwError)throw new Error(deleteOptions.throwError);
+            if(deleteOptions.error)return {data:null,error:deleteOptions.error};
+            if(deleteOptions.zeroRows)return {data:[],error:null};
+            const removed=records.filter(r=>query.filters.every(f=>f(r)));
+            records.splice(0,records.length,...records.filter(r=>!removed.includes(r)));
+            return {data:removed.map(r=>({id:r.id})),error:null};
+          })().then(resolve,reject);
+        },
         async range(from,to){
           calls.push({table,from,to});
           if(error)return {data:null,error};
@@ -43,7 +61,7 @@ function setup(records=[],patches={},error=null){
       return q;
     }}
   });
-  w.eval('var SUPABASE_PAGE_SIZE=1000;var sitingLocalPatches={};'
+  w.eval('var SUPABASE_PAGE_SIZE=1000;var sitingLocalPatches={};var sitingState={rows:[]};'
     +"var SITING_CANCEL_REASONS={patient:'due to patient',hospital:'hospital complication'};"
     +fn('fetchAllRows')+'\n'+fn('applySitingPatches')+'\n'+fn('sitingCancelReasonLabel')+'\n'
     +fn('fmtShortDate')+'\n'+fn('sitingSlotLabel')+'\n'+fn('addHour')+'\n'+fn('emptyStateHTML')+'\n'
@@ -153,5 +171,107 @@ test('the Siting tab opens on desktop and mobile, and refreshes after shared sit
   assert.equal(w.document.getElementById('mob-current-tab').textContent,'Cancelled Stoma Appointments');
   assert.ok(w.document.getElementById('page-siting-cancelled').classList.contains('active'));
   w.flushClinicRealtime();assert.equal(loaded,2);
+  close();
+});
+
+test('every row has Delete, and confirmation identifies the entry before any write',async()=>{
+  const {w,calls,close}=setup([row('first'),row('duplicate')]);
+  await w.loadCancelledSitingSessions();
+  const buttons=[...w.document.querySelectorAll('#siting-cancelled-table button')];
+  assert.equal(buttons.length,2);
+  assert.equal(w.document.querySelector('#siting-cancelled-table .hv-bannerrow th').colSpan,9);
+  w.confirmDeleteCancelledSiting(buttons.find(b=>b.dataset.sitingId==='duplicate').dataset.sitingId);
+  const modal=w.document.getElementById('mb');
+  assert.match(modal.textContent,/Test Patient.*TEST-duplicate.*09 Oct 2026.*08:00–09:00/s);
+  assert.match(modal.textContent,/cannot be undone/);
+  assert.equal(calls.filter(c=>c.action==='delete').length,0);
+  w.closeModal();
+  await w.executeDeleteCancelledSiting();
+  assert.equal(calls.filter(c=>c.action==='delete').length,0);
+  w.confirmDeleteCancelledSiting('not-a-row');
+  assert.ok(!w.document.getElementById('mo').classList.contains('open'));
+  close();
+});
+
+test('confirmed deletion removes the exact cancelled duplicate, updates counts and clears only its patch',async()=>{
+  const records=[row('first'),row('duplicate'),row('active','booked')];
+  const {w,calls,close}=setup(records);
+  await w.loadCancelledSitingSessions();
+  w.sitingLocalPatches={duplicate:{status:'cancelled'},first:{status:'cancelled'}};
+  w.sitingState.rows=[{...records[1]}, {...records[2]}];
+  const search=w.document.getElementById('siting-cancelled-search');search.value='test';
+  w.confirmDeleteCancelledSiting('duplicate');
+  await w.executeDeleteCancelledSiting();
+  const deletes=calls.filter(c=>c.action==='delete');
+  assert.equal(deletes.length,1);
+  assert.deepEqual(deletes[0],{table:'siting_sessions',action:'delete',filters:[['id','duplicate'],['status','cancelled']],columns:'id'});
+  assert.deepEqual(records.map(r=>r.id),['first','active']);
+  assert.equal(trs(w).length,1);
+  assert.match(w.document.querySelector('.hv-count').textContent,/1 of 1 cancelled/);
+  assert.equal(w.sitingLocalPatches.duplicate,undefined);
+  assert.equal(w.sitingLocalPatches.first.status,'cancelled');
+  assert.equal(w.sitingState.rows.length,1);
+  assert.equal(w.sitingState.rows[0].id,'active');
+  assert.equal(search.value,'test');
+  assert.ok(!w.document.getElementById('mo').classList.contains('open'));
+  const audit=calls.find(c=>c.action==='audit').entry;
+  assert.equal(audit.entity,'siting_session');assert.equal(audit.entity_id,'duplicate');
+  assert.ok(calls.some(c=>c.action==='refresh-record'));
+  await w.loadCancelledSitingSessions();
+  assert.equal(trs(w).length,1);
+  close();
+});
+
+test('failed, thrown and zero-row deletes retain the entry and allow retry; a changed status is not deleted',async()=>{
+  for(const options of [{error:{message:'Permission denied'}},{throwError:'Network unavailable'},{zeroRows:true},{}]){
+    const records=[row('one')];
+    const {w,calls,close}=setup(records,{},null,options);
+    await w.loadCancelledSitingSessions();
+    w.confirmDeleteCancelledSiting('one');
+    if(!Object.keys(options).length)records[0].status='booked'; // Changed on another device.
+    await w.executeDeleteCancelledSiting();
+    assert.equal(records.length,1);
+    assert.equal(trs(w).length,1);
+    assert.equal(w.document.getElementById('siting-delete-error').hidden,false);
+    assert.match(w.document.getElementById('siting-delete-error').textContent,/Could not delete/);
+    assert.equal(w.document.getElementById('siting-delete-save').disabled,false);
+    assert.equal(calls.filter(c=>c.action==='audit').length,0);
+    options.error=null;options.throwError=null;options.zeroRows=false;records[0].status='cancelled';
+    await w.executeDeleteCancelledSiting();
+    assert.equal(records.length,0);
+    assert.match(w.document.getElementById('siting-cancelled-body').textContent,/No cancelled stoma appointments/);
+    close();
+  }
+});
+
+test('repeated confirm taps make one delete request, and an older refresh cannot restore the row',async()=>{
+  let releaseDelete;
+  const waitDelete=new Promise(resolve=>{releaseDelete=resolve;});
+  const {w,calls,close}=setup([row('one')],{},null,{beforeDelete:()=>waitDelete});
+  await w.loadCancelledSitingSessions();
+  w.confirmDeleteCancelledSiting('one');
+  const deleting=w.executeDeleteCancelledSiting();
+  await Promise.resolve();
+  assert.equal(w.document.getElementById('siting-delete-save').disabled,true);
+  await w.executeDeleteCancelledSiting();
+  assert.equal(calls.filter(c=>c.action==='delete').length,1);
+  let releaseRefresh;
+  w.attachPatientProfilesByIdCard=rows=>new Promise(resolve=>{releaseRefresh=()=>resolve(rows);});
+  const refresh=w.loadCancelledSitingSessions();
+  while(!releaseRefresh)await Promise.resolve();
+  releaseDelete();await deleting;
+  releaseRefresh();await refresh;
+  assert.equal(w.cancelledSitingState.rows.length,0);
+  assert.match(w.document.getElementById('siting-cancelled-body').textContent,/No cancelled stoma appointments/);
+  close();
+});
+
+test('delete confirmation renders names and IDs as text',async()=>{
+  const {w,close}=setup([row('one','cancelled',{surname:'<img src=x onerror=alert(1)>',id_card:'<b>TEST</b>'})]);
+  await w.loadCancelledSitingSessions();
+  w.confirmDeleteCancelledSiting('one');
+  const modal=w.document.getElementById('mb');
+  assert.equal(modal.querySelector('img,b,script'),null);
+  assert.match(modal.textContent,/<b>TEST<\/b>/);
   close();
 });
