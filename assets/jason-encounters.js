@@ -422,7 +422,7 @@
   function render(){
     if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
     const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
-    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
+    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+(window.DocumentationStatus?DocumentationStatus.cardHTML(p):'')+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
@@ -687,7 +687,7 @@
       if(ctx!==savedCtx||ctx.expectedVersion!==savedVersion||ctx.saveOwner!==owner)return;
       if(results[0].status==='fulfilled'&&results[0].value.data)ctx.patient=results[0].value.data;
       if(results[1].status==='fulfilled'&&results[1].value.data)ctx.episodes=results[1].value.data;
-      if(refNote){ctx.message+=refNote;render();}
+      if(refNote)ctx.message+=refNote;render();
       if(typeof refreshReminders==='function')Promise.resolve(refreshReminders()).catch(()=>{});
     }catch(e){if(ctx===savedCtx&&ctx.saveOwner===owner){ctx.saving=false;render();const retry=ctx.pendingSave?' The save has not been confirmed. Press Save again to check or retry the same encounter.':'';error((e.message||'Could not reach the clinic server.')+retry+' Your changes remain on this screen.');}}
     finally{if(ctx===savedCtx&&ctx.saveOwner===owner){ctx.saving=false;ctx.saveOwner=null;}}
