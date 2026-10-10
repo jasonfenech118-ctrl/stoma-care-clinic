@@ -177,7 +177,7 @@ test('the Siting tab opens on desktop and mobile, and refreshes after shared sit
 test('every row has Delete, and confirmation identifies the entry before any write',async()=>{
   const {w,calls,close}=setup([row('first'),row('duplicate')]);
   await w.loadCancelledSitingSessions();
-  const buttons=[...w.document.querySelectorAll('#siting-cancelled-table button')];
+  const buttons=[...w.document.querySelectorAll('#siting-cancelled-table button.ncb-del')];
   assert.equal(buttons.length,2);
   assert.equal(w.document.querySelector('#siting-cancelled-table .hv-bannerrow th').colSpan,9);
   w.confirmDeleteCancelledSiting(buttons.find(b=>b.dataset.sitingId==='duplicate').dataset.sitingId);

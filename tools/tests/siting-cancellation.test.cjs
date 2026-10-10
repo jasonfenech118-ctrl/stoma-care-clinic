@@ -17,7 +17,7 @@ function win(extra={}){
   const w=dom.window;
   Object.assign(w,{htmlSafe:esc,openMo(){w.__open=true;},closeModal(){w.__closed=true;},
     attDisplayName:()=>'Jason Fenech',getCurrentUserForAudit:async()=>({email:'x'}),
-    refreshSitingViews(){w.__refreshed=true;},alert:m=>{w.__alert=m;},
+    refreshReminders(){w.__reminders=true;},refreshSitingViews(){w.__refreshed=true;},alert:m=>{w.__alert=m;},
     sitingLocalPatches:{},...extra});
   w.eval((fn('missingColumnFromError')+'\n'+block+'\n'+fn('sitingStatusLabel'))
     .replace('const SITING_CANCEL_REASONS=','var SITING_CANCEL_REASONS=')
@@ -95,3 +95,17 @@ test('updateSitingTolerant drops only the missing columns and reports them', asy
   assert.equal(calls.at(-1).cancellation_reason,'patient');
   assert.equal('cancellation_note' in calls.at(-1),false);
 });
+
+ test('operation date cancellation defaults to yes and can be kept explicitly', async()=>{
+  for(const cancel of [true,false]){
+    const {SB,calls}=sb();const w=win({SB});
+    w.cancelSitingSession('s1','Mary Borg');
+    w.document.querySelector('input[value="patient"]').checked=true;
+    if(!cancel)w.document.querySelector('input[name="siting-cancel-operation"][value="no"]').checked=true;
+    await w.saveSitingCancellation();
+    assert.equal('surgery_date' in calls[0],cancel);
+    if(cancel)assert.equal(calls[0].surgery_date,null);
+    assert.equal(w.__reminders,true);
+    assert.equal('first_name' in calls[0],false);
+  }
+ });
