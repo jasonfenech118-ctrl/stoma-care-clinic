@@ -30,7 +30,7 @@ function setup(t){
   w.eval(fistulaHelpers+'\nvar ivWizard=null;');
   w.eval(['openEncounterApplianceWizard','visitStoma','startVisitStoma','vaFlangeCouplings','vaBagPanelHTML','renderVisitStep','isoPlusDays','flangeDueFieldHTML',
     'visitChooseSystem','captureVisitStep','visitSubSteps','visitNext','visitBack','visitBackToAppointment','commitVisitFromWizard',
-    'visitPanelHTML','applianceChkHTML','applianceValues','selectedAppliances'].map(fn).join('\n'));
+    'visitKeepSame','esApplianceChoice','esApplianceContinue','esApplianceFinishStoma','visitPanelHTML','applianceChkHTML','applianceValues','selectedAppliances'].map(fn).join('\n'));
   return w;
 }
 const open=(w,current)=>w.eval(`openEncounterApplianceWizard({patient:{id:'p1',first_name:'Alex',surname:'Sample'},uid:'s1',type:'End colostomy',current:${JSON.stringify(current)},onDone:x=>picked.push(x)})`);
@@ -75,4 +75,44 @@ test('Back to encounter leaves the encounter exactly as it was',async t=>{
 test('a stoma with nothing on record starts with no system chosen',t=>{
   const w=setup(t);open(w,{appliances:[],accessories:[],flange_due:''});
   assert.equal(w.document.querySelector('.iv-sys-btn.active'),null);assert.equal(foot(w).disabled,true);
+});
+
+function integrated(w,existing=true,multi=false){
+  w.document.getElementById('mb').innerHTML='<input id="clinical-draft" value="Clinical notes remain"><div id="es-pane-3"></div><div id="es-footer"></div><input id="of-app-review" type="radio">';
+  w.eval(`var esResume=null,steps=[];var esState={apptId:'a1',step:3};function esGoStep(n){steps.push(n);esState.step=n;}
+    visitWizard={pending:{integrated:true,apptId:'a1',date:TODAY},patient:{},stomas:[{uid:'s1',typeLabel:'End colostomy'}${multi?",{uid:'s2',typeLabel:'Ileostomy'}":''}],prev:{s1:{appliances:${existing?"['Salts XND 1338']":"[]"},accessories:['Barrier ring']},s2:{appliances:[],accessories:[]}},rows:{},reviewed:{},work:{},system:''};startVisitStoma('s1');`);
+}
+test('integrated keep/change decision sets button text and keeps clinical fields in place',t=>{
+  const w=setup(t);integrated(w);
+  const draft=w.document.getElementById('clinical-draft');
+  assert.equal(w.document.querySelector('#es-footer .btn-save').disabled,true);
+  w.esApplianceChoice('unchanged');assert.match(w.document.querySelector('#es-footer').textContent,/Next: Follow-up/);
+  w.esApplianceContinue();assert.deepEqual(plain(w.eval('steps')),[4]);
+  assert.equal(w.eval('esResume.rows[0].kept'),true);
+  assert.equal(w.document.getElementById('clinical-draft'),draft);
+});
+test('integrated first appliance runs system, appliance and accessories before follow-up without saving early',t=>{
+  const w=setup(t);integrated(w,false);
+  assert.equal(w.eval('visitWizard.step'),'system');
+  assert.equal(w.document.querySelector('input[name="es-appliance-choice"]'),null);
+  w.visitChooseSystem('one');tick(w,'Salts XND 1338');w.visitNext();
+  assert.equal(w.eval('visitWizard.step'),'accessory');
+  w.visitNext();assert.deepEqual(plain(w.eval('steps')),[4]);
+  assert.equal(w.eval('saved.length'),0);assert.equal(w.eval('esResume.rows[0].appliances[0]'),'Salts XND 1338');
+});
+test('integrated change routes to selection and Back returns to keep/change',t=>{
+  const w=setup(t);integrated(w);
+  w.esApplianceChoice('changed');assert.match(w.document.querySelector('#es-footer').textContent,/Next: Appliance change/);
+  w.esApplianceContinue();assert.equal(w.eval('visitWizard.step'),'system');
+  w.visitBack();assert.equal(w.eval('visitWizard.step'),'choice');
+  assert.equal(w.document.getElementById('clinical-draft').value,'Clinical notes remain');
+});
+test('integrated multiple stomas keep each setup separately and require selection for a missing setup',t=>{
+  const w=setup(t);integrated(w,true,true);
+  w.esApplianceChoice('unchanged');w.esApplianceContinue();
+  assert.equal(w.eval('visitWizard.chosen'),'s2');assert.equal(w.eval('visitWizard.step'),'system');
+  assert.equal(w.eval('steps.length'),0);
+  w.visitChooseSystem('two');tick(w,'SH flange 57mm');w.visitNext();tick(w,'SH bag 57mm');w.visitNext();
+  const none=w.document.querySelector('.ap-box[value="None"]');none.checked=true;w.visitNext();
+  assert.equal(w.eval('esResume.rows.length'),2);assert.deepEqual(plain(w.eval('steps')),[4]);
 });

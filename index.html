@@ -3725,7 +3725,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-502';
+const APP_BUILD='2026.10.10-503';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6628,7 +6628,7 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
   storeAvailabilityOnSelect(ofMonth,availability,contextForFollowupOwner(ownerDefault));
   if(ofMonth)ofMonth.onchange=()=>{updateOutcomeAvailabilityPreview();updateFollowupChangeWarning();};
   if(!isDntuEditMode){
-    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[]};
+    esState={step:1,apptId:String(apptId||''),patientId:String(appt.patient_id||''),openedStatus:appt.status||'',complications:complicationsNow||[],patient:fullPat};
     if(window.VisitStomaReview)VisitStomaReview.mount(document.getElementById('es-stoma-review'),{appt,patient:fullPat,resume:!!(options.resume||options.keepDraft)});
     esGoStep(1);
     esCmpReviewChange();
@@ -6749,7 +6749,8 @@ function esSnapshot(){
   if(!esState)return null;
   const g=id=>{const el=document.getElementById(id);return el?el.value:undefined;};
   const radio=name=>document.querySelector('input[name="'+name+'"]:checked')?.value||'';
-  return {apptId:esState.apptId,step:esState.step,cmpAdded:!!esState.cmpAdded,
+  if(esState.applianceFlow&&esState.step===3)captureVisitStep();
+  return {applianceFlow:esState.applianceFlow,apptId:esState.apptId,step:esState.step,cmpAdded:!!esState.cmpAdded,
     fields:{'of-status':g('of-status'),'of-owner':g('of-owner'),'of-year':g('of-year'),
       'of-month':g('of-month'),'of-followup-status':g('of-followup-status'),'of-nurse':g('of-nurse')},
     cmp:radio('of-cmp-review'),app:radio('of-app-review'),next:radio('of-next'),
@@ -6777,6 +6778,7 @@ function esApplySnapshot(snap){
   pick('of-next',snap.next);
   try{esNextChange();}catch(e){}
   esState.cmpAdded=snap.cmpAdded;
+  if(snap.applianceFlow){esState.applianceFlow=snap.applianceFlow;snap.applianceFlow.pending.host=esState;}
   if(snap.esResume)esResume=snap.esResume;
   try{updateApplianceVisibility();}catch(e){}
   try{updateOutcomeAvailabilityPreview();}catch(e){}
@@ -6796,6 +6798,7 @@ function esOutcomeAttended(){return (document.getElementById('of-status')?.value
 function esStepsOrder(){return esOutcomeAttended()?[1,2,3,4,5]:[1,4];}
 function esGoStep(n){
   if(!esState)return;
+  if(n>=4&&esOutcomeAttended()&&!(esResume?.apptId===String(esState.apptId)&&esResume.rows?.length)){n=3;}
   const order=esStepsOrder();
   if(!order.includes(n))n=order[order.length-1];
   esState.step=n;
@@ -6890,65 +6893,40 @@ async function esFollowupNext(){
 /* The Appliances step (3): a summary of what will be recorded and a button to
    open the appliance / accessory picker. Filled when the step is shown. */
 function esRenderAppliancePane(){
-  const pane=document.getElementById('es-pane-3');
-  if(!pane||!esState)return;
-  const lines=[];
-  if(esResume&&esResume.rows&&esResume.rows.length){
-    const app=[...new Set(esResume.rows.flatMap(r=>r.appliances||[]))].filter(Boolean);
-    const acc=[...new Set(esResume.rows.flatMap(r=>r.accessories||[]))].filter(n=>n&&n!=='None');
-    lines.push('Appliance: '+(app.length?app.join(', '):'None recorded'));
-    lines.push('Accessories: '+(acc.length?acc.join(', '):'None'));
-  }else{
-    const cur=(document.getElementById('es-summary-appliance')?.textContent||'').trim();
-    lines.push(cur&&cur!=='…'?('Currently on record: '+cur):'No appliance recorded yet for this patient.');
-  }
-  const done=!!(esResume&&esResume.rows&&esResume.rows.length);
-  pane.innerHTML=`<div class="edit-seen-section">Appliances &amp; accessories</div>
-    <div class="psm-card" style="margin-bottom:12px;">
-      ${lines.map(l=>`<div style="font-size:13px;color:#374151;line-height:1.6;">${htmlSafe(l)}</div>`).join('')}
-    </div>
-    <button type="button" class="btn-save" style="width:100%;" onclick="esOpenAppliancePicker()">${done?'Change the appliances & accessories ›':'Open the appliance & accessory picker ›'}</button>
-    <div class="dntu-note" style="margin-top:8px;">The picker opens by itself here. Choose <strong>Keep same appliance</strong> in it when nothing changed (offered only when an appliance is on record), or set the new one. You can come back to this step at any time; press <strong>Next</strong> to continue to Follow-up.</div>`;
-  // Open the picker straight away unless something was already recorded this
-  // visit, or the nurse just stepped back out of it.
-  if(!done&&esPickerSkipFor!==String(esState.apptId)){
-    const id=String(esState.apptId);
-    setTimeout(()=>{if(esState&&String(esState.apptId)===id&&esState.step===3&&!(esResume&&esResume.rows&&esResume.rows.length))esOpenAppliancePicker();},0);
-  }
+  const pane=document.getElementById('es-pane-3');if(!pane||!esState)return;
+  if(esState.applianceFlow){visitWizard=esState.applianceFlow;renderVisitStep();return;}
+  pane.innerHTML='<p>Loading current appliances…</p>';
+  esOpenAppliancePicker();
 }
-/* Open the appliance/accessory picker from the Appliances step. The clinical
-   review answers and the follow-up choices are saved to the record and to
-   esResume first, so the rebuild after the picker restores them. */
 async function esOpenAppliancePicker(){
-  if(!esState)return;
-  const date=document.getElementById('of-date')?.value||'';
-  let pat=null;try{const r=await SB.from('patients').select(patientSelectCols()).eq('id',esState.patientId).maybeSingle();pat=r.data;}catch(e){}
-  if(!pat){alert('Could not load this patient for the appliance picker.');return;}
-  const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const app=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
-  let details=[];
-  if(cmp==='existing-reviewed'){
-    document.querySelectorAll('#of-cmp-existing .cmp-review-row').forEach(row=>{
-      const sel=row.querySelector('.of-cmp-state');const st=sel&&sel.value||'';if(!st)return;
-      details.push({id:sel.getAttribute('data-id')||'',type:row.querySelector('.cmp-title')?.textContent||'',state:st,note:row.querySelector('.of-cmp-state-note')?.value||''});
-    });
-  }
-  try{await SB.from('appointments').update({complication_review:cmp||null,appliance_review:app||null,complication_reviews:details.length?details:null}).eq('id',esState.apptId);}catch(e){}
-  esResume={apptId:String(esState.apptId),rows:(esResume&&esResume.rows)||null,cmp,app,fu:{
-    owner:document.getElementById('of-owner')?.value,
-    year:document.getElementById('of-year')?.value,
-    month:document.getElementById('of-month')?.value,
-    status:document.getElementById('of-followup-status')?.value,
-    next:document.querySelector('input[name="of-next"]:checked')?.value
-  }};
-  // Carry the current form values on `pending` too, so that backing out of the
-  // picker (Back to appointment) restores the Nurse owner and follow-up choices.
-  await openVisitApplianceWizard({apptId:esState.apptId,patientId:esState.patientId,date,status:'attended',returnToStep3:true,
-    idcard:document.getElementById('of-idcard')?.value,phone:document.getElementById('of-phone')?.value,
-    fn:document.getElementById('of-fn')?.value,sn:document.getElementById('of-sn')?.value,
-    slot:document.getElementById('of-slot')?.value,nurse:document.getElementById('of-nurse')?.value,
-    owner:document.getElementById('of-owner')?.value,year:document.getElementById('of-year')?.value,
-    month:document.getElementById('of-month')?.value,followupStatus:document.getElementById('of-followup-status')?.value},pat);
+  const state=esState;if(!state||state.applianceLoading)return;
+  state.applianceLoading=true;
+  try{
+    await openVisitApplianceWizard({apptId:state.apptId,patientId:state.patientId,date:document.getElementById('of-date')?.value||TODAY,status:'attended',integrated:true,host:state},state.patient);
+  }catch(e){
+    if(esState===state){document.getElementById('es-pane-3').innerHTML='<p>Could not load appliances. Please retry.</p><button type="button" class="btn-save" onclick="esOpenAppliancePicker()">Retry</button>';}
+  }finally{state.applianceLoading=false;}
+}
+function esApplianceChoice(value){
+  const w=visitWizard;if(!w||!w.pending.integrated)return;
+  if(esResume&&String(esResume.apptId)===String(w.pending.apptId))esResume=null;
+  delete w.rows[w.chosen];delete w.reviewed[w.chosen];w.choice=value;renderVisitStep();
+}
+function esApplianceContinue(){
+  const w=visitWizard;if(!w||!w.pending.integrated)return;
+  if(w.choice==='unchanged')visitKeepSame();
+  else if(w.choice==='changed'){w.step='system';renderVisitStep();}
+}
+function esApplianceFinishStoma(){
+  const w=visitWizard;
+  w.reviewed[w.chosen]=true;
+  const next=w.stomas.find(st=>!w.reviewed[st.uid]);
+  if(next){startVisitStoma(next.uid);return;}
+  const rows=Object.values(w.rows);
+  esResume={apptId:String(w.pending.apptId),rows,app:rows.every(r=>r.kept)?'unchanged':'changed'};
+  const marker=document.getElementById('of-app-review');if(marker){marker.value=esResume.app;marker.checked=true;}
+  w.complete=true;
+  esGoStep(4);
 }
 // Re-apply the two clinical-review choices after the modal is rebuilt on return
 // from the appliance picker (belt-and-braces alongside the saved record).
@@ -7087,6 +7065,7 @@ function esOnOutcomeChange(){
 }
 function esRenderFooter(){
   const foot=document.getElementById('es-footer');if(!foot||!esState)return;
+  if(esState.step===3){if(esState.applianceFlow){visitWizard=esState.applianceFlow;renderVisitStep();}else foot.innerHTML='<button type="button" class="btn-cancel" onclick="esPrevStep()">‹ Back</button><button type="button" class="btn-save" disabled aria-label="Loading appliances"> </button>';return;}
   const order=esStepsOrder(),pos=order.indexOf(esState.step);
   const isLast=pos===order.length-1,isFirst=pos===0;
   const attended=esOutcomeAttended();
@@ -7202,10 +7181,12 @@ function visitStomaBannerHTML(st){
 async function openVisitApplianceWizard(pending,patient){
   const stomas=stomasPresentOn(patient,pending.date);
   const list=stomas.length?stomas:[{uid:'unassigned',code:'S?',label:'no stoma recorded',typeLabel:'No stoma recorded',meta:'',kind:'stoma'}];
-  const{data:hist}=await SB.from('appointments')
+  const{data:hist,error:historyError}=await SB.from('appointments')
     .select('id,appt_date,status,appliances,accessories,stoma_appliances')
     .eq('patient_id',pending.patientId)
     .order('appt_date',{ascending:false}).limit(25);
+  if(pending.integrated&&(esState!==pending.host))return;
+  if(pending.integrated&&historyError)throw historyError;
   const previous=previousStomaRecords(hist||[],pending.apptId,list);
   const mine=stomaRecordsFor((hist||[]).find(a=>String(a.id)===String(pending.apptId)));
   /* Set from the handover, this belongs to the admission the patient is on, so
@@ -7250,6 +7231,7 @@ async function openVisitApplianceWizard(pending,patient){
       if(visitWizard.rows[uid])visitWizard.rows[uid].flange_due=due;
     }
   }
+  if(pending.integrated){visitWizard.reviewed={};pending.host.applianceFlow=visitWizard;startVisitStoma(list[0].uid);return;}
   if(list.length===1){startVisitStoma(list[0].uid);} else {renderVisitStep();}
 }
 /* An encounter's "Modify appliance" walks through these same pages for one
@@ -7299,7 +7281,8 @@ function startVisitStoma(uid){
   // Infer the system from what is carried over, so it lands on the right page.
   w.system=app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&(it.part==='flange'||it.part==='bag');})?'two'
           :(app.some(n=>{const it=APPLIANCE_CATALOGUE.find(a=>a.name===n);return it&&it.system==='one';})?'one':'');
-  w.step='system';
+  w.choice='';
+  w.step=w.pending.integrated&&carry.appliances.length?'choice':'system';
   renderVisitStep();
 }
 function vaFlangeCouplings(){
@@ -7323,7 +7306,7 @@ function renderVisitStep(){
     ? patientNameAvatarHTML(w.patient||{},name,`<span>${htmlSafe(fmtShortDate(w.pending.date))} ${htmlSafe(w.pending.slot||'')}</span>`,'md')
     : `<strong>${htmlSafe(name)}</strong> · ${htmlSafe(fmtShortDate(w.pending.date))} ${htmlSafe(w.pending.slot||'')}`}</div>`;
   const mb=document.getElementById('mb');
-  mb.className='mb mb-wide';
+  if(!w.pending.integrated)mb.className='mb mb-wide';
 
   if(w.step==='stoma'){
     const rows=w.stomas.map(st=>{
@@ -7346,13 +7329,22 @@ function renderVisitStep(){
   const carry=w.work.carriedFrom?`<div class="vw-carry">Carried over from the visit on <strong>${htmlSafe(fmtShortDate(w.work.carriedFrom))}</strong> — change only what changed.</div>`:'';
   const backLabel=(w.stomas.length>1)?'Back':(w.pending.mode==='encounter'?'Back to encounter':'Back to appointment');
   let body='', title='', foot=`<button class="btn-save" onclick="visitNext()">Next</button>`;
-  if(w.step==='system'){
+  if(w.step==='choice'){
+    title='Current appliance';
+    const current=w.prev[w.chosen]||{};
+    body=`${banner}<div class="psm-card"><strong>${htmlSafe(parseNameList(current.appliances).join(', '))}</strong><div>Accessories: ${htmlSafe(parseNameList(current.accessories).join(', ')||'None')}</div></div>
+      <fieldset class="cancel-choices"><legend>Appliance for this visit</legend>
+      <label><input type="radio" name="es-appliance-choice" value="unchanged" ${w.choice==='unchanged'?'checked':''} onchange="esApplianceChoice(this.value)"/> Keep current appliance</label>
+      <label><input type="radio" name="es-appliance-choice" value="changed" ${w.choice==='changed'?'checked':''} onchange="esApplianceChoice(this.value)"/> Change appliance</label></fieldset>`;
+    const more=w.stomas.some(x=>x.uid!==w.chosen&&!w.reviewed[x.uid]);
+    foot=`<button type="button" class="btn-save" onclick="esApplianceContinue()" ${w.choice?'':'disabled'} aria-label="${w.choice?'Continue':'Choose keep or change appliance'}">${w.choice==='unchanged'?(more?'Next: Next stoma ›':'Next: Follow-up ›'):(w.choice==='changed'?'Next: Appliance change ›':' ')}</button>`;
+  }else if(w.step==='system'){
     title='Appliance system';
     const sysBtn=(sys,label,note)=>`<button type="button" class="iv-sys-btn ${w.system===sys?'active':''}" onclick="visitChooseSystem('${sys}')"><span class="iv-sys-t">${label}</span><span class="iv-sys-s">${note}</span></button>`;
     // "Keep same appliance" only makes sense when there is one on record.
     const kept=w.prev[w.chosen]||{},keptApp=parseNameList(kept.appliances);
     // The encounter has its own Keep same button beside Modify appliance.
-    const keepBtn=(!['episode','encounter'].includes(w.pending.mode)&&keptApp.length)?`<button type="button" class="iv-sys-btn iv-keep-btn" onclick="visitKeepSame()"><span class="iv-sys-t">Keep same appliance</span><span class="iv-sys-s">${htmlSafe(keptApp.join(', '))}${parseNameList(kept.accessories).filter(n=>n!=='None').length?' · '+htmlSafe(parseNameList(kept.accessories).filter(n=>n!=='None').join(', ')):''}</span></button>`:'';
+    const keepBtn=(!w.pending.integrated&&!['episode','encounter'].includes(w.pending.mode)&&keptApp.length)?`<button type="button" class="iv-sys-btn iv-keep-btn" onclick="visitKeepSame()"><span class="iv-sys-t">Keep same appliance</span><span class="iv-sys-s">${htmlSafe(keptApp.join(', '))}${parseNameList(kept.accessories).filter(n=>n!=='None').length?' · '+htmlSafe(parseNameList(kept.accessories).filter(n=>n!=='None').join(', ')):''}</span></button>`:'';
     body=`${banner}${carry}<div class="iv-sys-row">${keepBtn}${sysBtn('one','One-piece system',isFistulaPatient(w.patient)?'Wound managers and fistula bags are here':'Bag and flange in one')}${sysBtn('two','Two-piece system','Flange, then bag')}${sysBtn('dressing','Dressing only','Not bagged — e.g. a fresh mucus fistula')}</div>
       <div class="ap-hint" style="margin:2px 0 0;">${keepBtn?'Nothing changed? Press <strong>Keep same appliance</strong>. Otherwise pick a system to choose the new appliance.':'Pick a system to choose the appliance and accessories.'}</div>`;
     foot=`<button class="btn-save" onclick="visitNext()" ${w.system?'':'disabled'}>Next</button>`;
@@ -7375,6 +7367,15 @@ function renderVisitStep(){
         <div class="ap-hint" style="margin:6px 0 0;">If nothing was used, tick <strong>None</strong>.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
     foot=`<button class="btn-save" onclick="visitNext()">${w.pending.mode==='encounter'?'Use in encounter':'Save change'}</button>`;
+  }
+  if(w.pending.integrated){
+    const pane=document.getElementById('es-pane-3');if(!pane)return;
+    pane.innerHTML=`<div class="edit-seen-section">${title}</div>${body}`;
+    if(w.step==='accessory')foot=`<button type="button" class="btn-save" onclick="visitNext()">${w.stomas.some(x=>x.uid!==w.chosen&&!w.reviewed[x.uid])?'Next: Next stoma ›':'Next: Follow-up ›'}</button>`;
+    document.getElementById('es-footer').innerHTML=`<button type="button" class="btn-cancel" onclick="visitBack()">‹ Back</button>${foot}`;
+    if(['onepiece','flange','bag','dressing'].includes(w.step)){filterApplianceList();updateApplianceSummary();scrollPanelsToTicked();}
+    if(w.step==='accessory')updateApplianceSummary();
+    return;
   }
   mb.innerHTML=`<h2>Set appliance</h2>
     ${visitIdentity}
@@ -7412,6 +7413,7 @@ function visitKeepSame(){
   const acc=parseNameList(kept.accessories),st=visitStoma(w.chosen);
   w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
     appliances:app.slice(),accessories:acc.length?acc.slice():['None'],flange_due:kept.flange_due||'',kept:true};
+  if(w.pending.integrated){esApplianceFinishStoma();return;}
   if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
   else commitVisitFromWizard();
 }
@@ -7458,6 +7460,7 @@ function visitNext(){
     w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
       appliances:w.work.appliances.slice(),accessories:w.work.accessories.slice(),
       flange_due:w.system==='two'?(w.work.flange_due||''):''};
+    if(w.pending.integrated){esApplianceFinishStoma();return;}
     if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
     else{commitVisitFromWizard();}
     return;
@@ -7471,6 +7474,12 @@ function visitBack(){
   const w=visitWizard;
   captureVisitStep();
   const steps=visitSubSteps(), i=steps.indexOf(w.step);
+  if(i<=0&&w.pending.integrated){
+    if(w.step==='system'&&w.prev[w.chosen]?.appliances.length){w.step='choice';renderVisitStep();return;}
+    const pos=w.stomas.findIndex(st=>st.uid===w.chosen);
+    if(pos>0){startVisitStoma(w.stomas[pos-1].uid);return;}
+    esGoStep(2);return;
+  }
   if(i<=0){ // leaving the sub-flow
     if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
     else{visitBackToAppointment();}
