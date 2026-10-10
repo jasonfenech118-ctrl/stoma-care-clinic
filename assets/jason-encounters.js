@@ -422,11 +422,33 @@
   function render(){
     if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
     const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
-    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='history'?'primary':'')+'" data-action="history">History</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
+    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="back">← Back to '+(ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta">'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+' · <span class="jenc-episode">Episode '+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar"><button class="jenc-btn '+(ctx.mode==='summary'?'primary':'')+'" data-action="summary">Encounter summary</button></div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
       page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e),prior=versions(e).slice(-2,-1)[0];return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><div class="jenc-history-report">'+documentReport({...v.snapshot,legacy_assessment:v.legacy_assessment},v.report,prior&&prior!==v?prior.snapshot:null,prior?.report)+'</div><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
+    }
+    if(ctx.mode==='summary'){
+      const snap=(rec&&ver)?ver.snapshot:ctx.draft;
+      const stomas=list(snap?.stomas);
+      const allFistula=stomas.length&&stomas.every(isFistulaCol);
+      const codeLabel=rec&&ver?encounterCode(rec,p,ctx.rows)+' · V'+ver.version:'New encounter · not yet saved';
+      const dateStr=rec?showDay(recordDay(rec)):showDay(TODAY);
+      const signLine=rec&&ver?'Signed by: '+esc(ver.author_name||ver.author_email||'')+' · '+esc(stamp(ver.saved_at)):'Will be signed by: '+esc(ctx.who.name);
+      const perNotes=stomas.filter(x=>String(x.notes||'').trim()).map(x=>'<p><strong>'+esc(stomaName(x,stomas))+':</strong> '+esc(x.notes)+'</p>').join('');
+      const inf=snap?.infection;
+      const infHTML=inf?.status&&inf.status!=='Not recorded'?'<section class="jenc-summary-sec"><h4>Infection status</h4><p><strong>'+esc([inf.organism,inf.status].filter(Boolean).join(' · '))+'</strong></p></section>':'';
+      const refs=list(snap?.referrals).map(normReferral).filter(Boolean);
+      const refHTML=refs.length?'<section class="jenc-summary-sec"><h4>Support / referrals</h4>'+refs.map(r=>'<p><strong>'+esc(referralText(r))+'</strong></p>').join('')+'</section>':'';
+      page.innerHTML=top+'<article class="jenc-document jenc-summary" aria-labelledby="jenc-summary-title"><header><h3 id="jenc-summary-title">Encounter summary</h3><p class="jenc-document-date">'+esc(codeLabel)+' · '+esc(dateStr)+' · Episode '+esc(episodeLabel)+'</p></header>'+
+        '<section class="jenc-summary-sec"><h4>'+(allFistula?'Fistula assessment':'Stoma assessment')+'</h4>'+stomaAssessmentTableHTML(stomas)+'</section>'+
+        (perNotes?'<section class="jenc-summary-sec"><h4>Stoma clinical notes</h4>'+perNotes+'</section>':'')+
+        '<section class="jenc-summary-sec"><h4>Appliances &amp; accessories</h4>'+applianceSummaryTableHTML(stomas)+'</section>'+
+        '<section class="jenc-summary-sec"><h4>General notes</h4><p class="jenc-document-notes">'+esc(String(snap?.notes||'').trim()||'No written notes recorded.')+'</p></section>'+
+        infHTML+refHTML+
+        '<footer class="jenc-signature">'+signLine+'</footer></article>'+
+        '<div class="jenc-actions jenc-no-print"><button class="jenc-btn" data-action="summary-back">← Back to encounter</button><button class="jenc-btn" data-action="print">Print / PDF</button><button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
+      return;
     }
     const d=ctx.draft,n=ctx.expectedVersion;
     const editReport=rec&&!ctx.editable&&editableToday(rec)?'<button type="button" class="jenc-btn primary jenc-no-print" data-action="edit">Edit report as V'+(n+1)+'</button>':'';
@@ -507,6 +529,36 @@
     });
     return current.innerHTML;
   }
+  // The stoma assessment shown as a table — one row per stoma — for the
+  // read-only encounter summary. Mirrors the on-screen Stoma review fields.
+  function summarySkinText(sk){return sk?.status==='Healthy'?'Healthy':sk?.status==='Not assessed'?'Not assessed — flange in situ':sk?.status==='Not healthy'?'Not healthy'+(list(sk.problems).length?' — '+sk.problems.join(', '):''):'';}
+  function stomaAssessmentTableHTML(stomas){
+    if(!stomas.length)return '<p class="jenc-meta">No stoma is recorded for this encounter.</p>';
+    const anyRod=stomas.some(x=>x.rod_asked!==false&&['In place','Removed'].includes(x.rod?.status));
+    const allFistula=stomas.every(isFistulaCol);
+    const row=x=>{
+      const comps=list(x.complications).filter(c=>c.text).map(c=>c.text+' ('+(c.status==='resolved'?'resolved':'active')+')').join('; ')||'—';
+      const rod=(x.rod_asked!==false&&['In place','Removed'].includes(x.rod?.status))?(x.rod.status==='In place'?'Present'+(x.rod.due?' · removal '+showDay(x.rod.due):''):'Removed'+(x.rod.removed?' · '+showDay(x.rod.removed):'')):'—';
+      return '<tr><th scope="row">'+esc(stomaName(x,stomas))+'</th>'+
+        '<td>'+esc(isFistulaCol(x)?'—':(String(x.colour||'').trim()||'Not recorded'))+'</td>'+
+        '<td>'+esc(list(x.output).join(', ')||'Not recorded')+'</td>'+
+        '<td>'+esc(summarySkinText(x.skin)||'Not recorded')+'</td>'+
+        '<td>'+esc(comps)+'</td>'+
+        (anyRod?'<td>'+esc(rod)+'</td>':'')+'</tr>';
+    };
+    return '<div class="jenc-table-wrap"><table class="jenc-assess-table"><thead><tr><th scope="col">Stoma</th>'+
+      '<th scope="col">'+(allFistula?'Appearance':'Colour / appearance')+'</th>'+
+      '<th scope="col">'+(allFistula?'Output':'Function / output')+'</th>'+
+      '<th scope="col">'+(allFistula?'Skin around the fistula':'Peristomal skin')+'</th>'+
+      '<th scope="col">Complications</th>'+(anyRod?'<th scope="col">Rod</th>':'')+'</tr></thead><tbody>'+
+      stomas.map(row).join('')+'</tbody></table></div>';
+  }
+  function applianceSummaryTableHTML(stomas){
+    if(!stomas.length)return '';
+    return '<div class="jenc-table-wrap"><table class="jenc-assess-table"><thead><tr><th scope="col">Stoma</th><th scope="col">Appliance</th><th scope="col">Accessories</th><th scope="col">Flange change due</th></tr></thead><tbody>'+
+      stomas.map(x=>'<tr><th scope="row">'+esc(stomaName(x,stomas))+'</th><td>'+esc(list(x.appliances).join(', ')||'No appliance recorded')+'</td><td>'+esc(list(x.accessories).join(', ')||'None')+'</td><td>'+esc(x.flange_due?showDay(x.flange_due):'—')+'</td></tr>').join('')+
+      '</tbody></table></div>';
+  }
   function refreshReport(){
     if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,showDiff=!!(ctx.compare&&old);
     document.querySelectorAll('#page-jason-encounters textarea[data-note]').forEach(ta=>{
@@ -562,6 +614,8 @@
     const btn=e.target.closest('[data-action]');if(!btn)return;const action=btn.dataset.action;
     if(action==='back'){await back();return;}if(!ctx)return;
     
+    if(action==='summary'){ctx._prevMode=ctx.mode==='summary'?(ctx._prevMode||'form'):ctx.mode;ctx.mode='summary';render();return;}
+    if(action==='summary-back'){ctx.mode=ctx._prevMode||'form';render();return;}
     if(action==='history'){if(!canLeave())return;ctx.mode='history';ctx.editable=false;render();return;}
     if(action==='view'){selectRecord(btn.dataset.id);return;}
     if(action==='version'){selectRecord(ctx.record.id,Number(btn.dataset.index));return;}
