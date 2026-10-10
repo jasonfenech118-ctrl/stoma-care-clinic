@@ -262,6 +262,17 @@
     }).sort(byWardOrder);
   }
 
+  const PRESENT_STATUSES = new Set(['present', 'late', 'left_early']);
+  function isStaleSaved(stored) {
+    return String(stored.person_key || '').startsWith('bank:');
+  }
+  // Saved rows for bank / extra staff whose overtime or TIL for the day no
+  // longer exists (cancelled or deleted). These are deleted on load.
+  function staleSavedRows(plannedRows, savedRows) {
+    const planned = new Set(plannedRows.map(row => row.person_key));
+    return (savedRows || []).filter(row => !planned.has(row.person_key) && isStaleSaved(row));
+  }
+
   function mergeSavedRows(plannedRows, savedRows) {
     const saved = new Map((savedRows || []).map(row => [row.person_key, row]));
     const merged = plannedRows.map(planned => {
@@ -279,12 +290,19 @@
         (stored.planned_source || '') !== (planned.planned_source || '') ||
         (stored.planned_hours || '') !== (planned.planned_hours || '') ||
         (stored.roster_notes || '') !== (planned.roster_notes || '');
+      // A Present mark (and its times) belonged to the duty planned when it was
+      // recorded. If that duty has since been cancelled and the person is now
+      // off / on leave (e.g. a TIL In or overtime shift removed), the mark no
+      // longer applies — clear it so they are not counted as Present.
+      const dutyCancelled = plannedChanged && isPlannedOff(planned) &&
+        PRESENT_STATUSES.has(stored.attendance_status);
       return {
         ...planned,
         id: stored.id,
-        attendance_status: STATUS_LABELS[stored.attendance_status] ? stored.attendance_status : 'not_recorded',
-        time_in: String(stored.time_in || '').slice(0, 5),
-        time_out: String(stored.time_out || '').slice(0, 5),
+        attendance_status: dutyCancelled ? 'not_recorded'
+          : (STATUS_LABELS[stored.attendance_status] ? stored.attendance_status : 'not_recorded'),
+        time_in: dutyCancelled ? '' : String(stored.time_in || '').slice(0, 5),
+        time_out: dutyCancelled ? '' : String(stored.time_out || '').slice(0, 5),
         remarks: stored.remarks || '',
         updated_at: stored.updated_at,
         is_new: false,
@@ -293,6 +311,10 @@
     });
 
     saved.forEach(stored => {
+      // Bank / extra staff are listed only because of an overtime or TIL record
+      // for this day. Once that record is cancelled or deleted, their saved row
+      // is stale (see staleSavedRows) and is removed rather than kept as Present.
+      if (isStaleSaved(stored)) return;
       merged.push({
         id: stored.id,
         person_key: stored.person_key,
@@ -363,7 +385,7 @@
   function countsFromRows(rows) {
     const counts = {total: rows.length, present: 0, absent: 0, off: 0, pending: 0};
     rows.forEach(row => {
-      if (['present', 'late', 'left_early'].includes(row.attendance_status)) counts.present++;
+      if (PRESENT_STATUSES.has(row.attendance_status)) counts.present++;
       else if (row.attendance_status === 'absent') counts.absent++;
       else if (row.attendance_status === 'off_leave' || isPlannedOff(row)) counts.off++;   // rostered off / on leave — no mark needed
       else counts.pending++;                       // rostered on duty, not yet marked
@@ -533,6 +555,12 @@
         bank: results[3].rows
       }, options.defaultCode);
       const rows = mergeSavedRows(planned, results[4].rows);
+      const stale = staleSavedRows(planned, results[4].rows).filter(row => row.id != null);
+      if (stale.length) {
+        const {error} = await options.db.from(TABLE).delete().in('id', stale.map(row => row.id));
+        if (request !== loadRequest) return;
+        if (error) setGlobalSave('Could not remove a cancelled duty from the saved sheet', 'error');
+      }
       rowsByKey = new Map(rows.map(row => [row.person_key, row]));
 
       const summary = root.document.getElementById('da-summary');
@@ -729,6 +757,7 @@
   const api = {
     buildPlannedRows,
     mergeSavedRows,
+    staleSavedRows,
     aggregateRecords,
     countsFromRows,
     renderSheet,
