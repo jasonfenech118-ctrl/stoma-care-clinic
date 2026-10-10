@@ -304,7 +304,7 @@
     // so one ticked Seen elsewhere since is not quietly undone on save.
     if(edit){const pat=patientReferrals(ctx.patient);if(pat.length)ctx.draft.referrals=pat.concat(ctx.draft.referrals.filter(r=>!pat.some(x=>x.id===r.id)));}
     const idx=vs.indexOf(v);
-    ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
+    ctx.compare=edit||idx>0;ctx.baseline=copy(ctx.draft);ctx.comparison=edit?copy(ctx.baseline):(idx>0?copy(vs[idx-1].snapshot):null);
     // A saved version is compared with the report as it was saved, not re-worded.
     ctx.comparisonReport=!edit&&idx>0?String(vs[idx-1].report||''):null;
     render();
@@ -426,7 +426,7 @@
     if(ctx.mode==='history'){
       const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
-      page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e);return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><div class="jenc-history-report">'+documentReport({...v.snapshot,legacy_assessment:v.legacy_assessment},v.report)+'</div><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
+      page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e),prior=versions(e).slice(-2,-1)[0];return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><div class="jenc-history-report">'+documentReport({...v.snapshot,legacy_assessment:v.legacy_assessment},v.report,prior&&prior!==v?prior.snapshot:null,prior?.report)+'</div><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
     }
     const d=ctx.draft,n=ctx.expectedVersion;
     const editReport=rec&&!ctx.editable&&editableToday(rec)?'<button type="button" class="jenc-btn primary jenc-no-print" data-action="edit">Edit report as V'+(n+1)+'</button>':'';
@@ -473,9 +473,9 @@
   }
   // Use the selected version's snapshot, never the patient's current care setup.
   // Text-only older records retain their original saved report as readable prose.
-  function documentReport(snapshot,text){
+  function documentReport(snapshot,text,previous=null,previousText=null){
     const stomas=list(snapshot?.stomas);
-    if(!stomas.length&&text&&(!snapshot?.notes||snapshot?.legacy_assessment))return '<div class="jenc-document-legacy">'+esc(text)+'</div>';
+    if(!stomas.length&&text&&(!snapshot?.notes||snapshot?.legacy_assessment))return '<div class="jenc-document-legacy">'+(previous?diffHTML(previousText??report(previous),text):esc(text))+'</div>';
     const field=(label,value,fallback='Not recorded')=>'<div class="jenc-document-field"><dt>'+esc(label)+'</dt><dd><strong>'+esc(String(value||'').trim()||fallback)+'</strong></dd></div>';
     const notes=value=>'<h5 class="jenc-document-notes-title">Notes</h5><p class="jenc-document-notes">'+esc(String(value||'').trim()||'No written notes recorded.')+'</p>';
     const skin=s=>s?.status==='Healthy'?'Healthy':s?.status==='Not assessed'?'Not assessed — flange in situ':s?.status==='Not healthy'?'Not healthy'+(list(s.problems).length?' — '+s.problems.join(', '):''):'';
@@ -484,14 +484,28 @@
       let review=(isFistulaCol(x)?'':field('Colour / appearance',x.colour))+field(isFistulaCol(x)?'Output':'Function / output',list(x.output).join(', '))+field(isFistulaCol(x)?'Skin around the fistula':'Peristomal skin',skin(x.skin));
       if(comps)review+=field('Complications',comps);
       if(x.rod_asked!==false&&['In place','Removed'].includes(x.rod?.status))review+=field('Rod',x.rod.status==='In place'?'Present'+(x.rod.due?' — planned removal '+showDay(x.rod.due):''):'Removed'+(x.rod.removed?' — '+showDay(x.rod.removed):''));
-      return '<section class="jenc-document-stoma jenc-document-tone-'+(i%3)+'"><h4>'+esc(stomaName(x,stomas))+'</h4><dl>'+review+'</dl>'+notes(x.notes)+'<h5 class="jenc-document-appliances-title">Appliances &amp; accessories</h5><dl>'+field('Appliances',list(x.appliances).join(', '),'No appliance recorded')+field('Accessories',list(x.accessories).join(', '),'No accessories recorded')+(x.flange_due?field('Flange change due',showDay(x.flange_due)):'')+'</dl></section>';
+      return '<section data-stoma-uid="'+esc(x.uid)+'" class="jenc-document-stoma jenc-document-tone-'+(i%3)+'"><h4>'+esc(stomaName(x,stomas))+'</h4><dl>'+review+'</dl>'+notes(x.notes)+'<h5 class="jenc-document-appliances-title">Appliances &amp; accessories</h5><dl>'+field('Appliances',list(x.appliances).join(', '),'No appliance recorded')+field('Accessories',list(x.accessories).join(', '),'No accessories recorded')+(x.flange_due?field('Flange change due',showDay(x.flange_due)):'')+'</dl></section>';
     }).join('');
     const general='<section class="jenc-document-general"><h4>General notes</h4><p class="jenc-document-notes">'+esc(String(snapshot?.notes||'').trim()||'No written notes recorded.')+'</p></section>';
     const infection=snapshot?.infection;
     const infectionHTML=infection?.status&&infection.status!=='Not recorded'?'<section class="jenc-document-support"><h4>Infection status</h4><p><strong>'+esc([infection.organism,infection.status].filter(Boolean).join(' · '))+'</strong></p></section>':'';
     const refs=list(snapshot?.referrals).map(normReferral).filter(Boolean);
     const support=refs.length?'<section class="jenc-document-support"><h4>Support / referrals</h4>'+refs.map(r=>'<p><strong>'+esc(referralText(r))+'</strong></p>').join('')+'</section>':'';
-    return sections+general+infectionHTML+support;
+    const html=sections+general+infectionHTML+support;
+    if(!previous)return html;
+    // Compare signed values within their original sections, keeping the saved document layout.
+    const current=document.createElement('div'),before=document.createElement('div');
+    current.innerHTML=html;before.innerHTML=documentReport(previous,previousText||'');
+    current.querySelectorAll('section').forEach(section=>{
+      const uid=section.dataset.stomaUid;
+      const oldSection=Array.from(before.querySelectorAll('section')).find(old=>uid?old.dataset.stomaUid===uid:old.className===section.className&&old.querySelector('h4')?.textContent===section.querySelector('h4')?.textContent);
+      section.querySelectorAll('dd strong, p').forEach(value=>{
+        const label=value.closest('.jenc-document-field')?.querySelector('dt')?.textContent;
+        const oldValue=label?Array.from(oldSection?.querySelectorAll('.jenc-document-field')||[]).find(field=>field.querySelector('dt')?.textContent===label)?.querySelector('dd strong'):Array.from(oldSection?.querySelectorAll('p')||[])[Array.from(section.querySelectorAll('p')).indexOf(value)];
+        value.innerHTML=diffHTML(oldValue?.textContent||'',value.textContent);
+      });
+    });
+    return current.innerHTML;
   }
   function refreshReport(){
     if(!ctx||ctx.mode!=='form')return;const old=ctx.comparison,showDiff=!!(ctx.compare&&old);
@@ -503,7 +517,7 @@
       const diff=box?.querySelector('.jenc-note-diff');if(diff)diff.innerHTML=showDiff&&before!==notes?'Changes: '+diffHTML(before,notes,true):'';
     });
     const r=document.getElementById('jenc-report');if(r){const now=ctx.record&&!ctx.editable&&ctx.viewVersion?.report?ctx.viewVersion.report:report(ctx.draft);
-      const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.classList.toggle('jenc-document-prose',!ctx.editable&&!showDiff);r.innerHTML=showDiff?diffHTML(was,now,true):ctx.editable?esc(now):documentReport({...ctx.viewVersion.snapshot,legacy_assessment:ctx.viewVersion.legacy_assessment},now);}
+      const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.classList.toggle('jenc-document-prose',!ctx.editable);r.innerHTML=ctx.editable?(showDiff?diffHTML(was,now,true):esc(now)):documentReport({...ctx.viewVersion.snapshot,legacy_assessment:ctx.viewVersion.legacy_assessment},now,showDiff?old:null,was);}
   }
   function input(e){
     if(!ctx?.editable)return;const key=e.target.dataset?.note;if(e.target.tagName!=='TEXTAREA'||key===undefined)return;
