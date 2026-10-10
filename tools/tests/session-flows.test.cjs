@@ -71,12 +71,11 @@ test('visit review: editing on the day saves V2 signed by the nurse; no change s
   assert.match(mb().textContent,/Visit review · V2/);
 });
 
-test('Complete visit › Appliances opens the picker by itself once, not after backing out or once something is recorded',async t=>{
-  const dom=new JSDOM('<div id="es-pane-3"></div><div id="es-summary-appliance">None recorded</div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
-  w.eval(`var opened=0;function esOpenAppliancePicker(){opened++;} function htmlSafe(x){return String(x??'');} var esResume=null,esPickerSkipFor=null,esState={apptId:'ap1',step:3};`);
+test('Complete visit embeds appliance pages and resumes the same flow',async t=>{
+  const dom=new JSDOM('<div id="es-pane-3"></div>',{runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window;
+  w.eval(`var opened=0,rendered=0,visitWizard=null;function esOpenAppliancePicker(){opened++;}function renderVisitStep(){rendered++;}var esState={apptId:'ap1',step:3};`);
   w.eval(fn('esRenderAppliancePane'));
-  w.esRenderAppliancePane();await tick();assert.equal(w.eval('opened'),1);
-  w.eval("esPickerSkipFor='ap1'");w.esRenderAppliancePane();await tick();assert.equal(w.eval('opened'),1,'backed out: wait for the button');
-  w.eval("esPickerSkipFor=null;esResume={apptId:'ap1',rows:[{appliances:['Little Ones']}]}");w.esRenderAppliancePane();await tick();assert.equal(w.eval('opened'),1,'already recorded');
-  assert.match(w.document.getElementById('es-pane-3').textContent,/Change the appliances/);
+  w.esRenderAppliancePane();assert.equal(w.eval('opened'),1);
+  w.eval('esState.applianceFlow={pending:{integrated:true}}');
+  w.esRenderAppliancePane();assert.equal(w.eval('opened'),1);assert.equal(w.eval('rendered'),1);
 });
