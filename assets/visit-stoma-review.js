@@ -231,23 +231,14 @@
     if(!draft||draft.apptId!==String(apptId))return null;
     return draft.locked?list(draft.versions[draft.versions.length-1]?.stomas):payloadFor(apptId);
   }
+  // In the visit "Seen" modal the stoma assessment is OPTIONAL — unlike the
+  // inpatient stoma assessment, a visit can be completed (Seen) with colour,
+  // function / output or peristomal skin left blank. So validate never blocks
+  // navigation or saving; it only clears any stale required-field message.
   function validate(apptId){
-    if(!enabled())return true;
-    if(!draft||draft.apptId!==String(apptId))return false;
-    // Historical locked assessments retain their original entries.
-    if(draft.locked)return true;
-    const missing=[];
-    draft.stomas.forEach(s=>{
-      const fields=[];
-      if(s.uid!=='fistula'&&lower(s.type)!=='fistula'&&!String(s.colour||'').trim())fields.push('colour / appearance');
-      if(!list(s.output).length)fields.push('function / output');
-      if(!['Healthy','Not healthy','Not assessed'].includes(s.skin?.status)||(s.skin?.status==='Not healthy'&&!list(s.skin.problems).length))fields.push('peristomal skin');
-      if(fields.length)missing.push(nameOf(s,draft.stomas)+': '+fields.join(', '));
-    });
-    let error=host?.querySelector('.vsr-required-error');
-    if(!error&&host){error=document.createElement('p');error.className='vsr-required-error';error.setAttribute('role','alert');error.style.color='#b42318';host.appendChild(error);}
-    if(error){error.hidden=!missing.length;error.textContent=missing.length?'Complete the stoma assessment — '+missing.join('; '):'';}
-    return !missing.length;
+    const error=host?.querySelector('.vsr-required-error');
+    if(error){error.hidden=true;error.textContent='';}
+    return true;
   }
   function clear(){draft=null;}
   window.VisitStomaReview={validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
