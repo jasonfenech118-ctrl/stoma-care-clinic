@@ -406,3 +406,12 @@ test('structured saved and history reports separate each stoma, bold clinical va
   click(w,'version','[data-index="0"]');assert.equal(w.document.querySelector('.jenc-document-general p').textContent,'No written notes recorded.');
   assert.match(w.document.querySelector('.jenc-document-notes').textContent,/Teaching <script>/);
 });
+
+test('teaching and discharge have separate pages, preserve unsaved inputs on return and reopen saved plans',async t=>{
+ const w=setup(t);await w.JasonEncounters.open(w.fixture.patient.id);notes(w,'Encounter draft stays here.');
+ click(w,'add-teaching');assert.equal(w.JasonEncounters.state.mode,'teaching');assert.ok(w.document.querySelector('[data-plan-page="teaching"]'));assert.equal(w.document.querySelector('[data-step="review"]'),null);
+ change(w,'[data-kind="teach"][data-field="note"]','Teaching with family');change(w,'[data-kind="teach-item"]',true);click(w,'plan-back');assert.equal(w.document.getElementById('jenc-notes-0').value,'Encounter draft stays here.');assert.equal(w.document.querySelector('[data-kind="teach-item"]'),null);
+ click(w,'add-discharge');assert.ok(w.document.querySelector('[data-plan-page="discharge"]'));change(w,'[data-kind="discharge"][data-field="home_supply"]','Yes');change(w,'[data-kind="discharge"][data-field="comments"]','Supply ready');click(w,'plan-back');
+ click(w,'add-teaching');assert.equal(w.document.querySelector('[data-kind="teach"][data-field="note"]').value,'Teaching with family');assert.equal(w.document.querySelector('[data-kind="teach-item"]').checked,true);await w.JasonEncounters.save();
+ assert.equal(w.fixture.calls[0].args.p_snapshot.discharge_plan.comments,'Supply ready');assert.equal(w.fixture.calls[0].args.p_snapshot.teaching_plan.note,'Teaching with family');click(w,'add-discharge');assert.equal(w.document.querySelector('[data-kind="discharge"][data-field="home_supply"]').value,'Yes');assert.equal(w.document.querySelector('[data-kind="discharge"][data-field="home_supply"]').disabled,true);click(w,'plan-back');assert.equal(w.JasonEncounters.state.mode,'form');
+});
