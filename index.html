@@ -30,7 +30,9 @@
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-499"/>
-<script defer src="assets/jason-encounters.js?v=2026.10.10-506"></script>
+<link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
+<script src="assets/documentation-status.js?v=2026.10.10-507"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.10-507"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-505"></script>
 <style>
 :root{
@@ -2898,6 +2900,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
           <option value="reversed">Reversed</option>
           <option value="ever_reversed">Ever reversed (any status)</option>
         </select>
+      <label for="pd-documentation">Documentation:</label><select id="pd-documentation" onchange="renderPatientDirectory()"><option value="all">All documentation</option><option value="electronic">Electronic from surgery</option><option value="earlier_history">Earlier history to check</option><option value="pending">Awaiting electronic history</option><option value="unconfirmed">Dates unconfirmed / incomplete</option></select>
         <span class="pd-count" id="pd-count"></span>
       </div>
       <div id="pd-setup-note"></div>
@@ -3727,7 +3730,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-506';
+const APP_BUILD='2026.10.10-507';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -12876,7 +12879,7 @@ function refreshPatientDatesAvailable(){
 async function fetchPatientsSelect(build){
   for(let i=0;i<10;i++){
     const res=await build(patientSelectCols());
-    if(!res.error){refreshPatientDatesAvailable();return res;}
+    if(!res.error){refreshPatientDatesAvailable();return window.DocumentationStatus?await DocumentationStatus.enrich(res,SB):res;}
     if(!dropMissingPatientCol(res.error)){
       // Not a missing column — fall back to the base columns as before.
       if(String(res.error.message||'').toLowerCase().includes('column')){
@@ -13589,7 +13592,7 @@ function registryStomaType(p){
 function configureDeceasedRegistry(){
   window.DeceasedRegistry?.configure({
     db:()=>SB,isDeceased:patientIsDeceased,formatDate:fmtShortDate,
-    avatar:(p,nm)=>patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p),'sm'),
+    avatar:(p,nm)=>patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+(window.DocumentationStatus?DocumentationStatus.badgeHTML(p):''),'sm'),
     surgeryDate:registrySurgeryDate,stomaType:registryStomaType,
     rerender:renderPatientDirectory,refresh:loadPatientDirectory,
     pager:(total,size,page,onMove)=>renderPager('pd-pager',total,size,page,onMove),
@@ -13617,7 +13620,8 @@ function renderPatientDirectory(){
   const terms=q.split(/\s+/).filter(Boolean);
   const owner=document.getElementById('pd-owner')?.value||'all';
   const status=document.getElementById('pd-status')?.value||'all';
-  const pdKey=q+'|'+owner+'|'+status;
+  const docs=document.getElementById('pd-documentation')?.value||'all';
+  const pdKey=q+'|'+owner+'|'+status+'|'+docs;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
   // The number tiles follow the owner filter (recomputed only when it changes).
   if(pdSummaryOwner!==owner){pdSummaryOwner=owner;renderPatientDirectorySummary(owner);}
@@ -13626,6 +13630,7 @@ function renderPatientDirectory(){
     // Archived patients are kept out of the registry unless they are being shown
     // on purpose, so an accidental clutter never reappears in the active list.
     if(!pdShowArchived&&p.archived)return false;
+    if(docs!=='all'&&window.DocumentationStatus&&DocumentationStatus.classify(p.documentation_dates).status!==docs)return false;
     if(owner!=='all'&&p.owner!==owner)return false;
     // Under an owner, closed records stay hidden unless that status is chosen.
     if(owner!=='all'&&PD_CLOSED_STATUSES.includes(p.status)&&!(status===p.status||status==='ever_reversed'))return false;
@@ -13685,7 +13690,7 @@ function renderPatientDirectory(){
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td>`;
     const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
     return `<tr class="pd-click-row ${rowCls}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
-      <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p),'sm')}</td>
+      <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+(window.DocumentationStatus?DocumentationStatus.badgeHTML(p):''),'sm')}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
       <td onclick="event.stopPropagation();"><div class="pd-actions">
@@ -18611,6 +18616,7 @@ function renderEpisodesPanel(){
     : `<button class="psm-btn psm-btn-primary" onclick="openInpatientVisit()">${psmIc('plus')} Open inpatient visit</button>`;
   const newest=clrState.rows.filter(r=>r.kind==='episode')[0];
   host.innerHTML=`<div class="clr-head pc-head"><h3>Episodes</h3><div class="pc-actions">${headAction}${PatientCommunications.actionsHTML()}</div></div>
+    ${window.DocumentationStatus?DocumentationStatus.cardHTML(clrState.patient):''}
     <div class="clr-cats">${episodeCategoryHTML(clrMeta('episode'),clrState.expanded.episode!==false)}</div>
     ${newest?`<div class="psm-audit">${psmIc('clock')} Last updated ${htmlSafe(fmtShortDate(String(newest.updated_at||newest.created_at||'').slice(0,10)))}${newest.created_by?' by '+htmlSafe(newest.created_by):''}</div>`:''}
     ${PatientCommunications.historyHTML()}`;
@@ -19496,6 +19502,7 @@ async function openPatientRecord(patientId,opts){
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
     </header>
 
+    ${window.DocumentationStatus?DocumentationStatus.cardHTML(pat):''}
     ${surgerySnapshotHTML(pat)}
 
     <nav class="psm-tabs" role="tablist" aria-label="Patient record sections">
