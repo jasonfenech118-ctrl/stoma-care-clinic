@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-509"/>
-<script src="assets/manual.js?v=2026.10.10-509"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-510"/>
+<script src="assets/manual.js?v=2026.10.10-510"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -1292,6 +1292,9 @@ table.np tbody tr:hover td{background:#f4fbfa;}
   border-radius:999px;padding:2px 7px;vertical-align:middle;}
 .np-kind-later{background:#eef7ff;color:#0369a1;border:1px solid #bcdcff;}
 .np-kind-refashion{background:#fffaf0;color:#b45309;border:1px solid #fadfae;}
+.iv-reason{display:flex;flex-direction:column;gap:6px;margin-top:4px;}
+.iv-reason-opt{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:#fff;}
+.iv-reason-opt:has(input:checked){border-color:#0d7377;background:#e8f5f4;}
 /* A refashioning is not a stoma of its own — it remakes one already on file — so
    it is never its own register row. It is folded into the one row for that stoma:
    each refashioning's operation, date and type stack ABOVE the first-performed
@@ -3730,7 +3733,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-509';
+const APP_BUILD='2026.10.10-510';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18732,10 +18735,16 @@ async function openInpatientVisit(){
     alert('This patient already has an inpatient visit open. Set appliances or discharge them from the Handover before opening another.');
     return;
   }
+  // A second or later admission: when the patient already has a (closed) episode
+  // on file, the nurse is asked whether this is a routine inpatient review or a
+  // surgical re-review (a stoma refashioning or a new stoma). The first-ever
+  // admission is unchanged — no reason is asked.
+  const hasPrevious=clrState.available&&(snapshot.records||[]).some(r=>r&&r.kind==='episode');
   ivWizard={pid,patient:pat,step:'ward',ward:pat?.inpatient_ward||'',bed:pat?.inpatient_bed||'',
     // A patient is often entered a day or two after they came in, so the date of
     // admission is asked for rather than assumed to be today.
     admitted:(pat?.is_inpatient&&pat.inpatient_since)||TODAY,
+    hasPrevious,admitReason:'review',surgicalKind:'',
     system:'',appliances:[],accessories:[],notes:''};
   applyInpatientApplianceSnapshot(ivWizard,snapshot);
   renderInpatientStep();
@@ -18783,7 +18792,16 @@ function renderInpatientStep(){
       :w.multi
       ?`<div class="vw-carry" style="grid-column:1 / -1;">This patient has more than one stoma (a mucus fistula). You will set the appliances and accessories for <strong>each stoma</strong> next.</div>`
       :`<div class="vw-carry" style="grid-column:1 / -1;">The patient goes on the Handover as <strong>Awaiting first review</strong> with no appliance set — review them, then set the appliance from the Handover. Or press <strong>Set appliance now</strong> to record it during admission.</div>`;
-    body=`<div class="edit-seen-grid">${carry}${saved}
+    const rsel=v=>((w.admitReason==='surgical'?w.surgicalKind:'review')===v?'checked':'');
+    const reasonBlock=w.hasPrevious?`<div class="fg iv-reason-wrap" style="grid-column:1 / -1;">
+        <label>Reason for this admission *</label>
+        <div class="iv-reason" role="radiogroup">
+          <label class="iv-reason-opt"><input type="radio" name="iv-reason" value="review" ${rsel('review')}> <span><strong>Inpatient review</strong> — routine re-admission, same stoma</span></label>
+          <label class="iv-reason-opt"><input type="radio" name="iv-reason" value="refashion" ${rsel('refashion')}> <span><strong>Surgical re-review</strong> — stoma refashioning</span></label>
+          <label class="iv-reason-opt"><input type="radio" name="iv-reason" value="new" ${rsel('new')}> <span><strong>Surgical re-review</strong> — new stoma formation</span></label>
+        </div>
+        <div class="ap-hint" style="margin:3px 0 0;">This patient has a previous episode. A surgical re-review records the admission and then opens the stoma details so you can add the refashioning or new stoma straight away.</div></div>`:'';
+    body=`<div class="edit-seen-grid">${carry}${reasonBlock}${saved}
       <div class="fg"><label>Ward *</label><select id="iv-ward">${wardOptions(w.ward)}</select></div>
       <div class="fg"><label>Bed number</label><input type="text" id="iv-bed" value="${htmlSafe(w.bed||'')}" placeholder="e.g. 15"/></div>
       <div class="fg"><label>Date of admission *</label>
@@ -18871,7 +18889,9 @@ function captureInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard;
   if(w.step==='ward'){w.ward=String(document.getElementById('iv-ward')?.value||'').trim();w.bed=String(document.getElementById('iv-bed')?.value||'').trim();
-    w.admitted=String(document.getElementById('iv-admitted')?.value||'').trim()||w.admitted||TODAY;}
+    w.admitted=String(document.getElementById('iv-admitted')?.value||'').trim()||w.admitted||TODAY;
+    const reason=document.querySelector('input[name="iv-reason"]:checked')?.value;
+    if(reason){w.admitReason=reason==='review'?'review':'surgical';w.surgicalKind=reason==='review'?'':reason;}}
   else if(['onepiece','flange','bag','dressing'].includes(w.step)){captureAppliancePage();}
   else if(w.step==='accessory'){w.accessories=applianceValues('of-accessories');w.notes=String(document.getElementById('iv-notes')?.value||'').trim();}
 }
@@ -18952,9 +18972,11 @@ async function saveInpatientVisit(){
     // The episode — recorded when the table exists; a missing table must not stop
     // the patient going onto the handover. record_date is the admission date;
     // the appliances (with the stoma type) are filed on the episode itself.
+    const surgical=w.admitReason==='surgical'&&w.surgicalKind;
+    const surgicalLabel=w.surgicalKind==='new'?'New stoma formation':'Stoma refashioning';
     if(clrState.available&&!w.episodeSaved){
-      const detail=`Ward ${ward}${bed?', Bed '+bed:''}`;
-      const base={patient_id:pid,kind:'episode',title:'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,
+      const detail=`Ward ${ward}${bed?', Bed '+bed:''}`+(surgical?` · ${surgicalLabel}`:'');
+      const base={patient_id:pid,kind:'episode',title:surgical?'Surgical re-review':'Inpatient visit',detail,status:'Inpatient',record_date:admitted,is_current:true,
         notes:summary||null,appliances:applianceData,created_by:who?.name||null};
       try{base.episode_ref=await nextEpisodeRef();}catch(e){}
       let body={...base};
@@ -18991,7 +19013,11 @@ async function saveInpatientVisit(){
     const epi=(clrState.rows||[]).find(r=>r.kind==='episode');
     const code=recCode(epi)||'';
     if(ivWizard!==w)return;
+    const jumpToStoma=surgical?w.surgicalKind:'';
     ivWizard=null;
+    // A surgical re-review: the admission is recorded, now open the stoma
+    // details so the refashioning or new stoma is added straight away.
+    if(jumpToStoma){await openStomaOperation(pid,jumpToStoma);return;}
     renderInpatientDone(pat,ward,bed,code,onHandover,admitted,w.reuse);
   }catch(e){alert('Could not complete the admission. Your details are still in the form. '+(e.message||''));}
   finally{
