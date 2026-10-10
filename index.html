@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-517"/>
-<script src="assets/manual.js?v=2026.10.10-517"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-518"/>
+<script src="assets/manual.js?v=2026.10.10-518"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -2024,7 +2024,8 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .followup-owner-plain{background:var(--gold)!important;color:#000!important;border-color:#a96f00!important;font-weight:800;color-scheme:light;}
 .followup-owner-plain option{background:#fff!important;color:#000!important;}
 .fuh-owner-select{padding:2px 6px;border-radius:7px;font-weight:800;}
-.fuh-owner-note{font-size:12px;font-weight:700;margin-left:4px;}
+.fuh-owner-ok{padding:3px 12px;}
+.fuh-owner-note{display:block;font-size:12px;font-weight:700;margin-top:5px;}
 .edit-seen-section{margin:14px 0 10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fafafa;color:var(--navy);font-size:12px;font-weight:900;}
 .episode-only-box{display:none;margin:10px 0 12px;padding:12px;border:1px solid #f2df9f;background:#fff8e1;border-radius:12px;}
 .episode-only-box .episode-note{font-size:11px;color:#856404;line-height:1.35;margin-bottom:8px;font-weight:700;}
@@ -3735,7 +3736,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-517';
+const APP_BUILD='2026.10.10-518';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10814,21 +10815,25 @@ async function savePatientFollowup(patientId){
 }
 async function transferFollowupOwner(patientId,owner){
   const sel=document.getElementById('fuh-owner');
+  const okBtn=document.querySelector('.fuh-owner-ok');
   const note=document.getElementById('fuh-owner-note');
   const newOwner=normaliseFollowupOwner(owner);
   if(sel)sel.disabled=true;
-  if(note){note.textContent=' · Transferring…';note.style.color='var(--muted)';}
+  if(okBtn)okBtn.disabled=true;
+  if(note){note.textContent='Transferring…';note.style.color='var(--muted)';}
   const{data:before}=await SB.from('patients').select('followup_owner').eq('id',patientId).maybeSingle();
   const oldOwner=normaliseFollowupOwner(before?.followup_owner||'Common');
   const r=await updatePatientTolerant(patientId,{followup_owner:newOwner});
   if(r.error){
     if(sel){sel.disabled=false;sel.value=oldOwner;}
-    if(note){note.textContent=' · Could not transfer: '+(r.error.message||r.error);note.style.color='var(--red)';}
+    if(okBtn)okBtn.disabled=false;
+    if(note){note.textContent='Could not transfer: '+(r.error.message||r.error);note.style.color='var(--red)';}
     return;
   }
   if(oldOwner!==newOwner){try{logAudit({action:'edit',patient_id:patientId,patient_name:'',summary:`Follow-up owner transferred: ${oldOwner} → ${newOwner}`});}catch(e){}}
   if(sel)sel.disabled=false;
-  if(note){note.textContent=oldOwner===newOwner?'':` · Transferred ${oldOwner} → ${newOwner}`;note.style.color='var(--teal)';}
+  if(okBtn)okBtn.disabled=false;
+  if(note){note.textContent=oldOwner===newOwner?'Already owned by '+newOwner:`✓ Transferred ${oldOwner} → ${newOwner}`;note.style.color='var(--teal)';}
   // Refresh the planning board so the patient moves to the new nurse's caseload.
   try{if(typeof loadBookingCalendar==='function'&&document.getElementById('bookcal-root'))await loadBookingCalendar();}catch(e){}
   try{if(typeof loadStaffAudit==='function'&&document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}catch(e){}
@@ -10861,7 +10866,7 @@ async function openFollowupHistory(patientId){
     <div class="patient-modal-identity">${patientIdentity}</div>
     <div class="msub">${isFistulaPatient(pat)
       ? `🩹 Booked when needed — no nurse owner or due month.`
-      : `<strong>Follow-up owner:</strong> <select id="fuh-owner" class="followup-owner-plain fuh-owner-select" title="Transfer this patient's follow-up ownership to another nurse" onchange="transferFollowupOwner('${jsSafe(String(patientId))}',this.value)">${followupOwnerOptions(pat?.followup_owner||'Common')}</select> · <strong>Due:</strong> ${followupMonthName(pat?.followup_due_month)} ${htmlSafe(pat?.followup_year||'—')}`}<span id="fuh-owner-note" class="fuh-owner-note"></span></div>
+      : `<strong>Follow-up owner:</strong> <select id="fuh-owner" class="followup-owner-plain fuh-owner-select" title="Choose a nurse, then press OK to transfer this patient">${followupOwnerOptions(pat?.followup_owner||'Common')}</select> <button type="button" class="ncb-btn fuh-owner-ok" style="background:var(--teal);color:#fff;" onclick="transferFollowupOwner('${jsSafe(String(patientId))}',document.getElementById('fuh-owner').value)" title="Transfer this patient to the selected nurse — no rebooking needed">OK</button> · <strong>Due:</strong> ${followupMonthName(pat?.followup_due_month)} ${htmlSafe(pat?.followup_year||'—')}<div id="fuh-owner-note" class="fuh-owner-note"></div>`}</div>
     <section aria-label="Upcoming follow-up appointments"><h3 class="history-section-title">${upcoming.length?'Booked appointments':'Awaiting appointment'}</h3>
       ${upcoming.length?`<div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Nurse / Column</th><th>Status</th><th></th></tr></thead><tbody>${bookedRows}</tbody></table></div>`:'<div class="report-note">Awaiting appointment — no upcoming follow-up appointment is booked.</div>'}
     </section>
