@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-518"/>
-<script src="assets/manual.js?v=2026.10.10-518"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-519"/>
+<script src="assets/manual.js?v=2026.10.10-519"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3736,7 +3736,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-518';
+const APP_BUILD='2026.10.10-519';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10813,28 +10813,41 @@ async function savePatientFollowup(patientId){
   if(error){alert('Could not save follow-up details: '+error.message);return;}
   loadStaffAudit();
 }
-async function transferFollowupOwner(patientId,owner){
+async function transferFollowupOwner(patientId){
   const sel=document.getElementById('fuh-owner');
+  const monthEl=document.getElementById('fuh-month');
+  const yearEl=document.getElementById('fuh-year');
   const okBtn=document.querySelector('.fuh-owner-ok');
   const note=document.getElementById('fuh-owner-note');
-  const newOwner=normaliseFollowupOwner(owner);
+  const newOwner=normaliseFollowupOwner(sel?sel.value:'Common');
+  const newMonth=monthEl&&monthEl.value?Number(monthEl.value):null;
+  const newYear=yearEl&&yearEl.value?Number(yearEl.value):null;
   if(sel)sel.disabled=true;
+  if(monthEl)monthEl.disabled=true;
+  if(yearEl)yearEl.disabled=true;
   if(okBtn)okBtn.disabled=true;
-  if(note){note.textContent='Transferring…';note.style.color='var(--muted)';}
-  const{data:before}=await SB.from('patients').select('followup_owner').eq('id',patientId).maybeSingle();
+  if(note){note.textContent='Saving…';note.style.color='var(--muted)';}
+  const{data:before}=await SB.from('patients').select('followup_owner,followup_due_month,followup_year').eq('id',patientId).maybeSingle();
   const oldOwner=normaliseFollowupOwner(before?.followup_owner||'Common');
-  const r=await updatePatientTolerant(patientId,{followup_owner:newOwner});
+  const patch={followup_owner:newOwner};
+  if(newMonth)patch.followup_due_month=newMonth;
+  if(newYear)patch.followup_year=newYear;
+  const r=await updatePatientTolerant(patientId,patch);
+  const reEnable=()=>{if(sel)sel.disabled=false;if(monthEl)monthEl.disabled=false;if(yearEl)yearEl.disabled=false;if(okBtn)okBtn.disabled=false;};
   if(r.error){
-    if(sel){sel.disabled=false;sel.value=oldOwner;}
-    if(okBtn)okBtn.disabled=false;
-    if(note){note.textContent='Could not transfer: '+(r.error.message||r.error);note.style.color='var(--red)';}
+    if(sel)sel.value=oldOwner;
+    reEnable();
+    if(note){note.textContent='Could not save: '+(r.error.message||r.error);note.style.color='var(--red)';}
     return;
   }
-  if(oldOwner!==newOwner){try{logAudit({action:'edit',patient_id:patientId,patient_name:'',summary:`Follow-up owner transferred: ${oldOwner} → ${newOwner}`});}catch(e){}}
-  if(sel)sel.disabled=false;
-  if(okBtn)okBtn.disabled=false;
-  if(note){note.textContent=oldOwner===newOwner?'Already owned by '+newOwner:`✓ Transferred ${oldOwner} → ${newOwner}`;note.style.color='var(--teal)';}
-  // Refresh the planning board so the patient moves to the new nurse's caseload.
+  const changes=[];
+  if(oldOwner!==newOwner)changes.push(`owner ${oldOwner} → ${newOwner}`);
+  if(newMonth&&Number(before?.followup_due_month)!==newMonth)changes.push(`due month → ${followupMonthName(newMonth)}`);
+  if(newYear&&Number(before?.followup_year)!==newYear)changes.push(`due year → ${newYear}`);
+  if(changes.length){try{logAudit({action:'edit',patient_id:patientId,patient_name:'',summary:'Follow-up '+changes.join(', ')});}catch(e){}}
+  reEnable();
+  if(note){note.textContent=changes.length?('✓ '+changes.join(', ')):'No change';note.style.color='var(--teal)';}
+  // Refresh the planning board so the patient moves to the new nurse's caseload / month.
   try{if(typeof loadBookingCalendar==='function'&&document.getElementById('bookcal-root'))await loadBookingCalendar();}catch(e){}
   try{if(typeof loadStaffAudit==='function'&&document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();}catch(e){}
 }
@@ -10866,7 +10879,7 @@ async function openFollowupHistory(patientId){
     <div class="patient-modal-identity">${patientIdentity}</div>
     <div class="msub">${isFistulaPatient(pat)
       ? `🩹 Booked when needed — no nurse owner or due month.`
-      : `<strong>Follow-up owner:</strong> <select id="fuh-owner" class="followup-owner-plain fuh-owner-select" title="Choose a nurse, then press OK to transfer this patient">${followupOwnerOptions(pat?.followup_owner||'Common')}</select> <button type="button" class="ncb-btn fuh-owner-ok" style="background:var(--teal);color:#fff;" onclick="transferFollowupOwner('${jsSafe(String(patientId))}',document.getElementById('fuh-owner').value)" title="Transfer this patient to the selected nurse — no rebooking needed">OK</button> · <strong>Due:</strong> ${followupMonthName(pat?.followup_due_month)} ${htmlSafe(pat?.followup_year||'—')}<div id="fuh-owner-note" class="fuh-owner-note"></div>`}</div>
+      : `<strong>Follow-up owner:</strong> <select id="fuh-owner" class="followup-owner-plain fuh-owner-select" title="Choose a nurse to transfer this patient to">${followupOwnerOptions(pat?.followup_owner||'Common')}</select> · <strong>Due:</strong> <select id="fuh-month" class="followup-owner-plain fuh-owner-select" title="Change the follow-up due month">${Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${Number(pat?.followup_due_month)===m?'selected':''}>${followupMonthName(m)}</option>`).join('')}</select> <select id="fuh-year" class="followup-owner-plain fuh-owner-select" title="Change the follow-up due year">${followupYearOptions(Number(pat?.followup_year)||new Date().getFullYear())}</select> <button type="button" class="ncb-btn fuh-owner-ok" style="background:var(--teal);color:#fff;" onclick="transferFollowupOwner('${jsSafe(String(patientId))}')" title="Save the owner and due month — no rebooking needed">OK</button><div id="fuh-owner-note" class="fuh-owner-note"></div>`}</div>
     <section aria-label="Upcoming follow-up appointments"><h3 class="history-section-title">${upcoming.length?'Booked appointments':'Awaiting appointment'}</h3>
       ${upcoming.length?`<div class="history-table-wrap"><table class="history-table"><thead><tr><th>Date</th><th>Time</th><th>Nurse / Column</th><th>Status</th><th></th></tr></thead><tbody>${bookedRows}</tbody></table></div>`:'<div class="report-note">Awaiting appointment — no upcoming follow-up appointment is booked.</div>'}
     </section>
