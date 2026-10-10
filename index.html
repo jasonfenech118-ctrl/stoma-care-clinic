@@ -3725,7 +3725,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-500';
+const APP_BUILD='2026.10.10-501';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20672,10 +20672,7 @@ function handoverAwaitingRowHTML(s){
    way (e.g. already an inpatient). Cancels the siting session and refreshes the
    handover, without filing a no-stoma record or touching the patient. */
 async function handoverRemoveAwaiting(id,name){
-  if(!confirm(`Remove ${name||'this patient'} from Awaiting surgery?\n\nUse this only when they are already recorded another way (e.g. already an inpatient). The siting session is cancelled and the row comes off the handover.`))return;
-  const{error}=await SB.from('siting_sessions').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
-  if(error){alert('Could not remove: '+(error.message||error));return;}
-  loadHandover();refreshReminders();
+  cancelSitingSession(id,name);
 }
 /* Stoma performed → continue into the siting-stoma patient form, which creates
    the patient as an inpatient and puts them on the handover proper. */
@@ -21232,7 +21229,7 @@ function renderCancelledSitingSessions(){
     <td data-label="Sited for">${htmlSafe(r.siting_for||'—')}</td>
     <td data-label="Reason / note"><div><strong>${htmlSafe(sitingCancelReasonLabel(r)||'Not recorded')}</strong>${r.cancellation_note?`<div style="white-space:pre-wrap;margin-top:4px;">${htmlSafe(r.cancellation_note)}</div>`:''}</div></td>
     <td data-label="Cancelled on / by"><div>${r.cancelled_at?htmlSafe(new Date(r.cancelled_at).toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric',timeZone:'Europe/Malta'})):'Not recorded'}<div><small>${htmlSafe(r.cancelled_by||'Not recorded')}</small></div></div></td>
-    <td data-label="Actions" class="hv-actions-cell"><div class="followup-actions"><button type="button" class="ncb-btn ncb-del" data-siting-id="${htmlSafe(r.id)}" onclick="confirmDeleteCancelledSiting(this.dataset.sitingId)" aria-label="Delete cancelled appointment for ${htmlSafe([r.first_name,r.surname].filter(Boolean).join(' ')||'patient')}, ID card ${htmlSafe(r.id_card||'not recorded')}">🗑 Delete</button></div></td>
+    <td data-label="Actions" class="hv-actions-cell"><div class="followup-actions"><button type="button" class="ncb-btn" data-siting-id="${htmlSafe(r.id)}" onclick="rebookCancelledSiting(this.dataset.sitingId)">Rebook</button><button type="button" class="ncb-btn ncb-del" data-siting-id="${htmlSafe(r.id)}" onclick="confirmDeleteCancelledSiting(this.dataset.sitingId)" aria-label="Delete cancelled appointment for ${htmlSafe([r.first_name,r.surname].filter(Boolean).join(' ')||'patient')}, ID card ${htmlSafe(r.id_card||'not recorded')}">🗑 Delete</button></div></td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="siting-cancelled-table">
     <colgroup><col style="width:120px"><col style="width:104px"><col style="width:120px"><col style="width:110px"><col style="width:115px"><col style="width:115px"><col><col style="width:140px"><col style="width:88px"></colgroup>
@@ -21347,6 +21344,11 @@ async function openPatientSiting(patientId,idCard,name){
 /* The booking modal: who it is for, the firm, and the day / hour. */
 let sitingChosenSlot='';
 let sitingEditId=null;
+async function rebookCancelledSiting(id){
+  const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).eq('status','cancelled').maybeSingle();
+  if(error||!ss){alert('Could not open cancelled booking: '+(error?.message||'not found'));return;}
+  openSitingBooking('', '', {id_card:ss.id_card,first_name:ss.first_name,surname:ss.surname,consultant:ss.consultant,siting_for:ss.siting_for,proposed_operation:ss.proposed_operation});
+}
 async function openSitingEdit(id){
   const{data:ss,error}=await SB.from('siting_sessions').select('*').eq('id',id).maybeSingle();
   if(error||!ss){alert('Could not open this session: '+(error?error.message:'not found'));return;}
@@ -21537,10 +21539,12 @@ let siteCancelState=null;
 async function updateSitingTolerant(id,payload){
   const body={...payload},dropped=[];
   for(let i=0;i<8;i++){
-    const{error}=await SB.from('siting_sessions').update(body).eq('id',id);
+    let error;
+    try{({error}=await SB.from('siting_sessions').update(body).eq('id',id));}
+    catch(e){return {error:e,dropped};}
     if(!error)return {error:null,dropped};
     const col=missingColumnFromError(error);
-    if(col&&col in body){delete body[col];dropped.push(col);continue;}
+    if(['cancellation_reason','cancellation_note','cancelled_by','cancelled_at'].includes(col)&&col in body){delete body[col];dropped.push(col);continue;}
     return {error,dropped};
   }
   return {error:new Error('too many missing columns'),dropped};
@@ -21555,27 +21559,38 @@ function cancelSitingSession(id,name){
       <label><input type="radio" name="siting-cancel-reason" value="patient"/><span><strong>Due to the patient</strong><small>The patient cancelled, could not attend, was unwell or declined.</small></span></label>
       <label><input type="radio" name="siting-cancel-reason" value="hospital"/><span><strong>Hospital complication</strong><small>Surgery postponed or cancelled, or a theatre, clinic or staffing reason.</small></span></label>
     </fieldset>
+    <fieldset class="cancel-choices"><legend>Cancel the planned operation date too?</legend>
+      <label><input type="radio" name="siting-cancel-operation" value="yes" checked/><span><strong>Yes, cancel operation date</strong><small>Clear the planned date and stop its surgery reminders.</small></span></label>
+      <label><input type="radio" name="siting-cancel-operation" value="no"/><span><strong>No, keep operation date</strong><small>Keep the date in this cancelled booking for reference.</small></span></label>
+    </fieldset>
+    <p>Patient details and the cancelled booking are kept for future rebooking. Completed operations are not changed.</p>
     <div class="fg"><label for="siting-cancel-note">Note (optional)</label><textarea id="siting-cancel-note" maxlength="500" rows="3"></textarea></div>
     <p id="siting-cancel-error" role="alert" hidden style="color:#b42318;font-weight:600;font-size:13px;margin:6px 0;"></p>
     <div class="mact"><button type="button" class="btn-cancel" onclick="closeModal()">Back</button><button type="button" class="btn-save" id="siting-cancel-save" onclick="saveSitingCancellation()">Cancel session</button></div>`;
   openMo();
 }
 async function saveSitingCancellation(){
-  const s=siteCancelState;if(!s)return;
+  const s=siteCancelState;if(!s||s.saving)return;
   const reason=document.querySelector('input[name="siting-cancel-reason"]:checked')?.value||'';
   const errorBox=document.getElementById('siting-cancel-error');
   if(!reason){if(errorBox){errorBox.hidden=false;errorBox.textContent='Choose whether it is due to the patient or a hospital complication.';}return;}
   const note=String(document.getElementById('siting-cancel-note')?.value||'').trim();
+  const cancelOperation=document.querySelector('input[name="siting-cancel-operation"]:checked')?.value==='yes';
+  s.saving=true;
   const btn=document.getElementById('siting-cancel-save');if(btn)btn.disabled=true;
   let who='';try{who=attDisplayName(await getCurrentUserForAudit())||'';}catch(e){}
   const now=new Date().toISOString();
-  const{error,dropped}=await updateSitingTolerant(s.id,{status:'cancelled',cancellation_reason:reason,cancellation_note:note||null,cancelled_by:who||null,cancelled_at:now,updated_at:now});
-  if(error){if(btn)btn.disabled=false;if(errorBox){errorBox.hidden=false;errorBox.textContent='Could not cancel: '+(error.message||error);}return;}
+  const operationPatch=cancelOperation?{surgery_date:null}:{};
+  const{error,dropped}=await updateSitingTolerant(s.id,{...operationPatch,status:'cancelled',cancellation_reason:reason,cancellation_note:note||null,cancelled_by:who||null,cancelled_at:now,updated_at:now});
+  if(error){s.saving=false;if(btn)btn.disabled=false;if(errorBox){errorBox.hidden=false;errorBox.textContent='Could not cancel: '+(error.message||error);}return;}
   const reasonSaved=!dropped.includes('cancellation_reason');
   closeModal();
   sitingLocalPatches[s.id]=reasonSaved?{status:'cancelled',cancellation_reason:reason,cancellation_note:note||null}:{status:'cancelled'};
   if(!reasonSaved)alert('The siting session was cancelled, but the reason could not be saved yet. Run sql/add-siting-cancellation.sql once in Supabase to record cancellation reasons.');
+  siteCancelState=null;
   refreshSitingViews();
+  refreshReminders();
+  if(document.getElementById('page-handover')?.classList.contains('active'))loadHandover();
 }
 function refreshSitingViews(){
   if(document.getElementById('siting-body'))loadSitingSessions();
