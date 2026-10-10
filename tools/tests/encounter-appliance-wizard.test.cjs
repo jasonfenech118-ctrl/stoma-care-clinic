@@ -28,7 +28,7 @@ function setup(t){
     async function commitEpisodeAppliances(p,rows){saved.push(rows);} async function commitOutcomeFollowup(p,rows){saved.push(rows);}
     var visitWizard=null,esPickerSkipFor=null;`);
   w.eval(fistulaHelpers+'\nvar ivWizard=null;');
-  w.eval(['openEncounterApplianceWizard','visitStoma','startVisitStoma','vaFlangeCouplings','vaBagPanelHTML','renderVisitStep','isoPlusDays','flangeDueFieldHTML',
+  w.eval(['openEncounterApplianceWizard','visitStoma','startVisitStoma','applianceSelectionType','applianceFitsStoma','compatibleStomaBags','vaFlangeCouplings','vaBagPanelHTML','renderVisitStep','isoPlusDays','flangeDueFieldHTML',
     'visitChooseSystem','captureVisitStep','visitSubSteps','visitNext','visitBack','visitBackToAppointment','commitVisitFromWizard',
     'visitKeepSame','esApplianceChoice','esApplianceContinue','esApplianceFinishStoma','visitPanelHTML','applianceChkHTML','applianceValues','selectedAppliances'].map(fn).join('\n'));
   return w;

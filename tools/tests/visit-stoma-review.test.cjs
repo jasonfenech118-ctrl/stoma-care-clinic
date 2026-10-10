@@ -23,7 +23,7 @@ test('each stoma gets its own named column with colour, output, skin and notes, 
   const {w,host,mount}=setup(t);await mount();
   assert.deepEqual([...host.querySelectorAll('.jenc-stoma-title')].map(h=>h.textContent),['End Colostomy','Loop Ileostomy']);
   for(const uid of ['a','b'])for(const k of ['colour','output','skin','notes'])assert.ok(host.querySelector('[data-vsr="'+k+'"][data-uid="'+uid+'"]'),k+uid);
-  assert.deepEqual([...host.querySelectorAll('[data-vsr="skin"][data-uid="a"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration']);
+  assert.deepEqual([...host.querySelectorAll('[data-vsr="skin"][data-uid="a"]')].map(x=>x.value),['Healthy skin','Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration','Not assessed — flange in situ']);
   assert.equal(host.querySelector('[data-vsr^="rod"]'),null,'appointments never ask about rods, including a loop stoma’s first assessment');
   assert.doesNotMatch(host.textContent,/Rod present|Planned removal date|Rod removed on/i);
   assert.doesNotMatch(host.textContent,/\bS[12]\b/);
@@ -88,7 +88,7 @@ test('editing a saved visit preserves its historical rod data without offering r
 });
 
 test('Complete visit advances and saves without a rod date, keeps complication checks and leaves patient rod fields alone',async t=>{
-  const row={uid:'b',type:'Loop ileostomy',colour:'Healthy pink',output:[],skin:{status:'Healthy',problems:[]},rod:{status:'In place',due:'',removed:''},rod_asked:true,notes:'Saved.'};
+  const row={uid:'b',type:'Loop ileostomy',colour:'Healthy pink',output:['Nil'],skin:{status:'Healthy',problems:[]},rod:{status:'In place',due:'',removed:''},rod_asked:true,notes:'Saved.'};
   const {w,host,mount}=setup(t,{stomas:[{uid:'b',typeLabel:'Loop ileostomy'}],patient:{rod_stoma_uid:'b',rod_removal_date:'2026-10-27'}});
   await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:[row]});
   w.document.body.insertAdjacentHTML('beforeend','<div id="mb"><input type="radio" name="of-cmp-review" value="none"><div id="of-review-error" hidden></div></div>');
@@ -196,4 +196,22 @@ test('a fistula patient’s visit has one Fistula column: output and the skin ar
   const labels=[...host.querySelectorAll('label')].map(l=>l.textContent);
   assert.ok(labels.includes('Output'));assert.ok(labels.includes('Skin around the fistula'));
   assert.ok(host.querySelector('[data-vsr="output"][data-uid="fistula"]'));assert.ok(host.querySelector('[data-vsr="notes"][data-uid="fistula"]'));
+});
+
+test('assessment requires colour, output and skin on every current stoma; notes are optional',async t=>{
+  const {w,host,mount}=setup(t);await mount();
+  assert.equal(w.VisitStomaReview.validate('ap1'),false);
+  assert.match(host.querySelector('[role="alert"]').textContent,/End Colostomy.*Loop Ileostomy/);
+  for(const id of ['a','b']){
+    change(w,host.querySelector('[data-vsr="colour"][data-uid="'+id+'"]'),'Healthy pink');
+    change(w,host.querySelector('[data-vsr="output"][data-uid="'+id+'"][value="Nil"]'),true);
+    change(w,host.querySelector('[data-vsr="skin"][data-uid="'+id+'"][value="Healthy skin"]'),true);
+    if(id==='a')assert.equal(w.VisitStomaReview.validate('ap1'),false);
+  }
+  assert.equal(w.VisitStomaReview.validate('ap1'),true);
+  assert.equal(w.VisitStomaReview.payloadFor('ap1')[0].notes,'');
+  change(w,host.querySelector('[data-vsr="skin"][data-uid="b"][value="Not assessed — flange in situ"]'),true);
+  assert.equal(w.VisitStomaReview.validate('ap1'),true);
+  assert.equal(w.VisitStomaReview.payloadFor('ap1')[1].skin.status,'Not assessed');
+  assert.equal(w.VisitStomaReview.skinFor('ap1').problems.length,0);
 });
