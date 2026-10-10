@@ -5,22 +5,22 @@
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const date=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))?String(v):null;
  function classify(e,asOf=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Malta'})){
-   if(!e)return {status:'unconfirmed',label:'Documentation dates unconfirmed',reason:'The electronic history could not be checked.'};
+   if(!e)return {status:'unconfirmed',label:'History not checked',reason:'The system could not check when electronic notes began. Try refreshing the patient record.'};
    const s=date(e.surgery_date),ep=date(e.first_episode_date),enc=date(e.first_encounter_date);
    const entered=[date(e.first_episode_entered_date),date(e.first_encounter_entered_date)];
-   if(!s)return {status:'unconfirmed',label:'Documentation dates incomplete',reason:'The first surgery date is not recorded.'};
-   if(s>asOf)return {status:'pending',label:'Awaiting electronic history',reason:'Surgery is in the future; electronic coverage from surgery cannot yet be established.'};
-   if([ep,enc,...entered].some(d=>d&&d>s))return {status:'earlier_history',label:'Earlier history to check',reason:'Electronic documentation begins or was entered after surgery. Earlier history may be held in a paper file.'};
-   if(!ep||!enc||entered.some(d=>!d))return {status:'pending',label:'Awaiting electronic history',reason:'A dated first episode and first saved encounter are needed to establish electronic coverage.'};
-   return {status:'electronic',label:'Electronic from surgery',reason:'The first episode and encounter were dated and entered on or before surgery. This does not confirm whether a separate paper file exists.'};
+   if(!s)return {status:'unconfirmed',label:'Surgery date missing',reason:'Add the first surgery date so the system can check when electronic notes began.'};
+   if(s>asOf)return {status:'pending',label:'Electronic history incomplete',reason:'Surgery has not taken place yet. The system will check the record history after surgery.'};
+   if([ep,enc,...entered].some(d=>d&&d>s))return {status:'earlier_history',label:'Check for earlier paper notes',reason:'Electronic notes were started or added after surgery. Check for earlier notes in a paper file.'};
+   if(!ep||!enc||entered.some(d=>!d))return {status:'pending',label:'Electronic history incomplete',reason:'The first episode or saved encounter is missing a date or has not been recorded yet.'};
+   return {status:'electronic',label:'Electronic notes from surgery',reason:'Electronic notes begin from surgery. A separate paper file may still exist.'};
  }
  function evidence(p){return p?.documentation_dates||null;}
  function badgeHTML(p){const d=classify(evidence(p));return '<span class="documentation-badge documentation-'+d.status+'" title="'+esc(d.reason)+'">'+esc(d.label)+'</span>';}
  function cardHTML(p){
    const e=evidence(p),d=classify(e);
-   const names=[['Surgery',e?.surgery_date],['First episode',e?.first_episode_date],['First encounter',e?.first_encounter_date],['Episode entered',e?.first_episode_entered_date],['Encounter entered',e?.first_encounter_entered_date]];
+   const names=[['Surgery',e?.surgery_date],['First electronic episode',e?.first_episode_date],['First electronic notes',e?.first_encounter_date],['Episode added to system',e?.first_episode_entered_date],['Notes added to system',e?.first_encounter_entered_date]];
    const fmt=v=>date(v)?new Date(v+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'Not recorded';
-   return '<aside class="documentation-card" aria-label="Documentation record"><div><strong>Documentation record</strong> '+badgeHTML(p)+' <small>Automatic · based on dates</small></div><p>'+esc(d.reason)+'</p><dl>'+names.map(([n,v])=>'<div><dt>'+n+'</dt><dd>'+esc(fmt(v))+'</dd></div>').join('')+'</dl></aside>';
+   return '<aside class="documentation-card" aria-label="Patient records"><div><strong>Patient records</strong> '+badgeHTML(p)+' <small>Automatically checked from dates</small></div><p>'+esc(d.reason)+'</p><dl>'+names.map(([n,v])=>'<div><dt>'+n+'</dt><dd>'+esc(fmt(v))+'</dd></div>').join('')+'</dl></aside>';
  }
  async function enrich(result,db){
    if(result?.error||!db?.rpc)return result;
