@@ -203,7 +203,8 @@
     // Referrals come from the patient record; an older episode's own list fills any gap.
     const fromPatient=patientReferrals(p);
     const legacy=list(saved?.referrals).map(normReferral).filter(r=>r&&!fromPatient.some(x=>x.id===r.id||(!x.seen&&x.profession===r.profession)));
-    return {stomas,scope:stomas.map(s=>s.uid),notes:'',infection:infectionSeed(p),referrals:fromPatient.concat(legacy)};
+    return {stomas,scope:stomas.map(s=>s.uid),notes:'',infection:infectionSeed(p),referrals:fromPatient.concat(legacy),
+      teaching_plan:saved&&saved.teaching_plan?copy(saved.teaching_plan):null,discharge_plan:saved&&saved.discharge_plan?copy(saved.discharge_plan):null};
   }
   // A rod is only placed at surgery, so the rod question belongs to the FIRST
   // encounter that assessed a stoma; later encounters do not ask it again.
@@ -419,6 +420,42 @@
       appliances:applianceHTML(s,extra,old)
     };
   }
+  // ── Teaching plan & Discharge preparation (Mater Dei stoma care forms) ──
+  // Both ride inside the encounter snapshot, so each saved version is signed
+  // automatically with the nurse's name. The teaching plan carries forward from
+  // the previous encounter, and each item records the nurse and date it was
+  // ticked — so the progress shows a signature for each nurse, as on paper.
+  const TEACHING_ITEMS=['Patient has seen stoma and first flange and bag change','Able to assemble items needed','Able to remove old bag','Able to remove flange','Able to clean stoma','Able to empty bag (applicable for drainable pouches)','Able to apply new bag with flange','Able to apply flange','Able to dispose of waste'];
+  function newTeachingPlan(){return {note:'',items:TEACHING_ITEMS.map(key=>({key,done:false,date:'',by:''})),by:'',updated:''};}
+  function newDischargePlan(){return {appliance_dispensing:'',schedule_v:'',home_supply:'',info_literature:'',community_nurse:'',stoma_clinic_followup:'',comments:'',by:'',updated:''};}
+  function teachingItems(tp){const prev=list(tp&&tp.items);return TEACHING_ITEMS.map(key=>{const o=prev.find(x=>x&&x.key===key)||{};return {key,done:!!o.done,date:o.date||'',by:o.by||''};});}
+  function normalizeTeaching(tp){tp.items=teachingItems(tp);if(typeof tp.note!=='string')tp.note='';return tp;}
+  function teachingPlanSectionHTML(tp){
+    normalizeTeaching(tp);const ed=ctx.editable;
+    const note='<div class="jenc-field jenc-field-wide"><label>Teaching note (e.g. “Done with wife”)</label><input type="text" data-kind="teach" data-field="note" value="'+esc(tp.note||'')+'"'+(ed?'':' disabled')+' placeholder="Who it was done with, progress…"></div>';
+    const rows=tp.items.map((it,i)=>'<div class="jenc-teach-item"><label class="jenc-check"><input type="checkbox" data-kind="teach-item" data-index="'+i+'"'+(it.done?' checked':'')+(ed?'':' disabled')+'> '+esc(it.key)+'</label>'+(it.done&&(it.date||it.by)?'<span class="jenc-teach-sign">'+esc([it.date?showDay(it.date):'',it.by].filter(Boolean).join(' · '))+'</span>':'')+'</div>').join('');
+    const sign='<div class="jenc-signature">'+(ed?'Each tick is signed automatically · editing as '+esc(ctx.who.name):(tp.by?'Last updated by: '+esc(tp.by)+(tp.updated?' · '+esc(showDay(tp.updated)):''):'Signed automatically'))+'</div>';
+    return '<div class="jenc-teach">'+note+'<div class="jenc-teach-list">'+rows+'</div>'+sign+'</div>';
+  }
+  function dischargePlanSectionHTML(dp){
+    const ed=ctx.editable;
+    const yn=(label,field)=>'<div class="jenc-field"><label>'+esc(label)+'</label><select data-kind="discharge" data-field="'+field+'"'+(ed?'':' disabled')+'><option value="">—</option><option value="Yes"'+(dp[field]==='Yes'?' selected':'')+'>Yes</option><option value="No"'+(dp[field]==='No'?' selected':'')+'>No</option></select></div>';
+    const comm='<div class="jenc-field"><label>Referral for community nurse</label><select data-kind="discharge" data-field="community_nurse"'+(ed?'':' disabled')+'>'+['','Daily','BD','No'].map(v=>'<option value="'+esc(v)+'"'+(dp.community_nurse===v?' selected':'')+'>'+(v||'—')+'</option>').join('')+'</select></div>';
+    const comments='<div class="jenc-field jenc-field-wide"><label>Additional comments or unmet outcomes</label><textarea rows="3" data-kind="discharge" data-field="comments"'+(ed?'':' readonly')+' placeholder="Anything not yet met, or notes for discharge…">'+esc(dp.comments||'')+'</textarea></div>';
+    const sign='<div class="jenc-signature">'+(ed?'Signed automatically · editing as '+esc(ctx.who.name):(dp.by?'Signed by: '+esc(dp.by)+(dp.updated?' · '+esc(showDay(dp.updated)):''):'Signed automatically'))+'</div>';
+    return '<div class="jenc-discharge"><div class="jenc-discharge-grid">'+yn('Discussed appliance dispensing procedure','appliance_dispensing')+yn('Schedule V application & prescriptions for home supply given','schedule_v')+yn('Home supply brought','home_supply')+yn('Patient information / literature & clinic contacts given','info_literature')+comm+yn('To be followed up in Stoma Clinic','stoma_clinic_followup')+'</div>'+comments+sign+'</div>';
+  }
+  // Read-only versions for the saved document and the encounter summary.
+  function teachingDocHTML(tp){
+    if(!tp)return '';
+    const items=teachingItems(tp);
+    return '<section class="jenc-document-support"><h4>Teaching plan</h4>'+(tp.note?'<p><em>'+esc(tp.note)+'</em></p>':'')+'<ul class="jenc-doc-teach">'+items.map(it=>'<li>'+(it.done?'☑':'☐')+' '+esc(it.key)+(it.done&&(it.date||it.by)?' <span class="jenc-meta">('+esc([it.date?showDay(it.date):'',it.by].filter(Boolean).join(' · '))+')</span>':'')+'</li>').join('')+'</ul>'+(tp.by?'<p class="jenc-meta">Last updated by '+esc(tp.by)+(tp.updated?' · '+esc(showDay(tp.updated)):'')+'</p>':'')+'</section>';
+  }
+  function dischargeDocHTML(dp){
+    if(!dp)return '';
+    const f=(label,value)=>'<div class="jenc-document-field"><dt>'+esc(label)+'</dt><dd><strong>'+esc(String(value||'').trim()||'—')+'</strong></dd></div>';
+    return '<section class="jenc-document-support"><h4>Discharge preparation</h4><dl>'+f('Discussed appliance dispensing',dp.appliance_dispensing)+f('Schedule V / home supply prescriptions given',dp.schedule_v)+f('Home supply brought',dp.home_supply)+f('Information / literature & contacts given',dp.info_literature)+f('Referral for community nurse',dp.community_nurse)+f('To be followed up in Stoma Clinic',dp.stoma_clinic_followup)+'</dl>'+(dp.comments?'<p>'+esc(dp.comments)+'</p>':'')+(dp.by?'<p class="jenc-meta">Signed by '+esc(dp.by)+(dp.updated?' · '+esc(showDay(dp.updated)):'')+'</p>':'')+'</section>';
+  }
   function render(){
     if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
     const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
@@ -446,6 +483,8 @@
         '<section class="jenc-summary-sec"><h4>Appliances &amp; accessories</h4>'+applianceSummaryTableHTML(stomas)+'</section>'+
         '<section class="jenc-summary-sec"><h4>General notes</h4><p class="jenc-document-notes">'+esc(String(snap?.notes||'').trim()||'No written notes recorded.')+'</p></section>'+
         infHTML+refHTML+
+        (snap?.teaching_plan?'<section class="jenc-summary-sec">'+teachingDocHTML(snap.teaching_plan)+'</section>':'')+
+        (snap?.discharge_plan?'<section class="jenc-summary-sec">'+dischargeDocHTML(snap.discharge_plan)+'</section>':'')+
         '<footer class="jenc-signature">'+signLine+'</footer></article>'+
         '<div class="jenc-actions jenc-no-print"><button class="jenc-btn" data-action="summary-back">← Back to encounter</button><button class="jenc-btn" data-action="print">Print / PDF</button><button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
       return;
@@ -488,7 +527,11 @@
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading','Episode '+esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','Patient · every episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
-    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(!editableToday(rec)?'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>':'')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
+    const tpd=ctx.draft.teaching_plan,dpd=ctx.draft.discharge_plan;
+    const teachingSection=tpd?'<section class="jenc-card jenc-step" data-step="teaching" aria-labelledby="jenc-teaching-heading">'+heading(6,'Teaching plan','jenc-teaching-heading','Patient')+teachingPlanSectionHTML(tpd)+'</section>':'';
+    const dischargeSection=dpd?'<section class="jenc-card jenc-step" data-step="discharge" aria-labelledby="jenc-discharge-heading">'+heading(7,'Discharge preparation','jenc-discharge-heading','Patient')+dischargePlanSectionHTML(dpd)+'</section>':'';
+    const addPlanBtns=ctx.editable&&(!tpd||!dpd)?'<div class="jenc-add-plans jenc-no-print">'+(!tpd?'<button class="jenc-btn" data-action="add-teaching">+ Add teaching plan</button>':'')+(!dpd?'<button class="jenc-btn" data-action="add-discharge">+ Add discharge preparation</button>':'')+'</div>':'';
+    page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+teachingSection+dischargeSection+'</div>'+addPlanBtns+'<div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(!editableToday(rec)?'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>':'')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
     page.querySelectorAll('details[data-section]').forEach(el=>el.addEventListener('toggle',()=>{if(el.open)ctx?.openSections.add(el.dataset.section);else ctx?.openSections.delete(el.dataset.section);}));
     page.querySelectorAll('textarea[data-note]').forEach(ta=>ta.addEventListener('scroll',()=>{const mirror=ta.parentNode.querySelector('.jenc-note-mirror');if(mirror){mirror.scrollTop=ta.scrollTop;mirror.scrollLeft=ta.scrollLeft;}}));refreshReport();
     if(ctx.saving){const saveButton=page.querySelector('#jenc-save');if(saveButton)saveButton.textContent=ctx.savePhase||'Saving…';page.querySelectorAll('select,input,textarea,button').forEach(el=>el.disabled=true);}
@@ -513,7 +556,7 @@
     const infectionHTML=infection?.status&&infection.status!=='Not recorded'?'<section class="jenc-document-support"><h4>Infection status</h4><p><strong>'+esc([infection.organism,infection.status].filter(Boolean).join(' · '))+'</strong></p></section>':'';
     const refs=list(snapshot?.referrals).map(normReferral).filter(Boolean);
     const support=refs.length?'<section class="jenc-document-support"><h4>Support / referrals</h4>'+refs.map(r=>'<p><strong>'+esc(referralText(r))+'</strong></p>').join('')+'</section>':'';
-    const html=sections+general+infectionHTML+support;
+    const html=sections+general+infectionHTML+support+teachingDocHTML(snapshot?.teaching_plan)+dischargeDocHTML(snapshot?.discharge_plan);
     if(!previous)return html;
     // Compare signed values within their original sections, keeping the saved document layout.
     const current=document.createElement('div'),before=document.createElement('div');
@@ -572,14 +615,21 @@
       const was=!ctx.editable&&ctx.comparisonReport!=null?ctx.comparisonReport:(old?report(old):'');r.classList.toggle('jenc-document-prose',!ctx.editable);r.innerHTML=ctx.editable?(showDiff?diffHTML(was,now,true):esc(now)):documentReport({...ctx.viewVersion.snapshot,legacy_assessment:ctx.viewVersion.legacy_assessment},now,showDiff?old:null,was);}
   }
   function input(e){
-    if(!ctx?.editable)return;const key=e.target.dataset?.note;if(e.target.tagName!=='TEXTAREA'||key===undefined)return;
-    if(key)(ctx.draft.stomas.find(x=>x.uid===key)||{}).notes=e.target.value;else ctx.draft.notes=e.target.value;refreshReport();
+    if(!ctx?.editable)return;
+    const el=e.target,dk=el.dataset?.kind,df=el.dataset?.field;
+    if(dk==='teach'&&df==='note'&&ctx.draft.teaching_plan){ctx.draft.teaching_plan.note=el.value;ctx.draft.teaching_plan.by=ctx.who.name;ctx.draft.teaching_plan.updated=TODAY;return;}
+    if(dk==='discharge'&&df==='comments'&&ctx.draft.discharge_plan){ctx.draft.discharge_plan.comments=el.value;ctx.draft.discharge_plan.by=ctx.who.name;ctx.draft.discharge_plan.updated=TODAY;return;}
+    const key=el.dataset?.note;if(el.tagName!=='TEXTAREA'||key===undefined)return;
+    if(key)(ctx.draft.stomas.find(x=>x.uid===key)||{}).notes=el.value;else ctx.draft.notes=el.value;refreshReport();
   }
   function change(e){
     if(!ctx)return;const el=e.target,kind=el.dataset.kind,field=el.dataset.field;
     if(kind==='compare'){ctx.compare=el.checked;render();return;}
     if(kind==='history'){ctx.historyFilter=el.value;render();return;}
     if(!ctx.editable)return;
+    if(kind==='teach-item'){const tp=ctx.draft.teaching_plan,it=tp&&list(tp.items)[Number(el.dataset.index)];if(it){it.done=el.checked;it.date=el.checked?TODAY:'';it.by=el.checked?ctx.who.name:'';tp.by=ctx.who.name;tp.updated=TODAY;}render();return;}
+    if(kind==='teach'&&field==='note'){if(ctx.draft.teaching_plan){ctx.draft.teaching_plan.note=el.value;ctx.draft.teaching_plan.by=ctx.who.name;ctx.draft.teaching_plan.updated=TODAY;}return;}
+    if(kind==='discharge'){const dp=ctx.draft.discharge_plan;if(dp){dp[field]=el.value;dp.by=ctx.who.name;dp.updated=TODAY;}return;}
     if(!kind)return;
     let obj;
     if(kind==='global')obj=ctx.draft;
@@ -632,6 +682,8 @@
     if(action==='add-comp'&&st){st.complications.push({id:crypto.randomUUID(),text:'',status:'open'});ctx.openSections.add('complications:'+st.uid);render();}
     if(action==='remove-comp'&&st){st.complications.splice(Number(btn.dataset.index),1);render();}
     if(action==='add-referral'){ctx.draft.referrals.push({id:crypto.randomUUID(),profession:'',referred_on:TODAY,referred_by:ctx.who.name,seen:false,seen_on:'',seen_by:''});render();}
+    if(action==='add-teaching'){if(ctx.editable){ctx.draft.teaching_plan=ctx.draft.teaching_plan||newTeachingPlan();render();}return;}
+    if(action==='add-discharge'){if(ctx.editable){ctx.draft.discharge_plan=ctx.draft.discharge_plan||newDischargePlan();render();}return;}
     if(action==='remove-referral'){ctx.draft.referrals.splice(Number(btn.dataset.index),1);render();}
     if(action==='save')await save();
   }
