@@ -31,7 +31,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.09-499"/>
 <script defer src="assets/jason-encounters.js?v=2026.10.09-499"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.10-504"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.10-505"></script>
 <style>
 :root{
   --navy:#1a2e4a;--teal:#0d7377;--teal2:#14a085;--gold:#e6a817;
@@ -3727,7 +3727,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.10-504';
+const APP_BUILD='2026.10.10-505';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6044,14 +6044,14 @@ const APPLIANCE_CATALOGUE=[
   {name:'Salts XNL1352',system:'one',group:'Salts'},
   {name:'Salts NDAL13',system:'one',group:'Salts'},
   {name:'Salts NAL1390',system:'one',group:'Salts'},
-  {name:'Hollister 24730',system:'one',group:'Hollister'},
-  {name:'Hollister 25300',system:'one',group:'Hollister'},
-  {name:'Hollister 25760',system:'one',group:'Hollister'},
-  {name:'Hollister 27300',system:'one',group:'Hollister'},
-  {name:'Hollister 27420',system:'one',group:'Hollister'},
-  {name:'Hollister 27830',system:'one',group:'Hollister'},
-  {name:'Hollister 29500',system:'one',group:'Hollister'},
-  {name:'Hollister 34200',system:'one',group:'Hollister'},
+  {name:'Hollister 24730',system:'two',part:'bag',coupling:45,connector:'hollister-conform2',purpose:'urostomy'},
+  {name:'Hollister 25300',system:'two',part:'flange',coupling:55,connector:'hollister-conform2'},
+  {name:'Hollister 25760',system:'two',part:'bag',coupling:55,connector:'hollister-conform2',purpose:'bowel'},
+  {name:'Hollister 27300',system:'two',part:'flange',coupling:70,connector:'hollister-conform2'},
+  {name:'Hollister 27420',system:'two',part:'bag',coupling:70,connector:'hollister-conform2',purpose:'bowel'},
+  {name:'Hollister 27830',system:'two',part:'bag',coupling:70,connector:'hollister-conform2',purpose:'urostomy'},
+  {name:'Hollister 29500',system:'one',group:'Hollister',purpose:'urostomy'},
+  {name:'Hollister 34200',system:'two',part:'flange',coupling:45,connector:'hollister-conform2'},
   {name:'Welland 201148',system:'one',group:'Welland'},
   {name:'Welland MHCS513',system:'one',group:'Welland'},
   {name:'Welland XFM535',system:'one',group:'Welland'},
@@ -6801,6 +6801,7 @@ function esStepsOrder(){return esOutcomeAttended()?[1,2,3,4,5]:[1,4];}
 function esGoStep(n){
   if(!esState)return;
   if(n>=4&&esOutcomeAttended()&&!(esResume?.apptId===String(esState.apptId)&&esResume.rows?.length)){n=3;}
+  if(n>=3&&esOutcomeAttended()&&window.VisitStomaReview?.validate&&!VisitStomaReview.validate(esState.apptId))n=2;
   const order=esStepsOrder();
   if(!order.includes(n))n=order[order.length-1];
   esState.step=n;
@@ -6867,6 +6868,7 @@ async function linkVisitSkinComplications(patientId,skin){
 async function esFollowupNext(){
   if(!esState)return;
   if(!esOutcomeAttended()){esGoStep(4);return;}
+  if(window.VisitStomaReview?.validate&&!VisitStomaReview.validate(esState.apptId))return;
   // Unhealthy peristomal skin is a complication: it cannot be "none identified".
   const skinIssues=window.VisitStomaReview?VisitStomaReview.skinFor(esState.apptId).problems:[];
   if(skinIssues.length&&document.querySelector('input[name="of-cmp-review"]:checked')?.value==='none'){
@@ -7287,19 +7289,30 @@ function startVisitStoma(uid){
   w.step=w.pending.integrated&&carry.appliances.length?'choice':'system';
   renderVisitStep();
 }
+function applianceSelectionType(w){
+  if(!w)return '';
+  const st=(w.stomas||[]).find(x=>x.uid===w.chosen)||((w.stomas||[]).length===1?w.stomas[0]:null);
+  return st?.typeLabel||st?.type||w.type||w.patient?.stoma_type||'';
+}
+function applianceFitsStoma(item,type){
+  if(!/urostomy/i.test(String(type||'')))return true;
+  if(item.part==='flange')return true;
+  return item.purpose==='urostomy'||/\buro(?:stomy)?[\/\s-]/i.test(item.name||'');
+}
+function compatibleStomaBags(appliances,type){
+  const flanges=(appliances||[]).map(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)).filter(a=>a?.part==='flange');
+  return APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&applianceFitsStoma(a,type)&&flanges.some(f=>f.coupling===a.coupling&&(f.connector||'convatec-surfit')===(a.connector||'convatec-surfit')));
+}
 function vaFlangeCouplings(){
   return [...new Set((visitWizard.work.appliances||[]).map(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)).filter(it=>it&&it.part==='flange').map(it=>it.coupling))];
 }
 function vaBagPanelHTML(selected){
-  const cs=vaFlangeCouplings().sort((a,b)=>a-b);
-  if(!cs.length)return '<div class="ap-empty">Go back and choose a flange first — the bags that fit it are then offered here.</div>';
-  const html=cs.map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selected)).join('');
-  // A flange whose coupling has no bag on the list would otherwise leave the
-  // page blank with nothing to tick and no reason given.
-  const none=cs.filter(c=>!APPLIANCE_CATALOGUE.some(a=>a.part==='bag'&&a.coupling===c));
-  const note=none.length?`<div class="ap-empty">No bag on the list fits a ${none.join(' mm or ')} mm flange yet. Carry on — the flange is recorded — and write the bag in the ward note.</div>`:'';
-  return note+html;
+  const w=visitWizard,cs=vaFlangeCouplings().sort((a,b)=>a-b);
+  if(!cs.length)return '<div class="ap-empty">Go back and choose a flange first.</div>';
+  const bags=compatibleStomaBags(w.work.appliances,applianceSelectionType(w));
+  return cs.map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,bags.filter(a=>a.coupling===c),selected)).join('')||'<div class="ap-empty">No compatible bag is on the list for this stoma and flange. Choose another recorded flange.</div>';
 }
+
 function renderVisitStep(){
   if(!visitWizard)return;
   const w=visitWizard;
@@ -7413,6 +7426,7 @@ function flangeDueFieldHTML(due){
 function visitKeepSame(){
   const w=visitWizard;if(!w||!w.chosen)return;
   const kept=w.prev[w.chosen]||{},app=parseNameList(kept.appliances);if(!app.length)return;
+  if(app.some(n=>!applianceFitsStoma(APPLIANCE_CATALOGUE.find(a=>a.name===n)||{name:n},applianceSelectionType(w)))){alert('The recorded appliance is not a urostomy pouch. Choose Change appliance.');return;}
   const acc=parseNameList(kept.accessories),st=visitStoma(w.chosen);
   w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
     appliances:app.slice(),accessories:acc.length?acc.slice():['None'],flange_due:kept.flange_due||'',kept:true};
@@ -7453,10 +7467,12 @@ function visitNext(){
   if(!visitWizard)return;
   const w=visitWizard;
   captureVisitStep();
+  if(w.step==='bag'){const allowed=compatibleStomaBags(w.work.appliances,applianceSelectionType(w));if(!w.work.appliances.some(n=>allowed.some(a=>a.name===n))){alert('Choose a compatible bag for this stoma and flange.');return;}}
   if(w.step==='system'&&!w.system){alert('Please choose one-piece, two-piece or dressing.');return;}
   if((w.step==='onepiece'||w.step==='bag')&&!w.work.appliances.length){alert('Record at least one appliance for this stoma. If it is unchanged it is already ticked — just continue.');return;}
   if(w.step==='dressing'&&!w.work.appliances.length){alert('Record at least one dressing for this stoma.');return;}
   if(w.step==='accessory'){
+    if(w.system==='two'&&!w.work.appliances.some(n=>compatibleStomaBags(w.work.appliances,applianceSelectionType(w)).some(a=>a.name===n))){alert('Choose a compatible bag for this stoma and flange.');w.step='bag';renderVisitStep();return;}
     if(!w.work.accessories.length){alert('Record the accessories for this stoma. If none were used, tick None.');return;}
     // store this stoma and either return to the list or save the visit
     const st=visitStoma(w.chosen);
@@ -7705,11 +7721,12 @@ function scrollPanelsToTicked(){
     if(row)host.scrollTop=Math.max(0,row.offsetTop-host.offsetTop-8);
   });
 }
-function visitPanelHTML(part,selected){
+function visitPanelHTML(part,selected,context){
   const extra=part==='one'?selected.filter(n=>!APPLIANCES.includes(n)).map(n=>({name:n,system:'one',group:'Also on this record'})):[];
-  const all=APPLIANCE_CATALOGUE.concat(extra);
+  const w=context||visitWizard||ivWizard;
+  const all=APPLIANCE_CATALOGUE.concat(extra).filter(a=>applianceFitsStoma(a,applianceSelectionType(w)));
   if(part==='one')
-    return onePieceGroupsFor(visitWizard?.patient||ivWizard?.patient).concat(extra.length?['Also on this record']:[]).map(g=>
+    return onePieceGroupsFor(w?.patient).concat(extra.length?['Also on this record']:[]).map(g=>
       applianceGroupHTML(g,all.filter(a=>a.system==='one'&&a.group===g),selected)).join('');
   if(part==='flange')return applianceFamilyGroupsHTML('flange',all,selected);
   if(part==='dressing')
@@ -7748,6 +7765,7 @@ async function correctApptAppliance(apptId,patientId){
 async function saveOutcomeFollowup(apptId,patientId){
   const status=document.getElementById('of-status')?.value||'attended';
   if(status==='cancelled')return openCancellationForm(apptId);
+  if(status==='attended'&&window.VisitStomaReview?.validate&&!VisitStomaReview.validate(apptId)){if(esState)esGoStep(2);return;}
   const year=document.getElementById('of-year')?.value;
   const {month,flexible:followupFlexible}=resolveMonthAndFlex(document.getElementById('of-month'),year);
   const followupStatus=document.getElementById('of-followup-status')?.value||'active';
@@ -18733,10 +18751,10 @@ function ivFlangeCouplings(){
   return [...new Set((ivWizard.appliances||[]).map(ivCat).filter(it=>it&&it.part==='flange').map(it=>it.coupling))];
 }
 function ivBagPanelHTML(selected){
-  const couplings=ivFlangeCouplings().sort((a,b)=>a-b);
-  if(!couplings.length)return '<div class="ap-empty">Go back and choose a flange first — the bags that fit it will then be offered here.</div>';
-  return couplings.map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,APPLIANCE_CATALOGUE.filter(a=>a.part==='bag'&&a.coupling===c),selected)).join('');
+  const bags=compatibleStomaBags(ivWizard.appliances,applianceSelectionType(ivWizard));
+  return ivFlangeCouplings().sort((a,b)=>a-b).map(c=>applianceGroupHTML(`Fits a ${c} mm flange`,bags.filter(a=>a.coupling===c),selected)).join('')||'<div class="ap-empty">Choose a flange with a compatible bag for this stoma.</div>';
 }
+
 function renderInpatientStep(){
   if(!ivWizard)return;
   const w=ivWizard, pat=w.patient;
@@ -18775,14 +18793,14 @@ function renderInpatientStep(){
       ${sysBtn('dressing','Dressing only','Not bagged — e.g. a fresh mucus fistula')}
     </div><div class="ap-hint" style="margin:2px 0 0;">Pick a system to choose the appliance.</div>`;
   }else if(w.step==='onepiece'){
-    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-onepiece',visitPanelHTML('one',w.appliances))}
+    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-onepiece',visitPanelHTML('one',w.appliances,w))}
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else if(w.step==='dressing'){
-    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-dressings',visitPanelHTML('dressing',w.appliances))}
+    body=`${ivStomaBanner()}<div class="edit-seen-grid">${search}${panel('of-dressings',visitPanelHTML('dressing',w.appliances,w))}
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-hint" style="margin:0;">A stoma that is not bagged — a freshly formed mucus fistula, say — is just covered. No flange, and no flange-change date.</div></div>
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else if(w.step==='flange'){
-    body=`<div class="edit-seen-grid">${search}${panel('of-flanges',visitPanelHTML('flange',w.appliances))}
+    body=`<div class="edit-seen-grid">${search}${panel('of-flanges',visitPanelHTML('flange',w.appliances,w))}
       <div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else if(w.step==='bag'){
     body=`<div class="edit-seen-grid">${search}${panel('of-bags',ivBagPanelHTML(w.appliances))}

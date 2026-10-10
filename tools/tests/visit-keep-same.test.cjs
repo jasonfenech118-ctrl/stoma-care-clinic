@@ -17,7 +17,7 @@ function setup(t,{prev,mode='',stomas=[{uid:'s1',code:'S1',typeLabel:'End colost
     function commitVisitFromWizard(){committed=JSON.parse(JSON.stringify(Object.values(visitWizard.rows)));}
     var visitWizard=null;`);
   w.eval(fistulaHelpers);
-  w.eval(fn('visitStoma')+fn('renderVisitStep')+fn('visitKeepSame'));
+  w.eval(fn('applianceSelectionType')+fn('applianceFitsStoma')+fn('visitStoma')+fn('renderVisitStep')+fn('visitKeepSame'));
   w.eval(`visitWizard=${JSON.stringify({pending:{mode,date:'2026-10-08',slot:'08:30'},patient:{first_name:'Stephen',surname:'Fava'},stomas,prev,rows:{},chosen:stomas[0].uid,step:'system',system:'',work:{appliances:[],accessories:[]}})};renderVisitStep();`);
   return w;
 }

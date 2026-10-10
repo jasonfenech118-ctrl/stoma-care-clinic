@@ -10,7 +10,7 @@
    Rod management stays in handover; existing visit rod history is retained. */
 (function(){
   'use strict';
-  const HEALTHY='Healthy skin';
+  const HEALTHY='Healthy skin',NOT_ASSESSED='Not assessed — flange in situ';
   const FALLBACK={colour:['Healthy pink','Dusky','Aubergine colour','Necrotic'],
     output:['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'],
     skin:[HEALTHY,'Irritation','Excoriation','Fungal infection','Psoriasis','Eczema','Dermatitis','Metaplasia','Ulcerated','Varices','Bluish discolouration']};
@@ -97,7 +97,7 @@
     return '<details class="jenc-multi"><summary>'+((values.length||oldValues?.length)?listText(values,oldValues):placeholder)+'</summary><div class="jenc-menu">'+
       opts.map(v=>'<label><input type="checkbox" data-vsr="'+kind+'"'+ref+' value="'+esc(v)+'"'+(values.includes(v)?' checked':'')+'>'+esc(v)+'</label>').join('')+addBtn(kind,ref)+'</div></details>';
   }
-  const skinValues=k=>k?.status==='Healthy'?[HEALTHY]:list(k?.problems);
+  const skinValues=k=>k?.status==='Healthy'?[HEALTHY]:k?.status==='Not assessed'?[NOT_ASSESSED]:list(k?.problems);
   function columnHTML(s,all){
     const ref=' data-uid="'+esc(s.uid)+'"',old=draft.compare?draft.compare.find(x=>x.uid===s.uid)||{}:null;
     const colourChanged=old&&(old.colour||'')!==(s.colour||'');
@@ -107,7 +107,7 @@
     const output=menu('output',list(s.output),options('output'),ref,'— not recorded —',old?list(old.output):null);
     // A fistula patient's fistula: output and the skin around it, no colour.
     const fistula=s.uid==='fistula'||String(s.type||'').trim().toLowerCase()==='fistula';
-    const skin='<div class="jenc-fields jenc-skin">'+field(fistula?'Skin around the fistula':'Peristomal skin',menu('skin',skinValues(s.skin),options('skin'),ref,'— not recorded —',old?skinValues(old.skin):null))+'</div>';
+    const skin='<div class="jenc-fields jenc-skin">'+field(fistula?'Skin around the fistula':'Peristomal skin',menu('skin',skinValues(s.skin),options('skin').concat(NOT_ASSESSED),ref,'— not recorded —',old?skinValues(old.skin):null))+'</div>';
     const notes=field(nameOf(s,all)+' — clinical notes','<textarea data-vsr="notes"'+ref+' rows="3" placeholder="Write your observations, care provided or patient concerns…">'+esc(s.notes||'')+'</textarea>'+
       '<div class="jenc-previous vsr-note-diff" data-uid="'+esc(s.uid)+'">'+noteDiff(s)+'</div>');
     return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4><div class="jenc-fields">'+(fistula?'':field('Colour / appearance',colour))+field(fistula?'Output':'Function / output',output)+'</div>'+skin+notes+'</div>';
@@ -153,8 +153,9 @@
   function find(el){return draft?.stomas.find(s=>s.uid===el.dataset.uid);}
   // "Healthy skin" stands alone; ticking any finding clears it.
   function setSkin(s,values,value,checked){
-    const v=checked&&value===HEALTHY?[HEALTHY]:list(values).filter(x=>x!==HEALTHY);
-    s.skin=v.includes(HEALTHY)?{status:'Healthy',problems:[]}:{status:v.length?'Not healthy':'',problems:v};
+    const standalone=[HEALTHY,NOT_ASSESSED];
+    const v=checked&&standalone.includes(value)?[value]:list(values).filter(x=>!standalone.includes(x));
+    s.skin=v.includes(HEALTHY)?{status:'Healthy',problems:[]}:v.includes(NOT_ASSESSED)?{status:'Not assessed',problems:[]}:{status:v.length?'Not healthy':'',problems:v};
   }
   function setOutput(s,values,value,checked){s.output=checked&&value==='Nil'?['Nil']:list(values).filter(x=>x!=='Nil');}
   function reopen(kind,s){const next=[...host.querySelectorAll('[data-vsr="'+kind+'"]')].find(x=>x.dataset.uid===s.uid);if(next)next.closest('details').open=true;}
@@ -200,6 +201,7 @@
       const parts=[];
       if(s.colour)parts.push('colour: '+String(s.colour).toLowerCase());
       if(list(s.output).length)parts.push('output: '+s.output.join(', '));
+      if(s.skin?.status==='Not assessed')parts.push('peristomal skin: '+NOT_ASSESSED);
       if(s.skin?.status==='Healthy')parts.push('peristomal skin: healthy');
       if(s.skin?.status==='Not healthy')parts.push('peristomal skin: not healthy'+(list(s.skin.problems).length?' ('+s.skin.problems.join(', ')+')':''));
       if(s.rod_asked!==false&&s.rod?.status==='In place')parts.push('rod present'+(s.rod.due?' (removal '+s.rod.due+')':''));
@@ -229,7 +231,25 @@
     if(!draft||draft.apptId!==String(apptId))return null;
     return draft.locked?list(draft.versions[draft.versions.length-1]?.stomas):payloadFor(apptId);
   }
+  function validate(apptId){
+    if(!enabled())return true;
+    if(!draft||draft.apptId!==String(apptId))return false;
+    // Historical locked assessments retain their original entries.
+    if(draft.locked)return true;
+    const missing=[];
+    draft.stomas.forEach(s=>{
+      const fields=[];
+      if(s.uid!=='fistula'&&lower(s.type)!=='fistula'&&!String(s.colour||'').trim())fields.push('colour / appearance');
+      if(!list(s.output).length)fields.push('function / output');
+      if(!['Healthy','Not healthy','Not assessed'].includes(s.skin?.status)||(s.skin?.status==='Not healthy'&&!list(s.skin.problems).length))fields.push('peristomal skin');
+      if(fields.length)missing.push(nameOf(s,draft.stomas)+': '+fields.join(', '));
+    });
+    let error=host?.querySelector('.vsr-required-error');
+    if(!error&&host){error=document.createElement('p');error.className='vsr-required-error';error.setAttribute('role','alert');error.style.color='#b42318';host.appendChild(error);}
+    if(error){error.hidden=!missing.length;error.textContent=missing.length?'Complete the stoma assessment — '+missing.join('; '):'';}
+    return !missing.length;
+  }
   function clear(){draft=null;}
-  window.VisitStomaReview={enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  window.VisitStomaReview={validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();
