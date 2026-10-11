@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.10-519"/>
-<script src="assets/manual.js?v=2026.10.10-519"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.11-520"/>
+<script src="assets/manual.js?v=2026.10.11-520"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3742,7 +3742,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.11-521';
+const APP_BUILD='2026.10.11-522';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -5255,6 +5255,7 @@ async function loadAppts(){
             ${appt.status!=='attended'&&appt.status!=='cancelled'?`<button title="Seen" onclick="setAS('${appt.id}','attended')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#d4edda;color:#155724;">✅</button>`:''}
             ${appt.status!=='did_not_attend'?`<button onclick="setAS('${appt.id}','did_not_attend')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#fff3cd;color:#856404;">DNTU</button>`:''}
             ${appt.status==='booked'?`<button title="Cancel" onclick="setAS('${appt.id}','cancelled')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">✖</button>`:''}
+            <button title="See what was written at this visit" onclick="openApptNotes('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#eef2ff;color:#3730a3;">📝</button>
             <button onclick="editAppointment('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#e8f5f4;color:#0d7377;">Edit</button>
             <button title="Delete" onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
           </div>
@@ -25714,6 +25715,36 @@ function plFollowupCardHTML(appt){
     ${appt.complication_review?`<div class="pl-event-detail"><strong>Complication review:</strong> ${htmlSafe(String(appt.complication_review).replaceAll('-',' '))}</div>`:''}
     ${plVisitAppliancesHTML(appt)}
   </article>`;
+}
+/* "What was written" at a visit — opened by the 📝 button on a Daily Clinic
+   appointment card. A read-only view of everything recorded at that visit: the
+   follow-up decision, the per-stoma assessment (with its signed versions, via
+   "Open review"), the complication review, and the appliances/accessories used.
+   Reuses the same card the Follow-up Planning history shows, so it always
+   matches. Nothing is edited here. */
+async function openApptNotes(apptId){
+  const mb=document.getElementById('mb');if(!mb)return;
+  mb.className='mb mb-wide';
+  mb.innerHTML='<div class="report-note">Loading the visit…</div>';
+  openMo();
+  const{data:raw,error}=await SB.from('appointments').select('*').eq('id',apptId).maybeSingle();
+  if(error||!raw){mb.innerHTML=`<h2>📝 Visit notes</h2><div class="report-note" style="color:#b91c1c;">Could not open this visit.</div><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;return;}
+  let appt=raw;try{const en=await enrichAppointments([raw]);if(en&&en[0])appt=en[0];}catch(e){}
+  let pat=appt.patients||{};
+  if(!pat.first_name&&appt.patient_id){try{const r=await fetchPatientById(appt.patient_id);if(r&&r.data)pat=r.data;}catch(e){}}
+  const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
+  const when=`${fmtShortDate(appt.appt_date)}${appt.appt_slot?' · '+String(appt.appt_slot).slice(0,5):''}`;
+  const hasAssess=!!(window.VisitStomaReview&&VisitStomaReview.rowsOf(appt.stoma_assessment).length);
+  const wrote=appt.followup_action||appt.complication_review||appt.appliance_review||hasAssess
+    ||(appt.appliances&&appt.appliances.length)||(appt.accessories&&appt.accessories.length)
+    ||(appt.stoma_appliances&&appt.stoma_appliances.length);
+  const stateWord=({booked:'still booked',did_not_attend:'marked “did not attend”',cancelled:'cancelled'})[appt.status]||'not completed';
+  const body=wrote?plFollowupCardHTML(appt)
+    :`<div class="report-note" style="margin-top:10px;">Nothing was written at this visit${appt.status==='attended'?' yet.':` — this appointment is ${stateWord}.`}</div>`;
+  mb.innerHTML=`<h2>📝 What was written at this visit</h2>
+    <div class="msub">${htmlSafe(nm)} · ID ${htmlSafe(pat.id_card||'—')} · ${htmlSafe(when)}</div>
+    ${body}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
 }
 function plDueLabel(patient){
   const month=Number(patient&&patient.followup_due_month);
