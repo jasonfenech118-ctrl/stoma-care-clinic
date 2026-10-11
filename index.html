@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.11-522"/>
-<script src="assets/manual.js?v=2026.10.11-522"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.11-523"/>
+<script src="assets/manual.js?v=2026.10.11-523"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3750,7 +3750,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.11-527';
+const APP_BUILD='2026.10.11-528';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7403,7 +7403,7 @@ function renderVisitStep(){
     let pick;
     if(w.step==='onepiece')pick=`${search}${panel('of-onepiece',visitPanelHTML('one',w.work.appliances))}`;
     else if(w.step==='dressing')pick=`${search}${panel('of-dressings',visitPanelHTML('dressing',w.work.appliances))}`;
-    else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`+flangeDueFieldHTML(w.work.flange_due);
+    else if(w.step==='flange')pick=`${search}${panel('of-flanges',visitPanelHTML('flange',w.work.appliances))}`+(['episode','encounter'].includes(w.pending.mode)?flangeDueFieldHTML(w.work.flange_due):'');
     else pick=`${search}${panel('of-bags',vaBagPanelHTML(w.work.appliances))}`;
     body=`${banner}${carry}<div class="edit-seen-grid">${pick}<div class="fg" style="grid-column:1 / -1;"><div class="ap-summary" id="of-appliance-summary"></div></div></div>`;
   }else{ // accessory
@@ -7462,7 +7462,7 @@ function visitKeepSame(){
   if(app.some(n=>!applianceFitsStoma(APPLIANCE_CATALOGUE.find(a=>a.name===n)||{name:n},applianceSelectionType(w)))){alert('The recorded appliance is not a urostomy pouch. Choose Change appliance.');return;}
   const acc=parseNameList(kept.accessories),st=visitStoma(w.chosen);
   w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
-    appliances:app.slice(),accessories:acc.length?acc.slice():['None'],flange_due:kept.flange_due||'',kept:true};
+    appliances:app.slice(),accessories:acc.length?acc.slice():['None'],flange_due:['episode','encounter'].includes(w.pending.mode)?(kept.flange_due||''):'',kept:true};
   if(w.pending.integrated){esApplianceFinishStoma();return;}
   if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
   else commitVisitFromWizard();
@@ -7511,7 +7511,7 @@ function visitNext(){
     const st=visitStoma(w.chosen);
     w.rows[w.chosen]={uid:w.chosen,code:st?st.code:'',short:st?(st.shortLabel||''):'',label:st?visitStomaLabel(st):'',stoma_type:st?(st.typeLabel||''):'',
       appliances:w.work.appliances.slice(),accessories:w.work.accessories.slice(),
-      flange_due:w.system==='two'?(w.work.flange_due||''):''};
+      flange_due:(w.system==='two'&&['episode','encounter'].includes(w.pending.mode))?(w.work.flange_due||''):''};
     if(w.pending.integrated){esApplianceFinishStoma();return;}
     if(w.stomas.length>1){w.step='stoma';w.chosen=null;renderVisitStep();}
     else{commitVisitFromWizard();}
@@ -18233,7 +18233,9 @@ function applianceEventRowHTML(e){
   const by=e.by?`<span>${htmlSafe(e.by)}</span>`:'';
   const ref=e.ref?`<span class="clr-code">${htmlSafe(e.ref)}</span>`:'';
   const stopped=e.stopped.length?`<div class="clr-ev-off">Stopped: ${htmlSafe(e.stopped.join(', '))}</div>`:'';
-  const flange=e.flange_due?`<div class="clr-ev-off">Flange due ${htmlSafe(fmtShortDate(e.flange_due))}</div>`:'';
+  // A flange due date belongs to an inpatient/ward change only — a follow-up
+  // clinic appointment never carries one, so it is never shown for one.
+  const flange=(e.flange_due&&e.source==='inpatient')?`<div class="clr-ev-off">Flange due ${htmlSafe(fmtShortDate(e.flange_due))}</div>`:'';
   return `<div class="clr-ev">
     <div class="clr-ev-when">${e.date?htmlSafe(fmtShortDate(e.date)):'No date'}</div>
     <div class="clr-ev-body">
@@ -25588,7 +25590,7 @@ function plApplianceRecordHTML(record){
   return `<div class="pl-appliance-box">
     <div class="pl-appliance-head"><strong>Appliance &amp; accessories</strong><span class="pl-appliance-meta">${htmlSafe(meta)}</span></div>
     ${items.length?`<div class="pl-tags">${items.join('')}</div>`:'<div class="pl-empty">No appliance name recorded.</div>'}
-    ${record.flange_due?`<div class="pl-flange-due">Flange due ${htmlSafe(fmtShortDate(record.flange_due))}</div>`:''}
+    ${(record.flange_due&&/inpatient|ward/i.test(record.source||''))?`<div class="pl-flange-due">Flange due ${htmlSafe(fmtShortDate(record.flange_due))}</div>`:''}
   </div>`;
 }
 function plStomaState(stoma){
