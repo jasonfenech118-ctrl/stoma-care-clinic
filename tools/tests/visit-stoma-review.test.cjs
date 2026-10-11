@@ -198,18 +198,21 @@ test('a fistula patient’s visit has one Fistula column: output and the skin ar
   assert.ok(host.querySelector('[data-vsr="output"][data-uid="fistula"]'));assert.ok(host.querySelector('[data-vsr="notes"][data-uid="fistula"]'));
 });
 
-test('assessment requires colour, output and skin on every current stoma; notes are optional',async t=>{
+test('the assessment is optional — a visit can be completed with colour, output and skin left blank; notes optional',async t=>{
   const {w,host,mount}=setup(t);await mount();
-  assert.equal(w.VisitStomaReview.validate('ap1'),false);
-  assert.match(host.querySelector('[role="alert"]').textContent,/End Colostomy.*Loop Ileostomy/);
+  // Unlike the inpatient assessment, the visit "Seen" assessment never blocks:
+  // with every field still blank, validate passes and raises no required error.
+  assert.equal(w.VisitStomaReview.validate('ap1'),true);
+  assert.equal(host.querySelector('[role="alert"]'),null);
+  assert.equal(w.VisitStomaReview.payloadFor('ap1')[0].notes,'');
+  // Filling fields in still validates and is recorded.
   for(const id of ['a','b']){
     change(w,host.querySelector('[data-vsr="colour"][data-uid="'+id+'"]'),'Healthy pink');
     change(w,host.querySelector('[data-vsr="output"][data-uid="'+id+'"][value="Nil"]'),true);
     change(w,host.querySelector('[data-vsr="skin"][data-uid="'+id+'"][value="Healthy skin"]'),true);
-    if(id==='a')assert.equal(w.VisitStomaReview.validate('ap1'),false);
   }
   assert.equal(w.VisitStomaReview.validate('ap1'),true);
-  assert.equal(w.VisitStomaReview.payloadFor('ap1')[0].notes,'');
+  // "Not assessed — flange in situ" stands alone and records no skin problem.
   change(w,host.querySelector('[data-vsr="skin"][data-uid="b"][value="Not assessed — flange in situ"]'),true);
   assert.equal(w.VisitStomaReview.validate('ap1'),true);
   assert.equal(w.VisitStomaReview.payloadFor('ap1')[1].skin.status,'Not assessed');

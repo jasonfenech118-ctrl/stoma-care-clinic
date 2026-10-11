@@ -17,6 +17,8 @@ function context({patients=[patient()],appointments=[]}={}){
   const c=vm.createContext({TODAY:'2026-10-01',SUPABASE_PAGE_SIZE:2,selectedFollowupOwner:'Common',bookCalState:{},staffList:[{id:'nurse'}],bcDrag:null,
     document:{getElementById:id=>elements[id]||null,querySelectorAll:()=>[]},
     normaliseFollowupStatus:v=>v||'active',normaliseFollowupOwner:v=>v||'Common',fixText:v=>v,
+    isFistulaPatient:p=>String(p?.patient_kind||'').trim().toLowerCase()==='fistula',
+    followupOwnerOptions:()=>'',followupYearOptions:()=>'',followupDueMonthOptions:()=>'',
     loadClinicStaffingIndex:async()=>({}),bcOwnerStaff:()=>null,renderBookingCalendar:()=>{c.rendered++;},rendered:0,
     enrichAppointments:async rows=>rows,followupStatusBadge:()=>'',visitPillsByStomaHTML:()=>'',cancellationSourceLabel:()=> 'Cancelled',
     openMo:()=>{c.opened++;},opened:0,alert:v=>{c.alerts.push(v);},alerts:[],invalidateAvailabilityCaches:()=>{},bcClearDropHi:()=>{},

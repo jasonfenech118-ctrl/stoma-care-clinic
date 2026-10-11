@@ -11,7 +11,7 @@ const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);return html.slice(i,html.indexOf('\n}',i)+2);};
 function row(encounterUser,done=false){
   const dom=new JSDOM('<table><tbody id="t"></tbody></table>');
-  const c=vm.createContext({isEncounterUser:()=>encounterUser,hvEncounteredToday:new Set(done?['p1']:[]),
+  const c=vm.createContext({isEncounterUser:()=>encounterUser,hvEncounteredToday:new Set(done?['p1']:[]),TODAY:'2026-10-01',
     JasonEncounters:{handoverCell:()=>'<span class="replaced-cell"></span>'},window:{},
     htmlSafe:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),jsSafe:v=>String(v??''),
     parseComplications:()=>[],hvIsInfectionNote:()=>false,wardBlockStyle:()=>'',wardBlockTitle:()=>'',wardHospitalLabel:()=>'',
@@ -19,6 +19,7 @@ function row(encounterUser,done=false){
     handoverComplicationLine:()=>'',stripHandoverFlangeDue:v=>v});
   c.window.JasonEncounters=c.JasonEncounters;
   vm.runInContext(fistulaHelpers,c);
+  vm.runInContext(fn('pickPostopDischargePatch'),c);
   vm.runInContext(fn('handoverRowHTML'),c);
   dom.window.document.getElementById('t').innerHTML=c.handoverRowHTML({id:'p1',inpatient_ward:'SW4',inpatient_bed:'3',id_card:'1M',surname:'Ciantar',first_name:'Saviour',inpatient_notes:'Little Ones',inpatient_nurse_notes:'Skin intact'},'');
   return dom.window.document.querySelector('td.hv-appl-cell');

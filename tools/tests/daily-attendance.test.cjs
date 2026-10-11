@@ -297,8 +297,12 @@
     assert.match(elements['da-autosave'].textContent, /Database setup required/);
   });
 
-  test('a roster refresh preserves every saved legacy status, time and remark in the upsert', async () => {
-    for (const status of ['late','left_early','off_leave']) {
+  test('a roster refresh clears a Present-type mark when its duty is cancelled, but keeps other saved statuses, times and remarks', async () => {
+    // A Present-type mark (present / late / left early) belonged to the duty
+    // planned when it was recorded. If that duty is later cancelled and the
+    // person is now off, the mark no longer applies — it and its times are
+    // cleared; the remark is always kept.
+    for (const status of ['late','left_early']) {
       const {api, elements} = app();
       elements['da-date'].value = day;
       elements['da-date'].dataset.initialized = 'true';
@@ -312,10 +316,29 @@
       }));
       assert.equal(db.upserts.length, 1);
       const saved = db.upserts[0].payload[0];
-      assert.equal(saved.planned_code, 'off');assert.equal(saved.attendance_status, status);
-      assert.equal(saved.time_in, '07:15');assert.equal(saved.time_out, '13:00');assert.equal(saved.remarks, 'Saved remark');
-      assert.ok(elements['da-results'].innerHTML.includes('value="'+status+'" selected'));
+      assert.equal(saved.planned_code, 'off');
+      assert.equal(saved.attendance_status, 'not_recorded');   // present-type mark cleared with its duty
+      assert.equal(saved.time_in, null);assert.equal(saved.time_out, null);
+      assert.equal(saved.remarks, 'Saved remark');             // the remark is kept
     }
+    // A non-present status (rostered off / on leave) is not a mark to clear, so
+    // it, its times and its remark are preserved exactly as saved.
+    const {api, elements} = app();
+    elements['da-date'].value = day;
+    elements['da-date'].dataset.initialized = 'true';
+    const db = database();
+    await api.load(options(db, {
+      staff: [nurse('a', 'Alice')],
+      roster: [{staff_id:'a', roster_date:day, status:'off', notes:'Changed duty'}],
+      daily_attendance: [{person_key:'staff:a', attendance_date:day, staff_name:'Alice',
+        planned_code:'working', planned_duty:'Day duty', planned_source:'Usual rota',
+        attendance_status:'off_leave', time_in:'07:15:00', time_out:'13:00:00', remarks:'Saved remark'}]
+    }));
+    assert.equal(db.upserts.length, 1);
+    const saved = db.upserts[0].payload[0];
+    assert.equal(saved.planned_code, 'off');assert.equal(saved.attendance_status, 'off_leave');
+    assert.equal(saved.time_in, '07:15');assert.equal(saved.time_out, '13:00');assert.equal(saved.remarks, 'Saved remark');
+    assert.ok(elements['da-results'].innerHTML.includes('value="off_leave" selected'));
   });
 
   test('new attendance rows keep three choices while legacy rows retain only their existing extra selection', () => {

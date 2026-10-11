@@ -76,7 +76,7 @@ function session(db,name='Nurse A'){
   });
   const names=['parseEpisodeApplianceRows','applianceStomaUid','currentApplianceNoteRows','looseApplianceRows',
     'shortAppliance','shortApplianceList','episodeApplianceNote','applianceRowIsTwoPiece','applianceLineIsTwoPiece',
-    'handoverApplianceRowText','handoverStomaLine','stripHandoverFlangeDue','handoverComplicationLine','handoverRowHTML',
+    'handoverApplianceRowText','handoverStomaLine','stripHandoverFlangeDue','handoverComplicationLine','pickPostopDischargePatch','handoverRowHTML',
     'attachHandoverApplianceLines','loadHandover','currentInpatientEpisode','commitEpisodeAppliances',
     'handoverReminderDate','daysUntilDate','flangeDueMeta','flangeDueChipHTML','episodeFlangeDueDate'];
   vm.runInContext('let handoverLoadVersion=0;let handoverWasPhone=false;let plLoaded=true;',c);

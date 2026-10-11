@@ -64,10 +64,11 @@ test('a fistula patient’s fistula stands in for a stoma; a stoma patient never
 
 function handoverRow(p){
   const dom=new JSDOM('<table><tbody id="t"></tbody></table>');
-  const c=helpers({isEncounterUser:()=>true,hvEncounteredToday:new Set(),window:{},htmlSafe:esc,jsSafe:v=>String(v??''),
+  const c=helpers({isEncounterUser:()=>true,hvEncounteredToday:new Set(),window:{},TODAY:'2026-10-01',htmlSafe:esc,jsSafe:v=>String(v??''),
     parseComplications:()=>[],hvIsInfectionNote:()=>false,wardBlockStyle:()=>'',wardBlockTitle:()=>'',wardHospitalLabel:()=>'',
     patientRodApplies:()=>false,handoverRodPrintCarrier:()=>'',flangeDueChipHTML:()=>'',handoverDocButtonHTML:()=>'',
     handoverComplicationLine:()=>'',stripHandoverFlangeDue:v=>v});
+  vm.runInContext(fn('pickPostopDischargePatch'),c);
   vm.runInContext(fn('handoverRowHTML'),c);
   dom.window.document.getElementById('t').innerHTML=c.handoverRowHTML({inpatient_ward:'SW4',inpatient_bed:'3',...p},'');
   return dom.window.document.querySelector('tr');
