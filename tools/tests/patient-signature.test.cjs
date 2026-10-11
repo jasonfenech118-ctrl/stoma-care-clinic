@@ -44,7 +44,7 @@ test('creating a patient stamps created_by / created_at and the same as the firs
     htmlSafe:esc,alert:()=>{},say:()=>{},
     openPatientRecord:()=>{},openPatientDatesModal:()=>{},renderAddPatientForm:()=>{},refreshReminders:()=>{},patientOutcome:()=>['Active','active'],patientSaveError:e=>String(e),loadPatientDirectory:()=>{},loadNewPatients:()=>{},switchTab:()=>{},
   });
-  w.eval(fn('attDisplayName')+'\n'+fn('patientSignatureName')+'\n'+fn('saveNewPatient'));
+  w.eval(fn('canonicalStaffName')+'\n'+fn('attDisplayName')+'\n'+fn('patientSignatureName')+'\n'+fn('saveNewPatient'));
   await w.saveNewPatient();
   assert.equal(inserted.created_by,'Jason Fenech');
   assert.equal(inserted.updated_by,'Jason Fenech');
@@ -62,7 +62,7 @@ test('no signed-in name means no *_by is written, only the timestamps', async t=
     getCurrentUserForAudit:async()=>({email:''}),staffList:[],htmlSafe:esc,
     alert:()=>{},say:()=>{},openPatientRecord:()=>{},openPatientDatesModal:()=>{},renderAddPatientForm:()=>{},refreshReminders:()=>{},patientOutcome:()=>['Active','active'],patientSaveError:e=>String(e),loadPatientDirectory:()=>{},loadNewPatients:()=>{},switchTab:()=>{},
   });
-  w.eval(fn('attDisplayName')+'\n'+fn('patientSignatureName')+'\n'+fn('saveNewPatient'));
+  w.eval(fn('canonicalStaffName')+'\n'+fn('attDisplayName')+'\n'+fn('patientSignatureName')+'\n'+fn('saveNewPatient'));
   await w.saveNewPatient();
   assert.equal(inserted.created_by,undefined);
   assert.equal(inserted.updated_by,undefined);

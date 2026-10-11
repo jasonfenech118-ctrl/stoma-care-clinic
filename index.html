@@ -3289,7 +3289,7 @@ function normaliseFollowupOwner(owner){
   if(low.includes('jason'))return 'Jason';
   if(low.includes('jacqueline')||low.includes('jacklyn'))return 'Jacqueline';
   if(low.includes('lorraine'))return 'Lorraine';
-  if(low.includes('tracey')||low.includes('galea'))return 'Tracey';
+  if(low.includes('tracey')||low.includes('galea')||low.includes('bartolo'))return 'Tracey';
   return 'Common';
 }
 function followupOwnerOptions(selected='Common'){
@@ -3750,7 +3750,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.11-528';
+const APP_BUILD='2026.10.11-529';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4221,18 +4221,30 @@ function attGrade(name,role){
 function attOrder(name){return ATT_ORDER_BY_NAME[attNameKey(name)]||99;}
 // The person who completed the sheet, as a real name rather than a login email:
 // "jason.fenech@gov.mt" -> "Jason Fenech", preferring an exact staff spelling.
+// A nurse may sign in, or have been recorded, under a name variant — a previous
+// surname, or an email built from it — e.g. Tracey Galea (roster core staff) is
+// the same person as "Tracey Bartolo". Fold the known variants onto the one
+// roster name so her signatures, roster column and owner are always the same
+// person. There is a single Tracey in core staff, so any Tracey/Galea/Bartolo
+// resolves to her.
+function canonicalStaffName(name){
+  const low=String(name||'').trim().toLowerCase();
+  if(!low)return name;
+  if(low.includes('tracey')||low.includes('galea')||low.includes('bartolo'))return 'Tracey Galea';
+  return name;
+}
 function attDisplayName(who){
   const raw=String((who&&(who.name||who.email))||'').trim();
   if(!raw||/^logged-in user$/i.test(raw))return '';
   // A proper name already (has a space, not an email) — keep it as given.
-  if(!raw.includes('@')&&/\s/.test(raw))return raw;
+  if(!raw.includes('@')&&/\s/.test(raw))return canonicalStaffName(raw);
   const local=raw.includes('@')?raw.split('@')[0]:raw;
   const name=local.replace(/[._-]+/g,' ').trim().split(/\s+/)
     .map(w=>w?w[0].toUpperCase()+w.slice(1).toLowerCase():'').join(' ');
   try{const k=name.toLowerCase();
     const st=(staffList||[]).find(s=>String(s.full_name||'').trim().toLowerCase()===k);
     if(st)return st.full_name;}catch(e){}
-  return name;
+  return canonicalStaffName(name);
 }
 function attDMY(ds){const d=new Date(ds+'T12:00:00');if(isNaN(d))return ds;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
 // A clean "HH:MM–HH:MM" window for the sheet: the rostered TIL / overtime hours
