@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-526"/>
-<script src="assets/manual.js?v=2026.10.12-526"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-527"/>
+<script src="assets/manual.js?v=2026.10.12-527"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3763,7 +3763,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.12-532';
+const APP_BUILD='2026.10.12-533';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20654,7 +20654,18 @@ function handoverRowHTML(p,cls){
   // open for discharge) — a plain inpatient review is discharged as an old case.
   let hvExtraStomas=[];try{hvExtraStomas=Array.isArray(p.extra_stomas)?p.extra_stomas:(p.extra_stomas?JSON.parse(p.extra_stomas):[]);}catch(e){hvExtraStomas=[];}
   const hvHadPostop=!!p.discharge_date||hvExtraStomas.some(x=>x&&x.discharge_date);
-  const hvShowPostop=!!pickPostopDischargePatch(p,TODAY)||!hvHadPostop;
+  // A new operation this admission re-enables Postop discharge even for a patient
+  // discharged before. pickPostopDischargePatch only sees the primary + extra
+  // stomas, so also look across the WHOLE timeline (refashionings and operation
+  // history too): any stoma still present that was formed on/after this episode's
+  // admission (inpatient_since) is a new stoma formed during the current episode.
+  const hvNewStomaThisEp=(()=>{
+    const since=String(p.inpatient_since||'').slice(0,10);
+    if(!since)return false;
+    try{return (typeof stomaTimeline==='function'?stomaTimeline(p):[]).some(s=>{
+      const f=String(s.formed||'').slice(0,10);return f&&f>=since&&f<=TODAY&&!s.ended;});}catch(e){return false;}
+  })();
+  const hvShowPostop=!!pickPostopDischargePatch(p,TODAY)||!hvHadPostop||hvNewStomaThisEp;
   const nameArg=jsSafe(`${p.first_name||''} ${p.surname||''}`.trim());
   return `<tr class="${cls||''}${fistula?' hv-fistula':''}${isBaggingPatient(p)?' hv-bagging':''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
