@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-524"/>
-<script src="assets/manual.js?v=2026.10.12-524"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-525"/>
+<script src="assets/manual.js?v=2026.10.12-525"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -789,6 +789,7 @@ body.qli-standalone #ql-install-btn{display:none;}
 .pl-event-date{font-size:14px;font-weight:900;color:var(--navy);}
 .pl-event-by{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .pl-event-detail{font-size:12px;color:#475569;line-height:1.45;margin-top:5px;}
+.pl-stoma-review{margin:8px 0 2px;}
 @media(max-width:360px){
   .pl-tab{font-size:10.5px;padding:7px 4px;}
   .pl-mini-grid{grid-template-columns:1fr;}
@@ -3751,7 +3752,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.12-530';
+const APP_BUILD='2026.10.12-531';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16912,10 +16913,13 @@ async function removeComplicationFromPatient(patientId,id){
   const{error:e2}=await updatePatientTolerant(patientId,{complications:list});
   return e2?{error:e2}:{list};
 }
-// The running list, newest first. Read-only unless removable is set.
+// The running list, newest first. Read-only unless removable is set. A resolved
+// complication is no longer an open concern, so it is hidden here (and from the
+// On-record lists) — reopen or review it from the ⚠️ Complications manager,
+// which can show resolved ones on request. Pass includeResolved to show them.
 function complicationListHTML(entries,opts={}){
-  const list=(entries||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-  if(!list.length)return '<div class="clr-empty">No complications recorded yet.</div>';
+  const list=(entries||[]).filter(e=>opts.includeResolved||e.status!=='resolved').slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  if(!list.length)return '<div class="clr-empty">No open complications.</div>';
   return `<div class="cmp-list">${list.map(e=>`
     <div class="cmp-row">
       <span class="cmp-dot" aria-hidden="true"></span>
@@ -17291,7 +17295,8 @@ function complicationsManagerBodyHTML(pat){
   </div>`;
   const cards=list.length
     ? `${open.map(c=>complicationCardHTML(pat,c)).join('')||'<div class="clr-empty" style="margin:4px 0 10px;">No open complications.</div>'}
-       ${resolved.length?`<div class="cmp-resolved-head">Resolved</div>${resolved.map(c=>complicationCardHTML(pat,c)).join('')}`:''}`
+       ${resolved.length?`<button type="button" class="clr-mini cmp-resolved-toggle" style="margin-top:10px;" onclick="var w=document.getElementById('cmp-resolved-wrap');if(w){w.hidden=!w.hidden;this.textContent=w.hidden?'Show resolved (${resolved.length})':'Hide resolved';}">Show resolved (${resolved.length})</button>
+         <div id="cmp-resolved-wrap" hidden><div class="cmp-resolved-head">Resolved</div>${resolved.map(c=>complicationCardHTML(pat,c)).join('')}</div>`:''}`
     : '<div class="clr-empty" style="margin-top:8px;">No complications recorded yet.</div>';
   return addForm+cards;
 }
@@ -25668,7 +25673,12 @@ function plVisitAppliancesHTML(appt){
 function plVisitStomaAssessmentHTML(appt){
   if(!window.VisitStomaReview||!VisitStomaReview.enabled())return '';
   const rows=VisitStomaReview.rowsOf(appt&&appt.stoma_assessment);if(!rows.length)return '';
-  return VisitStomaReview.summaryLines(rows).map(l=>`<div class="pl-event-detail"><strong>${htmlSafe(l.name)}:</strong> ${htmlSafe(l.text)}</div>`).join('')+visitReviewButtonHTML(appt);
+  // Use the organised per-stoma layout (the same one "Open review" shows) rather
+  // than a single run-on line, so the assessment reads cleanly at a glance.
+  const organised=VisitStomaReview.reviewHTML
+    ? `<div class="pl-stoma-review">${VisitStomaReview.reviewHTML(rows,null)}</div>`
+    : VisitStomaReview.summaryLines(rows).map(l=>`<div class="pl-event-detail"><strong>${htmlSafe(l.name)}:</strong> ${htmlSafe(l.text)}</div>`).join('');
+  return organised+visitReviewButtonHTML(appt);
 }
 // Jason's "Open review" button on a visit that has a stoma assessment.
 function visitReviewButtonHTML(appt){
