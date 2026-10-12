@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.11-523"/>
-<script src="assets/manual.js?v=2026.10.11-523"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-524"/>
+<script src="assets/manual.js?v=2026.10.12-524"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -32,7 +32,7 @@
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.10-510"></script>
-<script defer src="assets/jason-encounters.js?v=2026.10.10-517"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
 :root{
@@ -1473,6 +1473,7 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
 .cmp-ev-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
 .cmp-ev-date{font-size:11.5px;font-weight:800;color:var(--navy);}
 .cmp-ev-by{font-size:10.5px;color:var(--muted);}
+.cmp-ev-src{font-size:10px;font-weight:700;color:#475569;background:#eef2f6;border-radius:999px;padding:1px 7px;}
 .cmp-ev-note{font-size:12.5px;color:var(--navy);margin-top:1px;}
 .cmp-upd-grid{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin:6px 0;}
 .cmp-upd-grid input,.cmp-upd-grid select{padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:inherit;color:var(--navy);background:#fff;min-width:0;max-width:100%;}
@@ -3750,7 +3751,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.11-529';
+const APP_BUILD='2026.10.12-530';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6257,6 +6258,7 @@ function complicationReviewSectionHTML(patient,complicationsNow,preset){
     <div class="psm-card" style="margin-bottom:12px;">
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">On record:</div>
       <div id="of-cmp-list">${listHTML}</div>
+      ${list.length?`<button type="button" class="ncb-btn" style="background:#fdf0e1;color:#b45309;margin-top:6px;" onclick="openComplicationsManager('${jsSafe(patientId)}','Appointment')" title="Record an outcome — Improving / Unchanged / Worsening / Resolved — on an existing complication, saved against this appointment">⚠️ Update complication outcomes</button>`:''}
       <div class="es-review-choice" id="of-cmp-review" style="margin-top:8px;">
         <label><input type="radio" name="of-cmp-review" value="none" ${r==='none'?'checked':''} onchange="esCmpReviewChange()"> No complications identified</label>
         <label><input type="radio" name="of-cmp-review" value="new-added" ${(r==='new-added'||r==='existing-reviewed')?'checked':''} onchange="esCmpReviewChange()"> A complication is identified</label>
@@ -16837,7 +16839,7 @@ function parseComplications(pat){
     let events=Array.isArray(x.events)?x.events.filter(e=>e&&(e.note||e.trend||e.date)).map(e=>({
       id:e.id||('e'+Math.random().toString(36).slice(2,8)),
       date:e.date||'',trend:String(e.trend||'').trim(),
-      note:String(e.note||'').trim(),by:e.by||''
+      note:String(e.note||'').trim(),by:e.by||'',source:String(e.source||'').trim()
     })):[];
     const status=x.status==='resolved'?'resolved':'open';
     const note=String(x.note||'').trim();
@@ -16899,7 +16901,7 @@ async function addComplicationToPatient(patientId,entry){
     source:entry.source||'',
     by,
     // The onset is the first entry on the complication's timeline.
-    events:[{id:evId,date:onset,trend:'noted',note,by}]
+    events:[{id:evId,date:onset,trend:'noted',note,by,source:entry.source||''}]
   });
   return await saveComplicationsWithEvent(patientId,list,evId);
 }
@@ -17114,7 +17116,7 @@ function refreshComplicationViews(patientId,list){
 const CMP_TRENDS=[
   {v:'improving',label:'Improving'},
   {v:'unchanged',label:'Unchanged'},
-  {v:'deteriorating',label:'Deteriorating'}
+  {v:'deteriorating',label:'Worsening'}
 ];
 function cmpTrendMeta(trend){
   const t=String(trend||'').toLowerCase();
@@ -17122,7 +17124,7 @@ function cmpTrendMeta(trend){
   if(t==='resolved')return{label:'Resolved',cls:'cmp-tr-done'};
   if(t==='reopened')return{label:'Reopened',cls:'cmp-tr-new'};
   if(t==='improving')return{label:'Improving',cls:'cmp-tr-up'};
-  if(t==='deteriorating')return{label:'Deteriorating',cls:'cmp-tr-down'};
+  if(t==='deteriorating'||t==='worsening')return{label:'Worsening',cls:'cmp-tr-down'};
   if(t==='unchanged')return{label:'Unchanged',cls:'cmp-tr-flat'};
   return{label:t?t:'Update',cls:'cmp-tr-flat'};
 }
@@ -17244,7 +17246,12 @@ function complicationsSummaryHTML(pat){
     ${addBtn}`;
 }
 let cmpMgrPatient=null;
-async function openComplicationsManager(patientId){
+// Where the manager was opened from, stamped onto every outcome update so the
+// timeline says it was recorded at that follow-up appointment, that encounter,
+// the handover, or straight on the record.
+let cmpMgrSource='Record';
+async function openComplicationsManager(patientId,source){
+  cmpMgrSource=source||'Record';
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient.');return;}
   cmpMgrPatient=pat;
@@ -17293,7 +17300,7 @@ function complicationCardHTML(pat,c){
   const st=cmpStomaLabel(pat,c.stoma);
   const events=(c.events||[]).slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
   const timeline=events.map(e=>`<div class="cmp-ev">
-      <div class="cmp-ev-line"><span class="cmp-ev-date">${e.date?htmlSafe(fmtShortDate(e.date)):'—'}</span>${cmpTrendChip(e.trend)}${e.by?`<span class="cmp-ev-by">${htmlSafe(e.by)}</span>`:''}</div>
+      <div class="cmp-ev-line"><span class="cmp-ev-date">${e.date?htmlSafe(fmtShortDate(e.date)):'—'}</span>${cmpTrendChip(e.trend)}${e.source?`<span class="cmp-ev-src">${htmlSafe(e.source)}</span>`:''}${e.by?`<span class="cmp-ev-by">${htmlSafe(e.by)}</span>`:''}</div>
       ${e.note?`<div class="cmp-ev-note">${htmlSafe(e.note)}</div>`:''}
     </div>`).join('')||'<div class="clr-empty">No updates yet.</div>';
   const actions=resolved
@@ -17338,7 +17345,7 @@ async function cmpMutate(patientId,compId,mutator){
   const c=list.find(x=>x.id===compId);
   if(!c)return{error:{message:'This complication is no longer on the record.'}};
   const user=await getCurrentUserForAudit();
-  const ctx={evId:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),by:user.name||user.email||''};
+  const ctx={evId:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),by:attDisplayName(user)||user.name||user.email||'',source:cmpMgrSource};
   mutator(c,ctx);
   return await saveComplicationsWithEvent(patientId,list,ctx.evId);
 }
@@ -17356,7 +17363,7 @@ async function mgrAddComplication(patientId){
   const note=document.getElementById('cmpm-note')?.value||'';
   const failed=[];let saved=false;
   for(const text of names){
-    const res=await addComplicationToPatient(patientId,{text,stoma,note,source:'Record'});
+    const res=await addComplicationToPatient(patientId,{text,stoma,note,source:cmpMgrSource});
     if(res&&res.missing){cmpSaveAlert(res);return;}
     if(res&&res.error){failed.push(text);continue;}
     saved=true;
@@ -17370,7 +17377,7 @@ async function mgrAddUpdate(patientId,compId){
   const date=card?.querySelector('.cmp-upd-date')?.value||TODAY;
   const trend=card?.querySelector('.cmp-upd-trend')?.value||'unchanged';
   const note=String(card?.querySelector('.cmp-upd-note')?.value||'').trim();
-  const res=await cmpMutate(patientId,compId,(c,ctx)=>{c.events.push({id:ctx.evId,date,trend,note,by:ctx.by});});
+  const res=await cmpMutate(patientId,compId,(c,ctx)=>{c.events.push({id:ctx.evId,date,trend,note,by:ctx.by,source:ctx.source});});
   if(!cmpSaveAlert(res))return;
   await cmpMgrRefresh(patientId);
 }
@@ -17381,7 +17388,7 @@ async function mgrResolveComplication(patientId,compId){
   const note=String(card?.querySelector('.cmp-upd-note')?.value||'').trim();
   const res=await cmpMutate(patientId,compId,(c,ctx)=>{
     c.status='resolved';c.resolved_date=date;
-    c.events.push({id:ctx.evId,date,trend:'resolved',note,by:ctx.by});
+    c.events.push({id:ctx.evId,date,trend:'resolved',note,by:ctx.by,source:ctx.source});
   });
   if(!cmpSaveAlert(res))return;
   await cmpMgrRefresh(patientId);
@@ -17389,7 +17396,7 @@ async function mgrResolveComplication(patientId,compId){
 async function mgrReopenComplication(patientId,compId){
   const res=await cmpMutate(patientId,compId,(c,ctx)=>{
     c.status='open';c.resolved_date='';
-    c.events.push({id:ctx.evId,date:TODAY,trend:'reopened',note:'',by:ctx.by});
+    c.events.push({id:ctx.evId,date:TODAY,trend:'reopened',note:'',by:ctx.by,source:ctx.source});
   });
   if(!cmpSaveAlert(res))return;
   await cmpMgrRefresh(patientId);

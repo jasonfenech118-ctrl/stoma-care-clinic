@@ -80,6 +80,7 @@ test('baseline complication manager has no date input and saves every ticked ite
     addComplicationToPatient:async(patientId,entry)=>{calls.push({patientId,entry});return{list:[]};},
     cmpSaveAlert:()=>true,
     cmpMgrRefresh:async()=>{refreshed++;},
+    cmpMgrSource:'Record',
     alert:()=>{},Set,String
   });
   vm.runInContext(source,context);
