@@ -58,7 +58,8 @@ test('postop worklist counts only real booked or attended follow-ups',()=>{
 test('postop worklist keeps only the latest discharge for one patient or ID card',()=>{
   const source=sourceBetween('function latestPostopEpisodes(','/* ------------------------------------------------------------------------- *\n * Siting sessions');
   const context=vm.createContext({
-    normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,'')
+    normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,''),
+    parseEpisodeApplianceRows:e=>Array.isArray(e&&e.appliances)?e.appliances:[]
   });
   vm.runInContext(source,context);
   const rows=[
@@ -73,4 +74,21 @@ test('postop worklist keeps only the latest discharge for one patient or ID card
   };
   const result=context.latestPostopEpisodes(rows,patients);
   assert.deepEqual(Array.from(result,r=>r.id).sort(),['ep-new','ep-other']);
+});
+
+test('on the same discharge date the episode carrying the appliance wins (so a blank correction episode never hides it)',()=>{
+  const source=sourceBetween('function latestPostopEpisodes(','/* ------------------------------------------------------------------------- *\n * Siting sessions');
+  const context=vm.createContext({
+    normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,''),
+    parseEpisodeApplianceRows:e=>Array.isArray(e&&e.appliances)?e.appliances:[]
+  });
+  vm.runInContext(source,context);
+  // One patient, two admissions both discharged 12 Oct: an empty one (created by
+  // correcting an old-case discharge) and the real admission with the appliance.
+  const rows=[
+    {id:'ep-blank',patient_id:'p1',record_date:'2026-10-11',discharge_date:'2026-10-12',appliances:[]},
+    {id:'ep-real', patient_id:'p1',record_date:'2026-10-10',discharge_date:'2026-10-12',appliances:[{stoma_short:'Colo',appliances:['micro 70mm']}]}
+  ];
+  const result=context.latestPostopEpisodes(rows,{p1:{id_card:'126960M'}});
+  assert.deepEqual(Array.from(result,r=>r.id),['ep-real']);
 });
