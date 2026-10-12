@@ -3763,7 +3763,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.12-534';
+const APP_BUILD='2026.10.12-535';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21167,19 +21167,33 @@ async function savePostopDischargeCorrection(episodeId){
   const date=document.getElementById('ppd-date')?.value||TODAY;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('Please choose a valid date.');return;}
   const btn=document.getElementById('ppd-save');if(btn){btn.disabled=true;btn.textContent='Recording…';}
+  // A postop discharge is home, not on the ward — take the patient OFF the
+  // handover. Without this the patient stays is_inpatient and the Postop
+  // Discharges list (which drops anyone still on the ward) never shows them.
+  const{error:pe}=await SB.from('patients').update({is_inpatient:false}).eq('id',pat.id);
+  if(pe){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+pe.message);return;}
+  // Mark the selected admission as a postop discharge, with the usual tolerant
+  // fallback if the discharge_date column is not there yet.
   const full={discharge_date:date,status:'Discharged',is_current:false,updated_at:new Date().toISOString()};
-  let r=await SB.from('clinical_records').update(full).eq('id',episodeId);
-  if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',episodeId);}
+  const markEp=async id=>{let r=await SB.from('clinical_records').update(full).eq('id',id);
+    if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',id);}return r;};
+  const r=await markEp(episodeId);
   if(r.error){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+r.error.message);return;}
+  // Close any still-open admission the same way, so nothing is left on the ward
+  // (e.g. one re-opened automatically while the record was being viewed).
+  try{const{data:openEps}=await SB.from('clinical_records').select('id').eq('patient_id',pat.id).eq('kind','episode').eq('is_current',true);
+    for(const ep of (openEps||[])){if(String(ep.id)!==String(episodeId))await markEp(ep.id);}}catch(e){}
   try{await stampPostopDischargeDate(pat.id,date);}catch(e){}
   try{logAudit({action:'update',entity:'patient',entity_id:String(pat.id),patient_id:String(pat.id),
     patient_name:`${pat.first_name||''} ${pat.surname||''}`.trim(),
     summary:'Recorded a postop discharge (corrected an old-case discharge)',details:{episode:String(episodeId),date}});}catch(e){}
+  if(clrState.patient&&String(clrState.patient.id)===String(pat.id))clrState.patient.is_inpatient=false;
   closeModal();
   await loadClinicalRecords(pat.id);
   renderEpisodesPanel();
   await refreshReminders();
-  alert('Recorded as a postop discharge. The patient now appears on the Postop Discharges list.');
+  try{if(document.getElementById('hv-body'))await loadHandover();}catch(e){}
+  alert('Recorded as a postop discharge. The patient is off the handover and now appears on the Postop Discharges list.');
 }
 /* Discharge to Gozo, or relocated overseas: the patient leaves the local
    follow-up service, so they come off the handover, their inpatient episode is
