@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-525"/>
-<script src="assets/manual.js?v=2026.10.12-525"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-526"/>
+<script src="assets/manual.js?v=2026.10.12-526"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -789,7 +789,18 @@ body.qli-standalone #ql-install-btn{display:none;}
 .pl-event-date{font-size:14px;font-weight:900;color:var(--navy);}
 .pl-event-by{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:6px;}
 .pl-event-detail{font-size:12px;color:#475569;line-height:1.45;margin-top:5px;}
-.pl-stoma-review{margin:8px 0 2px;}
+.pl-stoma-review{margin:2px 0;}
+/* Each part of a visit's record is its own colour-coded section, so the
+   follow-up decision, stoma assessment, complication review and appliances are
+   told apart at a glance. */
+.pl-sec{border:1px solid var(--border);border-radius:10px;margin-top:8px;overflow:hidden;}
+.pl-sec-h{font-size:10.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;padding:5px 10px;}
+.pl-sec-b{padding:8px 10px;background:#fff;font-size:12.5px;color:#334155;line-height:1.5;}
+.pl-sec-b .pl-event-detail{margin-top:0;}
+.pl-sec-teal{border-color:#bfe3df;}.pl-sec-teal .pl-sec-h{background:#e6f4f1;color:#0d5f63;}
+.pl-sec-blue{border-color:#c7dbf3;}.pl-sec-blue .pl-sec-h{background:#e8f0fb;color:#1e4e8c;}
+.pl-sec-amber{border-color:#f0d6a8;}.pl-sec-amber .pl-sec-h{background:#fdf0e1;color:#9a5a00;}
+.pl-sec-green{border-color:#bfe6cc;}.pl-sec-green .pl-sec-h{background:#e6f7ec;color:#0a5e33;}
 @media(max-width:360px){
   .pl-tab{font-size:10.5px;padding:7px 4px;}
   .pl-mini-grid{grid-template-columns:1fr;}
@@ -3752,7 +3763,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.12-531';
+const APP_BUILD='2026.10.12-532';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25755,13 +25766,19 @@ function plFollowupCardHTML(appt){
   const nurse=appointmentNurseLabel(appt);
   const action=plFollowupActionLabel(appt.followup_action);
   const cls=appt.status==='did_not_attend'?'event-dntu':appt.status==='cancelled'?'event-cancelled':'';
+  const assess=plVisitStomaAssessmentHTML(appt);
+  const appl=plVisitAppliancesHTML(appt);
+  const cmp=appt.complication_review?htmlSafe(String(appt.complication_review).replaceAll('-',' ')):'';
+  // Each review part is its own colour-coded section, only shown when it has
+  // something to say.
+  const sec=(title,body,tone)=>body?`<section class="pl-sec pl-sec-${tone}"><div class="pl-sec-h">${title}</div><div class="pl-sec-b">${body}</div></section>`:'';
   return `<article class="pl-event ${cls}">
     <div class="pl-event-top"><span class="pl-event-date">${htmlSafe(fmtShortDate(appt.appt_date))}${appt.appt_slot?' · '+htmlSafe(String(appt.appt_slot).slice(0,5)):''}</span>${plAppointmentBadge(appt)}</div>
     <div class="pl-event-by">${htmlSafe(appt.status==='attended'?'Seen by '+nurse:'Clinic column: '+nurse)}</div>
-    ${action?`<div class="pl-event-detail"><strong>Follow-up decision:</strong> ${htmlSafe(action)}</div>`:''}
-    ${plVisitStomaAssessmentHTML(appt)}
-    ${appt.complication_review?`<div class="pl-event-detail"><strong>Complication review:</strong> ${htmlSafe(String(appt.complication_review).replaceAll('-',' '))}</div>`:''}
-    ${plVisitAppliancesHTML(appt)}
+    ${sec('Follow-up decision',action?htmlSafe(action):'','teal')}
+    ${sec('Stoma assessment',assess,'blue')}
+    ${sec('Complication review',cmp,'amber')}
+    ${sec('Appliances &amp; accessories',appl,'green')}
   </article>`;
 }
 /* "What was written" at a visit — opened by the 📝 button on a Daily Clinic
