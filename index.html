@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-527"/>
-<script src="assets/manual.js?v=2026.10.12-527"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.12-528"/>
+<script src="assets/manual.js?v=2026.10.12-528"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3763,7 +3763,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.12-533';
+const APP_BUILD='2026.10.12-534';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18478,6 +18478,7 @@ function episodeCategoryHTML(meta,open){
         ${r.derived
           ?'<span class="clr-rec-tag">From patient card</span>'
           :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
+        ${(meta.kind==='episode'&&!r.is_current&&!r.discharge_date)?`<button class="clr-mini" style="background:#fdecea;color:#c0392b;" onclick="openPostopDischargeCorrection('${r.id}')" title="This admission was discharged as an old case (not a postop discharge). If that was a mistake, record it as a postop discharge so the patient appears on the Postop Discharges list and can be booked for follow-up.">↩ Postop discharge</button>`:''}
         <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
       </div></div>${meta.kind==='episode'?episodeEncountersHTML(r):''}`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
   return `<div class="clr-cat">
@@ -21146,6 +21147,39 @@ async function dischargeOldFromHandover(patientId,name){
   await closeOpenInpatientEpisode(patientId,{postop:false});
   loadHandover();
   await refreshReminders();
+}
+/* Correct a mistaken "old case" discharge. An old-case close leaves the episode
+   without a discharge date, so it never reaches the Postop Discharges list. From
+   the patient record's Episodes tab this records that closed admission as a
+   postop discharge — setting the discharge date and stamping the stoma — so the
+   patient joins the Postop Discharges worklist and can be booked for follow-up. */
+function openPostopDischargeCorrection(episodeId){
+  const pat=clrState.patient;if(!pat||!episodeId)return;
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb'+sexModalClass(pat);
+  mb.innerHTML=`<h2>Record postop discharge</h2>
+    <div class="msub">Use this only to correct an admission that was <strong>discharged as an old case by mistake</strong>. It records this admission as a <strong>postop discharge</strong> — the patient then appears on the <strong>Postop Discharges</strong> list and can be booked for follow-up. Everything else on the record is kept.</div>
+    <div class="fg"><label for="ppd-date">Postop discharge date</label><input type="date" id="ppd-date" value="${TODAY}" max="${TODAY}"/></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="ppd-save" onclick="savePostopDischargeCorrection('${jsSafe(String(episodeId))}')">Record postop discharge</button></div>`;
+  openMo();
+}
+async function savePostopDischargeCorrection(episodeId){
+  const pat=clrState.patient;if(!pat||!episodeId)return;
+  const date=document.getElementById('ppd-date')?.value||TODAY;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('Please choose a valid date.');return;}
+  const btn=document.getElementById('ppd-save');if(btn){btn.disabled=true;btn.textContent='Recording…';}
+  const full={discharge_date:date,status:'Discharged',is_current:false,updated_at:new Date().toISOString()};
+  let r=await SB.from('clinical_records').update(full).eq('id',episodeId);
+  if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',episodeId);}
+  if(r.error){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+r.error.message);return;}
+  try{await stampPostopDischargeDate(pat.id,date);}catch(e){}
+  try{logAudit({action:'update',entity:'patient',entity_id:String(pat.id),patient_id:String(pat.id),
+    patient_name:`${pat.first_name||''} ${pat.surname||''}`.trim(),
+    summary:'Recorded a postop discharge (corrected an old-case discharge)',details:{episode:String(episodeId),date}});}catch(e){}
+  closeModal();
+  await loadClinicalRecords(pat.id);
+  renderEpisodesPanel();
+  await refreshReminders();
+  alert('Recorded as a postop discharge. The patient now appears on the Postop Discharges list.');
 }
 /* Discharge to Gozo, or relocated overseas: the patient leaves the local
    follow-up service, so they come off the handover, their inpatient episode is
