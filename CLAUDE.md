@@ -26,11 +26,13 @@ automation anywhere in the app, update the manual in the SAME commit:**
    (its `title`, `keywords` for search, and the step-by-step `html`).
 2. If it is something the app does automatically, add/update a card in the
    **Automations catalogue** page (`auto` section).
-3. Bump `MANUAL_META.updated` to today's date.
+3. Set `MANUAL_META.updated` to today's date plus **at most a 2-sentence** note
+   of what changed. It shows in the manual footer — keep it short; do NOT
+   accumulate a running changelog there (git history is the changelog).
 4. Bump the `?v=` query on the `assets/manual.js` / `manual.css` includes in
    `index.html` so browsers pick up the new file.
 The manual must always describe the *current* build. Treat "manual not updated"
-as an incomplete change.
+as an incomplete change. **Keep every manual note short — 2 sentences maximum.**
 
 ## Supabase
 - Patient data lives in Supabase; schema changes are one-off SQL files in `sql/`.
