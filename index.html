@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.13-532"/>
-<script src="assets/manual.js?v=2026.10.13-532"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.13-533"/>
+<script src="assets/manual.js?v=2026.10.13-533"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -548,6 +548,21 @@ body.manual-docked .help-btn{background:#0d7377;border-color:#0d7377;}
 .dis-opt-title{font-weight:800;font-size:13px;color:var(--dis,#1a2e4a);}
 .dis-opt-conseq{font-size:11.5px;color:var(--muted);line-height:1.4;}
 .dis-confirm{margin-top:12px;padding:10px 12px;border-radius:9px;background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;font-size:12.5px;line-height:1.45;}
+/* Three-step discharge wizard: stepper, identity check, final acknowledgement */
+.dis-stepper{display:flex;align-items:center;justify-content:center;gap:0;margin:2px 0 16px;}
+.dis-step-dot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;
+  background:#eef0f3;color:#94a3b8;border:2px solid #e2e8f0;flex:0 0 auto;}
+.dis-step-dot.is-on{background:#0d7377;color:#fff;border-color:#0d7377;}
+.dis-step-dot.is-done{background:#d1fae5;color:#065f46;border-color:#6ee7b7;}
+.dis-step-line{width:34px;height:2px;background:#e2e8f0;}
+.dis-check{display:flex;flex-direction:column;gap:1px;border:1px solid var(--border);border-radius:11px;overflow:hidden;margin-bottom:4px;}
+.dis-check-row{display:flex;gap:10px;padding:10px 13px;background:#fff;}
+.dis-check-row+.dis-check-row{border-top:1px solid var(--border);}
+.dis-check-k{flex:0 0 92px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);align-self:center;}
+.dis-check-v{font-size:14px;color:var(--navy);align-self:center;}
+.dis-final{margin:2px 0 14px;padding:12px 14px;border-radius:11px;background:#fef2f2;border:1.5px solid #fca5a5;color:#7f1d1d;font-size:13px;line-height:1.5;}
+.dis-ack{display:flex;align-items:flex-start;gap:9px;padding:11px 13px;border:2px solid #0d7377;border-radius:10px;background:#f0fdfa;cursor:pointer;font-size:13px;font-weight:700;color:#0f4f52;}
+.dis-ack input{margin-top:2px;width:18px;height:18px;accent-color:#0d7377;flex:0 0 auto;}
 
 /* The one-time Undo banner above the handover after a discharge */
 .hv-undo-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:10px 14px;border-radius:11px;
@@ -3799,7 +3814,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.13-540';
+const APP_BUILD='2026.10.13-541';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21117,7 +21132,7 @@ async function stampPostopDischargeDate(pid,dateStr){
    the handover button used to gate on: either a stoma still has no discharge
    date, or the patient has never been postop-discharged, or a new stoma was
    formed during the current episode. */
-function dischargeOptionsHTML(p){
+function dischargeOptionsHTML(p,selected){
   let extras=[];try{extras=Array.isArray(p.extra_stomas)?p.extra_stomas:(p.extra_stomas?JSON.parse(p.extra_stomas):[]);}catch(e){extras=[];}
   const hadPostop=!!p.discharge_date||extras.some(x=>x&&x.discharge_date);
   const newStomaThisEp=(()=>{
@@ -21128,7 +21143,7 @@ function dischargeOptionsHTML(p){
   })();
   const showPostop=!!pickPostopDischargePatch(p,TODAY)||!hadPostop||newStomaThisEp;
   const opt=(value,colour,title,conseq)=>`<label class="dis-opt" style="--dis:${colour};">
-    <input type="radio" name="dis-choice" value="${value}" onchange="dischargeChoicePicked()"/>
+    <input type="radio" name="dis-choice" value="${value}"${value===selected?' checked':''} onchange="dischargeChoicePicked()"/>
     <span class="dis-opt-body"><span class="dis-opt-title">${title}</span><span class="dis-opt-conseq">${conseq}</span></span></label>`;
   return [
     showPostop?opt('postop','#c0392b','🏥 Postop discharge',
@@ -21141,45 +21156,92 @@ function dischargeOptionsHTML(p){
       'Leaves the local follow-up service and the whole patient is <strong>paused</strong>. Today’s date is recorded as the relocated-overseas date.')
   ].filter(Boolean).join('');
 }
-/* One "Discharge patient" button on the handover opens this modal. The nurse
-   picks a single outcome — each shows its consequence — then confirms once.
-   After the discharge a one-time Undo banner appears on the handover. */
+/* One "Discharge patient" button on the handover opens this modal. Discharging
+   is deliberately a THREE-step safety check — layered so each step catches a
+   different mistake (Swiss-cheese): (1) choose the outcome, (2) verify the
+   patient's identity, (3) a final confirm with an acknowledgement tick. Every
+   step has a Back, so an error missed earlier can still be corrected before it
+   commits. After the discharge a one-time Undo banner appears on the handover. */
 let dischargeCtx=null;
+const DISCHARGE_META={
+  postop:{title:'🏥 Postop discharge',short:'on the Postop Discharges list, to be booked for follow-up',
+    conseq:'They come off the handover and join the <strong>Postop Discharges</strong> list to be booked for follow-up. Today’s date is recorded as the post-op discharge date.'},
+  old:{title:'📁 Discharge (old case)',short:'off the handover — this is not a postop discharge',
+    conseq:'They come off the handover. This is <strong>not</strong> a postop discharge — they will not appear on the Postop Discharges list.'},
+  discharged_gozo:{title:'⛴️ Discharged to Gozo',short:'out to the Gozo service, off the local follow-up',
+    conseq:'They leave the local follow-up service — their care continues in Gozo. Today’s date is recorded as the discharged-to-Gozo date.'},
+  relocated_overseas:{title:'✈️ Relocated overseas',short:'paused and taken off the local follow-up service',
+    conseq:'They leave the local follow-up service and the whole patient is <strong>paused</strong>. Today’s date is recorded as the relocated-overseas date.'}
+};
 async function openDischargeModal(patientId,name){
   const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
   if(error||!p){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
   const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
-  dischargeCtx={patient:p,name:nm};
-  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb'+sexModalClass(p);
-  mb.innerHTML=`<h2>Discharge patient</h2>
-    <div class="msub">Choose how <strong>${htmlSafe(nm)}</strong> is leaving. Pick one outcome — its consequence is shown below it — then confirm.</div>
-    <div class="dis-opts">${dischargeOptionsHTML(p)}</div>
-    <div class="dis-confirm" id="dis-confirm" style="display:none;"></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(patientId))}')">Discharge patient</button></div>`;
+  dischargeCtx={patient:p,name:nm,choice:null,step:1};
+  renderDischargeModal();
   openMo();
 }
-// When an outcome is picked, enable the confirm button and show a plain-English
-// "Are you sure…?" line naming the patient and what the choice does.
+function renderDischargeModal(){
+  const c=dischargeCtx;if(!c)return;
+  const mb=document.getElementById('mb');if(!mb)return;
+  const p=c.patient,nm=c.name;
+  mb.className='mb'+sexModalClass(p);
+  const wardBed=[p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' - ');
+  const idLine=`${htmlSafe(p.id_card||'No ID')}${wardBed?' · '+htmlSafe(wardBed):''}`;
+  const stepper=`<div class="dis-stepper">${[1,2,3].map(n=>`<span class="dis-step-dot${n===c.step?' is-on':''}${n<c.step?' is-done':''}">${n<c.step?'✓':n}</span>`).join('<span class="dis-step-line"></span>')}</div>`;
+  const meta=c.choice?DISCHARGE_META[c.choice]:null;
+  let body='';
+  if(c.step===1){
+    body=`<div class="msub">Step 1 of 3 — choose how <strong>${htmlSafe(nm)}</strong> is leaving. Pick one outcome; its consequence is shown.</div>
+      <div class="dis-opts">${dischargeOptionsHTML(p,c.choice)}</div>
+      <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" id="dis-next" ${c.choice?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
+  }else if(c.step===2){
+    body=`<div class="msub">Step 2 of 3 — <strong>check the patient</strong>. Make sure this is the right person before going on.</div>
+      <div class="dis-check">
+        <div class="dis-check-row"><span class="dis-check-k">Patient</span><span class="dis-check-v"><strong>${htmlSafe(nm)}</strong></span></div>
+        <div class="dis-check-row"><span class="dis-check-k">ID · ward</span><span class="dis-check-v">${idLine}</span></div>
+        <div class="dis-check-row"><span class="dis-check-k">Outcome</span><span class="dis-check-v"><strong>${meta?meta.title:''}</strong></span></div>
+      </div>
+      <div class="dis-confirm" style="display:block;">Is this the <strong>right patient</strong> and the <strong>right outcome</strong>? If not, step back and change it.</div>
+      <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
+        <button class="btn-save" onclick="dischargeStepNext()">Yes, continue →</button></div>`;
+  }else{
+    body=`<div class="msub">Step 3 of 3 — <strong>final check</strong>. This is the last step before it is done.</div>
+      <div class="dis-final">You are about to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta?meta.title:''}</strong>.<br/>${meta?meta.conseq:''} You can undo this once, straight after.</div>
+      <label class="dis-ack"><input type="checkbox" id="dis-ack" onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
+      <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
+        <button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
+  }
+  mb.innerHTML=`<h2>Discharge patient</h2>${stepper}${body}`;
+}
+// Step 1: a picked outcome is remembered and enables Continue.
 function dischargeChoicePicked(){
   const v=document.querySelector('input[name="dis-choice"]:checked')?.value;
-  const btn=document.getElementById('dis-save');
-  const box=document.getElementById('dis-confirm');
-  const nm=dischargeCtx&&dischargeCtx.name||'this patient';
-  const meta={
-    postop:['🏥 Postop discharge','on the Postop Discharges list, to be booked for follow-up'],
-    old:['📁 Discharge (old case)','off the handover — this is not a postop discharge'],
-    discharged_gozo:['⛴️ Discharged to Gozo','out to the Gozo service, off the local follow-up'],
-    relocated_overseas:['✈️ Relocated overseas','paused and taken off the local follow-up service']
-  }[v];
-  if(!v||!meta){if(btn)btn.disabled=true;if(box)box.style.display='none';return;}
-  if(btn)btn.disabled=false;
-  if(box){box.style.display='block';
-    box.innerHTML=`Are you sure you want to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta[0]}</strong>?<br/>They will be ${meta[1]}. You can undo this once, straight after.`;}
+  if(dischargeCtx)dischargeCtx.choice=v||null;
+  const btn=document.getElementById('dis-next');if(btn)btn.disabled=!v;
+}
+function dischargeStepNext(){
+  if(!dischargeCtx)return;
+  if(dischargeCtx.step===1&&!dischargeCtx.choice)return;
+  dischargeCtx.step=Math.min(3,dischargeCtx.step+1);
+  renderDischargeModal();
+}
+function dischargeStepBack(){
+  if(!dischargeCtx)return;
+  dischargeCtx.step=Math.max(1,dischargeCtx.step-1);
+  renderDischargeModal();
+}
+// Step 3: the acknowledgement tick is what finally enables the Discharge button.
+function dischargeFinalToggle(){
+  const ok=!!document.getElementById('dis-ack')?.checked;
+  const btn=document.getElementById('dis-save');if(btn)btn.disabled=!ok;
 }
 async function confirmDischargeModal(patientId){
-  const v=document.querySelector('input[name="dis-choice"]:checked')?.value;
+  const v=dischargeCtx&&dischargeCtx.choice;
   if(!v)return;
+  // Final gate: never discharge unless the acknowledgement was actively ticked.
+  if(!document.getElementById('dis-ack')||!document.getElementById('dis-ack').checked)return;
   const name=(dischargeCtx&&String(dischargeCtx.patient&&dischargeCtx.patient.id)===String(patientId)&&dischargeCtx.name)||'this patient';
   const btn=document.getElementById('dis-save');if(btn){btn.disabled=true;btn.textContent='Discharging…';}
   // Snapshot the patient fields and the open episode BEFORE changing anything,

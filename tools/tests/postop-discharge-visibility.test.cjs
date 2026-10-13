@@ -49,3 +49,16 @@ test('a never-discharged stoma patient is offered Postop discharge',()=>{
   const out=options({surgery_date:'2026-10-05',stoma_type:'End colostomy',inpatient_since:'2026-10-05'});
   assert.match(out,/Postop discharge</);
 });
+
+// Stepping Back in the wizard must re-check the previously chosen outcome: the
+// second argument pre-selects exactly that radio and no other.
+test('dischargeOptionsHTML pre-checks the previously chosen outcome',()=>{
+  const c=vm.createContext({TODAY:'2026-10-12',fmtShortDate:v=>String(v||''),stomaShortType:()=>'',stomaQuadrant:()=>''});
+  vm.runInContext(fistulaHelpers,c);
+  ['parseInitialStomas','parseStomas','parseRefashionings','stomaOperationHistory','stomaTimeline',
+   'pickPostopDischargePatch','dischargeOptionsHTML'].forEach(n=>vm.runInContext(fn(n),c));
+  const out=c.dischargeOptionsHTML({surgery_date:'2026-10-05',stoma_type:'End colostomy',inpatient_since:'2026-10-05'},'discharged_gozo');
+  assert.match(out,/value="discharged_gozo" checked/);
+  assert.equal((out.match(/ checked/g)||[]).length,1);
+  assert.doesNotMatch(out,/value="postop" checked/);
+});

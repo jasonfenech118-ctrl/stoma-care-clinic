@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 October 2026 — one “Discharge patient” chooser on the handover, with a one-time Undo, plus Add/Revert postop discharge. Kept in step with every change.'};
+const MANUAL_META={updated:'13 October 2026 — discharging is now a three-step safety check with a one-time Undo, plus Add/Revert postop discharge. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -476,7 +476,7 @@ const MANUAL_SECTIONS=[
     ${manMap('handover')}
     ${manWhen('A patient is leaving the ward.')}
     ${manH2('🏷️','One "Discharge patient" button')}
-    <p class="man-lede">Press ${manBtn('🏷️ Discharge patient','#e0e7ff','#3730a3')} on the patient’s row to open a chooser. Pick <b>one</b> outcome — each shows what it does — then confirm.</p>
+    <p class="man-lede">Press ${manBtn('🏷️ Discharge patient','#e0e7ff','#3730a3')} on the patient’s row. Discharging is a <b>three-step safety check</b>: ① pick the outcome, ② check the patient (name, ID and ward are shown back to you), ③ tick to confirm. Every step has a <b>← Back</b>, so a mistake can be corrected before it is done.</p>
     <ul class="man-ul">
       <li>${manBtn('🏥 Postop discharge','#fdecea','#c0392b')} — joins the Postop Discharges list for follow-up booking. Offered only while an operation is still open for discharge this admission.</li>
       <li>${manBtn('📁 Discharge (old case)','#eef0f3','#4b5563')} — off the ward, but not a post-op discharge.</li>
