@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 October 2026 — latest: correcting a mistaken old-case discharge to a postop discharge, and a tidier colour-coded visit review. This manual updates with every change.'};
+const MANUAL_META={updated:'13 October 2026 — kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
