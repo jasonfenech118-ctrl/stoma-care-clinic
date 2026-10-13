@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.13-531"/>
-<script src="assets/manual.js?v=2026.10.13-531"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.13-532"/>
+<script src="assets/manual.js?v=2026.10.13-532"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -535,7 +535,41 @@ body.manual-docked .help-btn{background:#0d7377;border-color:#0d7377;}
 .patient-search-result .ps-meta{font-size:11px;color:var(--muted);margin-top:2px;}
 .patient-search-result .ps-actions{display:flex;gap:5px;flex-wrap:wrap;}
 .patient-search-empty{font-size:12px;color:var(--muted);font-style:italic;padding:6px 2px;}
+.patient-search-results{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow-y:auto;margin-top:4px;}
 
+/* Unified Discharge modal — one coloured, consequence-labelled option per outcome */
+.dis-opts{display:flex;flex-direction:column;gap:9px;margin-bottom:4px;}
+.dis-opt{display:flex;align-items:flex-start;gap:10px;border:2px solid var(--border);border-left:6px solid var(--dis,#94a3b8);
+  border-radius:10px;padding:10px 12px;cursor:pointer;background:#fff;transition:background .12s,border-color .12s;}
+.dis-opt:hover{background:#f8fafc;}
+.dis-opt:has(input:checked){border-color:var(--dis,#94a3b8);background:color-mix(in srgb,var(--dis,#94a3b8) 9%,#fff);}
+.dis-opt input{margin-top:3px;accent-color:var(--dis,#94a3b8);width:16px;height:16px;flex:0 0 auto;}
+.dis-opt-body{display:flex;flex-direction:column;gap:2px;}
+.dis-opt-title{font-weight:800;font-size:13px;color:var(--dis,#1a2e4a);}
+.dis-opt-conseq{font-size:11.5px;color:var(--muted);line-height:1.4;}
+.dis-confirm{margin-top:12px;padding:10px 12px;border-radius:9px;background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;font-size:12.5px;line-height:1.45;}
+
+/* The one-time Undo banner above the handover after a discharge */
+.hv-undo-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:10px 14px;border-radius:11px;
+  background:#ecfdf5;border:1.5px solid #6ee7b7;box-shadow:0 1px 4px rgba(6,95,70,.08);animation:hvUndoIn .25s ease;}
+.hv-undo-banner[data-status="relocated_overseas"]{background:#fefce8;border-color:#fde047;}
+.hv-undo-banner[data-status="discharged_gozo"]{background:#eff6ff;border-color:#93c5fd;}
+.hv-undo-banner[data-status="old"]{background:#f8fafc;border-color:#cbd5e1;}
+@keyframes hvUndoIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+.hv-undo-ico{font-size:16px;}
+.hv-undo-txt{flex:1 1 220px;font-size:12.5px;color:#064e3b;}
+.hv-undo-banner[data-status="relocated_overseas"] .hv-undo-txt{color:#713f12;}
+.hv-undo-banner[data-status="discharged_gozo"] .hv-undo-txt{color:#1e3a8a;}
+.hv-undo-banner[data-status="old"] .hv-undo-txt{color:#334155;}
+.hv-undo-btn{padding:6px 14px;border-radius:7px;border:none;background:#0d7377;color:#fff;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;}
+.hv-undo-btn:hover{background:#0a5c5f;}
+.hv-undo-x{border:none;background:transparent;color:inherit;opacity:.6;font-size:13px;cursor:pointer;line-height:1;padding:4px;}
+.hv-undo-x:hover{opacity:1;}
+
+/* Revert control on a Postop Discharges row */
+.postop-revert{margin-top:5px;padding:3px 9px;border-radius:6px;border:1px solid #f3c6c0;background:#fdecea;color:#c0392b;
+  font-weight:700;font-size:10px;cursor:pointer;font-family:inherit;}
+.postop-revert:hover{background:#f9d9d4;}
 
 /* DNTU POLICY */
 .dntu-controls{background:white;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.04);}
@@ -3105,6 +3139,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
           <button class="btn-add" onclick="loadHandover()">Refresh</button>
         </div>
       </div>
+      <div id="hv-undo"></div>
       <div id="hv-body"><div class="report-note">Loading the handover list…</div></div>
     </div>
 
@@ -3112,6 +3147,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
       <div class="phdr">
         <div><h2><span class="page-heading-icon" aria-hidden="true">📤</span><span>Postop Discharges</span></h2><p>Patients discharged home after their operation — oldest first · tap a row to open the patient</p></div>
         <div class="page-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-add" onclick="openAddPostopDischarge()" style="background:#0d7377;" title="A patient discharged by mistake (e.g. as an old case)? Search for them and add their last admission to this list.">➕ Add postop discharge</button>
           <button class="btn-add" onclick="printPostopDischarges()" style="background:#0369a1;">🖨 Print / PDF</button>
           <button class="btn-add" onclick="loadPostopDischarges()">Refresh</button>
         </div>
@@ -3763,7 +3799,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.13-539';
+const APP_BUILD='2026.10.13-540';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18467,10 +18503,6 @@ function episodeEncountersHTML(ep){
 function episodeCategoryHTML(meta,open){
   const recs=clrState.rows.filter(r=>r.kind===meta.kind);
   const cur=recs.find(r=>r.is_current)||recs[0];
-  // Only the latest admission — the one shown as the "Current episode" (cur) —
-  // can be corrected to a postop discharge; an older admission closed as an old
-  // case stays as it is.
-  const latestEp=meta.kind==='episode'?cur:null;
   const curCode=recCode(cur);
   const line=cur?`${curCode?curCode+' · ':''}${htmlSafe(cur.title||meta.title)}${cur.detail?' • '+htmlSafe(cur.detail):''}${cur.record_date?' • '+htmlSafe(fmtShortDate(cur.record_date)):''}`:'';
   const listRows=recs.length?recs.map(r=>`<div class="clr-rec">
@@ -18482,7 +18514,6 @@ function episodeCategoryHTML(meta,open){
         ${r.derived
           ?'<span class="clr-rec-tag">From patient card</span>'
           :`<button class="clr-mini" onclick="openClinicalRecordForm('${meta.kind}','${r.id}')">Edit</button>
-        ${(meta.kind==='episode'&&latestEp&&String(r.id)===String(latestEp.id)&&!r.is_current&&!r.discharge_date)?`<button class="clr-mini" style="background:#fdecea;color:#c0392b;" onclick="openPostopDischargeCorrection('${r.id}')" title="This (the latest) admission was discharged as an old case (not a postop discharge). If that was a mistake, record it as a postop discharge so the patient appears on the Postop Discharges list and can be booked for follow-up.">↩ Postop discharge</button>`:''}
         <button class="clr-mini danger" onclick="deleteClinicalRecord('${r.id}')">Remove</button>`}
       </div></div>${meta.kind==='episode'?episodeEncountersHTML(r):''}`).join(''):`<div class="clr-empty">${htmlSafe(meta.none)}.</div>`;
   return `<div class="clr-cat">
@@ -20112,6 +20143,7 @@ let handoverLoadVersion=0;
 async function loadHandover(){
   const body=document.getElementById('hv-body');
   if(!body)return;
+  if(typeof renderDischargeUndoBanner==='function')renderDischargeUndoBanner();
   const version=++handoverLoadVersion;
   const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category';
   let cols=HV_COLS,data,error;
@@ -20653,24 +20685,9 @@ function handoverRowHTML(p,cls){
   const encUser=isEncounterUser();
   const encDone=encUser&&hvEncounteredToday.has(String(p.id));
   const fistula=isFistulaPatient(p);
-  // "Postop discharge" belongs to an operation that has not been postop-discharged
-  // yet. Once a patient has been seen and postop-discharged, the button is hidden
-  // on a later admission unless a new operation was performed (an operation still
-  // open for discharge) — a plain inpatient review is discharged as an old case.
-  let hvExtraStomas=[];try{hvExtraStomas=Array.isArray(p.extra_stomas)?p.extra_stomas:(p.extra_stomas?JSON.parse(p.extra_stomas):[]);}catch(e){hvExtraStomas=[];}
-  const hvHadPostop=!!p.discharge_date||hvExtraStomas.some(x=>x&&x.discharge_date);
-  // A new operation this admission re-enables Postop discharge even for a patient
-  // discharged before. pickPostopDischargePatch only sees the primary + extra
-  // stomas, so also look across the WHOLE timeline (refashionings and operation
-  // history too): any stoma still present that was formed on/after this episode's
-  // admission (inpatient_since) is a new stoma formed during the current episode.
-  const hvNewStomaThisEp=(()=>{
-    const since=String(p.inpatient_since||'').slice(0,10);
-    if(!since)return false;
-    try{return (typeof stomaTimeline==='function'?stomaTimeline(p):[]).some(s=>{
-      const f=String(s.formed||'').slice(0,10);return f&&f>=since&&f<=TODAY&&!s.ended;});}catch(e){return false;}
-  })();
-  const hvShowPostop=!!pickPostopDischargePatch(p,TODAY)||!hvHadPostop||hvNewStomaThisEp;
+  // All discharge outcomes now live behind one "Discharge patient" button that
+  // opens a modal (openDischargeModal → dischargeOptionsHTML), which decides on
+  // its own whether to offer "Postop discharge" for this admission.
   const nameArg=jsSafe(`${p.first_name||''} ${p.surname||''}`.trim());
   return `<tr class="${cls||''}${fistula?' hv-fistula':''}${isBaggingPatient(p)?' hv-bagging':''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
@@ -20697,10 +20714,7 @@ function handoverRowHTML(p,cls){
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
-      ${fistula?`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}','${isBaggingPatient(p)?'bagging':'fistula'}')" title="Off the handover; fistula and bagging-advice patients are not on the Postop Discharges list">Discharge patient</button>`:`${hvShowPostop?`<button class="ncb-btn" style="background:#fdecea;color:#c0392b;" onclick="dischargeFromHandover('${p.id}','${nameArg}')">Postop discharge</button>`:''}
-      <button class="ncb-btn" style="background:#eef0f3;color:#4b5563;" onclick="dischargeOldFromHandover('${p.id}','${nameArg}')">Discharge (old case)</button>
-      <button class="ncb-btn" style="background:#fef9c3;color:#713f12;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','relocated_overseas')">Relocated overseas</button>
-      <button class="ncb-btn" style="background:#dbeafe;color:#1e3a8a;" onclick="dischargeToStatusFromHandover('${p.id}','${nameArg}','discharged_gozo')">Discharged to Gozo</button>`}
+      ${fistula?`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}','${isBaggingPatient(p)?'bagging':'fistula'}')" title="Off the handover; fistula and bagging-advice patients are not on the Postop Discharges list">Discharge patient</button>`:`<button class="ncb-btn" style="background:#e0e7ff;color:#3730a3;font-weight:800;" onclick="openDischargeModal('${p.id}','${nameArg}')" title="Discharge this patient — choose postop discharge, old case, Gozo or relocated overseas, each with its consequence">🏷️ Discharge patient</button>`}
       <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Patient profile (read-only)">🪪 Profile</button>
     </div></td>
   </tr>`;
@@ -21096,14 +21110,154 @@ async function stampPostopDischargeDate(pid,dateStr){
     return{set:!uerr};
   }catch(e){return{set:false};}
 }
-async function dischargeFromHandover(patientId,name){
-  if(!confirm(`Postop discharge for ${name||'this patient'}?\n\nThey come off the handover list and their inpatient episode is closed with today's date, which is also recorded as their post-op discharge date on the patient form. They keep everything on their record and appear in the Postop Discharges list.`))return;
-  const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
-  if(error){alert('Could not discharge: '+error.message);return;}
-  await closeOpenInpatientEpisode(patientId,{postop:true});
-  await stampPostopDischargeDate(patientId,TODAY);
-  loadHandover();
-  await refreshReminders();
+/* The discharge outcomes offered in the unified Discharge modal, each as a
+   coloured radio option with its consequence spelled out. Pure, so the rule for
+   when "Postop discharge" is offered is unit-tested here. It is offered only
+   while an operation is still open for discharge this admission — the same rule
+   the handover button used to gate on: either a stoma still has no discharge
+   date, or the patient has never been postop-discharged, or a new stoma was
+   formed during the current episode. */
+function dischargeOptionsHTML(p){
+  let extras=[];try{extras=Array.isArray(p.extra_stomas)?p.extra_stomas:(p.extra_stomas?JSON.parse(p.extra_stomas):[]);}catch(e){extras=[];}
+  const hadPostop=!!p.discharge_date||extras.some(x=>x&&x.discharge_date);
+  const newStomaThisEp=(()=>{
+    const since=String(p.inpatient_since||'').slice(0,10);
+    if(!since)return false;
+    try{return (typeof stomaTimeline==='function'?stomaTimeline(p):[]).some(s=>{
+      const f=String(s.formed||'').slice(0,10);return f&&f>=since&&f<=TODAY&&!s.ended;});}catch(e){return false;}
+  })();
+  const showPostop=!!pickPostopDischargePatch(p,TODAY)||!hadPostop||newStomaThisEp;
+  const opt=(value,colour,title,conseq)=>`<label class="dis-opt" style="--dis:${colour};">
+    <input type="radio" name="dis-choice" value="${value}" onchange="dischargeChoicePicked()"/>
+    <span class="dis-opt-body"><span class="dis-opt-title">${title}</span><span class="dis-opt-conseq">${conseq}</span></span></label>`;
+  return [
+    showPostop?opt('postop','#c0392b','🏥 Postop discharge',
+      'Comes off the handover and joins the <strong>Postop Discharges</strong> list to be booked for follow-up. Today’s date is recorded as the post-op discharge date.'):'',
+    opt('old','#4b5563','📁 Discharge (old case)',
+      'Comes off the handover. This is <strong>not</strong> a postop discharge — they will <strong>not</strong> appear on the Postop Discharges list.'),
+    opt('discharged_gozo','#1e3a8a','⛴️ Discharged to Gozo',
+      'Leaves the local follow-up service — their care continues in Gozo. Today’s date is recorded as the discharged-to-Gozo date.'),
+    opt('relocated_overseas','#713f12','✈️ Relocated overseas',
+      'Leaves the local follow-up service and the whole patient is <strong>paused</strong>. Today’s date is recorded as the relocated-overseas date.')
+  ].filter(Boolean).join('');
+}
+/* One "Discharge patient" button on the handover opens this modal. The nurse
+   picks a single outcome — each shows its consequence — then confirms once.
+   After the discharge a one-time Undo banner appears on the handover. */
+let dischargeCtx=null;
+async function openDischargeModal(patientId,name){
+  const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  if(error||!p){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
+  const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
+  dischargeCtx={patient:p,name:nm};
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb'+sexModalClass(p);
+  mb.innerHTML=`<h2>Discharge patient</h2>
+    <div class="msub">Choose how <strong>${htmlSafe(nm)}</strong> is leaving. Pick one outcome — its consequence is shown below it — then confirm.</div>
+    <div class="dis-opts">${dischargeOptionsHTML(p)}</div>
+    <div class="dis-confirm" id="dis-confirm" style="display:none;"></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(patientId))}')">Discharge patient</button></div>`;
+  openMo();
+}
+// When an outcome is picked, enable the confirm button and show a plain-English
+// "Are you sure…?" line naming the patient and what the choice does.
+function dischargeChoicePicked(){
+  const v=document.querySelector('input[name="dis-choice"]:checked')?.value;
+  const btn=document.getElementById('dis-save');
+  const box=document.getElementById('dis-confirm');
+  const nm=dischargeCtx&&dischargeCtx.name||'this patient';
+  const meta={
+    postop:['🏥 Postop discharge','on the Postop Discharges list, to be booked for follow-up'],
+    old:['📁 Discharge (old case)','off the handover — this is not a postop discharge'],
+    discharged_gozo:['⛴️ Discharged to Gozo','out to the Gozo service, off the local follow-up'],
+    relocated_overseas:['✈️ Relocated overseas','paused and taken off the local follow-up service']
+  }[v];
+  if(!v||!meta){if(btn)btn.disabled=true;if(box)box.style.display='none';return;}
+  if(btn)btn.disabled=false;
+  if(box){box.style.display='block';
+    box.innerHTML=`Are you sure you want to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta[0]}</strong>?<br/>They will be ${meta[1]}. You can undo this once, straight after.`;}
+}
+async function confirmDischargeModal(patientId){
+  const v=document.querySelector('input[name="dis-choice"]:checked')?.value;
+  if(!v)return;
+  const name=(dischargeCtx&&String(dischargeCtx.patient&&dischargeCtx.patient.id)===String(patientId)&&dischargeCtx.name)||'this patient';
+  const btn=document.getElementById('dis-save');if(btn){btn.disabled=true;btn.textContent='Discharging…';}
+  // Snapshot the patient fields and the open episode BEFORE changing anything,
+  // so the one-time Undo can put everything back exactly as it was.
+  const{data:before}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  const snapFields={};
+  ['is_inpatient','followup_status','followup_status_effective_date','discharged_gozo_date','relocated_overseas_date','discharge_date','extra_stomas'].forEach(k=>{if(before&&k in before)snapFields[k]=before[k];});
+  let epSnap=null;
+  try{const{data:eps}=await SB.from('clinical_records').select('id,is_current,status,discharge_date')
+      .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).order('record_date',{ascending:false}).limit(1);
+    if(eps&&eps[0])epSnap={id:eps[0].id,is_current:eps[0].is_current,status:eps[0].status,discharge_date:eps[0].discharge_date};}catch(e){}
+  let label='',listNote='';
+  try{
+    if(v==='postop'){
+      label='Postop discharge';listNote='They are on the Postop Discharges list to be booked for follow-up.';
+      const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);if(error)throw error;
+      await closeOpenInpatientEpisode(patientId,{postop:true});
+      await stampPostopDischargeDate(patientId,TODAY);
+    }else if(v==='old'){
+      label='Discharge (old case)';listNote='They are off the handover. This was not a postop discharge.';
+      const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);if(error)throw error;
+      await closeOpenInpatientEpisode(patientId,{postop:false});
+    }else{
+      const isGozo=v==='discharged_gozo';
+      label=isGozo?'Discharged to Gozo':'Relocated overseas';
+      listNote=isGozo?'Their care continues in Gozo.':'Their follow-up is paused while they are overseas.';
+      const dateCol=isGozo?'discharged_gozo_date':'relocated_overseas_date';
+      const otherCol=isGozo?'relocated_overseas_date':'discharged_gozo_date';
+      const{error,dropped}=await updatePatientTolerant(patientId,{is_inpatient:false,followup_status:v,followup_status_effective_date:TODAY,[dateCol]:TODAY,[otherCol]:null});
+      if(error)throw error;
+      if(dropped&&dropped.includes('followup_status'))throw new Error('the follow-up status column is not in the database yet');
+      await closeOpenInpatientEpisode(patientId,{postop:false});
+    }
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='Discharge patient';}alert('Could not discharge: '+(e&&e.message||e));return;}
+  try{logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),
+    patient_name:name,summary:'Discharged from handover ('+label+')',details:{status:v,date:TODAY}});}catch(e){}
+  // Arm the one-time Undo banner shown at the top of the handover.
+  hvRecentDischarge={patientId:String(patientId),name,status:v,label,listNote,
+    patientBefore:snapFields,episodeBefore:epSnap};
+  closeModal();
+  await loadHandover();
+  try{await refreshReminders();}catch(e){}
+}
+/* The one-time Undo banner: after a discharge it sits above the handover list,
+   naming who left and how, with an Undo that puts them back exactly. It is held
+   in memory only (a page reload clears it) and replaced by the next discharge. */
+let hvRecentDischarge=null;
+function renderDischargeUndoBanner(){
+  const host=document.getElementById('hv-undo');if(!host)return;
+  const d=hvRecentDischarge;
+  if(!d){host.innerHTML='';return;}
+  host.innerHTML=`<div class="hv-undo-banner" data-status="${htmlSafe(d.status)}">
+    <span class="hv-undo-ico">✅</span>
+    <span class="hv-undo-txt"><strong>${htmlSafe(d.name)}</strong> discharged as <strong>${htmlSafe(d.label)}</strong>. ${htmlSafe(d.listNote)}</span>
+    <button class="hv-undo-btn" onclick="undoLastDischarge()">↩ Undo</button>
+    <button class="hv-undo-x" onclick="dismissDischargeUndo()" title="Dismiss">✕</button></div>`;
+}
+function dismissDischargeUndo(){hvRecentDischarge=null;renderDischargeUndoBanner();}
+async function undoLastDischarge(){
+  const d=hvRecentDischarge;if(!d)return;
+  const btn=document.querySelector('.hv-undo-btn');if(btn){btn.disabled=true;btn.textContent='Undoing…';}
+  try{
+    // Put the patient fields back exactly as they were before the discharge.
+    const{error}=await updatePatientTolerant(d.patientId,{...d.patientBefore});
+    if(error)throw error;
+    // Reopen the episode that was closed.
+    if(d.episodeBefore&&d.episodeBefore.id){
+      const full={is_current:d.episodeBefore.is_current,status:d.episodeBefore.status,discharge_date:d.episodeBefore.discharge_date,updated_at:new Date().toISOString()};
+      let r=await SB.from('clinical_records').update(full).eq('id',d.episodeBefore.id);
+      if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',d.episodeBefore.id);}
+      if(r.error)throw r.error;
+    }
+    try{logAudit({action:'update',entity:'patient',entity_id:String(d.patientId),patient_id:String(d.patientId),
+      patient_name:d.name,summary:'Undid a discharge ('+d.label+')',details:{status:d.status}});}catch(e){}
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='↩ Undo';}alert('Could not undo the discharge: '+(e&&e.message||e));return;}
+  hvRecentDischarge=null;
+  await loadHandover();
+  try{await refreshReminders();}catch(e){}
 }
 /* Discharge patient: a fistula patient leaves the handover and their admission
    closes with today's date. They are not followed up like a stoma patient, so
@@ -21141,84 +21295,117 @@ async function confirmFistulaDischarge(patientId,kind){
   await refreshReminders();
   if(note)alert(note);
 }
-/* An old case: taken off the handover without being counted as a postop
-   discharge. The episode is closed but not stamped with a discharge date, so it
-   does not appear in the Postop Discharges list. */
-async function dischargeOldFromHandover(patientId,name){
-  if(!confirm(`Discharge ${name||'this patient'} as an old case?\n\nThey come off the handover list, but this is NOT a postop discharge — they will not appear in the Postop Discharges list. They keep everything on their record.`))return;
-  const{error}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
-  if(error){alert('Could not discharge: '+error.message);return;}
-  await closeOpenInpatientEpisode(patientId,{postop:false});
-  loadHandover();
-  await refreshReminders();
+/* "Add postop discharge" (top of the Postop Discharges list) — for a patient
+   discharged by mistake (e.g. as an old case) who should be on the list. You
+   search for them, and their LAST admission is auto-selected and recorded as a
+   postop discharge. This replaces the old per-episode correction button. */
+function openAddPostopDischarge(){
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide';
+  mb.innerHTML=`<h2>Add a postop discharge</h2>
+    <div class="msub">For a patient <strong>discharged by mistake</strong> (e.g. as an old case) who should be on the Postop Discharges list. Search for them and pick them — their <strong>last admission</strong> is recorded as a postop discharge, so they can be booked for follow-up.</div>
+    <div class="fg"><label for="app-search">Search patient (name, ID card or phone)</label>
+      <input type="text" id="app-search" placeholder="Start typing a name or ID…" oninput="searchPatientsForAddPostop()" autocomplete="off"/></div>
+    <div id="app-results" class="patient-search-results"><div class="patient-search-empty">Enter at least 2 characters to search.</div></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+  setTimeout(()=>{const el=document.getElementById('app-search');if(el)el.focus();},40);
 }
-/* Correct a mistaken "old case" discharge. An old-case close leaves the episode
-   without a discharge date, so it never reaches the Postop Discharges list. From
-   the patient record's Episodes tab this records that closed admission as a
-   postop discharge — setting the discharge date and stamping the stoma — so the
-   patient joins the Postop Discharges worklist and can be booked for follow-up. */
-function openPostopDischargeCorrection(episodeId){
-  const pat=clrState.patient;if(!pat||!episodeId)return;
-  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb'+sexModalClass(pat);
+async function searchPatientsForAddPostop(){
+  const input=document.getElementById('app-search');const box=document.getElementById('app-results');
+  const q=(input?.value||'').trim().toLowerCase();if(!box)return;
+  if(q.length<2){box.innerHTML='<div class="patient-search-empty">Enter at least 2 characters to search.</div>';return;}
+  box.innerHTML='<div class="patient-search-empty">Searching…</div>';
+  const terms=q.split(/\s+/).filter(Boolean).slice(0,6);
+  let query=SB.from('patients').select('id,first_name,surname,id_card,phone_number,is_inpatient,patient_kind');
+  terms.forEach(t=>{const like='%'+t.replace(/[%,()]/g,'')+'%';
+    query=query.or(`first_name.ilike.${like},surname.ilike.${like},id_card.ilike.${like},phone_number.ilike.${like}`);});
+  const{data,error}=await query.order('surname',{ascending:true}).limit(50);
+  if(error){box.innerHTML='<div class="patient-search-empty">Could not search patients.</div>';return;}
+  const matches=(data||[]).filter(p=>!isFistulaPatient(p)).slice(0,20);
+  if(!matches.length){box.innerHTML='<div class="patient-search-empty">No matching patients found.</div>';return;}
+  box.innerHTML=matches.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+    const onWard=p.is_inpatient===true;
+    return `<div class="patient-search-result">
+      <div><div class="ps-name">${htmlSafe(nm)}</div><div class="ps-meta">ID: ${htmlSafe(p.id_card||'—')} · Phone: ${htmlSafe(p.phone_number||'—')}${onWard?' · <strong style="color:#c0392b;">currently on the ward</strong>':''}</div></div>
+      <div class="ps-actions"><button class="ncb-btn" onclick="recordAddPostopDischarge('${jsSafe(String(p.id))}','${jsSafe(nm)}')" style="background:#fdecea;color:#c0392b;"${onWard?' title="Still on the handover — discharge them from there instead of adding here"':''}>Record postop discharge</button></div>
+    </div>`;
+  }).join('');
+}
+async function recordAddPostopDischarge(patientId,name){
+  // Auto-select the patient's LATEST admission episode.
+  const{data:eps,error}=await SB.from('clinical_records').select('id,record_date,discharge_date,detail,status')
+    .eq('patient_id',patientId).eq('kind','episode').order('record_date',{ascending:false}).limit(1);
+  if(error){alert('Could not read this patient’s admissions: '+error.message);return;}
+  const ep=(eps||[])[0];
+  if(!ep){alert('This patient has no recorded admission to mark as a postop discharge. Admit them first, or discharge from the handover.');return;}
+  const already=!!ep.discharge_date;
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb';
   mb.innerHTML=`<h2>Record postop discharge</h2>
-    <div class="msub">Use this only to correct an admission that was <strong>discharged as an old case by mistake</strong>. It records this admission as a <strong>postop discharge</strong> — the patient then appears on the <strong>Postop Discharges</strong> list and can be booked for follow-up. Everything else on the record is kept.</div>
-    <div class="fg"><label for="ppd-date">Postop discharge date</label><input type="date" id="ppd-date" value="${TODAY}" max="${TODAY}"/></div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="ppd-save" onclick="savePostopDischargeCorrection('${jsSafe(String(episodeId))}')">Record postop discharge</button></div>`;
+    <div class="msub">Patient: <strong>${htmlSafe(name)}</strong>. Their last admission${ep.record_date?` (started ${htmlSafe(fmtShortDate(ep.record_date))})`:''} will be recorded as a <strong>postop discharge</strong>, so they appear on the Postop Discharges list and can be booked for follow-up.${already?'<br/><strong style="color:#b45309;">This admission already carries a discharge date — recording will update it.</strong>':''}</div>
+    <div class="fg"><label for="app-date">Postop discharge date</label><input type="date" id="app-date" value="${TODAY}" max="${TODAY}"/></div>
+    <div class="mact"><button class="btn-cancel" onclick="openAddPostopDischarge()">← Back to search</button>
+      <button class="btn-save" id="app-save" onclick="confirmAddPostopDischarge('${jsSafe(String(patientId))}','${jsSafe(String(ep.id))}','${jsSafe(name)}')">Record postop discharge</button></div>`;
   openMo();
 }
-async function savePostopDischargeCorrection(episodeId){
-  const pat=clrState.patient;if(!pat||!episodeId)return;
-  const date=document.getElementById('ppd-date')?.value||TODAY;
+async function confirmAddPostopDischarge(patientId,episodeId,name){
+  const date=document.getElementById('app-date')?.value||TODAY;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('Please choose a valid date.');return;}
-  const btn=document.getElementById('ppd-save');if(btn){btn.disabled=true;btn.textContent='Recording…';}
-  // A postop discharge is home, not on the ward — take the patient OFF the
-  // handover. Without this the patient stays is_inpatient and the Postop
-  // Discharges list (which drops anyone still on the ward) never shows them.
-  const{error:pe}=await SB.from('patients').update({is_inpatient:false}).eq('id',pat.id);
+  const btn=document.getElementById('app-save');if(btn){btn.disabled=true;btn.textContent='Recording…';}
+  // A postop discharge is home, not on the ward — take the patient off the handover.
+  const{error:pe}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(pe){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+pe.message);return;}
-  // Mark the selected admission as a postop discharge, with the usual tolerant
-  // fallback if the discharge_date column is not there yet.
   const full={discharge_date:date,status:'Discharged',is_current:false,updated_at:new Date().toISOString()};
   const markEp=async id=>{let r=await SB.from('clinical_records').update(full).eq('id',id);
     if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',id);}return r;};
   const r=await markEp(episodeId);
   if(r.error){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+r.error.message);return;}
-  // Close any still-open admission the same way, so nothing is left on the ward
-  // (e.g. one re-opened automatically while the record was being viewed).
-  try{const{data:openEps}=await SB.from('clinical_records').select('id').eq('patient_id',pat.id).eq('kind','episode').eq('is_current',true);
-    for(const ep of (openEps||[])){if(String(ep.id)!==String(episodeId))await markEp(ep.id);}}catch(e){}
-  try{await stampPostopDischargeDate(pat.id,date);}catch(e){}
-  try{logAudit({action:'update',entity:'patient',entity_id:String(pat.id),patient_id:String(pat.id),
-    patient_name:`${pat.first_name||''} ${pat.surname||''}`.trim(),
-    summary:'Recorded a postop discharge (corrected an old-case discharge)',details:{episode:String(episodeId),date}});}catch(e){}
-  if(clrState.patient&&String(clrState.patient.id)===String(pat.id))clrState.patient.is_inpatient=false;
+  // Close any other still-open admission so nothing is left on the ward.
+  try{const{data:openEps}=await SB.from('clinical_records').select('id').eq('patient_id',patientId).eq('kind','episode').eq('is_current',true);
+    for(const e of (openEps||[])){if(String(e.id)!==String(episodeId))await markEp(e.id);}}catch(e){}
+  try{await stampPostopDischargeDate(patientId,date);}catch(e){}
+  try{logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),
+    patient_name:name,summary:'Added a postop discharge (patient discharged by mistake)',details:{episode:String(episodeId),date}});}catch(e){}
   closeModal();
-  await loadClinicalRecords(pat.id);
-  renderEpisodesPanel();
-  await refreshReminders();
+  try{await loadPostopDischarges();}catch(e){}
   try{if(document.getElementById('hv-body'))await loadHandover();}catch(e){}
-  alert('Recorded as a postop discharge. The patient is off the handover and now appears on the Postop Discharges list.');
+  try{await refreshReminders();}catch(e){}
+  alert(`✅ ${name} is now on the Postop Discharges list for ${fmtShortDate(date)}.`);
 }
-/* Discharge to Gozo, or relocated overseas: the patient leaves the local
-   follow-up service, so they come off the handover, their inpatient episode is
-   closed, and today's date is written as the outcome date (and the follow-up
-   status effective date) automatically. Switching between the two clears the
-   other's date so only the chosen outcome is on file. */
-async function dischargeToStatusFromHandover(patientId,name,status){
-  const label=status==='discharged_gozo'?'discharged to Gozo':'relocated overseas';
-  if(!confirm(`Mark ${name||'this patient'} as ${label}?\n\nThey come off the handover, their inpatient episode is closed, and today (${fmtShortDate(TODAY)}) is recorded as the ${label} date on their follow-up. They keep everything on their record.`))return;
-  const dateCol=status==='discharged_gozo'?'discharged_gozo_date':'relocated_overseas_date';
-  const otherCol=status==='discharged_gozo'?'relocated_overseas_date':'discharged_gozo_date';
-  const patch={is_inpatient:false,followup_status:status,followup_status_effective_date:TODAY,
-    [dateCol]:TODAY,[otherCol]:null};
-  const{error,dropped}=await updatePatientTolerant(patientId,patch);
-  if(error){alert('Could not discharge: '+(error.message||error));return;}
-  if(dropped&&dropped.includes('followup_status')){alert('The follow-up status column is not in the database yet, so this could not be saved.');return;}
-  if(dropped&&(dropped.includes(dateCol)||dropped.includes('followup_status_effective_date')))
-    alert(`The patient is marked as ${label}, but the outcome-date column is not in the database yet — run the matching file in sql/ once in Supabase to record the date.`);
-  await closeOpenInpatientEpisode(patientId,{postop:false});
-  loadHandover();
-  try{refreshReminders();}catch(e){}
+/* Revert a recorded postop discharge (from a Postop Discharges row). It reopens
+   the patient's latest discharged admission, clears the stamped discharge date,
+   and puts them back on the handover, where they can be discharged correctly. */
+async function revertPostopDischarge(patientId,name){
+  if(!confirm(`Revert the postop discharge for ${name||'this patient'}?\n\nTheir last admission is reopened and they go back onto the handover, where you can discharge them again correctly. The postop discharge date is cleared.`))return;
+  const{data:eps,error}=await SB.from('clinical_records').select('id,discharge_date,record_date')
+    .eq('patient_id',patientId).eq('kind','episode').not('discharge_date','is',null)
+    .order('discharge_date',{ascending:false}).limit(1);
+  if(error){alert('Could not read the admission: '+error.message);return;}
+  const ep=(eps||[])[0];
+  if(!ep){alert('There is no recorded postop discharge to revert for this patient.');return;}
+  const epDate=String(ep.discharge_date||'').slice(0,10);
+  // Reopen the episode: back on the ward, no discharge date.
+  const full={is_current:true,status:'Inpatient',discharge_date:null,updated_at:new Date().toISOString()};
+  let r=await SB.from('clinical_records').update(full).eq('id',ep.id);
+  if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',ep.id);}
+  if(r.error){alert('Could not revert: '+r.error.message);return;}
+  // Clear the stamped discharge date (primary, or the extra stoma that carried
+  // it) and put the patient back on the handover.
+  const{data:pat}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  const patch={is_inpatient:true};
+  if(pat){
+    if(String(pat.discharge_date||'').slice(0,10)===epDate)patch.discharge_date=null;
+    let extras=[];try{extras=Array.isArray(pat.extra_stomas)?pat.extra_stomas:(pat.extra_stomas?JSON.parse(pat.extra_stomas):[]);}catch(e){extras=[];}
+    if(extras.some(s=>s&&String(s.discharge_date||'').slice(0,10)===epDate))
+      patch.extra_stomas=extras.map(s=>(s&&String(s.discharge_date||'').slice(0,10)===epDate)?{...s,discharge_date:null}:s);
+  }
+  await updatePatientTolerant(patientId,patch);
+  try{logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),
+    patient_name:name,summary:'Reverted a postop discharge (back to the handover)',details:{episode:String(ep.id),date:epDate}});}catch(e){}
+  try{await loadPostopDischarges();}catch(e){}
+  try{if(document.getElementById('hv-body'))await loadHandover();}catch(e){}
+  try{await refreshReminders();}catch(e){}
+  alert(`↩ ${name||'The patient'}’s postop discharge was reverted. They are back on the handover.`);
 }
 /* ------------------------------------------------------------------------- *
  * Postop Discharges — the patients discharged home after their operation.
@@ -22565,7 +22752,7 @@ async function loadPostopDischarges(){
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(r.surname)}</strong></td>
     <td data-label="First name">${htmlSafe(r.first_name)}</td>
-    <td data-label="Appliance + notes">${htmlSafe(r.appliance)}</td>
+    <td data-label="Appliance + notes"><div class="postop-appl">${htmlSafe(r.appliance)}</div>${r.id?`<button class="postop-revert" onclick="event.stopPropagation();revertPostopDischarge('${jsSafe(String(r.id))}','${jsSafe(`${r.first_name} ${r.surname}`.trim())}')" title="Discharged by mistake? Reopen the admission and put the patient back on the handover.">↩ Revert postop discharge</button>`:''}</td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="postop-table">
     <colgroup>

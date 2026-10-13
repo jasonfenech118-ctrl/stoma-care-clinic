@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 October 2026 — kept in step with every change.'};
+const MANUAL_META={updated:'13 October 2026 — one “Discharge patient” chooser on the handover, with a one-time Undo, plus Add/Revert postop discharge. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -472,27 +472,29 @@ const MANUAL_SECTIONS=[
     </ul>
     ${manNote('auto','⚙️','All three appear <b>automatically</b> on the day, and drop off once you record the outcome or admit the patient.')}
   `},
-  {id:'discharge',title:'Discharge a patient from the handover',keywords:'discharge handover postop old case overseas gozo relocated abroad off ward date automatic hidden already discharged no surgery new operation review',html:`
+  {id:'discharge',title:'Discharge a patient from the handover',keywords:'discharge handover postop old case overseas gozo relocated abroad off ward date automatic hidden already discharged no surgery new operation review modal confirm consequence undo revert',html:`
     ${manMap('handover')}
     ${manWhen('A patient is leaving the ward.')}
-    ${manH2('🔘','The four discharge buttons')}
+    ${manH2('🏷️','One "Discharge patient" button')}
+    <p class="man-lede">Press ${manBtn('🏷️ Discharge patient','#e0e7ff','#3730a3')} on the patient’s row to open a chooser. Pick <b>one</b> outcome — each shows what it does — then confirm.</p>
     <ul class="man-ul">
-      <li>${manBtn('Postop discharge','#fdecea','#c0392b')} — normal post-op discharge home; they join the Postop Discharges list for follow-up booking. It only shows while an operation is still waiting to be post-op discharged: once a patient has been post-op discharged, it is <b>hidden on a later admission unless a new stoma / operation has been recorded</b> — a plain inpatient review with no surgery is taken off with <b>Discharge (old case)</b> instead.</li>
-      <li>${manBtn('Discharge (old case)','#eef0f3','#4b5563')} — off the ward, but not counted as a post-op discharge.</li>
-      <li>${manBtn('Relocated overseas','#fef9c3','#713f12')} — patient left the country; sets the status.</li>
-      <li>${manBtn('Discharged to Gozo','#dbeafe','#1e3a8a')} — patient moved to Gozo; sets the status.</li>
+      <li>${manBtn('🏥 Postop discharge','#fdecea','#c0392b')} — joins the Postop Discharges list for follow-up booking. Offered only while an operation is still open for discharge this admission.</li>
+      <li>${manBtn('📁 Discharge (old case)','#eef0f3','#4b5563')} — off the ward, but not a post-op discharge.</li>
+      <li>${manBtn('⛴️ Discharged to Gozo','#dbeafe','#1e3a8a')} — care continues in Gozo; sets the status.</li>
+      <li>${manBtn('✈️ Relocated overseas','#fef9c3','#713f12')} — patient left the country and is paused; sets the status.</li>
     </ul>
-    ${manNote('tip','🩹','A <b>fistula</b> (purple FISTULA) or <b>bagging-advice</b> (blue BAGGING) patient has one <b>Discharge patient</b> button instead. It asks whether it has resolved / the drain was removed (the case closes) or they are going home still needing it (the case stays open). Either way they come off the handover, the admission closes with today’s date, and they never join the Postop Discharges list.')}
-    ${manNote('auto','⚙️','Every discharge <b>fills the date automatically</b> (today): Postop stamps the post-op discharge date on the operation; Overseas/Gozo stamp today as the outcome date and the status effective date. All of them close the inpatient episode and take the patient off the handover.')}
-    ${manNote('tip','↩️','<b>Discharged as an old case by mistake?</b> Open the patient record → <b>Episodes</b> tab and press <span class="man-kbd">↩ Postop discharge</span> on the admission. Pick the discharge date and confirm — it records that admission as a <b>postop discharge</b>: the patient comes <b>off the handover</b> and appears on the <b>Postop Discharges</b> list to be booked for follow-up. The button shows only on the <b>latest admission</b> when it was closed as an old case (no discharge date) — older admissions stay as they are.')}
+    ${manNote('tip','↩️','After confirming, an <b>Undo</b> banner appears above the handover. Press it once, straight away, to reverse that discharge and put the patient back exactly as they were.')}
+    ${manNote('tip','🩹','A <b>fistula</b> (purple FISTULA) or <b>bagging-advice</b> (blue BAGGING) patient keeps its own <b>Discharge patient</b> button. It asks whether the case resolved (it closes) or stays open, and never joins the Postop Discharges list.')}
+    ${manNote('auto','⚙️','Every discharge <b>fills today’s date automatically</b> and closes the inpatient episode. Postop stamps the post-op discharge date; Overseas/Gozo stamp the outcome date and status effective date.')}
   `},
-  {id:'postop',title:'Postop Discharges & Archived Handover',keywords:'postop discharges worklist booking book follow-up appointment nurse column overtime ot til archived snapshot 4pm print pdf',html:`
+  {id:'postop',title:'Postop Discharges & Archived Handover',keywords:'postop discharges worklist booking book follow-up appointment nurse column overtime ot til archived snapshot 4pm print pdf add mistake revert reopen search',html:`
     ${manMap('handover')}
     <ul class="man-ul">
       <li>${manBtn('📤 Postop Discharges','#fdf0e1','#b45309')} — everyone discharged post-op who still needs a follow-up booked. A patient leaves this list once you book them, or once they are recorded as overseas / Gozo / deceased.</li>
       <li>Tap a postop row to open <b>Book Follow-up Appointment</b>: it lays out the day with one column per nurse — the <b>same nurses as the Daily Clinic</b>, including anyone on <b>overtime</b> (OT tag) or <b>TIL-In</b> (TIL tag). Pick a free slot under the nurse who will follow the patient up.</li>
       <li>${manBtn('💾 Archived Handover','#fdf0e1','#b45309')} — a read-only copy of each day's handover, saved automatically at 4 pm. It is now stored as <b>lightweight data</b> (the handover sheet as HTML, a few KB) rather than a picture, so the archive barely uses space; each day still opens or downloads as the full sheet. Needs <b>sql/add-handover-snapshot-html.sql</b> run once in Supabase; days saved by the old build stay openable as their picture.</li>
     </ul>
+    ${manNote('tip','➕','<b>Discharged by mistake?</b> Press <span class="man-kbd">➕ Add postop discharge</span> at the top, search for the patient and pick them — their last admission is recorded as a postop discharge so they appear here. To undo one already on the list, press <span class="man-kbd">↩ Revert postop discharge</span> on its row: the admission reopens and the patient goes back on the handover.')}
     ${manNote('auto','⚙️','The handover is <b>archived automatically at 4&nbsp;pm every day</b>, and kept for reference. You can also press "Capture now".')}
   `},
   {id:'print',title:'Print the handover',keywords:'print handover pdf ward sheet paper letter a4 complications infection cre vre +ve positive isolation',html:`

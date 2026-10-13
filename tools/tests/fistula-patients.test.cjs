@@ -85,7 +85,11 @@ test('on the handover a fistula row is marked FISTULA and is simply discharged �
   assert.ok(tr.querySelector('.hv-enc-btn'));assert.ok(tr.querySelector('.hv-cmp-btn'));
   const stoma=handoverRow(STOMA);
   assert.equal(stoma.classList.contains('hv-fistula'),false);assert.equal(stoma.querySelector('.fistula-tag'),null);
-  assert.deepEqual([...stoma.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')].map(b=>b.textContent.trim()),['Postop discharge','Discharge (old case)','Relocated overseas','Discharged to Gozo']);
+  // A stoma patient now has one "Discharge patient" button that opens the
+  // unified modal (postop, old case, Gozo and overseas all live inside it).
+  const stomaBtns=[...stoma.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')];
+  assert.deepEqual(stomaBtns.map(b=>b.textContent.trim()),['🏷️ Discharge patient']);
+  assert.match(stomaBtns[0].getAttribute('onclick'),/openDischargeModal\('s1','Joe Vella'\)/);
 });
 
 function fistulaForm(t,{matches=[],insertErrors=[]}={}){
