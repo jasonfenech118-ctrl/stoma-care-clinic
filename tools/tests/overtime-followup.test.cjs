@@ -58,3 +58,17 @@ test('the worklist is this owner’s active, due-now / overdue patients with no 
   const all=c.otfDuePatients(pats,{owner:'All Patients',futureIds:new Set(['f'])});
   assert.deepEqual(all.map(p=>p.id).sort(),['a','b','c']);      // every owner, same exclusions
 });
+
+test('a chosen due month narrows to exactly that month and year, including future months',()=>{
+  const c=ctx();
+  const pats=[
+    {id:'a',first_name:'Ann',surname:'A',followup_status:'active',followup_owner:'Jason',followup_due_month:10,followup_year:2026},
+    {id:'b',first_name:'Ben',surname:'B',followup_status:'active',followup_owner:'Jason',followup_due_month:8, followup_year:2026},
+    {id:'d',first_name:'Di', surname:'D',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2026}, // future month
+    {id:'x',first_name:'Xa', surname:'X',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2027}  // right month, wrong year
+  ];
+  const dec=c.otfDuePatients(pats,{owner:'All Patients',futureIds:new Set(),dueMonth:12,dueYear:2026});
+  assert.deepEqual(dec.map(p=>p.id),['d']);                     // December 2026 only — future month now shows
+  const oct=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:10,dueYear:2026});
+  assert.deepEqual(oct.map(p=>p.id),['a']);
+});
