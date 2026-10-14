@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups: a calendar of overtime days, a nurse picker, a booking confirmation, a red due-month filter, and a colour per nurse (Jacqueline purple). Kept in step with every change.'};
+const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups due-month filter is now a horizon (that month plus earlier overdue months and DNTU patients). Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -333,7 +333,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('⏱️ Overtime Follow-ups','#efe7fb','#6b21a8')}. The small <b>calendar</b> at the top highlights the days that have <b>overtime / TIL cover</b> (a core nurse on OT, a bank nurse, or TIL-In).</p>
     ${manSteps([
       `<b>Tap a highlighted day</b> on the calendar. If more than one overtime nurse is on, a box asks <b>which nurse</b> — pick one to focus that column (or Show all).`,
-      `Filter the right-hand list by <b>owner</b> (Common, Jacqueline, Jason, Lorraine, Tracey, or All), and by <b>due month</b> — the <b>red Due Month</b> box narrows the list to a chosen month and year (leave it on <b>All</b> for everyone due or overdue).`,
+      `Filter the right-hand list by <b>owner</b> (Common, Jacqueline, Jason, Lorraine, Tracey, or All), and by <b>due month</b>. The <b>red Due Month</b> box is a <b>horizon</b>: it shows that month <b>and every earlier overdue month</b>, plus anyone who <b>did not turn up</b> (DNTU). Leave it on <b>All</b> for everyone due now or overdue.`,
       `<b>Drag a patient onto a free slot</b> under the nurse — or tap <b>Select</b>, then a free slot. A confirmation names the patient and whose patient they are before it books.`,
       `Press <b>✕</b> on a booked slot to remove that booking and free it again.`
     ])}

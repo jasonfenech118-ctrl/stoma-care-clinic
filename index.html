@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-537"/>
-<script src="assets/manual.js?v=2026.10.14-537"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-538"/>
+<script src="assets/manual.js?v=2026.10.14-538"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -2205,6 +2205,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 /* Overtime Follow-ups tab — a day grid of non-core (OT/TIL) nurse columns with a
    draggable due-patient list, modelled on the booking calendar. */
 .otf-owner-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.otf-scope{font-size:10.5px;color:var(--muted);margin:-4px 0 8px;line-height:1.35;}
 /* The Due-Month selector is the key filter, so it is a bold red pill like the
    one on Follow-up Planning. */
 .otf-month-label{color:#b91c1c;}
@@ -3883,7 +3884,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.14-545';
+const APP_BUILD='2026.10.14-546';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9309,7 +9310,7 @@ function bcDropUnder(x,y){
  * ------------------------------------------------------------------------- */
 let otfState={date:null,owner:'All Patients',patients:[],nurses:[],bookings:[],selId:null,
   calYear:null,calMonth:null,overtimeDays:new Set(),focusNurseId:null,promptNurse:false,
-  dueMonth:'',dueYear:null,rawPatients:[],futureIds:new Set()};
+  dueMonth:'',dueYear:null,rawPatients:[],futureIds:new Set(),dntuByPatient:{}};
 // A colour per core nurse, so each caseload reads at a glance. Jacqueline is
 // purple, as asked; Common and All Patients stay neutral.
 const OTF_OWNER_COLORS={'Common':'#475569','Jacqueline':'#7c3aed','Jason':'#2563eb','Lorraine':'#db2777','Tracey':'#0d7377'};
@@ -9330,22 +9331,28 @@ function otfBookingRow(n,date,slot,patientId){
 }
 // The due-to-book worklist: active patients due now or overdue (not a future
 // month), with no upcoming booking, for the chosen owner (or everyone).
-function otfDuePatients(pats,{owner,futureIds,dueMonth,dueYear}){
+function otfDuePatients(pats,{owner,futureIds,dueMonth,dueYear,dntuByPatient}){
   const nowKey=Number(String(TODAY).slice(0,4))*100+Number(String(TODAY).slice(5,7));
-  const dm=Number(dueMonth)||0, dy=Number(dueYear)||0;
+  const dm=Number(dueMonth)||0, dy=Number(dueYear)||Number(String(TODAY).slice(0,4));
+  // A chosen month is a HORIZON: it shows that month AND every earlier due month
+  // (overdue carried forward). With no month chosen, the horizon is the current
+  // month — i.e. everyone due now or overdue. Patients who did not turn up (a
+  // 1–2 DNTU streak) and "according to availability" patients are always shown,
+  // because they need booking whatever their nominal due month; three misses
+  // move a patient out of recall (paused), so they drop off.
+  const horizon=dm?(dy*100+dm):nowKey;
+  const dntu=dntuByPatient||{};
   const nm=p=>`${p.first_name||''} ${p.surname||''}`.trim();
+  const dueKey=p=>{const m=Number(p.followup_due_month),y=Number(p.followup_year);return (m>=1&&m<=12&&y>2000)?y*100+m:0;};
   return (pats||[]).filter(p=>{
     if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
-    const m=Number(p.followup_due_month),y=Number(p.followup_year);
-    if(!(m>=1&&m<=12&&y>2000))return false;
-    // A chosen due month (and year) shows exactly that month; otherwise the list
-    // is everyone due now or overdue.
-    if(dm){if(m!==dm)return false;if(dy&&y!==dy)return false;}
-    else if(y*100+m>nowKey)return false;
     if(owner&&owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
     if((futureIds||new Set()).has(String(p.id)))return false;          // already has a future booking
-    return true;
-  }).sort((a,b)=>{const ka=Number(a.followup_year)*100+Number(a.followup_due_month),kb=Number(b.followup_year)*100+Number(b.followup_due_month);
+    const streak=Number(dntu[String(p.id)])||0;
+    if(streak>=3)return false;                                         // paused by policy
+    const k=dueKey(p);
+    return (k>0&&k<=horizon)||streak>=1||!!p.followup_flexible;
+  }).sort((a,b)=>{const ka=dueKey(a)||999999,kb=dueKey(b)||999999;
     return ka-kb||nm(a).localeCompare(nm(b),'en',{sensitivity:'base'});});
 }
 async function loadOtFollowup(){
@@ -9372,14 +9379,27 @@ async function loadOtFollowup(){
     appts.forEach(a=>foldBankBookingIntoCoreColumn(nurses,a));
     otfState.nurses=nurses;otfState.bookings=appts;
     // The due-to-book list, minus anyone with a future booking and fistula patients.
-    const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,locality,patient_kind'));
+    // followup_flexible is newer, so fall back if the column is not there yet.
+    const otfCols='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,locality,patient_kind';
+    let pr=await fetchAllRows(()=>SB.from('patients').select(otfCols+',followup_flexible'));
+    if(pr.error&&/followup_flexible/i.test(String(pr.error.message||'')))pr=await fetchAllRows(()=>SB.from('patients').select(otfCols));
+    const pats=pr.rows;
     const noFistula=await withoutFistulaPatients(pats||[]);
     const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,status').gte('appt_date',TODAY).neq('status','cancelled'));
     const futureIds=new Set((future||[]).map(a=>String(a.patient_id)));
-    // Keep the raw pool so owner / due-month filters re-apply instantly, without
-    // another round trip and without disturbing the calendar or focused nurse.
-    otfState.rawPatients=noFistula;otfState.futureIds=futureIds;
-    otfState.patients=otfDuePatients(noFistula,{owner:otfState.owner,futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear});
+    // DNTU streak per patient, from the whole appointment history (lean read), so
+    // patients who did not turn up are carried onto the worklist too.
+    const dntuByPatient={};
+    try{
+      const{rows:allAppts}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,appt_slot,status'));
+      const groups={};
+      (allAppts||[]).forEach(a=>{const k=String(a.patient_id||'');if(!k)return;(groups[k]||(groups[k]=[])).push(a);});
+      Object.entries(groups).forEach(([pid,rows])=>{dntuByPatient[pid]=calculateCurrentDntuStreak(rows);});
+    }catch(e){}
+    // Keep the raw pool + maps so owner / due-month filters re-apply instantly,
+    // without another round trip and without disturbing the calendar or focus.
+    otfState.rawPatients=noFistula;otfState.futureIds=futureIds;otfState.dntuByPatient=dntuByPatient;
+    otfState.patients=otfDuePatients(noFistula,{owner:otfState.owner,futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear,dntuByPatient});
     // Arriving from a calendar-day click: one overtime nurse focuses straight
     // away; more than one opens a picker so you choose whose clinic to book into.
     if(prompt&&nurses.length===1)otfState.focusNurseId=String(nurses[0].id);
@@ -9459,7 +9479,7 @@ function otfFocusNurse(idx){
 // Owner and due-month are client-side filters over the raw pool, so they apply
 // instantly and keep the calendar and focused nurse as they are.
 function otfRefilter(){
-  otfState.patients=otfDuePatients(otfState.rawPatients,{owner:otfState.owner,futureIds:otfState.futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear});
+  otfState.patients=otfDuePatients(otfState.rawPatients,{owner:otfState.owner,futureIds:otfState.futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear,dntuByPatient:otfState.dntuByPatient});
   otfState.selId=null;
   renderOtFollowup();
 }
@@ -9529,8 +9549,9 @@ function otfGridHTML(){
 }
 function otfListHTML(){
   const list=otfState.patients;
-  const period=otfState.dueMonth?`${['January','February','March','April','May','June','July','August','September','October','November','December'][Number(otfState.dueMonth)-1]} ${otfState.dueYear}`:'due &amp; overdue';
-  const head=`<div class="bc-head"><h4>To book · ${period} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>`;
+  const period=otfState.dueMonth?`up to ${['January','February','March','April','May','June','July','August','September','October','November','December'][Number(otfState.dueMonth)-1]} ${otfState.dueYear}`:'due &amp; overdue';
+  const head=`<div class="bc-head"><h4>To book · ${period} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
+    <div class="otf-scope">Shows this month, earlier overdue months, and patients who did not turn up (DNTU).</div>`;
   if(!list.length)
     return head+`<div class="report-note">✅ No due follow-ups to book${otfState.owner!=='All Patients'?' for '+htmlSafe(otfState.owner):''}.</div>`;
   const hint=otfState.nurses.length

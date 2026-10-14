@@ -59,18 +59,34 @@ test('the worklist is this owner’s active, due-now / overdue patients with no 
   assert.deepEqual(all.map(p=>p.id).sort(),['a','b','c']);      // every owner, same exclusions
 });
 
-test('a chosen due month narrows to exactly that month and year, including future months',()=>{
+test('a chosen due month is a horizon: that month AND every earlier due month',()=>{
   const c=ctx();
   const pats=[
     {id:'a',first_name:'Ann',surname:'A',followup_status:'active',followup_owner:'Jason',followup_due_month:10,followup_year:2026},
     {id:'b',first_name:'Ben',surname:'B',followup_status:'active',followup_owner:'Jason',followup_due_month:8, followup_year:2026},
-    {id:'d',first_name:'Di', surname:'D',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2026}, // future month
-    {id:'x',first_name:'Xa', surname:'X',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2027}  // right month, wrong year
+    {id:'d',first_name:'Di', surname:'D',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2026},
+    {id:'x',first_name:'Xa', surname:'X',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2027}  // beyond the horizon
   ];
-  const dec=c.otfDuePatients(pats,{owner:'All Patients',futureIds:new Set(),dueMonth:12,dueYear:2026});
-  assert.deepEqual(dec.map(p=>p.id),['d']);                     // December 2026 only — future month now shows
-  const oct=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:10,dueYear:2026});
-  assert.deepEqual(oct.map(p=>p.id),['a']);
+  // December 2026 shows Aug, Oct and Dec 2026 (earliest first), but not Dec 2027.
+  const dec=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:12,dueYear:2026});
+  assert.deepEqual(dec.map(p=>p.id),['b','a','d']);
+  // August 2026 horizon shows only Aug and earlier.
+  const aug=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:8,dueYear:2026});
+  assert.deepEqual(aug.map(p=>p.id),['b']);
+});
+
+test('DNTU patients (1–2 misses) are always carried onto the worklist; three misses drop off',()=>{
+  const c=ctx();
+  const pats=[
+    {id:'n',first_name:'No', surname:'Show',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2027}, // far future, but DNTU
+    {id:'p',first_name:'Pa', surname:'Paused',followup_status:'active',followup_owner:'Jason',followup_due_month:12,followup_year:2027},// 3 misses → out
+    {id:'f',first_name:'Fl', surname:'Flex',followup_status:'active',followup_owner:'Jason',followup_due_month:null,followup_year:null,followup_flexible:true}
+  ];
+  const dntuByPatient={n:2,p:3};
+  const r=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:5,dueYear:2026,dntuByPatient});
+  // May 2026 horizon excludes both future-dated patients by date, but the DNTU
+  // one (2 misses) and the flexible one are shown; the 3-miss one is paused out.
+  assert.deepEqual(r.map(p=>p.id).sort(),['f','n']);
 });
 
 // Regression: changing the Due Month dropdown re-renders the patient list end to
@@ -105,10 +121,12 @@ test('changing the Due Month dropdown re-renders the to-book list',()=>{
     futureIds:new Set()};`,c);
   w.document.getElementById('otf-month').innerHTML='<option value="">All</option>'+[...Array(12)].map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
   const names=()=>[...w.document.querySelectorAll('#otf-right .bc-nm')].map(e=>e.textContent.trim());
+  // Horizon semantics: a month shows that month and every earlier due month,
+  // earliest first — and the list visibly changes as the horizon moves.
   w.document.getElementById('otf-month').value='12';vm.runInContext('otfFilterChanged()',c);
-  assert.deepEqual(names(),['Alex Debono']);
+  assert.deepEqual(names(),['Cy Cauchi','Ben Borg','Alex Debono']);   // May, Nov, Dec
   w.document.getElementById('otf-month').value='11';vm.runInContext('otfFilterChanged()',c);
-  assert.deepEqual(names(),['Ben Borg']);          // the list actually changes
+  assert.deepEqual(names(),['Cy Cauchi','Ben Borg']);                 // May, Nov
   w.document.getElementById('otf-month').value='5';vm.runInContext('otfFilterChanged()',c);
-  assert.deepEqual(names(),['Cy Cauchi']);
+  assert.deepEqual(names(),['Cy Cauchi']);                            // May only
 });
