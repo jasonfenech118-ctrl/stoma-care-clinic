@@ -72,3 +72,43 @@ test('a chosen due month narrows to exactly that month and year, including futur
   const oct=c.otfDuePatients(pats,{owner:'Jason',futureIds:new Set(),dueMonth:10,dueYear:2026});
   assert.deepEqual(oct.map(p=>p.id),['a']);
 });
+
+// Regression: changing the Due Month dropdown re-renders the patient list end to
+// end (onchange → otfFilterChanged → otfRefilter → renderOtFollowup). This
+// guards against the "filter shows the same patients" report.
+const {JSDOM}=require('jsdom');
+test('changing the Due Month dropdown re-renders the to-book list',()=>{
+  const dom=new JSDOM(`<!DOCTYPE html><body>
+    <select id="otf-year"><option value="2026">2026</option></select>
+    <select id="otf-month"></select>
+    <div id="otf-owners"></div><div id="otf-root"></div></body>`);
+  const w=dom.window;
+  const c=vm.createContext({
+    window:w,document:w.document,TODAY:'2026-10-14',
+    htmlSafe:v=>String(v==null?'':v),jsSafe:v=>String(v==null?'':v),
+    normaliseFollowupStatus:s=>String(s||'').toLowerCase()||'active',
+    normaliseFollowupOwner:v=>{const s=String(v||'Common').trim();return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase();},
+    FOLLOWUP_OWNER_FILTERS:['Common','Jacqueline','Jason','Lorraine','Tracey'],
+    followupMonthName:m=>['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m)]||'',
+    bcStomaLabel:()=>'',fmtLabel:v=>String(v),firstNameOf:v=>String(v).split(' ')[0],
+    pickerNurseTag:()=>'',appointmentMatchesNurseColumn:()=>false,SLOTS:['09:00','09:30'],
+    OTF_OWNER_COLORS:{Common:'#475569',Jacqueline:'#7c3aed',Jason:'#2563eb',Lorraine:'#db2777',Tracey:'#0d7377'}
+  });
+  ['otfDuePatients','otfOwnerColor','otfNurseColor','otfRefilter','renderOtFollowup','otfListHTML','otfGridHTML','otfFilterChanged']
+    .forEach(n=>vm.runInContext(fn(n),c));
+  vm.runInContext('function otfAttachDrag(){};function renderOtCalendar(){};',c);
+  vm.runInContext(`var otfState={date:'2026-10-14',owner:'Jacqueline',patients:[],nurses:[],bookings:[],selId:null,focusNurseId:null,dueMonth:'12',dueYear:2026,
+    rawPatients:[
+      {id:'a',first_name:'Alex',surname:'Debono',followup_status:'active',followup_owner:'Jacqueline',followup_due_month:12,followup_year:2026},
+      {id:'b',first_name:'Ben',surname:'Borg',followup_status:'active',followup_owner:'Jacqueline',followup_due_month:11,followup_year:2026},
+      {id:'z',first_name:'Cy',surname:'Cauchi',followup_status:'active',followup_owner:'Jacqueline',followup_due_month:5,followup_year:2026}],
+    futureIds:new Set()};`,c);
+  w.document.getElementById('otf-month').innerHTML='<option value="">All</option>'+[...Array(12)].map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('');
+  const names=()=>[...w.document.querySelectorAll('#otf-right .bc-nm')].map(e=>e.textContent.trim());
+  w.document.getElementById('otf-month').value='12';vm.runInContext('otfFilterChanged()',c);
+  assert.deepEqual(names(),['Alex Debono']);
+  w.document.getElementById('otf-month').value='11';vm.runInContext('otfFilterChanged()',c);
+  assert.deepEqual(names(),['Ben Borg']);          // the list actually changes
+  w.document.getElementById('otf-month').value='5';vm.runInContext('otfFilterChanged()',c);
+  assert.deepEqual(names(),['Cy Cauchi']);
+});
