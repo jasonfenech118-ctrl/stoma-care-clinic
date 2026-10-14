@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups due-month filter is now a horizon (that month plus earlier overdue months and DNTU patients). Kept in step with every change.'};
+const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups now uses the same to-book rules as Follow-up Planning (chosen month, overdue carried, booked patients hidden) and updates on its own. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -333,7 +333,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('⏱️ Overtime Follow-ups','#efe7fb','#6b21a8')}. The small <b>calendar</b> at the top highlights the days that have <b>overtime / TIL cover</b> (a core nurse on OT, a bank nurse, or TIL-In).</p>
     ${manSteps([
       `<b>Tap a highlighted day</b> on the calendar. If more than one overtime nurse is on, a box asks <b>which nurse</b> — pick one to focus that column (or Show all).`,
-      `Filter the right-hand list by <b>owner</b> (Common, Jacqueline, Jason, Lorraine, Tracey, or All), and by <b>due month</b>. The <b>red Due Month</b> box is a <b>horizon</b>: it shows that month <b>and every earlier overdue month</b>, plus anyone who <b>did not turn up</b> (DNTU). Leave it on <b>All</b> for everyone due now or overdue.`,
+      `The list follows the <b>same rules as Follow-up Planning</b>: pick the <b>owner</b> (Common, Jacqueline, Jason, Lorraine, Tracey, or All) and the <b>red Due Month</b>. A month shows that month’s due patients (overdue is carried into the current month); anyone who already has an upcoming booking is <b>not shown</b>. It updates on its own — there is no Refresh button.`,
       `<b>Drag a patient onto a free slot</b> under the nurse — or tap <b>Select</b>, then a free slot. A confirmation names the patient and whose patient they are before it books.`,
       `Press <b>✕</b> on a booked slot to remove that booking and free it again.`
     ])}

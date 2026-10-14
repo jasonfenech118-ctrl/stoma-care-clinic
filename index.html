@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-538"/>
-<script src="assets/manual.js?v=2026.10.14-538"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-539"/>
+<script src="assets/manual.js?v=2026.10.14-539"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -2813,7 +2813,6 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
           <label style="font-size:12px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px;">Date <input type="date" id="otf-date" onchange="loadOtFollowup()" style="font-family:inherit;padding:6px 9px;border:1px solid var(--border);border-radius:8px;"/></label>
           <label style="font-size:12px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px;">Year <select id="otf-year" onchange="otfFilterChanged()" style="font-family:inherit;padding:6px 9px;border:1px solid var(--border);border-radius:8px;"></select></label>
           <label class="otf-month-label" style="font-size:12px;font-weight:900;display:flex;align-items:center;gap:6px;">Due month <select id="otf-month" onchange="otfFilterChanged()"></select></label>
-          <button class="btn-add" onclick="loadOtFollowup()">Refresh</button>
         </div>
       </div>
       <div id="otf-owners" class="otf-owner-bar"></div>
@@ -3884,7 +3883,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.14-546';
+const APP_BUILD='2026.10.14-547';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9310,7 +9309,7 @@ function bcDropUnder(x,y){
  * ------------------------------------------------------------------------- */
 let otfState={date:null,owner:'All Patients',patients:[],nurses:[],bookings:[],selId:null,
   calYear:null,calMonth:null,overtimeDays:new Set(),focusNurseId:null,promptNurse:false,
-  dueMonth:'',dueYear:null,rawPatients:[],futureIds:new Set(),dntuByPatient:{}};
+  dueMonth:'',dueYear:null,rawPatients:[],earliestFuture:{}};
 // A colour per core nurse, so each caseload reads at a glance. Jacqueline is
 // purple, as asked; Common and All Patients stay neutral.
 const OTF_OWNER_COLORS={'Common':'#475569','Jacqueline':'#7c3aed','Jason':'#2563eb','Lorraine':'#db2777','Tracey':'#0d7377'};
@@ -9331,29 +9330,14 @@ function otfBookingRow(n,date,slot,patientId){
 }
 // The due-to-book worklist: active patients due now or overdue (not a future
 // month), with no upcoming booking, for the chosen owner (or everyone).
-function otfDuePatients(pats,{owner,futureIds,dueMonth,dueYear,dntuByPatient}){
-  const nowKey=Number(String(TODAY).slice(0,4))*100+Number(String(TODAY).slice(5,7));
-  const dm=Number(dueMonth)||0, dy=Number(dueYear)||Number(String(TODAY).slice(0,4));
-  // A chosen month is a HORIZON: it shows that month AND every earlier due month
-  // (overdue carried forward). With no month chosen, the horizon is the current
-  // month — i.e. everyone due now or overdue. Patients who did not turn up (a
-  // 1–2 DNTU streak) and "according to availability" patients are always shown,
-  // because they need booking whatever their nominal due month; three misses
-  // move a patient out of recall (paused), so they drop off.
-  const horizon=dm?(dy*100+dm):nowKey;
-  const dntu=dntuByPatient||{};
-  const nm=p=>`${p.first_name||''} ${p.surname||''}`.trim();
-  const dueKey=p=>{const m=Number(p.followup_due_month),y=Number(p.followup_year);return (m>=1&&m<=12&&y>2000)?y*100+m:0;};
-  return (pats||[]).filter(p=>{
-    if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
-    if(owner&&owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
-    if((futureIds||new Set()).has(String(p.id)))return false;          // already has a future booking
-    const streak=Number(dntu[String(p.id)])||0;
-    if(streak>=3)return false;                                         // paused by policy
-    const k=dueKey(p);
-    return (k>0&&k<=horizon)||streak>=1||!!p.followup_flexible;
-  }).sort((a,b)=>{const ka=dueKey(a)||999999,kb=dueKey(b)||999999;
-    return ka-kb||nm(a).localeCompare(nm(b),'en',{sensitivity:'base'});});
+// The to-book list, computed exactly like Follow-up Planning's booking worklist
+// (bcDuePatientsFor): the chosen month, with overdue months carried into the
+// current month, the owner filter, and no patient who already has an upcoming
+// booking. No month chosen ⇒ the current month (so "this month + overdue").
+function otfVisiblePatients(){
+  const y=Number(otfState.dueYear)||Number(String(TODAY).slice(0,4));
+  const m=Number(otfState.dueMonth)||Number(String(TODAY).slice(5,7));
+  return bcDuePatientsFor(otfState.rawPatients||[],{year:y,month:m,owner:otfState.owner,earliestFuture:otfState.earliestFuture||{}});
 }
 async function loadOtFollowup(){
   const root=document.getElementById('otf-root');
@@ -9378,28 +9362,22 @@ async function loadOtFollowup(){
     const appts=(rawAppts||[]).filter(a=>a.status!=='cancelled');
     appts.forEach(a=>foldBankBookingIntoCoreColumn(nurses,a));
     otfState.nurses=nurses;otfState.bookings=appts;
-    // The due-to-book list, minus anyone with a future booking and fistula patients.
-    // followup_flexible is newer, so fall back if the column is not there yet.
+    // The due-to-book list uses exactly the Follow-up Planning / booking-calendar
+    // rule (bcDuePatientsFor): the chosen month, overdue months carried into the
+    // current month, owner filter, and — crucially — nobody who already has an
+    // upcoming booking. The only difference from Follow-up Planning is that here
+    // the booking lands on an overtime nurse picked from the calendar.
     const otfCols='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,locality,patient_kind';
-    let pr=await fetchAllRows(()=>SB.from('patients').select(otfCols+',followup_flexible'));
-    if(pr.error&&/followup_flexible/i.test(String(pr.error.message||'')))pr=await fetchAllRows(()=>SB.from('patients').select(otfCols));
-    const pats=pr.rows;
+    const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select(otfCols));
     const noFistula=await withoutFistulaPatients(pats||[]);
     const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,status').gte('appt_date',TODAY).neq('status','cancelled'));
-    const futureIds=new Set((future||[]).map(a=>String(a.patient_id)));
-    // DNTU streak per patient, from the whole appointment history (lean read), so
-    // patients who did not turn up are carried onto the worklist too.
-    const dntuByPatient={};
-    try{
-      const{rows:allAppts}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,appt_slot,status'));
-      const groups={};
-      (allAppts||[]).forEach(a=>{const k=String(a.patient_id||'');if(!k)return;(groups[k]||(groups[k]=[])).push(a);});
-      Object.entries(groups).forEach(([pid,rows])=>{dntuByPatient[pid]=calculateCurrentDntuStreak(rows);});
-    }catch(e){}
-    // Keep the raw pool + maps so owner / due-month filters re-apply instantly,
+    // earliestFuture[pid] truthy ⇒ an upcoming booking ⇒ excluded from the list.
+    const earliestFuture={};
+    (future||[]).forEach(a=>{const pid=String(a.patient_id||''),d=String(a.appt_date||'');if(!pid||!d)return;if(!earliestFuture[pid]||d<earliestFuture[pid])earliestFuture[pid]=d;});
+    // Keep the raw pool + map so owner / due-month filters re-apply instantly,
     // without another round trip and without disturbing the calendar or focus.
-    otfState.rawPatients=noFistula;otfState.futureIds=futureIds;otfState.dntuByPatient=dntuByPatient;
-    otfState.patients=otfDuePatients(noFistula,{owner:otfState.owner,futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear,dntuByPatient});
+    otfState.rawPatients=noFistula;otfState.earliestFuture=earliestFuture;
+    otfState.patients=otfVisiblePatients();
     // Arriving from a calendar-day click: one overtime nurse focuses straight
     // away; more than one opens a picker so you choose whose clinic to book into.
     if(prompt&&nurses.length===1)otfState.focusNurseId=String(nurses[0].id);
@@ -9479,7 +9457,7 @@ function otfFocusNurse(idx){
 // Owner and due-month are client-side filters over the raw pool, so they apply
 // instantly and keep the calendar and focused nurse as they are.
 function otfRefilter(){
-  otfState.patients=otfDuePatients(otfState.rawPatients,{owner:otfState.owner,futureIds:otfState.futureIds,dueMonth:otfState.dueMonth,dueYear:otfState.dueYear,dntuByPatient:otfState.dntuByPatient});
+  otfState.patients=otfVisiblePatients();
   otfState.selId=null;
   renderOtFollowup();
 }
@@ -9497,7 +9475,7 @@ function otfInitFilters(){
   const mo=document.getElementById('otf-month');
   if(mo){
     const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    mo.innerHTML=`<option value="">All due &amp; overdue</option>`+months.map((nm,i)=>`<option value="${i+1}">${nm}</option>`).join('');
+    mo.innerHTML=`<option value="">This month + overdue</option>`+months.map((nm,i)=>`<option value="${i+1}">${nm}</option>`).join('');
     mo.value=String(otfState.dueMonth||'');
   }
 }
@@ -9549,9 +9527,10 @@ function otfGridHTML(){
 }
 function otfListHTML(){
   const list=otfState.patients;
-  const period=otfState.dueMonth?`up to ${['January','February','March','April','May','June','July','August','September','October','November','December'][Number(otfState.dueMonth)-1]} ${otfState.dueYear}`:'due &amp; overdue';
+  const period=otfState.dueMonth?`${['January','February','March','April','May','June','July','August','September','October','November','December'][Number(otfState.dueMonth)-1]} ${otfState.dueYear}`:`this month + overdue`;
+  const carried=list.filter(p=>p&&p._carried).length;
   const head=`<div class="bc-head"><h4>To book · ${period} <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>
-    <div class="otf-scope">Shows this month, earlier overdue months, and patients who did not turn up (DNTU).</div>`;
+    <div class="otf-scope">Same list as Follow-up Planning — the chosen month, with overdue carried into this month. Already-booked patients are not shown.${carried?` <strong>${carried} carried over.</strong>`:''}</div>`;
   if(!list.length)
     return head+`<div class="report-note">✅ No due follow-ups to book${otfState.owner!=='All Patients'?' for '+htmlSafe(otfState.owner):''}.</div>`;
   const hint=otfState.nurses.length
