@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.13-533"/>
-<script src="assets/manual.js?v=2026.10.13-533"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-534"/>
+<script src="assets/manual.js?v=2026.10.14-534"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -2202,6 +2202,31 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .bc-slot.drop{background:#e8f5f4;border-color:var(--teal);border-style:solid;}
 .bc-ghost{position:fixed;z-index:99999;pointer-events:none;background:var(--teal);color:#fff;padding:6px 11px;border-radius:9px;font-size:12px;font-weight:800;box-shadow:0 6px 16px rgba(0,0,0,.28);opacity:.96;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bc-pickhint{font-size:11px;font-weight:800;color:var(--teal);background:#e8f5f4;border:1px solid #b7ddd9;border-radius:8px;padding:6px 9px;margin-bottom:8px;}
+/* Overtime Follow-ups tab — a day grid of non-core (OT/TIL) nurse columns with a
+   draggable due-patient list, modelled on the booking calendar. */
+.otf-owner-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.otf-owner{padding:7px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:12px;cursor:pointer;color:var(--navy);font-family:inherit;}
+.otf-owner.active{background:#0d7377;color:#fff;border-color:#0d7377;}
+.otf-bookcal{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start;}
+#otf-left,#otf-right{min-width:0;border:1px solid var(--border);border-radius:12px;background:#fff;padding:14px;}
+#otf-right{background:#f6f9fb;}
+.otf-grid-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;}
+.otf-table{border-collapse:collapse;width:100%;min-width:300px;}
+.otf-table th{background:#0d1b2a;color:#fff;padding:7px 9px;font-size:11px;white-space:nowrap;position:sticky;top:0;}
+.otf-table td.otf-time,.otf-table th.otf-time{position:sticky;left:0;z-index:1;font-weight:800;font-size:11px;white-space:nowrap;}
+.otf-table td.otf-time{background:#fafafa;color:#0d7377;}
+.otf-table th.otf-time{background:#0d1b2a;color:#fff;}
+.otf-cell{border-top:1px solid var(--border);border-left:1px solid var(--border);padding:3px 5px;font-size:11px;vertical-align:top;min-width:120px;}
+.otf-cell.free{background:#f7fbf7;text-align:center;cursor:pointer;color:#9fb6a6;font-weight:800;}
+.otf-cell.free:hover,.otf-cell.free.drop{background:#d1fae5;color:#065f46;outline:2px solid #0d7377;outline-offset:-2px;}
+.otf-cell.booked{background:#fff;color:#1a2e4a;position:relative;}
+.otf-bk{font-weight:700;line-height:1.15;padding-right:12px;}
+.otf-bk span{display:block;font-family:monospace;font-size:9px;color:#5a6b7b;}
+.otf-x{position:absolute;top:2px;right:2px;border:none;background:transparent;color:#c0392b;font-size:11px;cursor:pointer;opacity:.6;line-height:1;}
+.otf-x:hover{opacity:1;}
+.otf-select{margin-top:6px;padding:4px 11px;border-radius:6px;border:1.5px solid #0d7377;background:#fff;color:#0d7377;font-weight:800;font-size:11px;cursor:pointer;font-family:inherit;}
+.bc-list-pat.sel .otf-select{background:#0d7377;color:#fff;}
+@media(max-width:860px){.otf-bookcal{grid-template-columns:minmax(0,1fr);}}
 .bc-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:8px;}
 .bc-legend span{display:inline-flex;align-items:center;gap:4px;}
 .bc-legend i{width:12px;height:12px;border-radius:3px;display:inline-block;}
@@ -2750,6 +2775,18 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
     </div>
 
     <!-- STAFF AUDIT / FOLLOW-UP OWNER VIEW -->
+    <div class="page" id="page-ot-followup">
+      <div class="phdr">
+        <div><h2><span class="page-heading-icon" aria-hidden="true">⏱️</span><span>Overtime Follow-ups</span></h2><p>Book due follow-ups into an overtime / TIL clinic — pick a date, then drag a patient onto a non-core nurse’s slot.</p></div>
+        <div class="page-actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:12px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px;">Date <input type="date" id="otf-date" onchange="loadOtFollowup()" style="font-family:inherit;padding:6px 9px;border:1px solid var(--border);border-radius:8px;"/></label>
+          <button class="btn-add" onclick="loadOtFollowup()">Refresh</button>
+        </div>
+      </div>
+      <div id="otf-owners" class="otf-owner-bar"></div>
+      <div id="otf-root"><div class="report-note">Loading…</div></div>
+    </div>
+
     <div class="page" id="page-staff-audit">
       <div class="phdr">
         <div><div class="fp-eyebrow">Stoma Care Clinic / Follow-up centre</div><h2><span class="page-heading-icon" aria-hidden="true">🔁</span><span>Follow-up Planning</span></h2><p>Plan the month. Find a clinic slot. Keep every follow-up in view.</p></div>
@@ -3814,7 +3851,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.13-541';
+const APP_BUILD='2026.10.14-542';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3906,7 +3943,8 @@ const TAB_GROUPS=[
   {key:'appointments',label:'Appointments',icon:'🕘',color:'#2563eb',  /* blue */
    pages:[
      {tab:'appointments',label:'Daily Clinic',icon:'🕘',color:'#2980b9'},
-     {tab:'staff-audit',label:'Follow-up Planning',icon:'🔁',color:'#0d7377'}
+     {tab:'staff-audit',label:'Follow-up Planning',icon:'🔁',color:'#0d7377'},
+     {tab:'ot-followup',label:'Overtime Follow-ups',icon:'⏱',color:'#7c3aed'}
    ]},
   {key:'siting',label:'Siting',icon:'📍',color:'#0891b2',  /* cyan */
    pages:[
@@ -4064,6 +4102,7 @@ function switchTab(name,opts){
   // Hide the floating Quick Look shortcut while the Quick Look page is open.
   document.body.classList.toggle('on-quicklook', name==='phone');
   if(name==='staff-audit')loadStaffAudit();
+  if(name==='ot-followup')loadOtFollowup();
   if(name==='appointment-outcomes')loadAppointmentOutcomes();
   if(name==='handover')return loadHandover();
   if(name==='siting')loadSitingSessions();
@@ -4157,6 +4196,7 @@ function flushClinicRealtime(){
     cod:new Set([...CLINIC_ROSTER_TABLES,'daily_attendance']),
     appointments:new Set([...CLINIC_ROSTER_TABLES,'appointments','patients','siting_sessions']),
     'staff-audit':new Set(['appointments','patients','staff','roster','leave_records']),
+    'ot-followup':new Set(['appointments','patients','staff','roster','leave_records','bank_staff','bank_staff_assignments']),
     siting:new Set(['siting_sessions','siting_images','patients']),
     nostoma:new Set(['operations_no_stoma','siting_sessions']),
     stomaperformed:new Set(['siting_sessions','patients']),
@@ -9227,6 +9267,190 @@ function bcDropUnder(x,y){
   if(day)return {type:'day',el:day};
   return null;
 }
+/* ------------------------------------------------------------------------- *
+ * Overtime Follow-ups — a day grid of the non-core (overtime / TIL) nurse
+ * columns working a chosen date, with the due follow-up patients (optionally
+ * filtered by owner: Common, Jacqueline, Jason, Lorraine, Tracey) on the right.
+ * Drag a patient onto a nurse's free slot — or tap Select, then a slot — to
+ * book that follow-up into the overtime clinic, exactly like the rest of the
+ * app. Booking does not change the patient's follow-up owner.
+ * ------------------------------------------------------------------------- */
+let otfState={date:null,owner:'All Patients',patients:[],nurses:[],bookings:[],selId:null};
+// A column is "non-core / overtime" when the nurse is there on an overtime or
+// TIL shift (a core nurse on OT, a bank OT nurse, or a TIL-In nurse) — never a
+// plain rostered day or the Common column.
+function otfIsOvertimeColumn(n){return !!n&&['core-ot','ot','til'].includes(n.type);}
+// The appointment row a booking onto this column writes: a bank/OT-only nurse is
+// booked on bank_staff_id, everyone else (a core nurse on OT or TIL) on assigned_to.
+function otfBookingRow(n,date,slot,patientId){
+  const isBank=!!n&&(n.type==='ot'||n.assignmentSource==='bank');
+  return {patient_id:patientId,appt_date:date,appt_slot:String(slot).slice(0,5),status:'booked',
+    assigned_to:isBank?null:String(n.id),bank_staff_id:isBank?String(n.id):null};
+}
+// The due-to-book worklist: active patients due now or overdue (not a future
+// month), with no upcoming booking, for the chosen owner (or everyone).
+function otfDuePatients(pats,{owner,futureIds}){
+  const nowKey=Number(String(TODAY).slice(0,4))*100+Number(String(TODAY).slice(5,7));
+  const nm=p=>`${p.first_name||''} ${p.surname||''}`.trim();
+  return (pats||[]).filter(p=>{
+    if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
+    const m=Number(p.followup_due_month),y=Number(p.followup_year);
+    if(!(m>=1&&m<=12&&y>2000))return false;
+    if(y*100+m>nowKey)return false;                                    // only due-now / overdue
+    if(owner&&owner!=='All Patients'&&normaliseFollowupOwner(p.followup_owner||'Common')!==owner)return false;
+    if((futureIds||new Set()).has(String(p.id)))return false;          // already has a future booking
+    return true;
+  }).sort((a,b)=>{const ka=Number(a.followup_year)*100+Number(a.followup_due_month),kb=Number(b.followup_year)*100+Number(b.followup_due_month);
+    return ka-kb||nm(a).localeCompare(nm(b),'en',{sensitivity:'base'});});
+}
+async function loadOtFollowup(){
+  const root=document.getElementById('otf-root');
+  if(!root)return;
+  let date=document.getElementById('otf-date')?.value;
+  if(!date){date=TODAY;const el=document.getElementById('otf-date');if(el)el.value=TODAY;}
+  otfState.date=date;otfState.selId=null;
+  root.innerHTML='<div class="report-note">Loading the overtime clinic…</div>';
+  try{
+    if((!staffList||!staffList.length)&&typeof loadStaff==='function'){try{await loadStaff();}catch(e){}}
+    // Non-core (overtime / TIL) nurse columns for the day.
+    const nurses=(await nurseListForDate(date)).filter(otfIsOvertimeColumn);
+    // The day's live bookings, so existing ones show and their slots are blocked.
+    const{data:rawAppts}=await SB.from('appointments')
+      .select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)')
+      .eq('appt_date',date);
+    const appts=(rawAppts||[]).filter(a=>a.status!=='cancelled');
+    appts.forEach(a=>foldBankBookingIntoCoreColumn(nurses,a));
+    otfState.nurses=nurses;otfState.bookings=appts;
+    // The due-to-book list, minus anyone with a future booking and fistula patients.
+    const{rows:pats}=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,stoma_type,initial_stomas,extra_stomas,locality,patient_kind'));
+    const noFistula=await withoutFistulaPatients(pats||[]);
+    const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('patient_id,appt_date,status').gte('appt_date',TODAY).neq('status','cancelled'));
+    const futureIds=new Set((future||[]).map(a=>String(a.patient_id)));
+    otfState.patients=otfDuePatients(noFistula,{owner:otfState.owner,futureIds});
+    renderOtFollowup();
+  }catch(e){root.innerHTML='<div class="report-note">Could not load the overtime clinic: '+htmlSafe(String(e&&e.message||e))+'</div>';}
+}
+function otfSetOwner(o){otfState.owner=o;loadOtFollowup();}
+function otfSelect(id){otfState.selId=otfState.selId===String(id)?null:String(id);renderOtFollowup();}
+function renderOtFollowup(){
+  const root=document.getElementById('otf-root');if(!root)return;
+  const bar=document.getElementById('otf-owners');
+  if(bar){
+    const owners=['All Patients',...FOLLOWUP_OWNER_FILTERS];
+    bar.innerHTML=owners.map(o=>`<button class="otf-owner${otfState.owner===o?' active':''}" onclick="otfSetOwner('${jsSafe(o)}')">${htmlSafe(o)}</button>`).join('');
+  }
+  root.innerHTML=`<div class="bookcal otf-bookcal">
+    <div class="bc-panel" id="otf-left">${otfGridHTML()}</div>
+    <div class="bc-panel" id="otf-right">${otfListHTML()}</div>
+  </div>`;
+  otfAttachDrag();
+}
+function otfGridHTML(){
+  const nurses=otfState.nurses;
+  const head=`<div class="bc-head"><h4>${htmlSafe(fmtLabel(otfState.date))}</h4></div>`;
+  if(!nurses.length)
+    return head+`<div class="report-note">No overtime or TIL nurse is on the clinic for this day. Add an <strong>overtime</strong> or <strong>TIL-In</strong> shift on the Monthly Roster (Clinic Calendar), then refresh.</div>`;
+  const cellFor=(n,idx,sl)=>{
+    const a=otfState.bookings.find(x=>String(x.appt_slot||'').slice(0,5)===sl&&appointmentMatchesNurseColumn(x,n));
+    if(a){const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked';
+      return `<td class="otf-cell booked"><div class="otf-bk">${htmlSafe(nm)}${a.patients?.id_card?`<span>${htmlSafe(a.patients.id_card)}</span>`:''}</div><button class="otf-x" title="Remove this booking" onclick="otfUndoBooking('${jsSafe(String(a.id))}')">✕</button></td>`;}
+    return `<td class="otf-cell otf-slot free" data-nurse="${idx}" data-slot="${sl}" onclick="otfSlotTap(${idx},'${sl}')" title="Book the selected patient here">+</td>`;
+  };
+  const headRow=`<tr><th class="otf-time">Time</th>${nurses.map(n=>`<th>${htmlSafe(firstNameOf(n.name))}${pickerNurseTag(n)}</th>`).join('')}</tr>`;
+  const body=SLOTS.map(sl=>`<tr><td class="otf-time">${htmlSafe(sl)}</td>${nurses.map((n,idx)=>cellFor(n,idx,sl)).join('')}</tr>`).join('');
+  return head+`<div class="otf-grid-wrap" id="otf-grid"><table class="otf-table">${headRow}${body}</table></div>`;
+}
+function otfListHTML(){
+  const list=otfState.patients;
+  const head=`<div class="bc-head"><h4>To book <span style="color:var(--muted);font-weight:600;">(${list.length})</span></h4></div>`;
+  if(!list.length)
+    return head+`<div class="report-note">✅ No due follow-ups to book${otfState.owner!=='All Patients'?' for '+htmlSafe(otfState.owner):''}.</div>`;
+  const hint=otfState.nurses.length
+    ? '<div class="bc-pickhint">Drag a patient onto an overtime nurse’s free slot — or tap <strong>Select</strong>, then a free slot.</div>'
+    : '<div class="bc-pickhint bc-carried-hint">No overtime nurse on this day yet — add one on the roster first.</div>';
+  return head+hint+`<div class="bc-list-scroll" id="otf-list">${list.map(p=>{
+    const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Unnamed patient';
+    const owner=normaliseFollowupOwner(p.followup_owner||'Common');
+    const due=`${followupMonthName(p.followup_due_month)} ${p.followup_year||''}`.trim();
+    const meta=[owner,due?('due '+due):'',bcStomaLabel(p),p.locality||''].filter(Boolean).join(' · ');
+    const sel=otfState.selId===String(p.id);
+    const card=String(p.id_card||'').trim()||'Not recorded';
+    return `<div class="bc-list-pat${sel?' sel':''}" data-id="${htmlSafe(p.id)}" title="Drag onto an overtime nurse’s slot; tap the name for history">
+      <div class="bc-nm"><button type="button" class="bc-history-link" onclick="openFollowupHistory('${jsSafe(p.id)}')">${htmlSafe(nm)}</button></div>
+      <div class="bc-id-card"><span>ID card</span><strong>${htmlSafe(card)}</strong></div>
+      <div class="bc-meta">${htmlSafe(meta)}</div>
+      <button type="button" class="otf-select" onclick="otfSelect('${jsSafe(p.id)}')">${sel?'✓ Selected':'Select'}</button>
+    </div>`;
+  }).join('')}</div>`;
+}
+function otfSlotTap(idx,slot){
+  if(!otfState.selId){alert('Tap a patient’s Select button first, then a free slot — or just drag the patient onto a slot.');return;}
+  otfBook(idx,slot,otfState.selId);
+}
+async function otfBook(nurseIdx,slot,patientId){
+  const n=otfState.nurses[Number(nurseIdx)];if(!n)return;
+  const p=otfState.patients.find(x=>String(x.id)===String(patientId));if(!p)return;
+  const sl=String(slot).slice(0,5);
+  const clash=otfState.bookings.some(a=>String(a.appt_slot||'').slice(0,5)===sl&&String(a.status||'')!=='cancelled'&&appointmentMatchesNurseColumn(a,n));
+  if(clash){alert(`${firstNameOf(n.name)} already has ${sl} booked on ${fmtShortDate(otfState.date)}. Choose another slot.`);return;}
+  const{data,error}=await SB.from('appointments').insert(otfBookingRow(n,otfState.date,sl,patientId))
+    .select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,bank_staff(full_name),patients(first_name,surname,id_card)').single();
+  if(error){alert(/duplicate|unique/i.test(String(error.message||''))?`That slot (${sl}) is already taken. Choose another.`:'Booking error: '+(error.message||error));return;}
+  otfState.bookings.push(data||otfBookingRow(n,otfState.date,sl,patientId));
+  otfState.patients=otfState.patients.filter(x=>String(x.id)!==String(patientId));
+  otfState.selId=null;
+  if(typeof invalidateAvailabilityCaches==='function')invalidateAvailabilityCaches();
+  renderOtFollowup();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+async function otfUndoBooking(apptId){
+  const a=otfState.bookings.find(x=>String(x.id)===String(apptId));
+  const nm=a?`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim():'';
+  if(!confirm(`Remove the booking${nm?' for '+nm:''}? This deletes the appointment and frees the slot.`))return;
+  const{error}=await SB.from('appointments').delete().eq('id',apptId);
+  if(error){alert('Could not remove the booking: '+(error.message||error));return;}
+  if(typeof invalidateAvailabilityCaches==='function')invalidateAvailabilityCaches();
+  await loadOtFollowup();
+  if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+}
+/* Drag mechanics — the same short-press-opens-history / drag-books pattern the
+   booking calendar uses, scoped to this tab. */
+let otfDrag=null;
+function otfAttachDrag(){document.querySelectorAll('#otf-list .bc-list-pat').forEach(el=>{el.onpointerdown=otfPointerDown;});}
+function otfPointerDown(e){
+  if(e.button!==0||e.target.closest('button,a,input,select,textarea'))return;
+  const el=e.currentTarget;
+  otfDrag={id:el.getAttribute('data-id'),startX:e.clientX,startY:e.clientY,moved:false,ghost:null,el};
+  el.setPointerCapture?.(e.pointerId);
+  el.onpointermove=otfPointerMove;el.onpointerup=otfPointerUp;el.onpointercancel=otfPointerUp;
+}
+function otfPointerMove(e){
+  if(!otfDrag)return;
+  const dx=e.clientX-otfDrag.startX,dy=e.clientY-otfDrag.startY;
+  if(!otfDrag.moved&&Math.hypot(dx,dy)<7)return;
+  otfDrag.moved=true;
+  if(!otfDrag.ghost){
+    const p=otfState.patients.find(x=>String(x.id)===String(otfDrag.id));
+    const g=document.createElement('div');g.className='bc-ghost';
+    g.textContent=p?`${p.first_name||''} ${p.surname||''}`.trim():'Patient';
+    document.body.appendChild(g);otfDrag.ghost=g;
+  }
+  otfDrag.ghost.style.left=(e.clientX+12)+'px';otfDrag.ghost.style.top=(e.clientY+12)+'px';
+  otfClearHi();
+  const t=otfDropUnder(e.clientX,e.clientY);if(t)t.classList.add('drop');
+}
+function otfPointerUp(e){
+  if(!otfDrag)return;
+  const drag=otfDrag;otfDrag=null;
+  if(drag.ghost)drag.ghost.remove();
+  drag.el.onpointermove=null;drag.el.onpointerup=null;drag.el.onpointercancel=null;
+  otfClearHi();
+  if(e.type==='pointercancel')return;
+  if(drag.moved){const t=otfDropUnder(e.clientX,e.clientY);if(t)otfBook(t.getAttribute('data-nurse'),t.getAttribute('data-slot'),drag.id);}
+  else openFollowupHistory(drag.id);
+}
+function otfClearHi(){document.querySelectorAll('#otf-grid .drop').forEach(s=>s.classList.remove('drop'));}
+function otfDropUnder(x,y){const el=document.elementFromPoint(x,y);return el?el.closest('#otf-grid .otf-slot.free'):null;}
 function ensureJsPDF(){
   if(window.jspdf&&window.jspdf.jsPDF)return Promise.resolve(window.jspdf);
   return new Promise((resolve,reject)=>{

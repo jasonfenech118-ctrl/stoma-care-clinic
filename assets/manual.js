@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 October 2026 — discharging is now a three-step safety check with a one-time Undo, plus Add/Revert postop discharge. Kept in step with every change.'};
+const MANUAL_META={updated:'14 October 2026 — a new Overtime Follow-ups tab: drag due patients onto non-core (OT/TIL) nurse slots to book them. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -326,6 +326,17 @@ const MANUAL_SECTIONS=[
     ${manNote('auto','🔤','The <b>Due this month</b> patient list is sorted A–Z by the displayed name (first name, then surname), ignoring capitalisation and accents. <b>Print patient list</b> uses the same order.')}
     ${manNote('auto','🔴','<b>Month-end carry-over (all users).</b> A patient who was due in a month that has now ended and was <b>not booked</b> (e.g. no free slots) is carried into the <b>current month</b> automatically. They are listed <b>first</b>, in a <b>red card</b> marked “Carried over from October 2026 — not yet booked” (with how many months, if longer), so they get priority. They keep carrying over each month until booked. Their recorded due month is not changed, so the delay stays visible. Printed lists mark them in red too.')}
     ${manNote('auto','⚙️','The booking workspace omits patients with any upcoming booked appointment, including a booking for a different month or nurse. Cancelled appointments, completed visits and past bookings do not hide someone needing a new appointment.')}
+  `},
+  {id:'ot-followup',title:'Overtime Follow-ups',keywords:'overtime follow up ot til non core bank nurse drag drop book slot column date clinic extra capacity owner common jason tracey lorraine jacqueline',html:`
+    ${manMap('appointments')}
+    ${manWhen('To book due follow-ups into an overtime or TIL clinic.')}
+    <p class="man-lede">Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('⏱️ Overtime Follow-ups','#efe7fb','#6b21a8')}. Pick a <b>date</b>: the grid shows a column for each <b>non-core nurse</b> working that day on <b>overtime</b> or <b>TIL</b> (a core nurse on OT, a bank nurse, or TIL-In).</p>
+    ${manSteps([
+      `Filter the right-hand list by <b>owner</b> (Common, Jacqueline, Jason, Lorraine, Tracey, or All) to see that caseload’s due and overdue follow-ups.`,
+      `<b>Drag a patient onto a free slot</b> under an overtime nurse to book them — or tap <b>Select</b> on the card, then tap a free slot.`,
+      `Press <b>✕</b> on a booked slot to remove that booking and free it again.`
+    ])}
+    ${manNote('tip','🩹','If no column shows, no overtime or TIL nurse is on that day — add the shift on the Monthly Roster first. Booking here does not change the patient’s usual follow-up owner.')}
   `},
   {id:'history',title:'Follow-up history & bookings',keywords:'follow up history patient card past visits last appointment booked appointments awaiting appointment upcoming nurse outcome appliances accessories',html:`
     ${manMap('appointments')}
