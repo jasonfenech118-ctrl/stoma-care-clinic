@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups gained a calendar of overtime days, a nurse picker, a booking confirmation, and a red due-month filter. Kept in step with every change.'};
+const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups: a calendar of overtime days, a nurse picker, a booking confirmation, a red due-month filter, and a colour per nurse (Jacqueline purple). Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -337,6 +337,7 @@ const MANUAL_SECTIONS=[
       `<b>Drag a patient onto a free slot</b> under the nurse — or tap <b>Select</b>, then a free slot. A confirmation names the patient and whose patient they are before it books.`,
       `Press <b>✕</b> on a booked slot to remove that booking and free it again.`
     ])}
+    ${manNote('tip','🎨','Each nurse has her own colour — Jacqueline purple, Jason blue, Lorraine pink, Tracey teal, Common slate — on the owner buttons and the grid columns, so a caseload reads at a glance.')}
     ${manNote('tip','🩹','If no day is highlighted, no overtime or TIL nurse is rostered — add the shift on the Monthly Roster first. Booking here never changes the patient’s usual follow-up owner.')}
   `},
   {id:'history',title:'Follow-up history & bookings',keywords:'follow up history patient card past visits last appointment booked appointments awaiting appointment upcoming nurse outcome appliances accessories',html:`

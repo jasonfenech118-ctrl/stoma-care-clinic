@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-536"/>
-<script src="assets/manual.js?v=2026.10.14-536"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-537"/>
+<script src="assets/manual.js?v=2026.10.14-537"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -3883,7 +3883,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.14-544';
+const APP_BUILD='2026.10.14-545';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9310,6 +9310,13 @@ function bcDropUnder(x,y){
 let otfState={date:null,owner:'All Patients',patients:[],nurses:[],bookings:[],selId:null,
   calYear:null,calMonth:null,overtimeDays:new Set(),focusNurseId:null,promptNurse:false,
   dueMonth:'',dueYear:null,rawPatients:[],futureIds:new Set()};
+// A colour per core nurse, so each caseload reads at a glance. Jacqueline is
+// purple, as asked; Common and All Patients stay neutral.
+const OTF_OWNER_COLORS={'Common':'#475569','Jacqueline':'#7c3aed','Jason':'#2563eb','Lorraine':'#db2777','Tracey':'#0d7377'};
+function otfOwnerColor(owner){return owner==='All Patients'?'#0d1b2a':(OTF_OWNER_COLORS[owner]||'#0d7377');}
+// A grid column is tinted only when its nurse is a named core nurse; a bank /
+// unknown nurse keeps the default dark header.
+function otfNurseColor(name){const o=normaliseFollowupOwner(name||'');return (o&&o!=='Common')?OTF_OWNER_COLORS[o]:null;}
 // A column is "non-core / overtime" when the nurse is there on an overtime or
 // TIL shift (a core nurse on OT, a bank OT nurse, or a TIL-In nurse) — never a
 // plain rostered day or the Common column.
@@ -9437,7 +9444,8 @@ function otfOpenNursePicker(){
   mb.innerHTML=`<h2>Which overtime nurse?</h2>
     <div class="msub">More than one non-core nurse is on <strong>${htmlSafe(fmtShortDate(otfState.date))}</strong>. Choose whose overtime clinic you are booking into — you can switch or show all at any time.</div>
     <div class="otf-pick-list">
-      ${nurses.map((n,idx)=>`<button class="otf-pick-btn" onclick="otfFocusNurse(${idx})"><span class="otf-pick-nm">${htmlSafe(firstNameOf(n.name))}</span><span class="otf-pick-tag ${n.type==='til'?'til':'ot'}">${n.type==='til'?'TIL':'OT'}</span></button>`).join('')}
+      ${nurses.map((n,idx)=>{const c=otfNurseColor(n.name);
+        return `<button class="otf-pick-btn" onclick="otfFocusNurse(${idx})"><span class="otf-pick-nm"${c?` style="color:${c};"`:''}>${htmlSafe(firstNameOf(n.name))}</span><span class="otf-pick-tag ${n.type==='til'?'til':'ot'}">${n.type==='til'?'TIL':'OT'}</span></button>`;}).join('')}
     </div>
     <div class="mact"><button class="btn-cancel" onclick="otfFocusNurse(-1)">Show all nurses</button></div>`;
   openMo();
@@ -9485,7 +9493,9 @@ function renderOtFollowup(){
   const bar=document.getElementById('otf-owners');
   if(bar){
     const owners=['All Patients',...FOLLOWUP_OWNER_FILTERS];
-    bar.innerHTML=owners.map(o=>`<button class="otf-owner${otfState.owner===o?' active':''}" onclick="otfSetOwner('${jsSafe(o)}')">${htmlSafe(o)}</button>`).join('');
+    bar.innerHTML=owners.map(o=>{const c=otfOwnerColor(o);const on=otfState.owner===o;
+      const style=on?`background:${c};border-color:${c};color:#fff;`:`color:${c};border-color:${c};`;
+      return `<button class="otf-owner${on?' active':''}" style="${style}" onclick="otfSetOwner('${jsSafe(o)}')">${htmlSafe(o)}</button>`;}).join('');
   }
   root.innerHTML=`<div class="otf-cal" id="otf-cal"></div>
   <div class="bookcal otf-bookcal">
@@ -9512,7 +9522,8 @@ function otfGridHTML(){
       return `<td class="otf-cell booked"><div class="otf-bk">${htmlSafe(nm)}${a.patients?.id_card?`<span>${htmlSafe(a.patients.id_card)}</span>`:''}</div><button class="otf-x" title="Remove this booking" onclick="otfUndoBooking('${jsSafe(String(a.id))}')">✕</button></td>`;}
     return `<td class="otf-cell otf-slot free" data-nurse="${idx}" data-slot="${sl}" onclick="otfSlotTap(${idx},'${sl}')" title="Book the selected patient here">+</td>`;
   };
-  const headRow=`<tr><th class="otf-time">Time</th>${shown.map(x=>`<th>${htmlSafe(firstNameOf(x.n.name))}${pickerNurseTag(x.n)}</th>`).join('')}</tr>`;
+  const headRow=`<tr><th class="otf-time">Time</th>${shown.map(x=>{const c=otfNurseColor(x.n.name);
+    return `<th${c?` style="background:${c};"`:''}>${htmlSafe(firstNameOf(x.n.name))}${pickerNurseTag(x.n)}</th>`;}).join('')}</tr>`;
   const body=SLOTS.map(sl=>`<tr><td class="otf-time">${htmlSafe(sl)}</td>${shown.map(x=>cellFor(x.n,x.idx,sl)).join('')}</tr>`).join('');
   return head+focusChip+`<div class="otf-grid-wrap" id="otf-grid"><table class="otf-table">${headRow}${body}</table></div>`;
 }
