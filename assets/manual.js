@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 October 2026 — Overtime Follow-ups now uses the same to-book rules as Follow-up Planning (chosen month, overdue carried, booked patients hidden) and updates on its own. Kept in step with every change.'};
+const MANUAL_META={updated:'15 October 2026 — a recorded rod now shows as a visible, colour-coded “Rod due” chip on the handover row (it was previously only on the printed sheet). Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -401,7 +401,8 @@ const MANUAL_SECTIONS=[
       <li><b>Flange due</b> chip — colours by urgency; overdue turns red.</li>
       <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
-      <li><b>⚠️ Complications / ROD</b> button — one button opens the full complication timeline and, where a rod applies, the rod's removal date. The rod is <b>not</b> a separate line on the sheet any more — it lives behind this button. The label reads <b>Complications/ROD</b> only while a rod is relevant and not yet recorded; it reads just <b>Complications</b> for an <b>end ileostomy, end colostomy or urostomy</b> (which never have a rod) and once a rod has already been recorded, so you are not asked about it again on a later admission with the same stoma.</li>
+      <li><b>🔩 Rod due</b> chip — once you record a rod, a <b>Rod due</b> chip shows on the row, colour-coded by how soon it is due (like the flange chip). Tap it to edit the date or record removal. It disappears when the rod is out.</li>
+      <li><b>⚠️ Complications / ROD</b> button — one button opens the full complication timeline and, where a rod applies, the rod's removal date. The label reads <b>Complications/ROD</b> only while a rod is relevant and not yet recorded; it reads just <b>Complications</b> for an <b>end ileostomy, end colostomy or urostomy</b> (which never have a rod) and once a rod has already been recorded, so you are not asked about it again on a later admission with the same stoma.</li>
     </ul>
     ${manNote('auto','⚙️','A rod only exists under a <b>loop</b> (or transverse) ileostomy/colostomy. Once you record a rod it stops being offered here; the bell still chases its removal and the printed ward sheet still shows "rod due" until it is out.')}
     ${manNote('auto','⚙️','A note carrying <b>CRE, VRE or "+ve"</b> turns the whole cell <b>bright red</b> so an infection alert can never be missed.')}

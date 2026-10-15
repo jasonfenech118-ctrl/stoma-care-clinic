@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.14-539"/>
-<script src="assets/manual.js?v=2026.10.14-539"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.15-540"/>
+<script src="assets/manual.js?v=2026.10.15-540"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.09-490"/>
@@ -1728,6 +1728,7 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
 .hv-flangebox .hv-flange-date{width:130px;max-width:100%;font-size:11px;font-weight:700;padding:1px 4px;
   border:1px solid rgba(0,0,0,.18);border-radius:6px;background:#fff;color:inherit;font-family:inherit;}
 .hv-flangebox .hv-flange-note{font-size:10px;font-weight:800;opacity:.9;}
+.hv-rodchip{cursor:pointer;}
 .hv-flangebox.hv-flange-set{background:#fff;color:var(--muted);border-style:dashed;border-color:#c3d0dc;}
 /* A siting patient due for surgery today sits at the top of the handover as an
    "awaiting surgery" row, tinted amber, until the outcome is recorded. */
@@ -3883,7 +3884,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.14-547';
+const APP_BUILD='2026.10.15-548';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21054,14 +21055,21 @@ function patientRodApplies(p){
   return list.filter(s=>s.present!==false)
              .some(s=>stomaTypeCanHaveRod(s.type)&&String(s.uid||'')!==rodUid);
 }
-/* The rod is managed through the Complications/ROD button, not an on-screen chip.
-   A pending rod (recorded but not yet removed) still needs to reach the printed
-   ward sheet, so carry it as a hidden element that the print reads. */
+/* A pending rod (recorded, not yet removed) shows as a visible chip on the
+   handover — like the flange-due chip, colour-coded by how soon it is due — and
+   still carries the print data (.hv-rod-print / data-rodprint) so the ward sheet
+   prints "rod due <date>". Tap it to edit the date or record removal in the
+   Complications/ROD manager. A removed rod shows nothing. */
 function handoverRodPrintCarrier(p){
   const due=p&&p.rod_removal_date?String(p.rod_removal_date).slice(0,10):'';
   const removed=p&&p.rod_removed_date?String(p.rod_removed_date).slice(0,10):'';
   if(!due||removed)return '';
-  return `<span class="hv-rod-print" data-rodprint="rod due ${htmlSafe(fmtShortDate(due))}" hidden></span>`;
+  const m=flangeDueMeta(due);
+  return `<div class="hv-flangebox hv-flange-${m.cls} hv-rod-print hv-rodchip" data-rodprint="rod due ${htmlSafe(fmtShortDate(due))}"
+    onclick="openComplicationPicker('${p.id}','Handover')" title="Rod present — planned removal ${htmlSafe(fmtShortDate(due))}. Tap to edit or record removal.">
+    <span class="hv-flange-cap">🔩 Rod due</span>
+    <span class="hv-flange-note">${htmlSafe(fmtShortDate(due))} · ${htmlSafe(m.note)}</span>
+  </div>`;
 }
 function handoverComplicationLine(p){
   const open=parseComplications(p).filter(c=>c.status!=='resolved');
