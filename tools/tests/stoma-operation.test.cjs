@@ -406,3 +406,23 @@ test('saving patient details updates demographics without writing stoma history'
 test('invalid chronology and missing refashion target are blocked',()=>{const c=context();assert.throws(()=>c.buildStomaOperationPatch(patient(),{...draft(),date:'2025-01-01'}),/before/);assert.throws(()=>c.buildStomaOperationPatch(patient(),{...draft(),target_uid:'absent'}),/Choose the present/);});
 test('save is one guarded update; an inpatient refashioning opens appliance selection',async()=>{const c=context(),p={...patient(),is_inpatient:true};let writes=0,appliance=0,closed=0;const filters=[];c.fetchPatientById=async()=>({data:p});c.stomaBadgesHTML=x=>x.present?'Present':'History';c.SB={from:()=>({update:patch=>{writes++;assert.equal(patch.extra_refashionings[0].uid,'draft-uid');return{eq:(k,v)=>{filters.push([k,v]);return query;}};}})};const query={eq:(k,v)=>{filters.push([k,v]);return query;},select:()=>({single:async()=>({data:{id:'p1'}})})};c.closeModal=()=>closed++;c.refreshReminders=()=>{};c.afterStomaSaved=async()=>{};c.openHandoverAppliance=async()=>appliance++;await c.openStomaOperation('p1','refashion');const d=c.document;d.getElementById('so-date').value='2026-09-25';d.getElementById('so-findings').value='Refashioned';d.getElementById('so-admission').value='yes';c.reviewStomaOperation();await Promise.all([c.saveStomaOperation(),c.saveStomaOperation()]);assert.equal(writes,1);assert.equal(closed,1);assert.equal(appliance,1);assert(filters.some(([k])=>k==='stoma_operation_history'));});
 test('missing migration blocks the entire operation with an actionable error',async()=>{const c=context();c.fetchPatientById=async()=>({data:patient()});c.stomaBadgesHTML=()=>'';const query={eq:()=>query,select:()=>({single:async()=>({error:{message:'stoma_operation_history column missing'}})})};c.SB={from:()=>({update:()=>query})};await c.openStomaOperation('p1','reversal');const d=c.document;d.getElementById('so-unknown').checked=true;c.reviewStomaOperation();await c.saveStomaOperation();assert.match(d.getElementById('so-error').textContent,/Nothing from this operation has been saved/);assert.equal(d.getElementById('so-save').disabled,false);});
+test('a NULL operation-history column is locked with .is(null), not .eq([]), so a legitimate save is not rejected',async()=>{
+ const c=context();
+ const p={...patient(),stoma_operation_history:null,updated_at:'2026-09-25T08:00:00Z'};
+ let writes=0,closed=0;const filters=[];
+ c.fetchPatientById=async()=>({data:p});
+ c.stomaBadgesHTML=x=>x.present?'Present':'History';
+ const query={eq:(k,v)=>{filters.push(['eq',k,v]);return query;},is:(k,v)=>{filters.push(['is',k,v]);return query;},select:()=>({single:async()=>({data:{id:'p1'}})})};
+ c.SB={from:()=>({update:()=>{writes++;return query;}})};
+ c.closeModal=()=>closed++;c.refreshReminders=()=>{};c.afterStomaSaved=async()=>{};c.openHandoverAppliance=async()=>{};
+ await c.openStomaOperation('p1','refashion');
+ const d=c.document;d.getElementById('so-date').value='2026-09-25';d.getElementById('so-findings').value='Refashioned';d.getElementById('so-admission').value='yes';
+ c.reviewStomaOperation();
+ await c.saveStomaOperation();
+ assert.equal(writes,1);
+ assert.equal(d.getElementById('so-error').hidden,true);                 // not wrongly rejected as "record changed"
+ assert.equal(closed,1);
+ assert.ok(filters.some(([op,k,v])=>op==='is'&&k==='stoma_operation_history'&&v===null),'locks a null history with .is(null)');
+ assert.ok(!filters.some(([op,k])=>op==='eq'&&k==='stoma_operation_history'),'never uses .eq on a null history');
+ assert.ok(filters.some(([op,k,v])=>op==='eq'&&k==='updated_at'&&v==='2026-09-25T08:00:00Z'),'still locks on updated_at');
+});

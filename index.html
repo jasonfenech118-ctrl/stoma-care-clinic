@@ -3887,7 +3887,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.16-551';
+const APP_BUILD='2026.10.16-552';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17070,7 +17070,14 @@ async function persistStomaOperation(ctx){
   const{data:fresh,error}=await fetchPatientById(ctx.patientId);if(error||!fresh)throw Error('Could not check the latest patient record.');
   if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s record has changed. Cancel and reopen this form to review the latest record.');
   // Strict single update: an unavailable column must never silently drop part of an operation.
-  let query=SB.from('patients').update(ctx.patch).eq('id',ctx.patientId).eq('stoma_operation_history',JSON.stringify(stomaOperationHistory(fresh)));
+  // Optimistic lock on the operation history. A NULL column (no history recorded yet — e.g. a
+  // patient imported before this column existed, like one whose stoma is on file but with no
+  // operation history) must be matched with .is(null); using .eq('[]') never matches a NULL
+  // column, so a legitimate save was wrongly rejected as "record changed" and the operation
+  // could not be saved at all.
+  let query=SB.from('patients').update(ctx.patch).eq('id',ctx.patientId);
+  if(fresh.stoma_operation_history==null)query=query.is('stoma_operation_history',null);
+  else query=query.eq('stoma_operation_history',JSON.stringify(stomaOperationHistory(fresh)));
   if(fresh.updated_at)query=query.eq('updated_at',fresh.updated_at);
   const saved=await query.select('id').single();
   if(saved.error&&(saved.error.code==='PGRST116'||/0 rows/.test(saved.error.message||'')))throw Error('The patient record changed while saving. Cancel and reopen this form to review the latest record.');
