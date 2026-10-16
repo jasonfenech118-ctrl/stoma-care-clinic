@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 October 2026 — the Episodes tab’s communication sections are now collapsible dropdown groups that open on their own when they hold something. Kept in step with every change.'};
+const MANUAL_META={updated:'16 October 2026 — the visit review and the follow-up decision now show the patient’s next follow-up due month. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -267,7 +267,7 @@ const MANUAL_SECTIONS=[
       `Open ${manBtn('🕘 Appointments','#e6f0f8','#22608f')} → ${manBtn('🕘 Daily Clinic','#e6f0f8','#22608f')}.`,
       `Book a slot for a patient, and record what happened from each row.`
     ])}
-    ${manNote('tip','📝','<b>See what was written at a visit.</b> Every appointment card has a <span class="man-kbd">📝</span> button in its row of actions. Press it to open a <b>read-only</b> view of everything recorded at that visit — the <b>follow-up decision</b>, the per-stoma <b>assessment</b> (with its signed versions, via <b>Open review</b>), the <b>complication review</b>, and the <b>appliances &amp; accessories</b> used — without opening the full patient record. If nothing was written yet (for example a booked or missed appointment), it says so. Nothing can be changed from this view.')}
+    ${manNote('tip','📝','<b>See what was written at a visit.</b> Every appointment card has a <span class="man-kbd">📝</span> button in its row of actions. Press it to open a <b>read-only</b> view of everything recorded at that visit — the <b>follow-up decision</b>, the per-stoma <b>assessment</b> (with its signed versions, via <b>Open review</b>), the <b>complication review</b>, and the <b>appliances &amp; accessories</b> used — without opening the full patient record. The <b>Follow-up decision</b> and the signed <b>Open review</b> both now show the patient’s <b>next follow-up due month</b>. If nothing was written yet (for example a booked or missed appointment), it says so. Nothing can be changed from this view.')}
     ${manNote('tip','👤','<b>Open the patient profile.</b> Next to it is a <span class="man-kbd">👤</span> button that jumps straight to that patient’s full record (Overview, Stomas, Outcome, Appointments, Episodes) from the clinic list — the <b>‹ Back</b> button returns you to the clinic.')}
   `},
   {id:'outcome',title:'Record a visit outcome',keywords:'outcome seen did not turn up dntu cancelled attended visit complete',html:`

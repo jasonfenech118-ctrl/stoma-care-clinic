@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.16-552"/>
-<script src="assets/manual.js?v=2026.10.16-552"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.16-553"/>
+<script src="assets/manual.js?v=2026.10.16-553"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3887,7 +3887,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.16-552';
+const APP_BUILD='2026.10.16-553';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -26420,6 +26420,16 @@ function plFollowupActionLabel(action){
     'status-review':'Follow-up status needs review'
   })[String(action||'')]||'';
 }
+// A patient's recorded next follow-up due month, as a short line. The due month
+// lives on the patient record (not the appointment), so it is read from the
+// patient. Empty when there is no valid due month or the follow-up is closed
+// (deceased/reversed) — nothing is due then.
+function followupDueLine(pat){
+  if(!pat||isClosedFollowupStatus(pat.followup_status))return '';
+  const m=Number(pat.followup_due_month),y=Number(pat.followup_year);
+  if(!(m>=1&&m<=12)||!(y>2000))return '';
+  return `Next follow-up due: <strong>${followupMonthName(m)} ${y}</strong>`;
+}
 function plVisitAppliancesHTML(appt){
   const rows=plParseStomaApplianceRows(appt&&appt.stoma_appliances);
   const appliances=[],accessories=[];
@@ -26485,8 +26495,10 @@ function renderVisitReview(edit){
   const versions=vs.length>1?`<div class="vr-versions">${vs.map((x,i)=>`<button type="button" class="jenc-btn${i===idx?' active':''}" onclick="setVisitReviewVersion(${i})">V${htmlSafe(x.version)}</button>`).join('')}
       ${idx>0?`<label class="jenc-meta" style="margin-left:6px;"><input type="checkbox" ${st.compare?'checked':''} onchange="toggleVisitReviewChanges(this.checked)"> Show changes from V${htmlSafe(vs[idx-1].version)}</label>`:''}</div>`:'';
   const day=VisitStomaReview.recordedDay(st.appt);
+  const dueLine=followupDueLine(st.patient);
   mb.innerHTML=`<h2>Visit review${v.version?' · V'+htmlSafe(v.version):''}</h2>
     <div class="msub">${htmlSafe(nm)} · ID ${htmlSafe(st.patient.id_card||'—')} · Visit ${htmlSafe(when)}</div>
+    ${dueLine?`<div class="vr-due" style="margin:6px 0 2px;padding:7px 11px;border-radius:9px;background:#edf7f5;border:1px solid #b5d7d4;color:var(--navy);font-size:13px;">📅 ${dueLine}</div>`:''}
     ${versions}
     ${VisitStomaReview.reviewHTML(v.stomas,prev)}
     <div class="jenc-signature">Signed by: <strong>${htmlSafe(v.author_name||v.author_email||'—')}</strong>${v.saved_at?' · '+htmlSafe(VisitStomaReview.stamp(v.saved_at)):''}</div>
@@ -26517,7 +26529,14 @@ async function saveVisitReviewEdit(){
 }
 function plFollowupCardHTML(appt){
   const nurse=appointmentNurseLabel(appt);
-  const action=plFollowupActionLabel(appt.followup_action);
+  const pat=appt.patients||{};
+  let action=plFollowupActionLabel(appt.followup_action);
+  // "Review due in a selected month" is meaningless without the month — show the
+  // actual due month recorded on the patient so the decision reads concretely.
+  if(appt.followup_action==='review-month'){
+    const m=Number(pat.followup_due_month),y=Number(pat.followup_year);
+    if(m>=1&&m<=12&&y>2000)action=`Review due · ${followupMonthName(m)} ${y}`;
+  }
   const cls=appt.status==='did_not_attend'?'event-dntu':appt.status==='cancelled'?'event-cancelled':'';
   const assess=plVisitStomaAssessmentHTML(appt);
   const appl=plVisitAppliancesHTML(appt);

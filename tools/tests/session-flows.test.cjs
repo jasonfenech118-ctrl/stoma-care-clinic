@@ -43,7 +43,8 @@ function reviewSetup(t,{appt,today='2026-10-25'}){
   w.SB={from:()=>{const q={select:()=>q,eq:()=>q,lte:()=>q,maybeSingle:async()=>({data:JSON.parse(JSON.stringify(appt)),error:null}),then:(a,b)=>Promise.resolve({data:[]}).then(a,b)};return q;}};
   w.fetchPatientById=async()=>({data:{id:'p1',first_name:'Saviour',surname:'Ciantar',id_card:'733749M'}});
   w.eval(visitModule);
-  for(const name of ['visitReviewButtonHTML','openVisitReview','setVisitReviewVersion','toggleVisitReviewChanges','renderVisitReview','saveVisitReviewEdit'])w.eval(fn(name));
+  w.eval(`var FOLLOWUP_STATUSES=['active','awaiting_feedback','paused','relocated_overseas','discharged_gozo','reversed','deceased'];var FOLLOWUP_STATUS_ALIASES={reversal:'reversed'};`);
+  for(const name of ['normaliseFollowupStatus','isClosedFollowupStatus','followupMonthName','followupDueLine','visitReviewButtonHTML','openVisitReview','setVisitReviewVersion','toggleVisitReviewChanges','renderVisitReview','saveVisitReviewEdit'])w.eval(fn(name));
   w.eval('var visitReviewState=null;');
   return {w,saves,mb:()=>w.document.getElementById('mb')};
 }
