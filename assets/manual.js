@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 October 2026 — the visit review and the follow-up decision now show the patient’s next follow-up due month. Kept in step with every change.'};
+const MANUAL_META={updated:'16 October 2026 — Add Patient flags an ID card already on the registry as you type it, offering to open that patient. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -87,7 +87,7 @@ const MANUAL_SECTIONS=[
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('➕ Add Patient','#e7f7ef','#1c8f5f')}.`,
-      `Complete the <b>Patient</b> page — name, ID card, sex, date of birth, locality, phone and consultant/firm.`,
+      `Complete the <b>Patient</b> page — name, ID card, sex, date of birth, locality, phone and consultant/firm. As you type the <b>ID card</b>, a patient already on the registry is flagged straight away (the field turns amber with <b>“Already in the registry as …”</b> and an <b>Open that patient</b> button) so nobody is entered twice.`,
       `Press <b>Next</b> for the first stoma’s page. Enter its type, location, surgery date, date of discharge, and operation and findings.`,
       `Press <b>Save</b>. The patient now appears in the Registry and a stoma code (<span class="man-kbd">STO-…</span>) is created for them automatically.`
     ])}

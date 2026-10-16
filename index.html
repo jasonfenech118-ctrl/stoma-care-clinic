@@ -21,8 +21,8 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.16-553"/>
-<script src="assets/manual.js?v=2026.10.16-553"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.16-554"/>
+<script src="assets/manual.js?v=2026.10.16-554"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2353,6 +2353,10 @@ body.jenc-open #nav-back{display:none!important;}
 .registry-lookup-note.found{background:#e8f5f4;color:var(--teal);border-color:#b7ddd9;}
 .registry-lookup-note.new{background:#fff8e1;color:#856404;border-color:#f2df9f;}
 .registry-lookup-note.error{background:#f8d7da;color:#721c24;border-color:#f1b0b7;}
+/* Live "already in the registry" flag on the Add Patient ID card field. */
+.pf-dup-idcard{border-color:#e0a800!important;background:#fff8e1!important;box-shadow:0 0 0 3px rgba(224,168,0,.18);}
+.pf-dup-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.pf-dup-note .ncb-btn{margin-left:auto;}
 /* Fistula patients: one purple tag wherever they appear, and a purple stripe on the handover. */
 .audit-table td{vertical-align:top;font-size:13px;}
 .audit-table tr[onclick]:hover{background:#f6f9fc;}
@@ -3887,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.16-553';
+const APP_BUILD='2026.10.16-554';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20275,7 +20279,41 @@ function renderAddPatientForm(){
   updateTitle();
   renumberStomaRows('ap');
   onPatientFormOutcome('ap');
+  // Live duplicate check: as the ID card is typed, flag a patient already on the
+  // registry so the same person is not entered twice.
+  const idEl=document.getElementById('ap-idcard');
+  if(idEl){
+    const note=document.createElement('div');
+    note.id='ap-dup-note';note.className='registry-lookup-note';note.hidden=true;
+    idEl.closest('.fg')?.appendChild(note);
+    idEl.addEventListener('input',scheduleNewPatientIdCheck);
+  }
   pfShowStep('ap',1);
+}
+let apDupTimer=null,apDupSeq=0;
+function scheduleNewPatientIdCheck(){
+  clearTimeout(apDupTimer);
+  apDupTimer=setTimeout(checkNewPatientIdDuplicate,350);
+}
+async function checkNewPatientIdDuplicate(){
+  const idEl=document.getElementById('ap-idcard');
+  const note=document.getElementById('ap-dup-note');
+  if(!idEl||!note)return;
+  const key=normaliseIdCard(idEl.value);
+  if(!key){idEl.classList.remove('pf-dup-idcard');note.hidden=true;note.innerHTML='';return;}
+  const seq=++apDupSeq;
+  let matches=[];
+  try{const r=await findRegistryPatientsByIdCard(key);matches=r.matches||[];}catch(e){return;}
+  if(seq!==apDupSeq)return;                 // a newer keystroke already ran
+  if(normaliseIdCard(idEl.value)!==key)return;
+  if(!matches.length){idEl.classList.remove('pf-dup-idcard');note.hidden=true;note.innerHTML='';note.className='registry-lookup-note';return;}
+  const p=matches[0];
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'a patient';
+  const extra=matches.length>1?` <strong>${matches.length} records already use this ID card.</strong>`:'';
+  idEl.classList.add('pf-dup-idcard');
+  note.hidden=false;note.className='registry-lookup-note new pf-dup-note';
+  note.innerHTML=`⚠️ <span>Already in the registry as <strong>${htmlSafe(nm)}</strong>.${extra}</span>
+    <button type="button" class="ncb-btn" style="background:#0369a1;color:white;" onclick="openPatientDatesModal('${jsSafe(p.id)}')">Open that patient</button>`;
 }
 async function saveNewPatient(){
   const err=document.getElementById('ap-error');
