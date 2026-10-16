@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'15 October 2026 — a recorded rod now shows as a visible, colour-coded “Rod due” chip on the handover row (it was previously only on the printed sheet). Kept in step with every change.'};
+const MANUAL_META={updated:'16 October 2026 — the Episodes tab’s communication sections are now collapsible dropdown groups that open on their own when they hold something. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -155,7 +155,7 @@ const MANUAL_SECTIONS=[
       `Check the <b>Date</b> and <b>Time (Malta)</b>. Select the <b>Contact method</b> (Telephone, Email, In person, Letter or Other) and whether the exchange is <b>Outgoing</b> or <b>Incoming</b>.`,
       `Record the <b>contact person</b> and, for community correspondence, the <b>community service / organisation</b>. For patient communication, the patient's name is prefilled; change it when speaking with a relative or carer.`,
       `Enter a <b>Subject</b> and the <b>Communication / advice / outcome</b>. Choose <b>Open</b>, <b>Awaiting response</b>, <b>Follow-up required</b> or <b>Resolved</b>. Under <b>Reminder</b>, tick <b>Set a reminder for this issue</b> and enter the action and date when follow-up is needed.`,
-      `Press <b>Save record</b>. Two separate issue lists underneath the inpatient episodes keep community correspondence and patient communication. Open issues remain listed until resolved, with a separate expandable resolved history. No inpatient admission is needed.`,
+      `Press <b>Save record</b>. Underneath the episodes, <b>Communication reminders</b>, <b>Community correspondence</b> and <b>Patient communication</b> are now <b>collapsible dropdown sections</b> — each shows its count in the header and <b>opens on its own when it has something in it</b>, so a record you just saved is always in view (empty sections stay collapsed). Tap a header to open or close it. No inpatient admission is needed.`,
       `For another contact about the same subject, open the issue and press <b>Add update / contact</b>. Each dated and signed contact is kept underneath that issue. Use <b>Edit issue / reminder</b> for its current status or reminder and <b>Edit record</b> to correct an individual contact; corrections retain <b>Previous versions</b>. Press <b>Resolve issue</b> when finished: its active reminder clears and the history stays available. <b>Reopen issue</b> allows further contacts; set a new reminder if needed.`
     ])}
     ${manNote('auto','✍️','Every record and correction is signed automatically with the logged-in nurse’s name and saving time. A correction keeps the original version. If another nurse or device saves first, your text remains in the form and the app asks you to reopen the latest record before saving over it.')}

@@ -17,6 +17,19 @@
   let state = {patientId: null, patient: null, rows: [], error: '', actionError: '', config: null};
   let generation = 0, editor = null;
   const expanded = new Set(), busy = new Set();
+  // Which collapsible section groups the nurse has manually collapsed (remembered
+  // across re-renders so a group stays shut once closed).
+  const sectionCollapsed = new Set();
+  function sectionToggle(key, open) { if (open) sectionCollapsed.delete(key); else sectionCollapsed.add(key); }
+  // A section rendered as a collapsible dropdown. It opens by default when it has
+  // content (so nothing a nurse added is hidden) and collapses when empty, unless
+  // the nurse has chosen otherwise.
+  function groupHTML(key, cls, titleHTML, badgeHTML, bodyHTML, hasContent) {
+    const open = hasContent && !sectionCollapsed.has(key);
+    return `<details class="${cls} pc-group"${open ? ' open' : ''} ontoggle="PatientCommunications.sectionToggle('${esc(key)}',this.open)">
+      <summary class="psm-sec-head pc-group-head"><h3>${titleHTML}</h3>${badgeHTML}</summary>
+      <div class="psm-card">${bodyHTML}</div></details>`;
+  }
 
   function localNow() {
     const parts = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Malta', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(new Date());
@@ -90,14 +103,16 @@
   }
   function patientRemindersHTML() {
     const rows = roots().filter(isActiveReminder).sort((a, b) => a.followup_date.localeCompare(b.followup_date));
-    return `<section class="pc-reminder-section" aria-label="Communication reminders"><div class="psm-sec-head"><h3>${icon('clock')} Communication reminders</h3><span class="psm-badge">${rows.length}</span></div><div class="psm-card">${rows.length ? rows.map(r => `<button type="button" class="pc-reminder-link${dueLabel(r.followup_date) === 'Overdue' ? ' overdue' : ''}" onclick="PatientCommunications.focus('${esc(r.id)}')"><strong>${esc(r.subject)}</strong><span>${esc(kinds[r.kind].label)} · ${esc(dueLabel(r.followup_date))} · ${esc(date(r.followup_date))}</span><span>${esc(r.followup_action)}</span></button>`).join('') : '<p class="pc-empty">No active communication reminders. Set one when adding or editing an issue.</p>'}</div></section>`;
+    const body = rows.length ? rows.map(r => `<button type="button" class="pc-reminder-link${dueLabel(r.followup_date) === 'Overdue' ? ' overdue' : ''}" onclick="PatientCommunications.focus('${esc(r.id)}')"><strong>${esc(r.subject)}</strong><span>${esc(kinds[r.kind].label)} · ${esc(dueLabel(r.followup_date))} · ${esc(date(r.followup_date))}</span><span>${esc(r.followup_action)}</span></button>`).join('') : '<p class="pc-empty">No active communication reminders. Set one when adding or editing an issue.</p>';
+    return groupHTML('reminders', 'pc-reminder-section', icon('clock') + ' Communication reminders', `<span class="psm-badge">${rows.length}</span>`, body, rows.length > 0);
   }
   function historyHTML() {
     if (state.error) return `<div class="psm-card pc-error" role="alert"><strong>Could not load communication history.</strong><p>${esc(state.error)}</p><button type="button" class="psm-btn" onclick="PatientCommunications.retry()">${icon('refresh')} Retry</button></div>`;
     return (state.actionError ? `<div class="pc-error" role="alert">${esc(state.actionError)}</div>` : '') + patientRemindersHTML() + Object.entries(kinds).map(([kind, meta]) => {
       const rows = roots().filter(r => r.kind === kind).sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
       const openRows = rows.filter(r => r.status !== 'Completed'), done = rows.filter(r => r.status === 'Completed');
-      return `<section class="pc-history"><div class="psm-sec-head"><h3>${icon(meta.icon)} ${meta.label}</h3><span class="psm-badge">${openRows.length} open · ${done.length} resolved</span></div><div class="psm-card"><div class="pc-contact-heading">Open issues (${openRows.length})</div>${openRows.length ? openRows.map(issueHTML).join('') : '<p class="pc-empty">No open issues.</p>'}${done.length ? `<details class="pc-resolved"><summary>Resolved issues (${done.length})</summary>${done.map(issueHTML).join('')}</details>` : ''}</div></section>`;
+      const body = `<div class="pc-contact-heading">Open issues (${openRows.length})</div>${openRows.length ? openRows.map(issueHTML).join('') : '<p class="pc-empty">No open issues.</p>'}${done.length ? `<details class="pc-resolved"><summary>Resolved issues (${done.length})</summary>${done.map(issueHTML).join('')}</details>` : ''}`;
+      return groupHTML(kind, 'pc-history', icon(meta.icon) + ' ' + meta.label, `<span class="psm-badge">${openRows.length} open · ${done.length} resolved</span>`, body, rows.length > 0);
     }).join('');
   }
   function toggleIssue(id, open) { if (open) expanded.add(id); else expanded.delete(id); }
@@ -251,5 +266,5 @@
     const rows = (result.items || []).filter(r => !kind || r.kind === kind);
     return rows.length ? rows.map(r => `<div class="rem-row clinical-reminder-row pc-bell-reminder"><div class="clinical-reminder-copy"><div class="clinical-reminder-heading">${esc([r.patient?.first_name, r.patient?.surname].filter(Boolean).join(' ') || 'Patient')} · ${esc(r.patient?.id_card)}</div><div class="clinical-reminder-meta">${esc(kinds[r.kind].label)} · ${esc(r.followup_date < (result.today || localNow().communication_date) ? 'Overdue' : 'Due today')} · ${esc(date(r.followup_date))}</div><strong>${esc(r.subject)}</strong><div class="pc-notes">${esc(r.followup_action)}</div></div><div class="clinical-reminder-actions"><button type="button" class="ncb-btn" onclick="openCommunicationReminder('${esc(r.patient_id)}','${esc(r.id)}')">Open issue</button></div></div>`).join('') : '<div class="rem-empty">No due communication reminders.</div>';
   }
-  global.PatientCommunications = {load, retry, actionsHTML, historyHTML, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, loadReminders, remindersHTML};
+  global.PatientCommunications = {load, retry, actionsHTML, historyHTML, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
 })(window);
