@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'17 October 2026 — a surgery date or stoma type recorded on a stoma (a later / new stoma or a refashioning) no longer flags the record as missing it. Kept in step with every change.'};
+const MANUAL_META={updated:'17 October 2026 — the “Patient records” status is now looked up in batches, so a large registry no longer shows every patient as “History not checked”. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -640,6 +640,7 @@ const MANUAL_SECTIONS=[
         ['🧾','Audit Trail — 90-day retention','A scheduled database cleanup permanently deletes audit entries older than 90 days each day, even if nobody opens the app. It keeps patient records, restored values, photographs and saved encounter versions. Expired audit entries and any recovery information within them cannot be retrieved. Only seven days of this cleanup job’s operational history are retained.','Audit & Reports › Audit Trail'],
         ['🧾','Cancelled siting deletion logged','After a confirmed Delete removes a cancelled siting appointment, the list and patient’s siting history update and the Audit Trail records the removal with the nurse’s signature. Other appointments and the patient’s registry and surgical records remain.','Siting › Cancelled Stoma Appointments / Audit & Reports › Audit Trail'],
         ['🏥','Saved appliances kept on readmission','A current stoma’s newest saved ward or attended-clinic appliance and accessories are kept when pressing Admit, including separate setups for multiple stomas. Cleared selections, closed stomas and new/refashioned identities are respected. The saved history is checked again before admission.','Registry › Patient record › Episodes'],
+        ['🗂️','Patient records status','The “Patient records” label (Electronic notes from surgery, Check for earlier paper notes, Electronic history incomplete, Surgery date missing or History not checked) is worked out automatically from the dates on file — it is never a manual flag and has nothing to do with the patient’s outcome. It is looked up in batches, so the whole registry stays reliable no matter how many patients there are; a patient briefly showing History not checked is just the lookup still running or timed out — refresh to re-check.','Registry'],
         ['🔖','Auto codes','Stoma codes (STO-…) and admission references (EP-…) are generated for you.','Registry']
       ].map(a=>`<div class="man-auto"><h4>${a[0]} ${a[1]}</h4><p>${a[2]}</p><span class="man-auto-where">${a[3]}</span></div>`).join('')}
     </div>

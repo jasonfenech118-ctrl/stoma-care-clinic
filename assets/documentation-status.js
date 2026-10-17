@@ -22,24 +22,37 @@
    const fmt=v=>date(v)?new Date(v+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'Not recorded';
    return '<aside class="documentation-card" aria-label="Patient records"><div><strong>Patient records</strong> '+badgeHTML(p)+' <small>Automatically checked from dates</small></div><p>'+esc(d.reason)+'</p><dl>'+names.map(([n,v])=>'<div><dt>'+n+'</dt><dd>'+esc(fmt(v))+'</dd></div>').join('')+'</dl></aside>';
  }
+ // The whole registry is enriched at once, so a single lookup over thousands of
+ // patients timed out and left everyone "History not checked". The ids are split
+ // into bounded chunks instead: each chunk is its own lookup, so a slow or failed
+ // chunk only leaves ITS patients unconfirmed rather than the entire list.
+ const CHUNK=200;
+ async function lookupChunk(db,ids){
+   const q=db.rpc('patient_documentation_dates',{p_patient_ids:ids});
+   let timer;const controller=new AbortController();
+   try{
+     const request=typeof q.abortSignal==='function'?q.abortSignal(controller.signal):q;
+     const response=await Promise.race([request,new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('Documentation lookup timed out'));},8000);})]);
+     if(response.error)throw response.error;
+     return response.data||[];
+   }finally{clearTimeout(timer);}
+ }
  async function enrich(result,db){
    if(result?.error||!db?.rpc)return result;
    const key=Array.isArray(result?.rows)?'rows':'data',value=result?.[key];
    const rows=Array.isArray(value)?value:value?[value]:[];
    const ids=[...new Set(rows.map(p=>String(p.id||'')).filter(Boolean))];
    if(!ids.length)return result;
-   try{
-     // One bounded lookup per patient batch. A failed lookup stays unconfirmed.
-     const q=db.rpc('patient_documentation_dates',{p_patient_ids:ids});
-     let timer;const controller=new AbortController();
-     try{
-       const request=typeof q.abortSignal==='function'?q.abortSignal(controller.signal):q;
-       const response=await Promise.race([request,new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('Documentation lookup timed out'));},6000);})]);
-       if(response.error)throw response.error;
-       const byId=new Map((response.data||[]).map(e=>[String(e.patient_id),e]));
-       rows.forEach(p=>{p.documentation_dates=byId.get(String(p.id))||null;});
-     }finally{clearTimeout(timer);}
-   }catch(_){rows.forEach(p=>{p.documentation_dates=null;});}
+   const chunks=[];
+   for(let i=0;i<ids.length;i+=CHUNK)chunks.push(ids.slice(i,i+CHUNK));
+   const byId=new Map();
+   // Chunks run in parallel; each resolves independently so one failure does not
+   // discard the rest. Patients left without an answer fall back to unconfirmed.
+   await Promise.all(chunks.map(async chunk=>{
+     try{(await lookupChunk(db,chunk)).forEach(e=>byId.set(String(e.patient_id),e));}
+     catch(_){/* this chunk stays unresolved; its patients remain null */}
+   }));
+   rows.forEach(p=>{p.documentation_dates=byId.get(String(p.id))||null;});
    return result;
  }
  g.DocumentationStatus={classify,badgeHTML,cardHTML,enrich};
