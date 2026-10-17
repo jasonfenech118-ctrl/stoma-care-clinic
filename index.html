@@ -20,9 +20,9 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.17-557"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-557"/>
-<script src="assets/manual.js?v=2026.10.17-557"></script>
+<script src="assets/daily-attendance.js?v=2026.10.17-558"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-558"/>
+<script src="assets/manual.js?v=2026.10.17-558"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -31,7 +31,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.17-557"></script>
+<script src="assets/documentation-status.js?v=2026.10.17-558"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -3891,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.17-557';
+const APP_BUILD='2026.10.17-558';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14181,10 +14181,22 @@ function registryStomaType(p){
   try{const types=[...new Set(stomaTimeline(p).map(s=>String(s.type||'').trim()).filter(Boolean))];if(types.length)return types.join(', ');}catch(e){}
   return '';
 }
+/* A deceased patient is a closed record — there is nothing more to document, so
+   the automatic "Patient records" status (electronic-notes coverage, "history
+   not checked", etc.) is not shown for them. It would only ever nag about notes
+   that no longer matter once the record is closed by death. */
+function docStatusBadgeHTML(p){
+  if(!window.DocumentationStatus||patientIsDeceased(p))return '';
+  return DocumentationStatus.badgeHTML(p);
+}
+function docStatusCardHTML(p){
+  if(!window.DocumentationStatus||patientIsDeceased(p))return '';
+  return DocumentationStatus.cardHTML(p);
+}
 function configureDeceasedRegistry(){
   window.DeceasedRegistry?.configure({
     db:()=>SB,isDeceased:patientIsDeceased,formatDate:fmtShortDate,
-    avatar:(p,nm)=>patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+(window.DocumentationStatus?DocumentationStatus.badgeHTML(p):''),'sm'),
+    avatar:(p,nm)=>patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+docStatusBadgeHTML(p),'sm'),
     surgeryDate:registrySurgeryDate,stomaType:registryStomaType,
     rerender:renderPatientDirectory,refresh:loadPatientDirectory,
     pager:(total,size,page,onMove)=>renderPager('pd-pager',total,size,page,onMove),
@@ -14222,7 +14234,9 @@ function renderPatientDirectory(){
     // Archived patients are kept out of the registry unless they are being shown
     // on purpose, so an accidental clutter never reappears in the active list.
     if(!pdShowArchived&&p.archived)return false;
-    if(docs!=='all'&&window.DocumentationStatus&&DocumentationStatus.classify(p.documentation_dates).status!==docs)return false;
+    // Deceased records carry no documentation status (closed case), so a specific
+    // "Patient records" filter never lists them — only "All patient records" does.
+    if(docs!=='all'&&window.DocumentationStatus&&(patientIsDeceased(p)||DocumentationStatus.classify(p.documentation_dates).status!==docs))return false;
     if(owner!=='all'&&p.owner!==owner)return false;
     // Under an owner, closed records stay hidden unless that status is chosen.
     if(owner!=='all'&&PD_CLOSED_STATUSES.includes(p.status)&&!(status===p.status||status==='ever_reversed'))return false;
@@ -14282,7 +14296,7 @@ function renderPatientDirectory(){
       : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td>`;
     const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
     return `<tr class="pd-click-row ${rowCls}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
-      <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+(window.DocumentationStatus?DocumentationStatus.badgeHTML(p):''),'sm')}</td>
+      <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+docStatusBadgeHTML(p),'sm')}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
       <td onclick="event.stopPropagation();"><div class="pd-actions">
@@ -20135,7 +20149,7 @@ async function openPatientRecord(patientId,opts){
       <button class="psm-close" onclick="goRegistry()" aria-label="Back to Registry">${psmIc('x')}</button>
     </header>
 
-    ${window.DocumentationStatus?DocumentationStatus.cardHTML(pat):''}
+    ${docStatusCardHTML(pat)}
     ${surgerySnapshotHTML(pat)}
 
     <nav class="psm-tabs" role="tablist" aria-label="Patient record sections">
