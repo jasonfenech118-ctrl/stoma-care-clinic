@@ -20,9 +20,9 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.17-555"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-555"/>
-<script src="assets/manual.js?v=2026.10.17-555"></script>
+<script src="assets/daily-attendance.js?v=2026.10.17-556"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-556"/>
+<script src="assets/manual.js?v=2026.10.17-556"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3891,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.17-555';
+const APP_BUILD='2026.10.17-556';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13551,6 +13551,13 @@ function patientOperationText(p){
 // reading as incomplete even though the form now shows a single box.
 function patientFieldFilled(p,k){
   if(k==='procedure_performed')return !!String(p?.procedure_performed??'').trim()||!!String(p?.findings??'').trim();
+  // The surgery date and stoma type may be recorded on a stoma — a later / new
+  // stoma, a refashioning, or a second stoma made at the first operation — rather
+  // than in the top-level column. Count them as filled when the date / type is on
+  // file anywhere (same effective value the record and registry show), so a
+  // patient is never nagged "surgery date missing" for a date already recorded.
+  if(k==='surgery_date')return !!String(p?.surgery_date??'').trim()||!!String(registrySurgeryDate(p)||'').trim();
+  if(k==='stoma_type')return !!String(p?.stoma_type??'').trim()||!!String(registryStomaType(p)||'').trim();
   return !!String(p?.[k]??'').trim();
 }
 function patientMissingFields(p){return PATIENT_REQUIRED_FIELDS.filter(([k])=>!patientFieldFilled(p,k)).map(([,label])=>label);}

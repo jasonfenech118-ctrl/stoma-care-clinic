@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'17 October 2026 — a TIL / overtime shift typed with a small spelling slip in a core nurse’s name now matches that nurse, so they no longer appear twice on the daily attendance sheet. Kept in step with every change.'};
+const MANUAL_META={updated:'17 October 2026 — a surgery date or stoma type recorded on a stoma (a later / new stoma or a refashioning) no longer flags the record as missing it. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -145,7 +145,7 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('🕗 Awaiting feedback','#475569','#ffffff')} — <b>slate</b> bar with a clock.</li>
     </ul>
     ${manNote('tip','📍','The <b>Locality</b> sits in its own prominent green row in Patient details, with the local council flag (or a neat initials marker when a town has no flag on file).')}
-    ${manNote('tip','🗂','In the <b>Registry list</b>, outcome rows use a <b>soft background tint, dark readable wording and a strong coloured stripe</b> — charcoal for deceased, violet for reversed, blue for Gozo and teal for overseas. An <b>amber left stripe</b> marks a non-finalised record still missing a required field. Finalised deceased and reversed records keep their own outcome stripe.')}
+    ${manNote('tip','🗂','In the <b>Registry list</b>, outcome rows use a <b>soft background tint, dark readable wording and a strong coloured stripe</b> — charcoal for deceased, violet for reversed, blue for Gozo and teal for overseas. An <b>amber left stripe</b> marks a non-finalised record still missing a required field. A <b>surgery date or stoma type recorded on a stoma</b> (a later / new stoma or a refashioning) counts as complete — the record is not flagged for it. Finalised deceased and reversed records keep their own outcome stripe.')}
   `},
   {id:'communications',title:'Community correspondence & patient communication',keywords:'community correspondence communication contact telephone phone email letter patient relative carer GP nursing care home service organisation incoming outgoing advice follow-up action date status awaiting response completed resolved reopen issues contact updates reminder bell date overdue episodes version edit correction history',html:`
     ${manMap('patients')}
