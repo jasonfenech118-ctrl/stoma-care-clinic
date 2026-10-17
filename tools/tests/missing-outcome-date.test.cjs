@@ -35,3 +35,21 @@ test('freshly recorded dates are not prompted again',async()=>{
  const c=context({id:'p1',followup_status:'deceased',deceased_date:'2026-10-01'});
  await c.promptSavedOutcomeDate('p1','deceased');assert.deepEqual(c.calls,['record']);
 });
+test('saving a stoma refreshes first, then opens its missing outcome date',async()=>{
+ const c=context({id:'p1',followup_status:'deceased'});
+ c.document={getElementById:id=>id==='page-patient-record'?{classList:{contains:()=>true}}:null};
+ c.fetchPatientById=async()=>({data:c.clrState.patient});
+ c.promptSavedOutcomeDate=async(id,key)=>c.calls.push(id+':'+key);
+ const start=html.indexOf('async function afterStomaSaved(');
+ const end=html.indexOf('/* The clickable list',start);
+ vm.runInContext(html.slice(start,end),c);
+ await c.afterStomaSaved('p1',{promptOutcome:true});
+ assert.deepEqual(c.calls,['record','p1:deceased']);
+});
+test('stoma save requests the prompt, and address is not a required demographic',()=>{
+ const save=html.slice(html.indexOf('async function saveStomaModal('),html.indexOf('function stomaPayloadFor('));
+ assert.match(save,/await afterStomaSaved\(ctx.patientId,\{promptOutcome:true\}\)/);
+ const persist=html.slice(html.indexOf('async function persistPatientDetailsForm('),html.indexOf('function missingSavedOutcomeDate('));
+ const required=persist.match(/const miss=\[([\s\S]*?)\]\.filter/)[1];
+ assert.match(required,/'sex'/);assert.match(required,/'locality'/);assert.doesNotMatch(required,/'address'/);
+});

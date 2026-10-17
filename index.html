@@ -20,9 +20,9 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.17-559"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-559"/>
-<script src="assets/manual.js?v=2026.10.17-559"></script>
+<script src="assets/daily-attendance.js?v=2026.10.17-560"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-560"/>
+<script src="assets/manual.js?v=2026.10.17-560"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -31,7 +31,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.17-559"></script>
+<script src="assets/documentation-status.js?v=2026.10.17-560"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -3891,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.17-559';
+const APP_BUILD='2026.10.17-560';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15402,6 +15402,7 @@ function patientFormHTML(p,prefix){
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
     <div class="fg"><label>Locality *</label><select id="${prefix}-locality" onchange="localityAdd(this)"${lksel('locality')}>${localityOptions(p?.locality)}</select></div>
     <div class="fg" style="grid-column:1 / -1;"><label>Full address <span style="font-weight:400;color:var(--muted);">(as the register book writes it)</span></label>
+      ${patientIsDeceased(p)?'<div class="ap-hint">Optional for deceased patients. Locality and sex are still required.</div>':''}
       <input type="text" id="${prefix}-address" value="${v('address')}" placeholder="e.g. 62, St. Anthony Flt No.1, Triq Giacint Tua, Gżira GŻR 06"${lk('address')}/></div>
     <div class="fg"><label>Date of birth *</label><input type="date" id="${prefix}-dob" value="${v('date_of_birth')}"${lk('dob')}/></div>
     <div class="fg"><label>Firm * <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="${prefix}-consultant" onchange="firmAdd(this)"${lksel('consultant')}>${firmOptions(p?.consultant)}</select></div>
@@ -16880,7 +16881,7 @@ async function saveStomaModal(){
   modalCloseGuard=null;                       // saved, so there is nothing to lose
   closeModal();
   refreshReminders();
-  await afterStomaSaved(ctx.patientId);
+  await afterStomaSaved(ctx.patientId,{promptOutcome:true});
 }
 /* Which column or JSON entry this stoma lives in, and the row that updates it.
    Only the one stoma is touched; every other entry in the array is written
@@ -17150,12 +17151,17 @@ async function addStomaToPatient(patientId,kind){
   return openStomaOperation(patientId,kind==='refashion'?'refashion':'new');
 }
 // Rebuild whichever page is open so the change shows straight away.
-async function afterStomaSaved(patientId){
+async function afterStomaSaved(patientId,options={}){
   if(document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
   if(document.getElementById('page-operated-outside-mdh')?.classList.contains('active'))loadNewPatients(true);
   if(document.getElementById('hv-body'))await loadHandover();
+  if(options.promptOutcome){
+    const {data:patient,error}=await fetchPatientById(patientId);
+    const key=!error&&missingSavedOutcomeDate(patient);
+    if(key)await promptSavedOutcomeDate(patientId,key);
+  }
 }
 /* The clickable list of every stoma, for the patient record. */
 /* The rod line shown on the stoma its rod is tied to (rod_stoma_uid). Shows the
@@ -20206,7 +20212,7 @@ async function openPatientRecord(patientId,opts){
           ${dDate('Date of birth',pat.date_of_birth)}
           ${dItem('Telephone',pat.phone_number)}
           <div class="psm-ditem psm-loc-item wide"><dt>Locality</dt>${pat.locality?`<dd class="psm-loc-val">${localityFlagHTML(pat.locality,'small',false)||'<span class="psm-loc-pin">📍</span>'}<span class="psm-loc-name">${htmlSafe(pat.locality)}</span></dd>`:'<dd class="na">Not recorded</dd>'}</div>
-          ${dItem('Address',pat.address,true)}
+          ${!patientIsDeceased(pat)||pat.address?dItem('Address',pat.address,true):''}
           ${dItem('Firm',pat.consultant)}
         </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}${patientSignatureHTML(pat)}</div>
       </div>
