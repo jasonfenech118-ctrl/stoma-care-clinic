@@ -75,6 +75,37 @@
     return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
+  // True when two already-normalised strings are equal or differ by a single
+  // edit: one substitution, one inserted/dropped letter, or two swapped adjacent
+  // letters (a transposition, e.g. "psaila"/"pasila").
+  function withinOneEdit(a, b) {
+    if (a === b) return true;
+    const la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while (i < la && j < lb) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (la === lb && a[i + 1] === b[j] && a[i] === b[j + 1]) { i += 2; j += 2; }  // adjacent transposition
+      else if (la > lb) i++;
+      else if (la < lb) j++;
+      else { i++; j++; }
+    }
+    return edits + (la - i) + (lb - j) <= 1;
+  }
+
+  // The same nurse typed slightly differently: an identical first name plus a
+  // surname that matches within one edit. Short surnames are not compared, so a
+  // one-letter placeholder never counts as a match. Used to merge a misspelled
+  // overtime / TIL entry into the core nurse's row instead of listing them twice.
+  function sameNurseName(a, b) {
+    const pa = a.split(' '), pb = b.split(' ');
+    if (!pa[0] || pa[0] !== pb[0]) return false;
+    const sa = pa.slice(1).join(' '), sb = pb.slice(1).join(' ');
+    if (sa.length < 4 || sb.length < 4) return false;
+    return withinOneEdit(sa, sb);
+  }
+
   function activityCode(record) {
     if (String(record.notes || '').startsWith('TIL-Off')) return 'til_off';
     if (String(record.notes || '').startsWith('TIL-In')) return 'til_in';
@@ -160,6 +191,14 @@
           const candidate = normaliseName(person.name);
           return candidate && !candidate.includes(' ') && normal.startsWith(candidate + ' ');
         });
+      }
+
+      // Last resort: a near-spelled version of a core nurse's name (a typo in the
+      // overtime / TIL entry). Only merge when exactly one core nurse is close,
+      // so an ambiguous name still gets its own row.
+      if (!matches.length && normal) {
+        const close = core.filter(person => sameNurseName(normal, normaliseName(person.name)));
+        if (close.length === 1) matches = close;
       }
 
       let person = matches.length === 1 ? matches[0] : null;

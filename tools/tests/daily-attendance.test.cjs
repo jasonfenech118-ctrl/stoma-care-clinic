@@ -138,6 +138,30 @@
     assert.ok(result.some(row => row.person_key === 'bank:c'));
   });
 
+  test('a misspelled overtime/TIL name merges into the core nurse it resembles', () => {
+    // A TIL-In booked for "Erika Pasila" (a transposed surname) must not show as a
+    // second person beside the core nurse "Erika Psaila" rostered off that day.
+    const result = planned({
+      staff: [nurse('e', 'Erika Psaila')],
+      roster: [{staff_id: 'e', staff: nurse('e', 'Erika Psaila'), roster_date: day, status: 'off'}],
+      bank: [bank('phantom', 'Erika Pasila', 'TIL-In: 7h [07:00–14:00]')]
+    });
+    assert.equal(result.length, 1);
+    assert.equal(result[0].person_key, 'staff:e');
+    assert.equal(result[0].name, 'Erika Psaila');
+    assert.equal(result[0].planned_code, 'til_in');
+    assert.ok(!result.some(row => row.person_key === 'phantom' || row.person_key === 'bank:phantom'));
+  });
+
+  test('a nurse who only shares a first name keeps a separate row', () => {
+    const result = planned({
+      staff: [nurse('e', 'Erika Psaila')],
+      bank: [bank('x', 'Erika Zammit', 'Core OT: [07:00–13:00]')]
+    });
+    assert.equal(result.length, 2);
+    assert.ok(result.some(row => row.person_key === 'bank:x'));
+  });
+
   test('saved actual attendance overrides defaults while preserving archived staff', () => {
     const api = app().api;
     const current = planned({staff: [nurse('a', 'Alice')]});

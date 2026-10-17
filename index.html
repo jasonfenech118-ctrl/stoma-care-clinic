@@ -20,9 +20,9 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.10-508"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.16-554"/>
-<script src="assets/manual.js?v=2026.10.16-554"></script>
+<script src="assets/daily-attendance.js?v=2026.10.17-555"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-555"/>
+<script src="assets/manual.js?v=2026.10.17-555"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3891,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.16-554';
+const APP_BUILD='2026.10.17-555';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4970,15 +4970,23 @@ async function addTIL(type){
   const[sh,sm]=start.split(':').map(Number);const[eh,em]=until.split(':').map(Number);
   const totalMins=(eh*60+em)-(sh*60+sm);
   const hrs=totalMins>0?(totalMins/60).toFixed(1).replace('.0',''):'0';
-  let staffId=null;
-  const{data:coreFound}=await SB.from('staff').select('id').ilike('full_name',name);
-  if(coreFound?.[0]?.id){staffId=coreFound[0].id;}
-  else{let{data:bankFound}=await SB.from('bank_staff').select('id').ilike('full_name',name);if(bankFound?.[0]?.id){staffId=bankFound[0].id;}else{const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();staffId=ns?.id;}}
+  let staffId=null,isCore=false;
+  // Resolve the typed name to a core nurse even when it is spelled slightly
+  // differently (a transposed or mistyped letter, e.g. "Pasila"/"Psaila"), so a
+  // core nurse's TIL is recorded against them and never saved as a separate
+  // phantom bank nurse that then shows twice on the attendance sheet.
+  const near=(typeof findCoreStaffByName==='function')?findCoreStaffByName(name):null;
+  if(near?.id){staffId=near.id;isCore=true;}
+  else{
+    const{data:coreFound}=await SB.from('staff').select('id').ilike('full_name',name);
+    if(coreFound?.[0]?.id){staffId=coreFound[0].id;isCore=true;}
+    else{let{data:bankFound}=await SB.from('bank_staff').select('id').ilike('full_name',name);if(bankFound?.[0]?.id){staffId=bankFound[0].id;}else{const{data:ns}=await SB.from('bank_staff').insert({full_name:name,role:'Nurse'}).select().single();staffId=ns?.id;}}
+  }
   if(!staffId){alert('Error saving staff.');return;}
   const typeLabel=type==='off'?'TIL-Off':'TIL-In';
   const tilNote=`${typeLabel}: ${hrs}h [${start}–${until}]`;
   let insErr=null;
-  if(coreFound?.[0]?.id){
+  if(isCore){
     // Update the existing TIL record for this nurse+date if there is one, so changing the timing works.
     const{data:existing}=await SB.from('leave_records').select('id,notes').eq('staff_id',staffId).eq('leave_type','overtime').eq('start_date',date);
     const existingTil=(existing||[]).find(r=>isTILNote(r.notes));

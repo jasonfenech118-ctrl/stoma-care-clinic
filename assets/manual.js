@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 October 2026 — Add Patient flags an ID card already on the registry as you type it, offering to open that patient. Kept in step with every change.'};
+const MANUAL_META={updated:'17 October 2026 — a TIL / overtime shift typed with a small spelling slip in a core nurse’s name now matches that nurse, so they no longer appear twice on the daily attendance sheet. Kept in step with every change.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -560,6 +560,7 @@ const MANUAL_SECTIONS=[
       `Roster refreshes update planned duty while retaining the attendance, times and remarks already recorded.`,
       `If a TIL In or overtime shift is <b>cancelled or deleted</b> after the person was marked Present, the sheet corrects itself next time it opens: a core nurse now off has the Present mark and times cleared (remarks stay), and bank / extra staff who were only listed for that shift are removed from the sheet and the saved record.`
     ])}
+    ${manNote('auto','⚙️','A TIL or overtime shift typed with a <b>small spelling slip</b> in a core nurse’s name (a swapped or mistyped letter) is matched to that nurse, so it joins their own row instead of showing them twice.')}
   `}
 ]},
 
