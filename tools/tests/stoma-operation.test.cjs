@@ -399,7 +399,7 @@ test('saving patient details updates demographics without writing stoma history'
  c.document.body.insertAdjacentHTML('beforeend','<div id="pcd-error"></div><input id="pcd-first" value="Alexander"><input id="pcd-surname" value="Example" data-locked="1"><input id="pcd-idcard" value="0000000M" data-locked="1">');
  c.fetchPatientById=async()=>({data:p,error:null});c.normaliseIdCard=s=>s;c.findRegistryPatientsByIdCard=async()=>({matches:[],error:null});c.refreshReminders=()=>{};c.closeModal=()=>{};
  let written;c.updatePatientTolerant=async(id,patch)=>{written=patch;return{error:null,dropped:[]};};
- vm.runInContext(source('savePatientDates'),c);vm.runInContext('patientEditReturn=null;',c);
+ vm.runInContext(source('missingSavedOutcomeDate'),c);vm.runInContext(source('savePatientDates'),c);vm.runInContext('patientEditReturn=null;',c);
  await c.savePatientDates('p1');assert.equal(written.first_name,'Alexander');assert.equal(written.surname,undefined);
  assert.equal(written.stoma_type,undefined);assert.equal(written.extra_refashionings,undefined);
 });

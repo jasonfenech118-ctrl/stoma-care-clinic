@@ -20,9 +20,9 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.17-558"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-558"/>
-<script src="assets/manual.js?v=2026.10.17-558"></script>
+<script src="assets/daily-attendance.js?v=2026.10.17-559"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-559"/>
+<script src="assets/manual.js?v=2026.10.17-559"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -31,7 +31,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.17-558"></script>
+<script src="assets/documentation-status.js?v=2026.10.17-559"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -3891,7 +3891,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.17-558';
+const APP_BUILD='2026.10.17-559';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16309,7 +16309,7 @@ async function persistPatientDetailsForm(patientId,requireComplete){
     if((country||null)!==(old.data.operated_abroad_country||null))payload.operated_abroad_country=country;
   }
   // Nothing was edited (all fields locked / unchanged) — no write needed.
-  if(!Object.keys(payload).length){if(err)err.innerHTML='';return{ok:true,dropped:[],nothing:true};}
+  if(!Object.keys(payload).length){if(err)err.innerHTML='';return{ok:true,dropped:[],nothing:true,patient:record};}
   // A second patient must not end up on the same ID card, including an older
   // copy stored with spaces or different letter case.
   const{matches:clashes,error:clashErr}=await findRegistryPatientsByIdCard(record.id_card,patientId);
@@ -16321,7 +16321,29 @@ async function persistPatientDetailsForm(patientId,requireComplete){
   const{error,dropped}=await updatePatientTolerant(patientId,payload);
   if(error)return fail(htmlSafe(patientSaveError(error)));
   if(err)err.innerHTML='';
-  return{ok:true,dropped:dropped||[]};
+  return{ok:true,dropped:dropped||[],patient:record};
+}
+function missingSavedOutcomeDate(p){
+  if(!p)return null;
+  if(patientIsDeceased(p)&&!p.deceased_date)return 'deceased';
+  if(normaliseFollowupStatus(p.followup_status)==='reversed'&&!croStatusDate(p,'reversed'))return 'reversed';
+  return null;
+}
+async function promptSavedOutcomeDate(patientId,key){
+  await openPatientRecord(patientId);
+  if(String(clrState.patient?.id)!==String(patientId)||!missingSavedOutcomeDate(clrState.patient))return;
+  switchPatientPanel('outcomes');
+  if(key==='reversed'){
+    const undated=patientStomaList(clrState.patient).find(x=>x.reversal_unknown);
+    if(undated){
+      await openStomaModal(patientId,undated.slot);
+      document.getElementById('sm-reversal')?.focus();
+      return;
+    }
+  }
+  croAsk(key);
+  croConfirm(key);
+  document.getElementById('cro-confirm')?.scrollIntoView({block:'nearest'});
 }
 async function savePatientDates(patientId){
   const res=await persistPatientDetailsForm(patientId,true);
@@ -16329,12 +16351,16 @@ async function savePatientDates(patientId){
   const dropped=res.dropped||[];
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
   const ret=patientEditReturn; patientEditReturn=null;
-  if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
+  const missingOutcome=missingSavedOutcomeDate(res.patient);
+  if(missingOutcome){
+    closeModal();
+    await promptSavedOutcomeDate(patientId,missingOutcome);
+  }else if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
   else closeModal();
   refreshReminders();
   // If the record page is open, rebuild it so the edits show; otherwise refresh
   // whichever registry-style page is active.
-  if(document.getElementById('page-patient-record')?.classList.contains('active'))openPatientRecord(patientId);
+  if(!missingOutcome&&document.getElementById('page-patient-record')?.classList.contains('active'))await openPatientRecord(patientId);
   if(document.getElementById('page-patients')?.classList.contains('active'))loadPatientDirectory();
   if(document.getElementById('page-new-patients')?.classList.contains('active'))loadNewPatients();
   if(document.getElementById('page-operated-outside-mdh')?.classList.contains('active'))loadNewPatients(true);

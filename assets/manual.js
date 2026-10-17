@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'17 October 2026 — the automatic “Patient records” status is no longer shown for deceased patients (a closed case needs no documentation history). Kept in step with every change.'};
+const MANUAL_META={updated:'17 October 2026 — Saving patient details opens the missing date entry for patients already marked deceased or reversed.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -171,6 +171,7 @@ const MANUAL_SECTIONS=[
       `For a new stoma or refashioning, enter the surgery date, discharge date if known, and operation and findings, then review and save. A reversal needs the selected stoma and its closure date only.`
     ])}
     <p class="man-lede">The individual stoma form has no separate <b>Comments</b> field or same-site replacement question. Previously saved notes and replacement links remain in the record.</p>
+    <p>After <b>Save patient details</b>, a patient already marked <b>Deceased</b> or <b>Reversed</b> with no outcome date automatically opens the appropriate date entry. Enter and save the date; for reversal, choose the affected stoma. Existing dates are retained.</p>
     ${manH2('↩','Reversal from the Outcome tab')}
     ${manSteps([
       `Open the patient → <b>Outcome</b> → ${manBtn('↩ Reversal / closure','#6d28d9','#ede9fe')} under <b>Change the outcome</b>. This button is available when a stoma is present.`,
@@ -595,6 +596,7 @@ const MANUAL_SECTIONS=[
     <div class="man-auto-grid">
       ${[
         ['📝','Encounter records and revisions','Interrupted saves are checked before showing a failure; retrying the same submission keeps one encounter/revision, and controls unlock after a timeout. Confirmed saves display immediately. The screen follows stoma review, appliances, written report, infection and referrals. Each stoma has its own column (named by type, e.g. End Ileostomy) for review, appliances and notes; the report and automatic author/signature cover every stoma. One encounter per patient per day, coded ENC-ID-date; saved encounters reopen read only, with Edit report as V2/V3 starting a deliberate revision. Every encounter has a separate General notes box, saved with each version and included in the report. The patient record’s Episodes tab lists each episode’s encounters underneath, newest first. Background ward updates wait while the encounter is open, including loading, saving and history, then resume when it closes. Corrections append a version to the same encounter; current care updates together, while older records remain in history.','Handover › Encounter'],
+        ['📅','Missing outcome date','Saving patient details opens the death or reversal date entry when that outcome is already recorded without a date. The date is saved separately after entry.','Patient record › Outcome'],
         ['📝','Handover fields save on change','Ward, bed and notes save when you change a field and leave it. Rows remain editable on a computer and phone, without a row Edit / Save button.','Handover'],
         ['🏥','Handover archived at 4 pm','The ward sheet is saved automatically every day — now as lightweight data (the sheet as HTML, a few KB), not a picture — and kept for reference.','Handover › Archived'],
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
