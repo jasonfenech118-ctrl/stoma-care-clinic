@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Patient ID letters automatically become uppercase. Each word in first name and surname automatically starts with a capital letter, followed by lowercase letters.'};
+const MANUAL_META={updated:'18 October 2026 — Saving edited patient details opens that patient’s Outcome tab. Edits started from an appointment keep their return-to-appointment workflow.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -86,6 +86,7 @@ const MANUAL_SECTIONS=[
 
 {id:'registry',title:'Registry & Patients',icon:'👥',color:'#16a34a',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
   {id:'add',title:'Add a new patient',keywords:'add patient new register demographics id card create',html:`
+    <p>After editing an existing patient and saving, the patient record opens on <b>Outcome</b>; edits opened from an appointment return to that appointment.</p>
     <p>Enter the <b>ID card number first</b>, then first name and surname; the ID field is focused when Add Patient opens. ID letters become uppercase automatically; each word in first name and surname starts with a capital letter, with the remaining letters lowercase.</p>
     ${manMap('patients')}
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
