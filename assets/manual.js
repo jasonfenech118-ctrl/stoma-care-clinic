@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The first nurse version is retained with green edge residue suppressed around the cutout. Help, voice and drag controls remain available.'};
+const MANUAL_META={updated:'18 October 2026 — Restored the original animated paperclip helper. Click it to open Help, search for a topic or browse the manual.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'nurse assistant clippy helper assistant animation movements hide help page search',html:`<p>The nurse assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the nurse assistant once. Click or tap it again to minimise the bubble.</p><p>The nurse assistant wears the supplied lilac uniform and repeats friendly waves, marching steps and a gentle sway automatically, with green edge residue suppressed around her cutout. Clicking her moves her to the side and opens the Help card; clicking again closes it. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the nurse assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the nurse assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -598,7 +598,7 @@ const MANUAL_SECTIONS=[
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
-  {id:'helper-context',title:'Help for the current page',keywords:'automatic nurse assistant helper context guidance',html:`<p>The nurse assistant stays visible with its card closed until clicked. She moves to the side, opens the card and speaks her greeting where browser speech is available; Find searches Help topics only when you submit text.</p>`},
+  {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>The paperclip appears automatically with its help bubble closed. Click it to search for a Help topic or browse the manual.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
@@ -762,7 +762,7 @@ function openManualDock(){
   setTimeout(()=>{const i=document.getElementById('man-search');if(i)try{i.focus();}catch(e){}},60);
 }
 function closeManualDock(){document.body.classList.remove('manual-docked');}
-function toggleManualDock(){const helper=document.getElementById('stoma-helper');if(document.body.classList.contains('manual-docked')&&!helper?.hidden)closeManualDock();else openManualDock();}
+function toggleManualDock(){document.body.classList.contains('manual-docked')?closeManualDock():openManualDock();}
 function manualDockHome(){manualState.sec=null;manualState.pg=null;renderManual('manual-dock-body');}
 /* Cycle the panel width so a nurse can give Help more or less room. */
 function manualDockWiden(){
@@ -809,7 +809,7 @@ function manualSearchKey(e){
 /* Local manual companion: reads navigation and help text only, never records. */
 function stomaHelperShow(){
   const helper=document.getElementById('stoma-helper');
-  if(helper){helper.dispatchEvent(new Event('stoma-helper-reset'));helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open','pa-walking');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
+  if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
 (function(){
@@ -817,47 +817,42 @@ function stomaHelperShow(){
     if(document.getElementById('stoma-helper'))return;
     const root=document.createElement('aside');
     root.id='stoma-helper'; root.setAttribute('aria-label','Stoma Rosters help');
-    root.innerHTML=`<svg class="nurse-edge-filter" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;pointer-events:none"><defs><filter id="nurse-remove-green" color-interpolation-filters="sRGB" x="-5%" y="-5%" width="110%" height="110%"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  2 -3 1 1 0" result="clean-alpha"/><feComposite in="SourceGraphic" in2="clean-alpha" operator="in"/></filter></defs></svg><button type="button" class="sh-dismiss" aria-label="Hide nurse assistant" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
+    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide paperclip" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
       <form class="sh-search"><label for="sh-query">What would you like help with?</label><div><input id="sh-query" type="search" maxlength="120" placeholder="e.g. update register"><button type="submit">Find</button></div></form>
       <div class="sh-results" aria-live="polite"></div>
       <button type="button" class="sh-manual">Browse all help topics</button>
     </section>
-    <button type="button" class="pa-voice" aria-label="Mute assistant voice" title="Mute assistant voice">🔊</button>
-    <button type="button" class="sh-character" aria-label="Open nurse assistant help" title="Click for help; drag to move" aria-expanded="false">
-    <span class="nurse-motion" aria-hidden="true"><span class="nurse-sprite"></span></span><span>Help</span></button>`;
+    <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
+    <svg viewBox="0 0 200 230" aria-hidden="true">
+      <defs>
+        <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
+        <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
+        <radialGradient id="sh-eye" cx=".35" cy=".25" r=".8"><stop offset=".35" stop-color="#fff"/><stop offset=".7" stop-color="#f5f3fc"/><stop offset="1" stop-color="#a8a1bc"/></radialGradient>
+        <radialGradient id="sh-pupil" cx=".3" cy=".22"><stop stop-color="#555"/><stop offset=".5" stop-color="#242426"/><stop offset="1" stop-color="#08090b"/></radialGradient>
+        <clipPath id="sh-paper-clip"><path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z"/></clipPath>
+      </defs>
+      <path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z" fill="url(#sh-paper)"/>
+      <g clip-path="url(#sh-paper-clip)" fill="none" stroke="#929f71" stroke-width="1" opacity=".75">
+        ${Array.from({length:23},(_,i)=>`<path d="M8 ${57+i*7} Q90 ${65+i*7} 193 ${57+i*7}"/>`).join('')}
+        <path d="M128 51 Q74 108 75 143 Q73 175 41 203" stroke="#cc9c77" stroke-width="1.3"/>
+      </g>
+      <g class="sh-body">
+        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="#5e587b" stroke-width="9" stroke-linecap="round"/>
+        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="url(#sh-metal)" stroke-width="6.5" stroke-linecap="round"/>
+        <g class="sh-eyes">
+          <ellipse cx="70" cy="66" rx="22" ry="18" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(-10 70 66)"/>
+          <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
+          <g class="sh-pupils"><ellipse cx="70" cy="67" rx="11.5" ry="9.5" fill="url(#sh-pupil)"/><ellipse cx="116" cy="79" rx="11.5" ry="10" fill="url(#sh-pupil)"/></g>
+        </g>
+        <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
+      </g>
+    </svg><span>Help</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     root.hidden=false; // Available on every fresh app visit; × hides it for this visit.
-    let muted=false,utterance=null,talkTimer=null;
-    try{muted=localStorage.getItem('stoma-helper-muted')==='1';}catch(e){}
-    const voiceButton=root.querySelector('.pa-voice');
-    const speechAvailable='speechSynthesis' in window&&typeof window.SpeechSynthesisUtterance==='function';
-    voiceButton.hidden=!speechAvailable;
-    function voiceLabel(){voiceButton.textContent=muted?'🔇':'🔊';voiceButton.setAttribute('aria-label',muted?'Unmute assistant voice':'Mute assistant voice');voiceButton.title=muted?'Unmute assistant voice':'Mute assistant voice';}
-    voiceLabel();
-    root.addEventListener('stoma-helper-reset',()=>stopTalking());
-    function stopTalking(){if(utterance&&speechAvailable)window.speechSynthesis.cancel();utterance=null;clearTimeout(talkTimer);root.classList.remove('pa-talking');}
-    function speak(text){
-      stopTalking();root.classList.add('pa-talking');
-      if(!muted&&speechAvailable){
-        utterance=new window.SpeechSynthesisUtterance(text);utterance.lang='en-GB';utterance.rate=.95;
-        utterance.onend=utterance.onerror=()=>{root.classList.remove('pa-talking');utterance=null;};
-        try{window.speechSynthesis.speak(utterance);}catch(e){root.classList.remove('pa-talking');}
-      }
-      talkTimer=setTimeout(()=>root.classList.remove('pa-talking'),5000);
-    }
-    voiceButton.onclick=()=>{muted=!muted;try{localStorage.setItem('stoma-helper-muted',muted?'1':'0');}catch(e){}voiceLabel();if(muted)stopTalking();else if(!bubble.hidden)speak('What would you like help with?');};
-    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);if(!open){stopTalking();root.classList.remove('pa-walking');}}
-    function walkToSide(){
-      const start=root.getBoundingClientRect();
-      const end=place(window.innerWidth-(root.offsetWidth||Math.min(470,window.innerWidth-20))-12,start.top);
-      const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      if(!reduced){root.classList.add('pa-walking');
-        if(root.animate)root.animate([{transform:'translateX('+Math.max(-200,Math.min(200,start.left-end.x))+'px)'},{transform:'translateX(0)'}],{duration:1000,easing:'ease-in-out'});
-      }
-    }
+    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);}
     let dragged=false;
-    character.onclick=()=>{if(dragged){dragged=false;return;}const opening=bubble.hidden;toggle(opening);if(opening){walkToSide();speak('Hello! What would you like help with?');}};
+    character.onclick=()=>{if(dragged){dragged=false;return;}toggle(bubble.hidden);};
     character.style.touchAction='none';
     character.style.cursor='grab';
     function place(x,y){
@@ -896,13 +891,12 @@ function stomaHelperShow(){
     root.querySelector('.sh-search').onsubmit=e=>{
       e.preventDefault();const q=root.querySelector('input').value.trim().toLowerCase();const results=root.querySelector('.sh-results');results.replaceChildren();
       const words=q.split(/\s+/).filter(w=>w.length>1);
-      if(!words.length){results.textContent='Enter a task or topic to search.';speak(results.textContent);return;}
+      if(!words.length){results.textContent='Enter a task or topic to search.';return;}
       const hits=manualAllPages().map(h=>({...h,score:words.reduce((n,w)=>n+((h.pg.title+' '+(h.pg.keywords||'')+' '+h.sec.title).toLowerCase().includes(w)?1:0),0)})).filter(h=>h.score).sort((a,b)=>b.score-a.score).slice(0,4);
       if(!hits.length)results.textContent='No matching topic. Try another word or browse Help.';
-      speak(hits.length?'I found '+hits.length+' help topics. Choose a topic to read the guide.':'No matching topic. Try another word or browse all help topics.');
       hits.forEach(h=>{const b=document.createElement('button');b.type='button';b.textContent=h.pg.title;b.onclick=()=>go(h.sec.id,h.pg.id);results.appendChild(b);});
     };
-    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';if(root.style.display==='none')stopTalking();}
+    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';}
     visibility();const app=document.getElementById('app');if(app)new MutationObserver(visibility).observe(app,{attributes:true,attributeFilter:['style','class','hidden']});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
