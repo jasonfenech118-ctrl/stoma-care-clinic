@@ -1,7 +1,13 @@
 /* Completed IDs are matched before a missing patient registration is offered. */
 window.UpdateRegister=(()=>{
   let timer,request=0,saving=false,flow=null;
-  function open(){document.getElementById('ur-search')?.focus({preventScroll:true});}
+  function open(){
+    clearTimeout(timer);request++;flow=null;
+    const input=document.getElementById('ur-search');
+    if(input){input.value='';input.focus({preventScroll:true});}
+    const host=document.getElementById('ur-results');
+    if(host)host.textContent='Enter at least two characters of an ID number, first name or surname.';
+  }
   function search(){clearTimeout(timer);request++;timer=setTimeout(run,250);}
   async function run(){
     const token=++request,host=document.getElementById('ur-results');
