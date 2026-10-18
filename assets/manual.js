@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Light-blue Profile button and animated paperclip helper with page guidance and search.'};
+const MANUAL_META={updated:'18 October 2026 — Move the paperclip by dragging it, or press × to hide it; the question-mark manual restores its help options.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- the manual content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip at the bottom-right opens help beside your work. Select <b>Help with this page</b> for the relevant manual section, search by task, or open the full manual.</p><p>It blinks, looks around and bounces when opened. Use <b>Minimise</b> to close its speech bubble, or <b>Hide helper</b> to hide it for this browser; open the ❓ manual to bring it back. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Press the small <b>×</b> on the paperclip, or the paperclip itself, to hide it completely. Open the ❓ manual to bring it back with its help options. Select <b>Help with this page</b> for the relevant manual section, search by task, or open the full manual.</p><p>It blinks, looks around and bounces when opened. Press the paperclip or <b>Hide helper</b> to hide it for this browser; use <b>Minimise</b> to close only its speech bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -809,7 +809,7 @@ function manualSearchKey(e){
 /* Local manual companion: reads navigation and help text only, never records. */
 function stomaHelperShow(){
   const helper=document.getElementById('stoma-helper');
-  if(helper)helper.hidden=false;
+  if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=false;helper.classList.add('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','true');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
 (function(){
@@ -817,7 +817,7 @@ function stomaHelperShow(){
     if(document.getElementById('stoma-helper'))return;
     const root=document.createElement('aside');
     root.id='stoma-helper'; root.setAttribute('aria-label','Stoma Rosters help');
-    root.innerHTML=`<section class="sh-bubble" hidden aria-label="Help options">
+    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide paperclip" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
       <div class="sh-heading"><b>Your Stoma Rosters guide</b><button type="button" class="sh-close" aria-label="Minimise help">×</button></div>
       <p>I can help you find the next step.</p>
       <button type="button" class="sh-context">Help with this page</button>
@@ -826,7 +826,7 @@ function stomaHelperShow(){
       <button type="button" class="sh-manual">Browse the full manual</button>
       <button type="button" class="sh-hide">Hide helper</button>
     </section>
-    <button type="button" class="sh-character" aria-label="Open animated help assistant" aria-expanded="false">
+    <button type="button" class="sh-character" aria-label="Hide animated help assistant" aria-expanded="false">
     <svg viewBox="0 0 130 155" aria-hidden="true">
       <defs><linearGradient id="sh-metal" x2="1" y2=".5"><stop stop-color="#667085"/><stop offset=".45" stop-color="#d8dce8"/><stop offset="1" stop-color="#72718e"/></linearGradient></defs>
       <path d="M23 128 Q53 117 112 126 L120 145 Q58 136 14 148Z" fill="#fff2b3"/>
@@ -835,12 +835,45 @@ function stomaHelperShow(){
       <g class="sh-eyes"><ellipse cx="48" cy="57" rx="17" ry="19" fill="white" stroke="#b4b7c1"/><ellipse cx="83" cy="62" rx="17" ry="19" fill="white" stroke="#b4b7c1"/>
       <g class="sh-pupils"><circle cx="50" cy="60" r="8" fill="#252638"/><circle cx="84" cy="65" r="8" fill="#252638"/><circle cx="52" cy="57" r="2.5" fill="white"/><circle cx="86" cy="62" r="2.5" fill="white"/></g></g>
       <path d="M33 34 Q46 23 58 32 M72 36 Q88 30 99 43" fill="none" stroke="#343247" stroke-width="4" stroke-linecap="round"/></g>
-    </svg><span>Help</span></button>`;
+    </svg><span>Hide</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     try{root.hidden=localStorage.getItem('stoma-helper-hidden')==='1';}catch(e){}
     function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);}
-    character.onclick=()=>toggle(bubble.hidden);
+    let dragged=false;
+    character.onclick=()=>{if(dragged){dragged=false;return;}toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
+    character.style.touchAction='none';
+    character.style.cursor='grab';
+    function place(x,y){
+      const width=root.offsetWidth||100,height=root.offsetHeight||140;
+      const left=Math.max(0,Math.min(x,window.innerWidth-width));
+      const top=Math.max(0,Math.min(y,window.innerHeight-height));
+      root.style.left=left+'px';root.style.top=top+'px';root.style.right='auto';root.style.bottom='auto';
+      return {x:left,y:top};
+    }
+    try{const saved=JSON.parse(localStorage.getItem('stoma-helper-position'));if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y))place(saved.x,saved.y);}catch(e){}
+    let drag=null;
+    character.addEventListener('pointerdown',e=>{
+      if(e.button!==0)return;const rect=root.getBoundingClientRect();
+      drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};dragged=false;
+      character.setPointerCapture(e.pointerId);
+    });
+    character.addEventListener('pointermove',e=>{
+      if(!drag||drag.id!==e.pointerId)return;
+      const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+      if(!dragged&&Math.hypot(dx,dy)<6)return;
+      dragged=true;place(drag.left+dx,drag.top+dy);
+    });
+    function endDrag(e){
+      if(!drag||drag.id!==e.pointerId)return;
+      if(dragged){const rect=root.getBoundingClientRect();try{localStorage.setItem('stoma-helper-position',JSON.stringify({x:rect.left,y:rect.top}));}catch(err){}}
+      drag=null;if(character.hasPointerCapture(e.pointerId))character.releasePointerCapture(e.pointerId);
+    }
+    character.addEventListener('pointerup',endDrag);character.addEventListener('pointercancel',endDrag);
+    function constrain(){if(root.hidden)return;const r=root.getBoundingClientRect();if(root.style.left)place(r.left,r.top);}
+    window.addEventListener('resize',constrain);
+    new MutationObserver(constrain).observe(bubble,{attributes:true,attributeFilter:['hidden']});
+    root.querySelector('.sh-dismiss').onclick=()=>character.click();
     root.querySelector('.sh-close').onclick=()=>{toggle(false);character.focus();};
     root.addEventListener('keydown',e=>{if(e.key==='Escape'){toggle(false);character.focus();}});
     root.querySelector('.sh-hide').onclick=()=>{toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
