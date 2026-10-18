@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The nurse now uses a free joint-based animation with continuous waving and stepping, replacing fading photographs. Click her to open Help.'};
+const MANUAL_META={updated:'18 October 2026 — Restored the first nurse version with its original waves and marching poses. Help, voice and drag controls remain available.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'nurse assistant clippy helper assistant animation movements hide help page search',html:`<p>The nurse assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the nurse assistant once. Click or tap it again to minimise the bubble.</p><p>The nurse assistant wears the supplied lilac uniform and repeats friendly waves and marching steps with continuously moving arms and legs and gentle body movement automatically. Clicking her moves her to the side and opens the Help card; clicking again closes it. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the nurse assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the nurse assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'nurse assistant clippy helper assistant animation movements hide help page search',html:`<p>The nurse assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the nurse assistant once. Click or tap it again to minimise the bubble.</p><p>The nurse assistant wears the supplied lilac uniform and repeats friendly waves, marching steps and a gentle sway automatically. Clicking her moves her to the side and opens the Help card; clicking again closes it. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the nurse assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the nurse assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -824,21 +824,7 @@ function stomaHelperShow(){
     </section>
     <button type="button" class="pa-voice" aria-label="Mute assistant voice" title="Mute assistant voice">🔊</button>
     <button type="button" class="sh-character" aria-label="Open nurse assistant help" title="Click for help; drag to move" aria-expanded="false">
-    <span class="nurse-motion" aria-hidden="true"><svg class="nurse-rig" viewBox="45 -25 420 780" xmlns="http://www.w3.org/2000/svg" focusable="false">
-      <defs>
-        <clipPath id="nurse-photo-bounds"><path d="M170 0H340V140L400 175V420L365 724H180V410L140 290L100 270L72 135L88 75H170Z"/></clipPath><g id="nurse-rig-photo" clip-path="url(#nurse-photo-bounds)"><image href="assets/nurse-helper-gestures.webp?v=593" x="-543" y="0" width="1086" height="1448"/></g>
-        <clipPath id="nurse-wave-cut"><path d="M80 80H170L184 215Q184 271 143 274Q113 268 111 224Z"/></clipPath>
-        <clipPath id="nurse-left-leg-cut"><path d="M150 385H288L296 510L283 724H150Z"/></clipPath>
-        <clipPath id="nurse-right-leg-cut"><path d="M285 385H385V724H282L296 510Z"/></clipPath>
-        <mask id="nurse-body-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="543" height="724"><path fill="white" d="M0 0H543V408H0Z"/><path fill="black" d="M80 80H170L184 215Q184 271 143 274Q113 268 111 224Z"/></mask>
-      </defs>
-      <g class="nurse-rig-body">
-        <g class="nurse-rig-leg nurse-rig-leg-right"><g clip-path="url(#nurse-right-leg-cut)"><use href="#nurse-rig-photo"/></g></g>
-        <g class="nurse-rig-leg nurse-rig-leg-left"><g clip-path="url(#nurse-left-leg-cut)"><use href="#nurse-rig-photo"/></g></g>
-        <g mask="url(#nurse-body-cut)"><use href="#nurse-rig-photo"/></g>
-        <g class="nurse-rig-wave"><g clip-path="url(#nurse-wave-cut)"><use href="#nurse-rig-photo"/></g></g>
-      </g>
-    </svg></span><span>Help</span></button>`;
+    <span class="nurse-motion" aria-hidden="true"><span class="nurse-sprite"></span></span><span>Help</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     root.hidden=false; // Available on every fresh app visit; × hides it for this visit.
