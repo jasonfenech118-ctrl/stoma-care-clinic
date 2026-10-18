@@ -20,9 +20,11 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.17-560"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.17-560"/>
-<script src="assets/manual.js?v=2026.10.17-560"></script>
+<script src="assets/daily-attendance.js?v=2026.10.18-561"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-561"/>
+<link rel="stylesheet" href="assets/account.css?v=2026.10.18-561">
+<script src="assets/account.js?v=2026.10.18-561"></script>
+<script src="assets/manual.js?v=2026.10.18-561"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -31,7 +33,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.17-560"></script>
+<script src="assets/documentation-status.js?v=2026.10.18-561"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -2527,6 +2529,10 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 <div id="app">
   <div class="topbar">
     <div class="tb-identity" style="display:flex;align-items:center;gap:0;min-width:0;">
+      <div class="account-top-left">
+        <button id="profile-button" type="button" onclick="switchTab('profile')">👤 Profile</button>
+        <button id="login-audit-button" type="button" hidden onclick="switchTab('login-audit')">🔐 Login Audit</button>
+      </div>
       <button class="mob-ham" onclick="openMobileNav()" aria-label="Open navigation menu"><span></span><span></span><span></span></button>
       <button class="nav-back-btn" id="nav-back" onclick="navBack()" style="display:none;" aria-label="Go back to the previous page" title="Back to the previous page">‹ Back</button>
       <div class="tb-logo" style="margin-left:10px;">MDH <span>Stoma Care</span> Clinic</div>
@@ -2578,6 +2584,31 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
   </div>
 
   <div class="main">
+  <section class="page" id="page-profile">
+    <div class="account-card"><h2>My Profile</h2>
+      <p>Signed in as <strong id="profile-email"></strong></p>
+      <form id="profile-form" onsubmit="ClinicAccount.save(event)">
+        <label for="profile-name">Display name</label><input id="profile-name" maxlength="100" autocomplete="name">
+        <p>Your clinic permissions and clinical signature remain linked to your registered account.</p>
+        <label for="profile-password">New password</label><input id="profile-password" type="password" minlength="8" autocomplete="new-password">
+        <label for="profile-confirm">Confirm new password</label><input id="profile-confirm" type="password" minlength="8" autocomplete="new-password">
+        <p>Leave both password fields blank to keep your current password.</p>
+        <button id="profile-save" type="submit">Save profile</button>
+        <p class="account-status" id="profile-status" role="status"></p>
+      </form>
+    </div>
+  </section>
+  <section class="page" id="page-login-audit">
+    <div class="account-card"><h2>Login Audit</h2>
+      <p>Successful new logins recorded from 18 October 2026. Records are retained for 90 days. Reopening an existing session is not a new login.</p>
+      <button type="button" onclick="ClinicAccount.audit()">Refresh</button>
+      <p class="account-status" id="login-audit-status" role="status"></p>
+      <table><thead><tr><th scope="col">Nurse account</th><th scope="col">Login date and time (Malta)</th></tr></thead><tbody id="login-audit-rows"></tbody></table>
+      <button id="login-audit-prev" type="button" disabled onclick="ClinicAccount.audit(-50)">Previous</button>
+      <button id="login-audit-next" type="button" disabled onclick="ClinicAccount.audit(50)">Next</button>
+    </div>
+  </section>
+
 
     <!-- ROSTER -->
     <div class="page active" id="page-roster">
@@ -3891,7 +3922,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.17-560';
+const APP_BUILD='2026.10.18-561';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -3904,7 +3935,7 @@ async function doLogin(){
   else startApp();
 }
 document.getElementById('li-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-async function doLogout(){stopClinicRealtime();await SB.auth.signOut();IS_ADMIN=false;ENCOUNTER_USER=false;document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
+async function doLogout(){ClinicAccount.clear();stopClinicRealtime();await SB.auth.signOut();IS_ADMIN=false;ENCOUNTER_USER=false;document.getElementById('app').style.display='none';document.getElementById('login-screen').style.display='flex';}
 async function checkSession(){const{data}=await SB.auth.getSession();if(data.session)startApp();}
 
 async function startApp(){
@@ -3915,6 +3946,7 @@ async function startApp(){
   document.getElementById('app').style.display='block';
   // Who is signed in — decides whether the administrator-only tools appear.
   try{const _who=await getCurrentUserForAudit();IS_ADMIN=attIsJason(_who,'');ENCOUNTER_USER=!!String(_who.email||'').trim();}catch(e){IS_ADMIN=false;ENCOUNTER_USER=false;}
+  await ClinicAccount.sync();
   // Honour a direct route before any awaited startup work, so Quick Look is the
   // first app page painted instead of briefly showing the roster.
   const initialTab=quickLookStart?'phone':'roster';
@@ -4019,7 +4051,7 @@ const TAB_GROUPS=[
      {tab:'audit-trail',label:'Audit Trail',icon:'🧾',color:'#475569'}
    ]}
 ];
-const TAB_LABELS={};
+const TAB_LABELS={profile:'My Profile','login-audit':'Login Audit'};
 TAB_GROUPS.forEach(g=>g.pages.forEach(p=>{TAB_LABELS[p.tab]=p.label;}));
 function groupForTab(name){
   return TAB_GROUPS.find(g=>g.pages.some(p=>p.tab===name))||TAB_GROUPS[0];
@@ -4124,6 +4156,9 @@ function recordBack(){
   else goRegistry();
 }
 function switchTab(name,opts){
+  if(name==='login-audit'&&!ClinicAccount.isJason())return;
+  if(name==='profile')ClinicAccount.openProfile();
+  if(name==='login-audit')ClinicAccount.audit();
   // The User Manual opens as a docked side panel (split screen) beside whatever
   // page you are on, so staff can read it and act on the app at the same time —
   // it does not replace the working page.
