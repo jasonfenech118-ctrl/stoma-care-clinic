@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Paperclip artwork updated to match the reference, with yellow lined paper and expressive eyes and eyebrows. Drag and hide controls remain available.'};
+const MANUAL_META={updated:'18 October 2026 — The question-mark button shows only the paperclip; double-click the paperclip to open the user manual. Drag to move it and use × to hide it.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,12 +46,12 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- the manual content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Press the small <b>×</b> on the paperclip, or the paperclip itself, to hide it completely. Open the ❓ manual to bring it back with its help options. Select <b>Help with this page</b> for the relevant manual section, search by task, or open the full manual.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. Press the paperclip or <b>Hide helper</b> to hide it for this browser; use <b>Minimise</b> to close only its speech bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Press <b>❓</b> to show only the paperclip, then <b>double-click the paperclip</b> to open the user manual. Press its small <b>×</b> to hide it; press ❓ to show it again. On a phone, double-tap the paperclip. Once the manual opens, use its search box or browse the sections.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for this browser. Keyboard users can focus it and press Enter or Space to open the manual. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
   {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
-    ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
+    ${manNote('tip','❓','Press the <b>❓ button next to the 🔔 bell</b>, top-right, then double-click the paperclip to open this manual. It opens beside your work — read a step, do it, read the next.')}
     ${manNote('tip','🔔','Top-right you also have the <b>📝 button</b> (add a to-do or dated reminder) and the <b>🔔 bell</b> (every reminder, in tabs with counts). Both carry a number when something needs attention.')}
     ${manWhen('Your first time in the app, or when you cannot find a page.')}
     ${manH2('🧭','The six work areas')}
@@ -75,7 +75,7 @@ const MANUAL_SECTIONS=[
     ${manH2('🪟','It opens beside the app, not over it')}
     <p class="man-lede">The manual opens as a <b>side panel</b>, so the page you are working on stays open next to it. Read a step, do it on the app, read the next — you never have to remember it all.</p>
     ${manSteps([
-      `Open it from the ${manBtn('❓','#0d7377','#fff')} <b>button next to the 🔔 bell</b> at the top-right of every screen. Tap it again to close.`,
+      `Open it from the ${manBtn('❓','#0d7377','#fff')} <b>button next to the 🔔 bell</b> at the top-right of every screen. It shows the paperclip; double-click the paperclip to open the manual.`,
       `Type what you want in the <b>search box</b> at the top — e.g. <i>"add a patient"</i>, <i>"discharge to Gozo"</i>, <i>"flange due"</i> — and pick the page.`,
       `Or tap a <b>coloured section</b> to browse. Each section is the same colour as its area in the app.`,
       `Use the panel’s top buttons: <b>☰</b> all sections · <b>⇔</b> make it wider/narrower · <b>✕</b> close.`
@@ -598,7 +598,7 @@ const MANUAL_SECTIONS=[
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
-  {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>The paperclip’s <b>Help with this page</b> reads the open navigation page and selects its manual topic or work-area section. It uses no patient data; help opens only when you request it.</p>`},
+  {id:'helper-context',title:'Opening paperclip help',keywords:'automatic paperclip helper double click tap manual',html:`<p>The ❓ button shows only the paperclip. Double-click it (double-tap on a phone) to open the manual beside your work; dragging it does not open the manual.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
@@ -762,7 +762,7 @@ function openManualDock(){
   setTimeout(()=>{const i=document.getElementById('man-search');if(i)try{i.focus();}catch(e){}},60);
 }
 function closeManualDock(){document.body.classList.remove('manual-docked');}
-function toggleManualDock(){document.body.classList.contains('manual-docked')?closeManualDock():openManualDock();}
+function toggleManualDock(){closeManualDock();stomaHelperShow();}
 function manualDockHome(){manualState.sec=null;manualState.pg=null;renderManual('manual-dock-body');}
 /* Cycle the panel width so a nurse can give the manual more or less room. */
 function manualDockWiden(){
@@ -809,7 +809,7 @@ function manualSearchKey(e){
 /* Local manual companion: reads navigation and help text only, never records. */
 function stomaHelperShow(){
   const helper=document.getElementById('stoma-helper');
-  if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=false;helper.classList.add('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','true');}
+  if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
 (function(){
@@ -826,7 +826,7 @@ function stomaHelperShow(){
       <button type="button" class="sh-manual">Browse the full manual</button>
       <button type="button" class="sh-hide">Hide helper</button>
     </section>
-    <button type="button" class="sh-character" aria-label="Hide animated help assistant" aria-expanded="false">
+    <button type="button" class="sh-character" aria-label="Double-click to open the user manual" title="Double-click to open the user manual; drag to move" aria-expanded="false">
     <svg viewBox="0 0 200 230" aria-hidden="true">
       <defs>
         <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
@@ -850,13 +850,14 @@ function stomaHelperShow(){
         </g>
         <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
       </g>
-    </svg><span>Hide</span></button>`;
+    </svg><span>Manual</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     try{root.hidden=localStorage.getItem('stoma-helper-hidden')==='1';}catch(e){}
     function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);}
     let dragged=false;
-    character.onclick=()=>{if(dragged){dragged=false;return;}toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
+    character.onclick=e=>{if(dragged){dragged=false;return;}if(e.detail===0)openManualDock();};
+    character.ondblclick=()=>{if(!dragged)openManualDock();};
     character.style.touchAction='none';
     character.style.cursor='grab';
     function place(x,y){
@@ -867,7 +868,7 @@ function stomaHelperShow(){
       return {x:left,y:top};
     }
     try{const saved=JSON.parse(localStorage.getItem('stoma-helper-position'));if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y))place(saved.x,saved.y);}catch(e){}
-    let drag=null;
+    let drag=null,lastTouchTap=0;
     character.addEventListener('pointerdown',e=>{
       if(e.button!==0)return;const rect=root.getBoundingClientRect();
       drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};dragged=false;
@@ -882,13 +883,14 @@ function stomaHelperShow(){
     function endDrag(e){
       if(!drag||drag.id!==e.pointerId)return;
       if(dragged){const rect=root.getBoundingClientRect();try{localStorage.setItem('stoma-helper-position',JSON.stringify({x:rect.left,y:rect.top}));}catch(err){}}
+      if(e.pointerType==='touch'&&!dragged){const now=Date.now();if(lastTouchTap&&now-lastTouchTap<450){openManualDock();lastTouchTap=0;}else lastTouchTap=now;}else lastTouchTap=0;
       drag=null;if(character.hasPointerCapture(e.pointerId))character.releasePointerCapture(e.pointerId);
     }
     character.addEventListener('pointerup',endDrag);character.addEventListener('pointercancel',endDrag);
     function constrain(){if(root.hidden)return;const r=root.getBoundingClientRect();if(root.style.left)place(r.left,r.top);}
     window.addEventListener('resize',constrain);
     new MutationObserver(constrain).observe(bubble,{attributes:true,attributeFilter:['hidden']});
-    root.querySelector('.sh-dismiss').onclick=()=>character.click();
+    root.querySelector('.sh-dismiss').onclick=()=>{toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
     root.querySelector('.sh-close').onclick=()=>{toggle(false);character.focus();};
     root.addEventListener('keydown',e=>{if(e.key==='Escape'){toggle(false);character.focus();}});
     root.querySelector('.sh-hide').onclick=()=>{toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
