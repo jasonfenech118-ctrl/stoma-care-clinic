@@ -49,7 +49,15 @@ window.UpdateRegister=(()=>{
   async function detailsSaved(id){
     flow={id,step:'stoma'};
     await openPatientRecord(id,{panel:'stomas'});
-    const stomas=patientStomaList(clrState.patient);
+    // The shared profile may still contain the previous patient after a load
+    // failure or another in-flight profile request. Never select a stoma from it.
+    const {data:patient,error}=await fetchPatientById(id);
+    if(!flow||String(flow.id)!==String(id)||flow.step!=='stoma')return;
+    if(error||!patient||String(patient.id)!==String(id)){
+      alert('Patient details were saved, but the stoma record could not be loaded. Open this patient again to continue.');
+      return;
+    }
+    const stomas=patientStomaList(patient);
     const stoma=stomas.find(x=>x.present)||stomas[0];
     if(stoma)await openStomaModal(id,stoma.slot);
     else await openStomaOperation(id,'new');
