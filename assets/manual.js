@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The assistant loops a playful moonwalk, heel-toe shuffle, spin, toe stand and splits routine. Its Help card stays steady and opens only when clicked.'};
+const MANUAL_META={updated:'18 October 2026 — The supplied nurse replaces the pouch assistant with alternating waves, marching steps and a gentle sway. The click-open Help card, voice, mute and drag controls remain available.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'pouch assistant clippy helper assistant animation movements hide help page search',html:`<p>The pouch assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the pouch assistant once. Click or tap it again to minimise the bubble.</p><p>The textured beige stoma pouch assistant has eyes, eyebrows, hands and legs, with no circular flange behind it. Click it to see it wave hello and walk to the side holding the Help card; it keeps performing a playful Michael Jackson-inspired routine whenever visible: waving, moonwalking, heel-toe shuffling, a spin, toe stand and splits, even with the card closed. Its mouth moves while speaking; clicking is needed only to open or close the Help card. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the pouch assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the pouch assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'nurse assistant clippy helper assistant animation movements hide help page search',html:`<p>The nurse assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the nurse assistant once. Click or tap it again to minimise the bubble.</p><p>The nurse assistant wears the supplied lilac uniform and repeats friendly waves, marching steps and a gentle sway automatically. Clicking her moves her to the side and opens the Help card; clicking again closes it. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the nurse assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the nurse assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -598,7 +598,7 @@ const MANUAL_SECTIONS=[
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
-  {id:'helper-context',title:'Help for the current page',keywords:'automatic pouch assistant helper context guidance',html:`<p>The pouch assistant stays visible with its card closed until clicked. It walks to the side, holds the card and speaks its greeting where browser speech is available; Find searches Help topics only when you submit text.</p>`},
+  {id:'helper-context',title:'Help for the current page',keywords:'automatic nurse assistant helper context guidance',html:`<p>The nurse assistant stays visible with its card closed until clicked. She moves to the side, opens the card and speaks her greeting where browser speech is available; Find searches Help topics only when you submit text.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
@@ -817,31 +817,14 @@ function stomaHelperShow(){
     if(document.getElementById('stoma-helper'))return;
     const root=document.createElement('aside');
     root.id='stoma-helper'; root.setAttribute('aria-label','Stoma Rosters help');
-    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide pouch assistant" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
+    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide nurse assistant" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
       <form class="sh-search"><label for="sh-query">What would you like help with?</label><div><input id="sh-query" type="search" maxlength="120" placeholder="e.g. update register"><button type="submit">Find</button></div></form>
       <div class="sh-results" aria-live="polite"></div>
       <button type="button" class="sh-manual">Browse all help topics</button>
     </section>
     <button type="button" class="pa-voice" aria-label="Mute assistant voice" title="Mute assistant voice">🔊</button>
-    <button type="button" class="sh-character" aria-label="Open pouch assistant help" title="Click for help; drag to move" aria-expanded="false">
-    <svg viewBox="0 0 1280 1280" aria-hidden="true">
-      <defs>
-        <clipPath id="pq-outline"><path d="M645 15 C410 5 320 135 300 350 L267 620 C255 795 360 850 432 870 L685 880 C885 855 920 780 920 603 L920 280 C908 85 820 5 645 15Z"/><path d="M65 260H250V430L350 440V560H220L150 510L60 460Z"/><path d="M875 470H1100V530H1245V690H980L870 625Z"/><path d="M425 780H730V1000H425Z"/><path d="M435 955H550L570 1245H265V1040Z"/><path d="M635 825H735L895 980V1245H650L620 970Z"/></clipPath><clipPath id="pq-upper"><path clip-rule="evenodd" d="M0 0H1280V850H660V985H440V850H0Z M900 440H1280V710H900Z"/></clipPath><clipPath id="pq-wave"><path d="M900 510L980 500L1030 460H1110V525L1250 530V690L965 700L900 640Z"/></clipPath>
-        <clipPath id="pq-left-leg"><path d="M440 965H530L550 1235H260V1050Z"/></clipPath>
-        <clipPath id="pq-right-leg"><path d="M650 830L720 850L890 1000V1240H660L640 980Z"/></clipPath>
-        <clipPath id="pq-eyes"><ellipse cx="517" cy="312" rx="91" ry="109"/><ellipse cx="707" cy="339" rx="88" ry="108"/></clipPath>
-        <clipPath id="pq-mouth"><ellipse cx="590" cy="477" rx="108" ry="76"/></clipPath>
-      </defs>
-      <g class="pq-performer"><g class="pq-leg pq-leg-left" clip-path="url(#pq-left-leg)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/></g>
-      <g class="pq-leg pq-leg-right" clip-path="url(#pq-right-leg)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/></g>
-      <g class="pq-torso">
-        <g clip-path="url(#pq-upper)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280" clip-path="url(#pq-outline)"/></g>
-        <g class="pq-wave-arm" clip-path="url(#pq-wave)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280" clip-path="url(#pq-outline)"/></g>
-        <g clip-path="url(#pq-eyes)"><image class="pq-eye-look" href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/><image class="pq-blink" href="assets/pouch-helper-rest.webp?v=590" width="1280" height="1280"/></g>
-        <image class="pq-mouth-rest" href="assets/pouch-helper-rest.webp?v=590" width="1280" height="1280" clip-path="url(#pq-mouth)"/>
-      </g>
-      </g>
-    </svg><span>Help</span></button>`;
+    <button type="button" class="sh-character" aria-label="Open nurse assistant help" title="Click for help; drag to move" aria-expanded="false">
+    <span class="nurse-motion" aria-hidden="true"><span class="nurse-sprite"></span></span><span>Help</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     root.hidden=false; // Available on every fresh app visit; × hides it for this visit.
