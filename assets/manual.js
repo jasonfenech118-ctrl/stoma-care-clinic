@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Move the paperclip by dragging it, or press × to hide it; the question-mark manual restores its help options.'};
+const MANUAL_META={updated:'18 October 2026 — Paperclip artwork updated to match the reference, with yellow lined paper and expressive eyes and eyebrows. Drag and hide controls remain available.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- the manual content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Press the small <b>×</b> on the paperclip, or the paperclip itself, to hide it completely. Open the ❓ manual to bring it back with its help options. Select <b>Help with this page</b> for the relevant manual section, search by task, or open the full manual.</p><p>It blinks, looks around and bounces when opened. Press the paperclip or <b>Hide helper</b> to hide it for this browser; use <b>Minimise</b> to close only its speech bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Press the small <b>×</b> on the paperclip, or the paperclip itself, to hide it completely. Open the ❓ manual to bring it back with its help options. Select <b>Help with this page</b> for the relevant manual section, search by task, or open the full manual.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. Press the paperclip or <b>Hide helper</b> to hide it for this browser; use <b>Minimise</b> to close only its speech bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -827,14 +827,29 @@ function stomaHelperShow(){
       <button type="button" class="sh-hide">Hide helper</button>
     </section>
     <button type="button" class="sh-character" aria-label="Hide animated help assistant" aria-expanded="false">
-    <svg viewBox="0 0 130 155" aria-hidden="true">
-      <defs><linearGradient id="sh-metal" x2="1" y2=".5"><stop stop-color="#667085"/><stop offset=".45" stop-color="#d8dce8"/><stop offset="1" stop-color="#72718e"/></linearGradient></defs>
-      <path d="M23 128 Q53 117 112 126 L120 145 Q58 136 14 148Z" fill="#fff2b3"/>
-      <g class="sh-body"><path d="M88 64 L76 112 C69 147 27 138 33 107 L47 40 C55 3 97 12 89 46 L74 105 C70 122 49 118 53 100 L65 55" fill="none" stroke="#52566e" stroke-width="9" stroke-linecap="round"/>
-      <path d="M88 64 L76 112 C69 147 27 138 33 107 L47 40 C55 3 97 12 89 46 L74 105 C70 122 49 118 53 100 L65 55" fill="none" stroke="url(#sh-metal)" stroke-width="5" stroke-linecap="round"/>
-      <g class="sh-eyes"><ellipse cx="48" cy="57" rx="17" ry="19" fill="white" stroke="#b4b7c1"/><ellipse cx="83" cy="62" rx="17" ry="19" fill="white" stroke="#b4b7c1"/>
-      <g class="sh-pupils"><circle cx="50" cy="60" r="8" fill="#252638"/><circle cx="84" cy="65" r="8" fill="#252638"/><circle cx="52" cy="57" r="2.5" fill="white"/><circle cx="86" cy="62" r="2.5" fill="white"/></g></g>
-      <path d="M33 34 Q46 23 58 32 M72 36 Q88 30 99 43" fill="none" stroke="#343247" stroke-width="4" stroke-linecap="round"/></g>
+    <svg viewBox="0 0 200 230" aria-hidden="true">
+      <defs>
+        <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
+        <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
+        <radialGradient id="sh-eye" cx=".35" cy=".25" r=".8"><stop offset=".35" stop-color="#fff"/><stop offset=".7" stop-color="#f5f3fc"/><stop offset="1" stop-color="#a8a1bc"/></radialGradient>
+        <radialGradient id="sh-pupil" cx=".3" cy=".22"><stop stop-color="#555"/><stop offset=".5" stop-color="#242426"/><stop offset="1" stop-color="#08090b"/></radialGradient>
+        <clipPath id="sh-paper-clip"><path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z"/></clipPath>
+      </defs>
+      <path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z" fill="url(#sh-paper)"/>
+      <g clip-path="url(#sh-paper-clip)" fill="none" stroke="#929f71" stroke-width="1" opacity=".75">
+        ${Array.from({length:23},(_,i)=>`<path d="M8 ${57+i*7} Q90 ${65+i*7} 193 ${57+i*7}"/>`).join('')}
+        <path d="M128 51 Q74 108 75 143 Q73 175 41 203" stroke="#cc9c77" stroke-width="1.3"/>
+      </g>
+      <g class="sh-body">
+        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="#5e587b" stroke-width="9" stroke-linecap="round"/>
+        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="url(#sh-metal)" stroke-width="6.5" stroke-linecap="round"/>
+        <g class="sh-eyes">
+          <ellipse cx="70" cy="66" rx="22" ry="18" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(-10 70 66)"/>
+          <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
+          <g class="sh-pupils"><ellipse cx="70" cy="67" rx="11.5" ry="9.5" fill="url(#sh-pupil)"/><ellipse cx="116" cy="79" rx="11.5" ry="10" fill="url(#sh-pupil)"/></g>
+        </g>
+        <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
+      </g>
     </svg><span>Hide</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
