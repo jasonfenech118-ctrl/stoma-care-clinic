@@ -396,6 +396,7 @@ test('patient details shortcut opens the present stoma and starts a new one when
 });
 test('saving patient details updates demographics without writing stoma history',async()=>{
  const c=context(),p={...patient(),first_name:'Alex',surname:'Example',id_card:'0000000M',sex:'Male',locality:'Mosta',date_of_birth:'1980-01-01',consultant:'Firm A'};
+ c.currentTabName=()=> 'patients';
  c.document.body.insertAdjacentHTML('beforeend','<div id="pcd-error"></div><input id="pcd-first" value="Alexander"><input id="pcd-surname" value="Example" data-locked="1"><input id="pcd-idcard" value="0000000M" data-locked="1">');
  c.fetchPatientById=async()=>({data:p,error:null});c.normaliseIdCard=s=>s;c.findRegistryPatientsByIdCard=async()=>({matches:[],error:null});c.refreshReminders=()=>{};c.closeModal=()=>{};
  let written;c.updatePatientTolerant=async(id,patch)=>{written=patch;return{error:null,dropped:[]};};
