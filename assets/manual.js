@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The paperclip text window opens only when clicked, with a question, Find and Browse all help topics. Automatic prompts were removed.'};
+const MANUAL_META={updated:'18 October 2026 — A stoma pouch character replaces the paperclip, with moving eyes, hands, walking legs and a talking mouth. It holds the click-open Help card and offers browser speech with mute.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'pouch assistant clippy helper assistant animation movements hide help page search',html:`<p>The pouch assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the pouch assistant once. Click or tap it again to minimise the bubble.</p><p>The beige stoma pouch assistant has eyes, eyebrows, hands and legs. Click it to see it walk to the side holding the Help card; its mouth moves as it talks. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the pouch assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the pouch assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -598,7 +598,7 @@ const MANUAL_SECTIONS=[
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
-  {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>Click the paperclip once to open its help bubble. <b>Help with this page</b> selects Help topic for your current page or work area; searching offers matching manual topics.</p>`},
+  {id:'helper-context',title:'Help for the current page',keywords:'automatic pouch assistant helper context guidance',html:`<p>The pouch assistant stays visible with its card closed until clicked. It walks to the side, holds the card and speaks its greeting where browser speech is available; Find searches Help topics only when you submit text.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
@@ -762,7 +762,7 @@ function openManualDock(){
   setTimeout(()=>{const i=document.getElementById('man-search');if(i)try{i.focus();}catch(e){}},60);
 }
 function closeManualDock(){document.body.classList.remove('manual-docked');}
-function toggleManualDock(){document.body.classList.contains('manual-docked')?closeManualDock():openManualDock();}
+function toggleManualDock(){const helper=document.getElementById('stoma-helper');if(document.body.classList.contains('manual-docked')&&!helper?.hidden)closeManualDock();else openManualDock();}
 function manualDockHome(){manualState.sec=null;manualState.pg=null;renderManual('manual-dock-body');}
 /* Cycle the panel width so a nurse can give Help more or less room. */
 function manualDockWiden(){
@@ -809,7 +809,7 @@ function manualSearchKey(e){
 /* Local manual companion: reads navigation and help text only, never records. */
 function stomaHelperShow(){
   const helper=document.getElementById('stoma-helper');
-  if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
+  if(helper){helper.dispatchEvent(new Event('stoma-helper-reset'));helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
 (function(){
@@ -817,42 +817,80 @@ function stomaHelperShow(){
     if(document.getElementById('stoma-helper'))return;
     const root=document.createElement('aside');
     root.id='stoma-helper'; root.setAttribute('aria-label','Stoma Rosters help');
-    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide paperclip" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
+    root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide pouch assistant" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
       <form class="sh-search"><label for="sh-query">What would you like help with?</label><div><input id="sh-query" type="search" maxlength="120" placeholder="e.g. update register"><button type="submit">Find</button></div></form>
       <div class="sh-results" aria-live="polite"></div>
       <button type="button" class="sh-manual">Browse all help topics</button>
     </section>
-    <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
-    <svg viewBox="0 0 200 230" aria-hidden="true">
+    <button type="button" class="pa-voice" aria-label="Mute assistant voice" title="Mute assistant voice">🔊</button>
+    <button type="button" class="sh-character" aria-label="Open pouch assistant help" title="Click for help; drag to move" aria-expanded="false">
+    <svg viewBox="0 0 220 290" aria-hidden="true">
       <defs>
-        <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
-        <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
-        <radialGradient id="sh-eye" cx=".35" cy=".25" r=".8"><stop offset=".35" stop-color="#fff"/><stop offset=".7" stop-color="#f5f3fc"/><stop offset="1" stop-color="#a8a1bc"/></radialGradient>
-        <radialGradient id="sh-pupil" cx=".3" cy=".22"><stop stop-color="#555"/><stop offset=".5" stop-color="#242426"/><stop offset="1" stop-color="#08090b"/></radialGradient>
-        <clipPath id="sh-paper-clip"><path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z"/></clipPath>
+        <linearGradient id="pa-fabric" x1="0" y1="0" x2="1" y2=".8"><stop stop-color="#fff0d6"/><stop offset=".45" stop-color="#e7c59a"/><stop offset="1" stop-color="#b98c61"/></linearGradient>
+        <linearGradient id="pa-edge"><stop stop-color="#ba926b"/><stop offset=".45" stop-color="#f5dcb7"/><stop offset="1" stop-color="#c49b72"/></linearGradient>
+        <radialGradient id="pa-flange"><stop stop-color="#c99858"/><stop offset=".5" stop-color="#eed39a"/><stop offset="1" stop-color="#f4dfb4"/></radialGradient>
+        <radialGradient id="pa-eye" cx=".35" cy=".25"><stop offset=".55" stop-color="white"/><stop offset="1" stop-color="#d2cbd8"/></radialGradient>
+        <linearGradient id="pa-shoe" x2="0" y2="1"><stop stop-color="#b49bd4"/><stop offset="1" stop-color="#675082"/></linearGradient>
+        <filter id="pa-texture"><feTurbulence type="fractalNoise" baseFrequency=".65" numOctaves="3" seed="4" result="noise"/><feComposite in="noise" in2="SourceGraphic" operator="in" result="grain"/><feBlend in="SourceGraphic" in2="grain" mode="soft-light"/></filter>
       </defs>
-      <path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z" fill="url(#sh-paper)"/>
-      <g clip-path="url(#sh-paper-clip)" fill="none" stroke="#929f71" stroke-width="1" opacity=".75">
-        ${Array.from({length:23},(_,i)=>`<path d="M8 ${57+i*7} Q90 ${65+i*7} 193 ${57+i*7}"/>`).join('')}
-        <path d="M128 51 Q74 108 75 143 Q73 175 41 203" stroke="#cc9c77" stroke-width="1.3"/>
-      </g>
-      <g class="sh-body">
-        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="#5e587b" stroke-width="9" stroke-linecap="round"/>
-        <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="url(#sh-metal)" stroke-width="6.5" stroke-linecap="round"/>
-        <g class="sh-eyes">
-          <ellipse cx="70" cy="66" rx="22" ry="18" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(-10 70 66)"/>
-          <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
-          <g class="sh-pupils"><ellipse cx="70" cy="67" rx="11.5" ry="9.5" fill="url(#sh-pupil)"/><ellipse cx="116" cy="79" rx="11.5" ry="10" fill="url(#sh-pupil)"/></g>
+      <ellipse cx="115" cy="279" rx="78" ry="7" fill="#686078" opacity=".12"/>
+      <g class="pa-leg pa-leg-left"><path d="M85 212 Q81 235 69 251" stroke="#cba77f" stroke-width="13" fill="none" stroke-linecap="round"/><path d="M72 244 Q90 248 85 263 L77 274 Q44 279 31 266 Q27 250 48 248Z" fill="url(#pa-shoe)" stroke="#756181"/><path d="M31 263 Q53 274 82 266 L77 275 Q44 281 31 269Z" fill="#e9e7ed"/><path d="M57 248 L71 254 M52 253 L65 259" stroke="white" stroke-width="3" stroke-linecap="round"/></g>
+      <g class="pa-leg pa-leg-right"><path d="M132 211 Q137 234 151 249" stroke="#cba77f" stroke-width="13" fill="none" stroke-linecap="round"/><path d="M151 243 Q167 241 176 258 Q177 268 158 276 Q137 277 134 263 L137 248Z" fill="url(#pa-shoe)" stroke="#756181"/><path d="M135 262 Q155 273 175 258 L175 266 Q159 282 140 273Z" fill="#e9e7ed"/><path d="M146 247 L159 254 M143 253 L155 260" stroke="white" stroke-width="3" stroke-linecap="round"/></g>
+      <g class="pa-torso">
+        <ellipse cx="124" cy="61" rx="67" ry="57" fill="url(#pa-flange)" stroke="#ddc18b"/>
+        <ellipse cx="124" cy="61" rx="57" ry="48" fill="none" stroke="#ead09f" stroke-width="4"/>
+        <ellipse cx="124" cy="61" rx="43" ry="36" fill="none" stroke="#cea565" stroke-width="2"/>
+        <path d="M154 130 Q178 154 193 137" fill="none" stroke="#cdaa82" stroke-width="12" stroke-linecap="round"/>
+        <g class="pa-wave"><path d="M187 130 Q180 119 186 116 Q193 114 197 127 Q201 114 205 117 Q208 118 203 130 Q217 123 218 128 Q220 133 205 139 Q211 145 206 148 Q194 152 186 140Z" fill="#fff" stroke="#d6d0d8" stroke-width="1.2"/></g>
+        <path d="M65 127 Q39 142 21 113" fill="none" stroke="#cdaa82" stroke-width="12" stroke-linecap="round"/>
+        <path d="M100 38 C55 35 42 66 44 115 L49 174 Q50 216 104 222 Q160 221 167 178 L171 104 Q177 45 132 38Z" fill="url(#pa-edge)" stroke="#b98d64" stroke-width="1.5"/>
+        <path d="M100 44 C61 41 48 70 50 114 L55 171 Q57 209 105 215 Q152 215 160 175 L165 104 Q169 50 131 44Z" fill="url(#pa-fabric)"/>
+        <path d="M100 44 C61 41 48 70 50 114 L55 171 Q57 209 105 215 Q152 215 160 175 L165 104 Q169 50 131 44Z" fill="#dfbd96" opacity=".09" filter="url(#pa-texture)"/>
+        <path d="M99 43 C59 41 48 69 49 114 L54 173 Q56 210 105 216 Q153 216 162 175 L166 104 Q170 48 132 43" fill="none" stroke="#fff1da" stroke-width="1.4" stroke-dasharray="2 3"/>
+        <path d="M84 205 L125 207 L125 237 Q105 245 81 235Z" fill="url(#pa-fabric)" stroke="#ba926b"/>
+        <path d="M80 211 L129 214 L127 228 L80 225Z" fill="#e8cba5" stroke="#c49c72"/><path d="M88 216 L120 218" stroke="#c8a27c" stroke-width="3"/>
+        <g class="sh-eyes"><ellipse cx="84" cy="99" rx="20" ry="26" fill="url(#pa-eye)" stroke="#795b46" stroke-width="1"/><ellipse cx="132" cy="103" rx="20" ry="26" fill="url(#pa-eye)" stroke="#795b46" stroke-width="1"/>
+          <g class="sh-pupils"><ellipse cx="87" cy="103" rx="10" ry="16" fill="#30201c"/><ellipse cx="133" cy="107" rx="10" ry="16" fill="#30201c"/><ellipse cx="90" cy="96" rx="3.5" ry="5" fill="white"/><ellipse cx="136" cy="100" rx="3.5" ry="5" fill="white"/></g>
         </g>
-        <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
+        <g class="sh-brows" fill="none" stroke="#65412e" stroke-width="7" stroke-linecap="round"><path d="M69 67 Q82 55 97 63"/><path d="M120 67 Q136 61 147 76"/></g>
+        <ellipse cx="66" cy="138" rx="12" ry="6" fill="#d99b83" opacity=".3"/><ellipse cx="149" cy="141" rx="12" ry="6" fill="#d99b83" opacity=".3"/>
+        <g class="pa-mouth"><path d="M84 140 Q110 154 138 140 Q131 174 108 172 Q91 170 84 140Z" fill="#52291f"/><path d="M91 145 Q112 153 132 145 L127 151 Q110 158 96 151Z" fill="#fff9ed"/><ellipse cx="114" cy="165" rx="12" ry="5" fill="#d77c7b"/></g>
+        <g class="pa-holding-hand"><path d="M8 104 Q4 92 9 88 Q15 86 17 99 Q13 83 20 83 Q26 83 26 99 Q25 85 31 87 Q37 90 33 104 Q39 99 41 105 Q40 115 27 119 Q12 120 8 110Z" fill="#fff" stroke="#d6d0d8" stroke-width="1.2"/></g>
       </g>
     </svg><span>Help</span></button>`;
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     root.hidden=false; // Available on every fresh app visit; × hides it for this visit.
-    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);}
+    let muted=false,utterance=null,walkTimer=null,talkTimer=null;
+    try{muted=localStorage.getItem('stoma-helper-muted')==='1';}catch(e){}
+    const voiceButton=root.querySelector('.pa-voice');
+    const speechAvailable='speechSynthesis' in window&&typeof window.SpeechSynthesisUtterance==='function';
+    voiceButton.hidden=!speechAvailable;
+    function voiceLabel(){voiceButton.textContent=muted?'🔇':'🔊';voiceButton.setAttribute('aria-label',muted?'Unmute assistant voice':'Mute assistant voice');voiceButton.title=muted?'Unmute assistant voice':'Mute assistant voice';}
+    voiceLabel();
+    root.addEventListener('stoma-helper-reset',()=>stopTalking());
+    function stopTalking(){if(utterance&&speechAvailable)window.speechSynthesis.cancel();utterance=null;clearTimeout(talkTimer);root.classList.remove('pa-talking');}
+    function speak(text){
+      stopTalking();root.classList.add('pa-talking');
+      if(!muted&&speechAvailable){
+        utterance=new window.SpeechSynthesisUtterance(text);utterance.lang='en-GB';utterance.rate=.95;
+        utterance.onend=utterance.onerror=()=>{root.classList.remove('pa-talking');utterance=null;};
+        try{window.speechSynthesis.speak(utterance);}catch(e){root.classList.remove('pa-talking');}
+      }
+      talkTimer=setTimeout(()=>root.classList.remove('pa-talking'),5000);
+    }
+    voiceButton.onclick=()=>{muted=!muted;try{localStorage.setItem('stoma-helper-muted',muted?'1':'0');}catch(e){}voiceLabel();if(muted)stopTalking();else if(!bubble.hidden)speak('What would you like help with?');};
+    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);if(!open)stopTalking();}
+    function walkToSide(){
+      const start=root.getBoundingClientRect();
+      const end=place(window.innerWidth-(root.offsetWidth||Math.min(470,window.innerWidth-20))-12,start.top);
+      const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if(!reduced){root.classList.add('pa-walking');clearTimeout(walkTimer);walkTimer=setTimeout(()=>root.classList.remove('pa-walking'),1100);
+        if(root.animate)root.animate([{transform:'translateX('+Math.max(-200,Math.min(200,start.left-end.x))+'px)'},{transform:'translateX(0)'}],{duration:1000,easing:'ease-in-out'});
+      }
+    }
     let dragged=false;
-    character.onclick=()=>{if(dragged){dragged=false;return;}toggle(bubble.hidden);};
+    character.onclick=()=>{if(dragged){dragged=false;return;}const opening=bubble.hidden;toggle(opening);if(opening){walkToSide();speak('What would you like help with?');}};
     character.style.touchAction='none';
     character.style.cursor='grab';
     function place(x,y){
@@ -891,12 +929,13 @@ function stomaHelperShow(){
     root.querySelector('.sh-search').onsubmit=e=>{
       e.preventDefault();const q=root.querySelector('input').value.trim().toLowerCase();const results=root.querySelector('.sh-results');results.replaceChildren();
       const words=q.split(/\s+/).filter(w=>w.length>1);
-      if(!words.length){results.textContent='Enter a task or topic to search.';return;}
+      if(!words.length){results.textContent='Enter a task or topic to search.';speak(results.textContent);return;}
       const hits=manualAllPages().map(h=>({...h,score:words.reduce((n,w)=>n+((h.pg.title+' '+(h.pg.keywords||'')+' '+h.sec.title).toLowerCase().includes(w)?1:0),0)})).filter(h=>h.score).sort((a,b)=>b.score-a.score).slice(0,4);
       if(!hits.length)results.textContent='No matching topic. Try another word or browse Help.';
+      speak(hits.length?'I found '+hits.length+' help topics. Choose a topic to read the guide.':'No matching topic. Try another word or browse all help topics.');
       hits.forEach(h=>{const b=document.createElement('button');b.type='button';b.textContent=h.pg.title;b.onclick=()=>go(h.sec.id,h.pg.id);results.appendChild(b);});
     };
-    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';}
+    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';if(root.style.display==='none')stopTalking();}
     visibility();const app=document.getElementById('app');if(app)new MutationObserver(visibility).observe(app,{attributes:true,attributeFilter:['style','class','hidden']});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
