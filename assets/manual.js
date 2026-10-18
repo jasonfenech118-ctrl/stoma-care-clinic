@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The paperclip appears on screen automatically with page-specific Yes/Not now prompts and step-by-step Help. Dragging, task search and × to hide remain available.'};
+const MANUAL_META={updated:'18 October 2026 — The paperclip text window opens only when clicked, with a question, Find and Browse all help topics. Automatic prompts were removed.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen when the app opens. Its speech bubble offers help for each work page once per visit; choose <b>Yes</b> for steps from Help, or <b>Not now</b> to minimise it. Use <b>Previous</b> and <b>Next</b> through the steps, <b>Read full topic</b> for all details, or search for another task. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -818,14 +818,9 @@ function stomaHelperShow(){
     const root=document.createElement('aside');
     root.id='stoma-helper'; root.setAttribute('aria-label','Stoma Rosters help');
     root.innerHTML=`<button type="button" class="sh-dismiss" aria-label="Hide paperclip" style="position:absolute;right:0;bottom:112px;border:1px solid #a8cce5;border-radius:50%;width:28px;height:28px;background:white;color:#344968;cursor:pointer;font-size:20px;z-index:1">×</button><section class="sh-bubble" hidden aria-label="Help options">
-      <div class="sh-heading"><b>Your Stoma Rosters guide</b><button type="button" class="sh-close" aria-label="Minimise help">×</button></div>
-      <div class="sh-guide" aria-live="polite"></div>
-      <p class="sh-intro">I can help you find the next step.</p>
-      <button type="button" class="sh-context">Help with this page</button>
       <form class="sh-search"><label for="sh-query">What would you like help with?</label><div><input id="sh-query" type="search" maxlength="120" placeholder="e.g. update register"><button type="submit">Find</button></div></form>
       <div class="sh-results" aria-live="polite"></div>
       <button type="button" class="sh-manual">Browse all help topics</button>
-      <button type="button" class="sh-hide">Hide helper</button>
     </section>
     <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
     <svg viewBox="0 0 200 230" aria-hidden="true">
@@ -890,58 +885,9 @@ function stomaHelperShow(){
     window.addEventListener('resize',constrain);
     new MutationObserver(constrain).observe(bubble,{attributes:true,attributeFilter:['hidden']});
     root.querySelector('.sh-dismiss').onclick=()=>{toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
-    root.querySelector('.sh-close').onclick=()=>{toggle(false);character.focus();};
     root.addEventListener('keydown',e=>{if(e.key==='Escape'){toggle(false);character.focus();}});
-    root.querySelector('.sh-hide').onclick=()=>{toggle(false);root.hidden=true;try{localStorage.setItem('stoma-helper-hidden','1');}catch(e){}};
-    let guideTarget=null,guideSteps=[],guideIndex=0;
-    const guide=root.querySelector('.sh-guide');
-    function currentTopic(){
-      const tab=typeof currentTabName==='function'?currentTabName():'roster';
-      const exact={'update-register':['registry','update-register'],'add-patient':['registry','add'],'patient-record':['registry','record'],profile:['start','profile'],'daily-attendance':['calendar','attendance'],'attendance-records':['calendar','attendance'],cod:['calendar','roster'],'staff-audit':['appointments','planning'],'ot-followup':['appointments','ot-followup']};
-      if(exact[tab])return exact[tab];
-      const group=typeof groupForTab==='function'?groupForTab(tab).key:'start';
-      const sec=MANUAL_SECTIONS.find(s=>s.id===(group==='patients'?'registry':group));
-      return sec?[sec.id,sec.pages[0].id]:['start','basics'];
-    }
-    function button(text,action){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=action;return b;}
-    function topic(sec,pg){return MANUAL_SECTIONS.find(s=>s.id===sec)?.pages.find(p=>p.id===pg);}
-    function prompt(){
-      guideTarget=currentTopic();const page=topic(...guideTarget);guide.replaceChildren();
-      const text=document.createElement('p');text.textContent='Would you like help with '+(page?.title||'this page')+'?';guide.appendChild(text);
-      const actions=document.createElement('div');actions.className='sh-guide-actions';
-      actions.append(button('Yes',()=>go(...guideTarget)),button('Not now',()=>toggle(false)));guide.appendChild(actions);
-      root.querySelector('.sh-intro').hidden=true;toggle(true);
-    }
-    function renderStep(){
-      guide.replaceChildren();const title=document.createElement('b');title.textContent=topic(...guideTarget)?.title||'Help';guide.appendChild(title);
-      const count=document.createElement('p');count.className='sh-step-count';count.textContent='Step '+(guideIndex+1)+' of '+guideSteps.length;guide.appendChild(count);
-      const text=document.createElement('p');text.textContent=guideSteps[guideIndex];guide.appendChild(text);
-      const actions=document.createElement('div');actions.className='sh-guide-actions';
-      if(guideIndex>0)actions.appendChild(button('Previous',()=>{guideIndex--;renderStep();}));
-      actions.appendChild(button(guideIndex<guideSteps.length-1?'Next':'Done',()=>{if(guideIndex<guideSteps.length-1){guideIndex++;renderStep();}else toggle(false);}));
-      actions.appendChild(button('Read full topic',()=>{const target=guideTarget.slice();openManualDock();manualGo(...target);toggle(false);}));guide.appendChild(actions);
-      toggle(true);constrain();
-    }
-    function go(sec,pg){
-      const page=topic(sec,pg);if(!page)return;guideTarget=[sec,pg];guideIndex=0;
-      const doc=document.createElement('div');doc.innerHTML=page.html;
-      let entries=[...doc.querySelectorAll('.man-steps > li')];
-      if(!entries.length)entries=[...doc.querySelectorAll('p,li')];
-      guideSteps=entries.map(e=>e.textContent.trim()).filter(Boolean);
-      if(!guideSteps.length)guideSteps=[doc.textContent.trim()||'Open the full topic to browse this help section.'];
-      root.querySelector('.sh-intro').hidden=true;renderStep();
-    }
+    function go(sec,pg){openManualDock();manualGo(sec,pg);toggle(false);}
     root.querySelector('.sh-manual').onclick=()=>{openManualDock();manualDockHome();toggle(false);};
-    root.querySelector('.sh-context').onclick=()=>go(...currentTopic());
-    const offered=new Set();
-    function offer(){
-      const app=document.getElementById('app');
-      if(root.hidden||!app||getComputedStyle(app).display==='none'||document.body.classList.contains('manual-docked'))return;
-      const key=typeof currentTabName==='function'?currentTabName():'roster';
-      if(offered.has(key))return;offered.add(key);prompt();
-    }
-    // Watch navigation classes, not form values or patient records.
-    document.querySelectorAll('.page').forEach(page=>new MutationObserver(offer).observe(page,{attributes:true,attributeFilter:['class']}));
     root.querySelector('.sh-search').onsubmit=e=>{
       e.preventDefault();const q=root.querySelector('input').value.trim().toLowerCase();const results=root.querySelector('.sh-results');results.replaceChildren();
       const words=q.split(/\s+/).filter(w=>w.length>1);
@@ -950,7 +896,7 @@ function stomaHelperShow(){
       if(!hits.length)results.textContent='No matching topic. Try another word or browse Help.';
       hits.forEach(h=>{const b=document.createElement('button');b.type='button';b.textContent=h.pg.title;b.onclick=()=>go(h.sec.id,h.pg.id);results.appendChild(b);});
     };
-    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';offer();}
+    function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';}
     visibility();const app=document.getElementById('app');if(app)new MutationObserver(visibility).observe(app,{attributes:true,attributeFilter:['style','class','hidden']});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
