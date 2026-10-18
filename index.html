@@ -20,13 +20,13 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.18-573"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-573"/>
-<link rel="stylesheet" href="assets/account.css?v=2026.10.18-573">
-<script src="assets/app-access.js?v=2026.10.18-573"></script>
-<script src="assets/update-register.js?v=2026.10.18-573"></script>
-<script src="assets/account.js?v=2026.10.18-573"></script>
-<script src="assets/manual.js?v=2026.10.18-573"></script>
+<script src="assets/daily-attendance.js?v=2026.10.18-574"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-574"/>
+<link rel="stylesheet" href="assets/account.css?v=2026.10.18-574">
+<script src="assets/app-access.js?v=2026.10.18-574"></script>
+<script src="assets/update-register.js?v=2026.10.18-574"></script>
+<script src="assets/account.js?v=2026.10.18-574"></script>
+<script src="assets/manual.js?v=2026.10.18-574"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -35,7 +35,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.18-573"></script>
+<script src="assets/documentation-status.js?v=2026.10.18-574"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -3935,7 +3935,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.18-573';
+const APP_BUILD='2026.10.18-574';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -16201,13 +16201,14 @@ function pcdCancelOrReturn(){
 }
 async function openPatientDatesModal(patientId,returnCtx){
   patientEditReturn=returnCtx||null;
+  const fromUpdateRegister=!!returnCtx?.updateRegister;
   const fromVisit=!!(returnCtx&&returnCtx.apptId);   // opened from a visit — the buttons name the return
   const{data:pat,error}=await fetchPatientById(patientId);
   if(error||!pat){alert('Could not open this patient. If this is the first use, run sql/add-registry-columns.sql in Supabase.');return;}
   if(isFistulaPatient(pat)){patientEditReturn=null;return openFistulaPatientModal(patientId);}
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const needsStoma=!patientStomaList(pat).some(x=>String(x.type||'').trim());
-  const stomaFirst=needsStoma&&!fromVisit;
+  const stomaFirst=needsStoma&&!fromVisit&&!fromUpdateRegister;
   const mb=document.getElementById('mb');
   mb.className='mb mb-wide'+sexModalClass(pat);
   const patientIdentity=typeof patientNameAvatarHTML==='function'
@@ -16219,8 +16220,8 @@ async function openPatientDatesModal(patientId,returnCtx){
     <div id="pcd-error"></div>
     <div class="mact" style="justify-content:flex-end;gap:8px;">
         <button class="btn-cancel" onclick="pcdCancelOrReturn()">${fromVisit?'Back to appointment':'Cancel'}</button>
-        <button type="button" class="${stomaFirst?'btn-save':'btn-stoma'}" id="pcd-stomabtn" onclick="openCurrentStomaFromPatientDetails('${patientId}')">Input / edit stoma details</button>
-        <button class="btn-save" id="pcd-savebtn" ${stomaFirst?'hidden':''} onclick="savePatientDates('${patientId}')">${fromVisit?'Save & return to appointment':'Save patient details'}</button>
+        <button type="button" class="${stomaFirst?'btn-save':'btn-stoma'}" id="pcd-stomabtn" ${fromUpdateRegister?'hidden':''} onclick="openCurrentStomaFromPatientDetails('${patientId}')">Input / edit stoma details</button>
+        <button class="btn-save" id="pcd-savebtn" ${stomaFirst?'hidden':''} onclick="savePatientDates('${patientId}')">${fromVisit?'Save & return to appointment':fromUpdateRegister?'Save & continue to stoma':'Save patient details'}</button>
       </div>
     <div style="text-align:center;margin-top:14px;">
       <button type="button" onclick="confirmArchivePatient('${patientId}','${htmlSafe(nm).replace(/'/g,"\\'")}')"
@@ -16420,7 +16421,10 @@ async function savePatientDates(patientId){
   if(dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
   const ret=patientEditReturn; patientEditReturn=null;
   const missingOutcome=missingSavedOutcomeDate(res.patient);
-  if(missingOutcome){
+  if(ret?.updateRegister){
+    closeModal();
+    await UpdateRegister.detailsSaved(patientId);
+  }else if(missingOutcome){
     closeModal();
     await promptSavedOutcomeDate(patientId,missingOutcome);
   }else if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
@@ -17233,6 +17237,7 @@ async function afterStomaSaved(patientId,options={}){
     const key=!error&&missingSavedOutcomeDate(patient);
     if(key)await promptSavedOutcomeDate(patientId,key);
   }
+  if(typeof UpdateRegister!=='undefined')UpdateRegister.stomaSaved(patientId);
 }
 /* The clickable list of every stoma, for the patient record. */
 /* The rod line shown on the stoma its rod is tied to (rod_stoma_uid). Shows the
@@ -20331,6 +20336,7 @@ async function openPatientRecord(patientId,opts){
   </div></div>`;
   renderClinicalPanel();
   switchPatientPanel(selectedPanel);
+  if(typeof UpdateRegister!=='undefined')UpdateRegister.renderFlowControls(patientId);
 }
 
 /* ---- delete patient with confirmation ---- */

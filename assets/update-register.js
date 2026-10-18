@@ -1,6 +1,6 @@
 /* Completed IDs are matched before a missing patient registration is offered. */
 window.UpdateRegister=(()=>{
-  let timer,request=0,saving=false;
+  let timer,request=0,saving=false,flow=null;
   function open(){document.getElementById('ur-search')?.focus({preventScroll:true});}
   function search(){clearTimeout(timer);request++;timer=setTimeout(run,250);}
   async function run(){
@@ -28,15 +28,35 @@ window.UpdateRegister=(()=>{
         if(completeId){newPatient(term);return;}
         host.textContent='No existing patient found. Complete the ID number with its final letter to open a new patient form, or search by name.';return;
       }
-      if(completeId&&data.length===1){await profile(data[0].id);return;}
       host.innerHTML=data.map(p=>`<div class="ur-row">
         <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong><br>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}<br><small>${htmlSafe(followupStatusText(p.followup_status))}</small></div>
         <div><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open profile</button>
 </div>
       </div>`).join('')+(data.length===30?'<p>Showing the first 30 matches. Enter more of the ID or name to narrow the search.</p>':'');
+      if(completeId&&data.length===1)await profile(data[0].id);
     }catch(error){if(token===request)host.textContent='Could not search the register. Please try again.';}
   }
-  async function profile(id){await openPatientRecord(id,{panel:'demographics'});}
+  async function profile(id){
+    flow={id,step:'details'};
+    await openPatientDatesModal(id,{updateRegister:true});
+  }
+  async function detailsSaved(id){
+    flow={id,step:'stoma'};
+    await openPatientRecord(id,{panel:'stomas'});
+    const stomas=patientStomaList(clrState.patient);
+    if(stomas.length===1)await openStomaModal(id,stomas[0].slot);
+  }
+  function renderFlowControls(id){
+    document.getElementById('ur-continue-outcome')?.remove();
+    if(!flow||flow.id!==id||flow.step!=='stoma')return;
+    const bar=document.querySelector('#page-patient-record .psm-page-bar');if(!bar)return;
+    const next=document.createElement('button');next.id='ur-continue-outcome';next.type='button';next.className='psm-btn psm-btn-primary';
+    next.textContent='Continue to Outcome ›';next.onclick=()=>stomaSaved(id);bar.append(next);
+  }
+  function stomaSaved(id){
+    if(!flow||flow.id!==id||flow.step!=='stoma')return;
+    flow.step='outcome';switchPatientPanel('outcomes');renderFlowControls(id);
+  }
   async function surgery(id){await openPatientRecord(id,{panel:'stomas'});}
   async function edit(id){await openPatientDatesModal(id);}
   async function outcome(id){await openPatientRecord(id,{panel:'outcomes'});}
@@ -78,5 +98,5 @@ window.UpdateRegister=(()=>{
     }catch(error){status.textContent='Could not save: '+(error.message||'Please try again.');}
     finally{saving=false;button.disabled=false;}
   }
-  return {open,search,profile,surgery,edit,outcome,saveNew};
+  return {open,search,profile,surgery,edit,outcome,saveNew,detailsSaved,renderFlowControls,stomaSaved};
 })();
