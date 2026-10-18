@@ -5,6 +5,7 @@ window.ClinicAccount=(()=>{
   const $=id=>document.getElementById(id);
   const isJason=()=>user?.id===JASON_ID;
   function clear(){
+    window.ClinicAccess?.stop();
     user=null;request++;offset=0;
     $('login-audit-button').hidden=true;
     $('profile-audit-tools').hidden=true;$('profile-audit-tools').open=false;
@@ -21,6 +22,7 @@ window.ClinicAccount=(()=>{
     const {data,error}=await SB.auth.getUser();
     if(error||!data?.user)return;
     user=data.user;
+    window.ClinicAccess?.start(SB,user.id);
     $('profile-email').textContent=user.email||'';
     $('profile-name').value=user.user_metadata?.full_name||'';
     $('login-audit-button').hidden=!isJason();
@@ -52,25 +54,25 @@ window.ClinicAccount=(()=>{
     const token=++request,owner=user.id;
     offset=Math.max(0,offset+delta);
     const status=$('login-audit-status'),body=$('login-audit-rows');
-    body.replaceChildren();status.textContent='Loading logins…';
+    body.replaceChildren();status.textContent='Loading app visits…';
     $('login-audit-prev').disabled=true;$('login-audit-next').disabled=true;
     try{
-      const {data,error}=await SB.from('clinic_login_audit')
-        .select('session_id,email,logged_in_at').order('logged_in_at',{ascending:false})
-        .order('session_id',{ascending:false}).range(offset,offset+50);
+      const {data,error}=await SB.from('clinic_app_access')
+        .select('id,nurse_name,email,accessed_at,last_activity_at').order('accessed_at',{ascending:false})
+        .order('id',{ascending:false}).range(offset,offset+50);
       if(token!==request||user?.id!==owner||!isJason())return;
       if(error)throw error;
       const rows=data||[];
       for(const row of rows.slice(0,50)){
         const tr=document.createElement('tr');
-        for(const text of [row.email,new Date(row.logged_in_at).toLocaleString('en-GB',{timeZone:'Europe/Malta',dateStyle:'medium',timeStyle:'medium'})]){
+        for(const text of [row.nurse_name,row.email,...[row.accessed_at,row.last_activity_at].map(time=>new Date(time).toLocaleString('en-GB',{timeZone:'Europe/Malta',dateStyle:'medium',timeStyle:'medium'}))]){
           const td=document.createElement('td');td.textContent=text;tr.append(td);
         }
         body.append(tr);
       }
-      status.textContent=rows.length?`Showing ${offset+1}–${offset+Math.min(rows.length,50)}. Times shown in Malta time.`:'No successful logins recorded in this range.';
+      status.textContent=rows.length?`Showing ${offset+1}–${offset+Math.min(rows.length,50)}. Times shown in Malta time.`:'No app visits recorded in this range.';
       $('login-audit-prev').disabled=offset===0;$('login-audit-next').disabled=rows.length<=50;
-    }catch(error){if(token===request)status.textContent='Unable to load login audit. Please refresh and try again.';}
+    }catch(error){if(token===request)status.textContent='Unable to load app access audit. Please refresh and try again.';}
   }
   function openProfile(){ $('profile-audit-tools').open=false; $('profile-password').value='';$('profile-confirm').value='';$('profile-status').textContent=''; }
   return {sync,clear,save,audit,isJason,openProfile};

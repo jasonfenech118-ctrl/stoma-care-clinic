@@ -5,7 +5,7 @@ function setup(id='other'){
   const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{runScripts:'outside-only'});
   let user={id,email:'nurse@example.test',user_metadata:{}},updates=[],queries=0;
   const w=dom.window;
-  w.SB={auth:{getUser:async()=>({data:{user}}),updateUser:async changes=>{updates.push(changes);return {data:{user}};}},from:()=>{queries++;return {select(){return this;},order(){return this;},range:async()=>({data:[{email:'<script>bad()</script>',logged_in_at:'2026-10-18T03:00:00Z'}]})};}};
+  w.SB={auth:{getUser:async()=>({data:{user}}),updateUser:async changes=>{updates.push(changes);return {data:{user}};}},from:()=>{queries++;return {select(){return this;},order(){return this;},range:async()=>({data:[{email:'<script>bad()</script>',nurse_name:'Test Nurse',accessed_at:'2026-10-18T03:00:00Z',last_activity_at:'2026-10-18T03:00:00Z'}]})};}};
   w.eval(fs.readFileSync(path.join(root,'assets/account.js'),'utf8'));
   return {w,dom,updates,queries:()=>queries,setUser:u=>user=u,$:id=>w.document.getElementById(id)};
 }
