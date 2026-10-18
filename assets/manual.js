@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Profile is available in the top-left corner for password and display-name changes. Login Audit is restricted to Jason and records successful new logins for 90 days.'};
+const MANUAL_META={updated:'18 October 2026 — Profile is available in the top-left corner for password and display-name changes. App Access Audit is restricted to Jason and records app visits and last activity for 90 days.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,9 +46,9 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- the manual content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'profile',title:'My Profile and Login Audit',keywords:'profile password change account login audit Jason top left security',html:`
+  {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open <b>Profile</b> in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
-    <p>Only Jason can see and read <b>Login Audit</b> beside Profile: it lists the nurse account and successful new login time in Malta, starting 18 October 2026, with 90-day retention; existing sessions and failed attempts are not listed.</p>`},
+    <p>Only Jason can see and read <b>App Access Audit</b> beside Profile: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
   {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
     ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
     ${manNote('tip','🔔','Top-right you also have the <b>📝 button</b> (add a to-do or dated reminder) and the <b>🔔 bell</b> (every reminder, in tabs with counts). Both carry a number when something needs attention.')}
@@ -593,7 +593,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
-  {id:'login-capture',title:'Login recording',keywords:'login audit automatic successful session 90 days',html:`<p>Successful new logins are recorded by the server automatically and retained for 90 days; refreshing a page does not create a login entry.</p><p>Only Jason can see the Login Audit button and retrieve its records.</p>`},
+  {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
