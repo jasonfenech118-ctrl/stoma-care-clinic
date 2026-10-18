@@ -44,7 +44,9 @@ window.UpdateRegister=(()=>{
     flow={id,step:'stoma'};
     await openPatientRecord(id,{panel:'stomas'});
     const stomas=patientStomaList(clrState.patient);
-    if(stomas.length===1)await openStomaModal(id,stomas[0].slot);
+    const stoma=stomas.find(x=>x.present)||stomas[0];
+    if(stoma)await openStomaModal(id,stoma.slot);
+    else await openStomaOperation(id,'new');
   }
   function renderFlowControls(id){
     document.getElementById('ur-continue-outcome')?.remove();
