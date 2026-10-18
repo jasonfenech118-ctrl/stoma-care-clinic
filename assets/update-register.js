@@ -31,15 +31,17 @@ window.UpdateRegister=(()=>{
       if(token!==request)return;
       if(error)throw error;
       if(!data?.length){
-        if(completeId){newPatient(term);return;}
-        host.textContent='No existing patient found. Complete the ID number with its final letter to open a new patient form, or search by name.';return;
+        if(completeId){
+          host.innerHTML=`<div class="ur-row"><div><strong>${htmlSafe(term)}</strong><br>No patient found with this ID.</div><div><button type="button" class="btn-add" onclick="UpdateRegister.createNewProfile('${jsSafe(term)}')">Create New Profile</button></div></div>`;
+          return;
+        }
+        host.textContent='No existing patient found. Complete the ID number with its final letter to see the Create New Profile button, or search by name.';return;
       }
       host.innerHTML=data.map(p=>`<div class="ur-row">
         <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''}<br>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}<br><small>${htmlSafe(followupStatusText(p.followup_status))}</small></div>
-        <div><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open profile</button>
+        <div><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open Profile</button>
 </div>
       </div>`).join('')+(data.length===30?'<p>Showing the first 30 matches. Enter more of the ID or name to narrow the search.</p>':'');
-      if(completeId&&data.length===1)await profile(data[0].id);
     }catch(error){if(token===request)host.textContent='Could not search the register. Please try again.';}
   }
   async function profile(id){
@@ -113,5 +115,5 @@ window.UpdateRegister=(()=>{
     }catch(error){status.textContent='Could not save: '+(error.message||'Please try again.');}
     finally{saving=false;button.disabled=false;}
   }
-  return {open,search,profile,surgery,edit,outcome,saveNew,detailsSaved,renderFlowControls,stomaSaved};
+  return {open,search,profile,surgery,edit,outcome,saveNew,detailsSaved,renderFlowControls,stomaSaved,createNewProfile:newPatient};
 })();
