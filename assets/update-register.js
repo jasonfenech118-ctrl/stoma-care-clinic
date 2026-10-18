@@ -64,11 +64,10 @@ window.UpdateRegister=(()=>{
   async function outcome(id){await openPatientRecord(id,{panel:'outcomes'});}
   function newPatient(id){
     const host=document.getElementById('ur-results');
-    host.innerHTML=`<p><strong>${htmlSafe(id)}</strong> is not in the register. Enter the patient details and stoma information below, then save to continue to Outcome.</p>
-      ${patientFormHTML({id_card:id},'ur')}
+    host.innerHTML=`<p><strong>${htmlSafe(id)}</strong> is not in the register. Enter the patient details below. Saving opens the separate stoma modal, then continues to Outcome.</p>
+      ${patientDetailsOnlyHTML({id_card:id},'ur')}
       <p id="ur-new-error" role="status"></p>
-      <button id="ur-savebtn" class="btn-save" type="button" hidden onclick="UpdateRegister.saveNew()">Save patient & continue to Outcome</button>`;
-    pfShowStep('ur',1);
+      <button id="ur-savebtn" class="btn-save" type="button" onclick="UpdateRegister.saveNew()">Save patient details & continue to stoma</button>`;
     document.getElementById('ur-first')?.focus({preventScroll:true});
   }
   async function saveNew(){
@@ -76,16 +75,16 @@ window.UpdateRegister=(()=>{
     const status=document.getElementById('ur-new-error'),button=document.getElementById('ur-savebtn');
     if(!status||!button)return;
     const payload=readPatientForm('ur');
-    const missing=patientMissingFields(payload),refError=refashioningError(payload);
+    const missing=pfStepMissing('ur',1).map(([,label])=>label);
     if(!/^\d+[A-Z]$/.test(payload.id_card||'')){status.textContent='Enter the complete ID number, ending with its letter.';return;}
-    if(missing.length||refError){status.textContent=refError||'Please complete: '+missing.join(', ');return;}
+    if(missing.length){status.textContent='Please complete: '+missing.join(', ');return;}
     saving=true;button.disabled=true;status.textContent='Checking ID and saving…';
     try{
       const {matches,error:lookupError}=await findRegistryPatientsByIdCard(payload.id_card);
       if(lookupError)throw lookupError;
       if(matches.length){
         status.textContent='This patient is already registered. Open their existing record to update it.';
-        const go=document.createElement('button');go.type='button';go.textContent='Open existing patient';go.onclick=()=>outcome(matches[0].id);status.append(go);return;
+        const go=document.createElement('button');go.type='button';go.textContent='Open existing patient';go.onclick=()=>profile(matches[0].id);status.append(go);return;
       }
       payload.followup_owner='Common';payload.followup_type=normaliseFollowupType('new_case');
       const by=await patientSignatureName(),now=new Date().toISOString();
@@ -95,7 +94,7 @@ window.UpdateRegister=(()=>{
       if(error)throw error;
       if(!data?.id)throw new Error('Could not confirm the saved patient. Search the ID again before retrying.');
       if(dropped?.length)alert('Saved, except for unavailable fields: '+dropped.join(', '));
-      await outcome(data.id);
+      await detailsSaved(data.id);
       refreshReminders();
     }catch(error){status.textContent='Could not save: '+(error.message||'Please try again.');}
     finally{saving=false;button.disabled=false;}
