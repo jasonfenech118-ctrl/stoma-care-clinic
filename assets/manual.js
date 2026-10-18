@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Update Register recognises a complete ID when its final letter is entered and checks for an exact match. If absent, it opens a prefilled registration form within Update Register and continues to Outcome after saving.'};
+const MANUAL_META={updated:'18 October 2026 — Update Register results now show only Open profile. The profile’s Registry button and close control return to Update Register in this workflow.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -85,7 +85,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'registry',title:'Registry & Patients',icon:'👥',color:'#16a34a',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
-  {id:'update-register',title:'Update Register',keywords:'update register existing patient details outcome ID search edit',html:`<p>Open <b>Registry → Update Register</b>, enter an ID number or patient name; a final letter completes the ID and triggers an exact check. If absent, enter the patient and stoma details in the prefilled form and save to continue to Outcome; an exact existing match opens the profile automatically. Partial results offer <b>Open profile</b>, <b>Surgery / stomas</b>, <b>Edit details</b> and <b>Outcome</b>. Editing starts with ID; its letters become uppercase, and each word in names starts with a capital letter.</p><p>Saving details opens that patient’s Outcome tab; confirming the outcome stays there, and Back to Update Register returns to the search.</p>`},
+  {id:'update-register',title:'Update Register',keywords:'update register existing patient details outcome ID search edit',html:`<p>Open <b>Registry → Update Register</b>, enter an ID number or patient name; a final letter completes the ID and triggers an exact check. If absent, enter the patient and stoma details in the prefilled form and save to continue to Outcome; an exact existing match opens the profile automatically. Partial results offer only <b>Open profile</b>; edit details, surgery and outcomes from within that profile. Editing starts with ID; its letters become uppercase, and each word in names starts with a capital letter.</p><p>Saving details opens that patient’s Outcome tab; confirming the outcome stays there, and Back to Update Register returns to the search.</p>`},
   {id:'add',title:'Add a new patient',keywords:'add patient new register demographics id card create',html:`
     <p>After editing an existing patient and saving, the patient record opens on <b>Outcome</b> when using Update Register; edits opened from an appointment return to that appointment.</p>
 
