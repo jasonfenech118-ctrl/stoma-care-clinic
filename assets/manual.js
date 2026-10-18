@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Audit controls remain inside Jason’s Profile under Administration. Audit Trail, access records and recovery history are restricted to Jason in the database.'};
+const MANUAL_META={updated:'18 October 2026 — The patient form starts with the ID card number, followed by first name and surname. Add Patient focuses the ID field automatically.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -86,6 +86,7 @@ const MANUAL_SECTIONS=[
 
 {id:'registry',title:'Registry & Patients',icon:'👥',color:'#16a34a',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
   {id:'add',title:'Add a new patient',keywords:'add patient new register demographics id card create',html:`
+    <p>Enter the <b>ID card number first</b>, then first name and surname; the ID field is focused when Add Patient opens.</p>
     ${manMap('patients')}
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
     ${manSteps([
