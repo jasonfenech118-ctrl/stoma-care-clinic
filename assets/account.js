@@ -7,10 +7,14 @@ window.ClinicAccount=(()=>{
   function clear(){
     user=null;request++;offset=0;
     $('login-audit-button').hidden=true;
+    $('profile-audit-tools').hidden=true;$('profile-audit-tools').open=false;
     $('login-audit-rows').replaceChildren();
     $('profile-form').reset();$('profile-email').textContent='';
     $('profile-status').textContent='';$('login-audit-status').textContent='';
-    $('page-profile').classList.remove('active');$('page-login-audit').classList.remove('active');
+    const privatePages=['page-profile','page-login-audit','page-audit-trail'].map(id=>$(id)).filter(Boolean);
+    const wasPrivate=privatePages.some(page=>page.classList.contains('active'));
+    privatePages.forEach(page=>page.classList.remove('active'));
+    if(wasPrivate)$('page-roster')?.classList.add('active');
   }
   async function sync(){
     clear();
@@ -20,6 +24,7 @@ window.ClinicAccount=(()=>{
     $('profile-email').textContent=user.email||'';
     $('profile-name').value=user.user_metadata?.full_name||'';
     $('login-audit-button').hidden=!isJason();
+    $('profile-audit-tools').hidden=!isJason();
   }
   async function save(event){
     event.preventDefault();
@@ -67,6 +72,6 @@ window.ClinicAccount=(()=>{
       $('login-audit-prev').disabled=offset===0;$('login-audit-next').disabled=rows.length<=50;
     }catch(error){if(token===request)status.textContent='Unable to load login audit. Please refresh and try again.';}
   }
-  function openProfile(){ $('profile-password').value='';$('profile-confirm').value='';$('profile-status').textContent=''; }
+  function openProfile(){ $('profile-audit-tools').open=false; $('profile-password').value='';$('profile-confirm').value='';$('profile-status').textContent=''; }
   return {sync,clear,save,audit,isJason,openProfile};
 })();
