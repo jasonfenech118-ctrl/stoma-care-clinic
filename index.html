@@ -21,12 +21,12 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-599"/>
-<link rel="stylesheet" href="assets/account.css?v=2026.10.18-599">
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-600"/>
+<link rel="stylesheet" href="assets/account.css?v=2026.10.18-600">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.18-579"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<script src="assets/manual.js?v=2026.10.18-599"></script>
+<script src="assets/manual.js?v=2026.10.18-600"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3934,7 +3934,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.18-599';
+const APP_BUILD='2026.10.18-600';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18657,7 +18657,20 @@ function recordOutcomeDecor(pat){
   const icon={deceased:'cross',reversed:'revert',discharged_gozo:'ferry',relocated_overseas:'plane',paused:'pause',awaiting_feedback:'clock'}[st]||'';
   return {status:st,icon,isOutcome:st!=='active'};
 }
-function psmAge(dob){if(!dob)return null;const b=new Date(dob+'T00:00:00');if(isNaN(b))return null;const t=new Date();let a=t.getFullYear()-b.getFullYear();const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;return(a>=0&&a<130)?a:null;}
+function psmAge(dob,asOf){
+  if(!dob)return null;
+  const parse=v=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));if(!m)return null;const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));return d.getFullYear()===Number(m[1])&&d.getMonth()===Number(m[2])-1&&d.getDate()===Number(m[3])?d:null;};
+  const b=parse(dob),t=asOf===undefined?new Date():parse(asOf);
+  if(!b||!t||t<b)return null;
+  let a=t.getFullYear()-b.getFullYear();
+  const m=t.getMonth()-b.getMonth();if(m<0||(m===0&&t.getDate()<b.getDate()))a--;
+  return(a>=0&&a<130)?a:null;
+}
+function psmPatientAge(pat){
+  if(!pat)return null;
+  // Never continue ageing a deceased patient when their death date is missing.
+  return psmAge(pat.date_of_birth,patientIsDeceased(pat)?(pat.deceased_date||null):undefined);
+}
 function switchPatientPanel(which){
   ['demographics','stomas','outcomes','appts','episodes'].forEach(p=>{
     const panel=document.getElementById('psm-'+p);
@@ -20138,7 +20151,7 @@ function deceasedArchiveHTML(pat,extras){
   const stomas=(typeof stomaTimeline==='function'?stomaTimeline(pat):[])
     .slice().sort((a,b)=>String(b.formed||'').localeCompare(String(a.formed||'')));
   const stomaRows=stomas.length?stomas.map(s=>`<li>${esc(fmtShortDate(s.formed)||'date not recorded')} — ${esc(s.typeLabel||s.type||'Stoma')}${s.location?' · '+esc(s.location):''}${s.ended?' · ended '+esc(fmtShortDate(s.ended)):''}</li>`).join(''):'<li><em>No surgery recorded</em></li>';
-  const age=(typeof psmAge==='function'?psmAge(pat.date_of_birth):null);
+  const age=psmPatientAge(pat);
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Deceased patient summary — ${esc(nm)}</title>
@@ -20155,7 +20168,7 @@ function deceasedArchiveHTML(pat,extras){
 <table>
  ${row('ID card',pat.id_card)}
  ${row('Date of birth',pat.date_of_birth?fmtShortDate(pat.date_of_birth):'')}
- ${age!=null?row('Age',age+' years'):''}
+ ${age!=null?row(patientIsDeceased(pat)?'Age at death':'Age',age+' years'):''}
  ${row('Sex',pat.sex)}
  ${row('Locality',pat.locality)}
  ${row('Telephone',pat.phone_number)}
@@ -20232,8 +20245,8 @@ async function openPatientRecord(patientId,opts){
   const episodeCount=clrState.available?clrState.rows.filter(r=>r.kind==='episode').length:0;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const[outText,outCls]=patientOutcome(pat);
-  const age=psmAge(pat.date_of_birth);
-  const demo=[age!=null?age+' years':null,htmlSafe(pat.sex||'')].filter(Boolean).join(' · ');
+  const age=psmPatientAge(pat);
+  const demo=[age!=null?age+' years'+(patientIsDeceased(pat)?' (at death)':''):null,htmlSafe(pat.sex||'')].filter(Boolean).join(' · ');
   const staffName=a=>htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||(!a.assigned_to&&!a.bank_staff_id?'Common':'—'));
   const badge=a=>`<span class="status-badge ${a.status==='attended'?'sb-attended':a.status==='cancelled'?'sb-cancelled':a.status==='did_not_attend'?'sb-dna':'sb-booked'}">${statusLabel(a.status,a)}</span>`;
   const today=new Date().toISOString().slice(0,10);
@@ -26796,9 +26809,9 @@ async function plOpen(id){
   const request=++plOpenRequest;
   const q=document.getElementById('pl-q')?.value||'';
   const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
-  const age=psmAge(p.date_of_birth);
+  const age=psmPatientAge(p);
   const hero=`<div class="pl-hero"><div class="pl-hero-top">${patientAvatarHTML(p,'lg')}<div class="pl-hero-copy"><h2>${htmlSafe(nm)}</h2>
-    <div class="pl-sub">${htmlSafe(p.id_card||'No ID')}${age!=null?' · '+age+' years':''}${p.sex?' · '+htmlSafe(p.sex):''}</div>
+    <div class="pl-sub">${htmlSafe(p.id_card||'No ID')}${age!=null?' · '+age+' years'+(patientIsDeceased(p)?' (at death)':''):''}${p.sex?' · '+htmlSafe(p.sex):''}</div>
     <div style="margin-top:8px;"><span class="cr-out ${patientOutcome(p)[1]}">${htmlSafe(patientOutcome(p)[0])}</span>${extraStatusChipsHTML(p)}</div></div></div>
     ${p.phone_number?`<div class="pl-phone-readonly" aria-label="Phone number"><span>Phone number</span><strong>${htmlSafe(p.phone_number)}</strong></div>`:''}
   </div>`;
