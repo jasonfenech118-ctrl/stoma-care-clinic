@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Saving edited patient details opens that patient’s Outcome tab. Edits started from an appointment keep their return-to-appointment workflow.'};
+const MANUAL_META={updated:'18 October 2026 — Saving an outcome keeps the patient record on Outcome, including subsequent live refreshes. Patient-record navigation no longer leaves Add Patient selected.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
