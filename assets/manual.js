@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Single-click paperclip help restored, with task search and page guidance; ❓ opens the manual directly. Dragging and × to hide remain available.'};
+const MANUAL_META={updated:'18 October 2026 — Manual labels renamed to Help across the help button, panel and paperclip options.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -43,15 +43,15 @@ function manSteps(items){return `<ol class="man-steps">${items.map(i=>`<li>${i}<
 function manNote(kind,ic,t){return `<div class="man-note ${kind}"><span class="man-note-ic">${ic}</span><div>${t}</div></div>`;}
 function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${t}</div>`;}
 
-/* ---- the manual content -------------------------------------------------- */
+/* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
-{id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Click the paperclip once to open its help bubble. Choose <b>Help with this page</b>, search for a task, or select <b>Browse the full manual</b>. Press its small <b>×</b> to hide it; press ❓ to open the manual and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for this browser. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+{id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>Click the paperclip once to open its help bubble. Choose <b>Help with this page</b>, search for a task, or select <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for this browser. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
   {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
-    ${manNote('tip','❓','Open this manual from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
+    ${manNote('tip','❓','Open Help from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
     ${manNote('tip','🔔','Top-right you also have the <b>📝 button</b> (add a to-do or dated reminder) and the <b>🔔 bell</b> (every reminder, in tabs with counts). Both carry a number when something needs attention.')}
     ${manWhen('Your first time in the app, or when you cannot find a page.')}
     ${manH2('🧭','The six work areas')}
@@ -70,12 +70,12 @@ const MANUAL_SECTIONS=[
   `},
   {id:'layout',title:'Page layout and icons',keywords:'icons alignment layout spacing phone mobile page headings buttons navigation tabs patient tiles back return button previous page go back',html:`<p>Navigation pictures sit in matching icon boxes. Page headings and action buttons align consistently, and patient record tiles keep their illustrations and section counts. On a phone, the clinic name and help, task and reminder buttons fit in the compact top bar; use the menu to change work area and the sub-tabs to change page. Controls wrap onto the next row when needed, so their labels remain readable.</p>
     <p><b>‹ Back</b> — once you move off the first screen, a <b>‹ Back</b> button appears at the top-left of the bar. It takes you to the page you were just on — the list you opened a patient from, the clinic day you drilled into, and so on — so you never have to hunt back through the menu. Press it again to keep stepping back; it disappears when there is nowhere left to return to. Both the top-bar <b>‹ Back</b> and the one on a patient record are <b>yellow</b> so they stand out. A patient record’s own <b>‹ Back</b> button steps back the same way — to wherever you opened the record from (the clinic list, the handover, a search…) — and only returns to the <b>Registry</b> when there is no earlier page to go back to.</p>`},
-  {id:'usingmanual',title:'Using this manual (split screen)',keywords:'help search find how to question mark manual guide split screen side panel dock beside open close help button',html:`
+  {id:'usingmanual',title:'Using Help (split screen)',keywords:'help search find how to question mark manual guide split screen side panel dock beside open close help button',html:`
     ${manWhen('Any time you are unsure how to do something — keep it open beside your work.')}
     ${manH2('🪟','It opens beside the app, not over it')}
     <p class="man-lede">The manual opens as a <b>side panel</b>, so the page you are working on stays open next to it. Read a step, do it on the app, read the next — you never have to remember it all.</p>
     ${manSteps([
-      `Open it from the ${manBtn('❓','#0d7377','#fff')} <b>button next to the 🔔 bell</b> at the top-right of every screen. It opens the manual directly; press it again to close.`,
+      `Open it from the ${manBtn('❓','#0d7377','#fff')} <b>button next to the 🔔 bell</b> at the top-right of every screen. It opens Help directly; press it again to close.`,
       `Type what you want in the <b>search box</b> at the top — e.g. <i>"add a patient"</i>, <i>"discharge to Gozo"</i>, <i>"flange due"</i> — and pick the page.`,
       `Or tap a <b>coloured section</b> to browse. Each section is the same colour as its area in the app.`,
       `Use the panel’s top buttons: <b>☰</b> all sections · <b>⇔</b> make it wider/narrower · <b>✕</b> close.`
@@ -541,7 +541,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The letter uses the <b>latest saved selection for each stoma</b>, even when different stomas were last updated on different days. Stoma powder and other accessories are carried across automatically. Open complications include their latest recorded note; complications not linked to a particular stoma appear separately. A cleared selection stays cleared.')}
     ${manNote('auto','⚙️','Rod status and dates come from the saved handover record. While in situ, its removal-due date is included; once marked removed, its removal date is included and in-situ care instructions stop. There is <b>no rod, complication, accessory or appliance selection page</b> to repeat when opening a recorded patient’s letter. If a current appliance is missing, update the stoma record and reopen the letter.')}
-    ${manNote('tip','ℹ️','The general Discharge letters tab still offers the manual wizard for a standalone letter. Letters opened from a patient use a fresh snapshot; reopen after changing that patient’s recorded details.')}
+    ${manNote('tip','ℹ️','The general Discharge letters tab still offers Help wizard for a standalone letter. Letters opened from a patient use a fresh snapshot; reopen after changing that patient’s recorded details.')}
   `}
 ]},
 
@@ -598,7 +598,7 @@ const MANUAL_SECTIONS=[
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
-  {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>Click the paperclip once to open its help bubble. <b>Help with this page</b> selects the manual topic for your current page or work area; searching offers matching manual topics.</p>`},
+  {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>Click the paperclip once to open its help bubble. <b>Help with this page</b> selects Help topic for your current page or work area; searching offers matching manual topics.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
@@ -707,7 +707,7 @@ function renderManual(hostId){
   }).join('');
   host.innerHTML=`<div class="man-shell">
     <div class="man-searchbar">
-      <input type="search" id="man-search" placeholder="Search the manual — e.g. add a patient, discharge to Gozo, flange due…"
+      <input type="search" id="man-search" placeholder="Search Help — e.g. add a patient, discharge to Gozo, flange due…"
         autocomplete="off" oninput="manualSearch(this.value)" onkeydown="manualSearchKey(event)"/>
       <div id="man-results" class="man-results" hidden></div>
     </div>
@@ -740,21 +740,21 @@ function manualRenderMain(){
   main.innerHTML=`<div class="man-crumb" style="color:${s.color};">${s.icon} ${htmlSafe(s.title)}</div>
     <h1 class="man-h1">${htmlSafe(p.title)}</h1>
     ${p.html}
-    <div class="man-foot">MDH Stoma Care Clinic · User manual · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
+    <div class="man-foot">MDH Stoma Care Clinic · Help · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
 }
 function manualHome(){
   const cards=MANUAL_SECTIONS.filter(s=>s.id!=='start').map(s=>`
     <div class="man-home-card" style="--sec:${s.color};" onclick="manualGo('${s.id}','${s.pages[0].id}')">
       <h3>${s.icon} ${htmlSafe(s.title)}</h3><p>${htmlSafe(s.blurb)}</p></div>`).join('');
   return `<div class="man-crumb">Welcome</div>
-    <h1 class="man-h1">MDH Stoma Care — User Manual</h1>
+    <h1 class="man-h1">MDH Stoma Care — Help</h1>
     <p class="man-lede">Everything the app does, in plain steps. Use the <b>search box</b> above, or pick a section. Each page shows <b>where it lives</b> in the app, <b>when to use it</b>, the <b>steps</b>, and any <b>automation</b> done for you.</p>
     ${manNote('tip','👋','New here? Start with <b>Getting Started → Finding your way around</b> on the left.')}
     <div class="man-home-grid">${cards}</div>
     <div class="man-foot">This manual is part of the app (no Supabase space used) and updates with every change · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
 }
 
-/* ---- docked split-screen: read the manual beside the live app ------------ */
+/* ---- docked split-screen: read Help beside the live app ------------ */
 function openManualDock(){
   if(typeof stomaHelperShow==='function')stomaHelperShow();
   document.body.classList.add('manual-docked');
@@ -764,7 +764,7 @@ function openManualDock(){
 function closeManualDock(){document.body.classList.remove('manual-docked');}
 function toggleManualDock(){document.body.classList.contains('manual-docked')?closeManualDock():openManualDock();}
 function manualDockHome(){manualState.sec=null;manualState.pg=null;renderManual('manual-dock-body');}
-/* Cycle the panel width so a nurse can give the manual more or less room. */
+/* Cycle the panel width so a nurse can give Help more or less room. */
 function manualDockWiden(){
   const cur=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--mdock-w'),10)||440;
   const next=cur<400?460:cur<560?640:cur<760?340:460;
@@ -823,7 +823,7 @@ function stomaHelperShow(){
       <button type="button" class="sh-context">Help with this page</button>
       <form class="sh-search"><label for="sh-query">What would you like help with?</label><div><input id="sh-query" type="search" maxlength="120" placeholder="e.g. update register"><button type="submit">Find</button></div></form>
       <div class="sh-results" aria-live="polite"></div>
-      <button type="button" class="sh-manual">Browse the full manual</button>
+      <button type="button" class="sh-manual">Browse all help topics</button>
       <button type="button" class="sh-hide">Hide helper</button>
     </section>
     <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
@@ -906,7 +906,7 @@ function stomaHelperShow(){
       const words=q.split(/\s+/).filter(w=>w.length>1);
       if(!words.length){results.textContent='Enter a task or topic to search.';return;}
       const hits=manualAllPages().map(h=>({...h,score:words.reduce((n,w)=>n+((h.pg.title+' '+(h.pg.keywords||'')+' '+h.sec.title).toLowerCase().includes(w)?1:0),0)})).filter(h=>h.score).sort((a,b)=>b.score-a.score).slice(0,4);
-      if(!hits.length)results.textContent='No matching topic. Try another word or browse the manual.';
+      if(!hits.length)results.textContent='No matching topic. Try another word or browse Help.';
       hits.forEach(h=>{const b=document.createElement('button');b.type='button';b.textContent=h.pg.title;b.onclick=()=>go(h.sec.id,h.pg.id);results.appendChild(b);});
     };
     function visibility(){const app=document.getElementById('app');root.style.display=app&&getComputedStyle(app).display==='none'?'none':'';}
