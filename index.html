@@ -20,12 +20,13 @@
 <link rel="stylesheet" href="assets/cancellations.css"/>
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.18-570"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-570"/>
-<link rel="stylesheet" href="assets/account.css?v=2026.10.18-570">
-<script src="assets/app-access.js?v=2026.10.18-570"></script>
-<script src="assets/account.js?v=2026.10.18-570"></script>
-<script src="assets/manual.js?v=2026.10.18-570"></script>
+<script src="assets/daily-attendance.js?v=2026.10.18-571"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.18-571"/>
+<link rel="stylesheet" href="assets/account.css?v=2026.10.18-571">
+<script src="assets/app-access.js?v=2026.10.18-571"></script>
+<script src="assets/update-register.js?v=2026.10.18-571"></script>
+<script src="assets/account.js?v=2026.10.18-571"></script>
+<script src="assets/manual.js?v=2026.10.18-571"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -34,7 +35,7 @@
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
-<script src="assets/documentation-status.js?v=2026.10.18-570"></script>
+<script src="assets/documentation-status.js?v=2026.10.18-571"></script>
 <script defer src="assets/jason-encounters.js?v=2026.10.12-530"></script>
 <script defer src="assets/visit-stoma-review.js?v=2026.10.10-509"></script>
 <style>
@@ -3154,6 +3155,13 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
       <div id="np-outside-body"><div class="report-note">Loading the register…</div></div>
     </div>
 
+    <section class="page" id="page-update-register">
+      <div class="phdr"><div><h2>✏️ Update Register</h2><p>Find an existing patient, update their details and record their outcome.</p></div></div>
+      <div class="card"><label for="ur-search"><strong>ID number or patient name</strong></label>
+        <input id="ur-search" type="search" autocomplete="off" placeholder="Enter ID number, first name or surname" oninput="UpdateRegister.search()" style="display:block;width:100%;padding:12px;margin:10px 0;border:1px solid var(--border);border-radius:8px;box-sizing:border-box;">
+        <div id="ur-results" aria-live="polite">Enter at least two characters of an ID number, first name or surname.</div>
+      </div>
+    </section>
     <!-- ADD PATIENT -->
     <div class="page" id="page-add-patient">
       <div class="phdr">
@@ -3927,7 +3935,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.18-570';
+const APP_BUILD='2026.10.18-571';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4041,6 +4049,7 @@ const TAB_GROUPS=[
      {tab:'patients',label:'Patient Registry',icon:'👥',color:'#0891b2'},
      {tab:'new-patients',label:'New Patients',icon:'🆕',color:'#1baf7a'},
      {tab:'add-patient',label:'Add Patient',icon:'➕',color:'#1baf7a'},
+     {tab:'update-register',label:'Update Register',icon:'✏️',color:'#0d7377'},
      {tab:'phone',label:'Quick Look',icon:'📱',color:'#4338ca'},
      {tab:'duplicates',label:'Needs Checking',icon:'🔍',color:'#d97706'},
      {tab:'fistulas',label:'Fistulas & Bagging',icon:'🩹',color:'#7c3aed'},
@@ -4200,6 +4209,7 @@ function switchTab(name,opts){
   if(name==='new-patients')loadNewPatients();
   if(name==='operated-outside-mdh')loadNewPatients(true);
   if(name==='add-patient')renderAddPatientForm();
+  if(name==='update-register')UpdateRegister.open();
   if(name==='duplicates')loadDuplicates();
   if(name==='fistulas')loadFistulaPatients();
   if(name==='data-analysis')loadDataAnalysis();
@@ -15392,7 +15402,7 @@ function addInitialStomaRow(prefix){document.getElementById(`${prefix}-iststomal
    an edit never wipes a status that was set on the record. */
 const PF_STEPS=[
   {n:1,key:'patient',title:'Patient',sub:'Who they are',
-   need:[['idcard','ID card'],['first','First name'],['surname','Surname'],['sex','Sex'],
+   need:[['first','First name'],['surname','Surname'],['idcard','ID card'],['sex','Sex'],
          ['locality','Locality'],['dob','Date of birth'],['consultant','Firm (consultant)']]},
   {n:2,key:'stoma',title:'Stoma',sub:'The operation',
    need:[['stoma','Stoma type'],['surgery','Date of surgery'],['procedure','Operation performed and findings']]}
@@ -15442,9 +15452,15 @@ function patientFormHTML(p,prefix){
   <h3 class="pf-head">Patient</h3>
   ${demoLockBar}
   <div class="edit-seen-grid">
+    ${prefix==='ap'?`
+    <div class="fg"><label>First name *</label><input type="text" id="${prefix}-first" value="${v('first_name')}" placeholder="Given name"${lk('first')}/></div>
+    <div class="fg"><label>Surname *</label><input type="text" id="${prefix}-surname" value="${v('surname')}" placeholder="Family name"${lk('surname')}/></div>
+    <div class="fg"><label>ID card *</label><input type="text" id="${prefix}-idcard" value="${v('id_card')}" placeholder="e.g. 404261M"${lk('idcard')}/></div>
+    `:`
     <div class="fg" style="grid-column:1 / -1;"><label>ID card *</label><input type="text" id="${prefix}-idcard" oninput="if(!event.isComposing)formatPatientIdentityInput(this,'id')" onblur="formatPatientIdentityInput(this,'id')" value="${v('id_card')}" placeholder="e.g. 404261M"${lk('idcard')}/></div>
     <div class="fg"><label>First name *</label><input type="text" id="${prefix}-first" oninput="if(!event.isComposing)formatPatientIdentityInput(this,'name')" onblur="formatPatientIdentityInput(this,'name')" value="${v('first_name')}" placeholder="Given name"${lk('first')}/></div>
     <div class="fg"><label>Surname *</label><input type="text" id="${prefix}-surname" oninput="if(!event.isComposing)formatPatientIdentityInput(this,'name')" onblur="formatPatientIdentityInput(this,'name')" value="${v('surname')}" placeholder="Family name"${lk('surname')}/></div>
+    `}
     <div class="fg"><label>Phone</label><input type="text" id="${prefix}-phone" value="${v('phone_number')}" placeholder="e.g. 79001122"${lk('phone')}/></div>
     <div class="fg"><label>Sex *</label><select id="${prefix}-sex"${lksel('sex')}>
       <option value="">— not recorded —</option>
@@ -16023,8 +16039,8 @@ function readPatientForm(prefix){
   refRows.sort(byFormedDate);
   const out={
     id_card:normaliseIdCard(val('idcard')),
-    first_name:normalisePatientName(val('first'))||null,
-    surname:normalisePatientName(val('surname'))||null,
+    first_name:(prefix==='ap'?val('first'):normalisePatientName(val('first')))||null,
+    surname:(prefix==='ap'?val('surname'):normalisePatientName(val('surname')))||null,
     phone_number:val('phone')||null,
     sex:val('sex')||null,
     locality:loc(val('locality')),
@@ -16397,6 +16413,7 @@ async function promptSavedOutcomeDate(patientId,key){
   document.getElementById('cro-confirm')?.scrollIntoView({block:'nearest'});
 }
 async function savePatientDates(patientId){
+  const updateRegisterFlow=currentTabName()==='update-register'||(currentTabName()==='patient-record'&&patientRecordOrigin==='update-register');
   const res=await persistPatientDetailsForm(patientId,true);
   if(!res.ok)return;
   const dropped=res.dropped||[];
@@ -16408,9 +16425,10 @@ async function savePatientDates(patientId){
     await promptSavedOutcomeDate(patientId,missingOutcome);
   }else if(ret&&ret.apptId)await openOutcomeFollowupModal(ret.apptId,ret.status,ret.resume?{resume:ret.resume}:{});
   else{
+    const recordWasOpen=document.getElementById('page-patient-record')?.classList.contains('active');
     closeModal();
-    await openPatientRecord(patientId);
-    switchPatientPanel('outcomes');
+    if(updateRegisterFlow){await openPatientRecord(patientId,{panel:'outcomes'});switchPatientPanel('outcomes');}
+    else if(recordWasOpen)await openPatientRecord(patientId);
   }
   refreshReminders();
   // The saved patient's record is already rebuilt above; keep Outcome selected.
@@ -20143,18 +20161,21 @@ function deceasedMinimiseCardHTML(pat){
 function viewDeceasedArchive(patientId){
   configureDeceasedRegistry();return window.DeceasedRegistry.viewSummary(patientId);
 }
+let patientRecordOrigin='patients';
 async function openPatientRecord(patientId,opts){
   const host=document.getElementById('page-patient-record');
   // Remember the page we came from (the list, handover, a search…) so Back
   // returns there — but not when simply refreshing the record already open.
   const onSameRecord=host.classList.contains('active')&&clrState?.patient&&String(clrState.patient.id)===String(patientId);
+  if(!onSameRecord)patientRecordOrigin=currentTabName()==='update-register'?'update-register':'patients';
   const selectedPanel=opts?.panel||(onSameRecord?document.querySelector('#page-patient-record .psm-tab.active')?.id?.replace('psm-tab-',''):'')||'demographics';
   if(!(opts&&opts.fromBack)&&!onSameRecord)pushNavHistory(currentView());
-  const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="recordBack()">'+psmIc('chevleft')+' Back</button>'+(isEncounterUser()?'<button class="psm-btn" onclick="openEncounter(\''+jsSafe(patientId)+'\')">📝 Encounters</button>':'')+'<button class="psm-btn psm-btn-registry" onclick="goRegistry()">👥 Registry</button></div>';
+  const backBar='<div class="psm-page-bar"><button class="psm-back" onclick="recordBack()">'+psmIc('chevleft')+(patientRecordOrigin==='update-register'?' Back to Update Register':' Back')+'</button>'+(isEncounterUser()?'<button class="psm-btn" onclick="openEncounter(\''+jsSafe(patientId)+'\')">📝 Encounters</button>':'')+'<button class="psm-btn psm-btn-registry" onclick="goRegistry()">👥 Registry</button></div>';
   host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note">Loading patient card…</div></div>';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   host.classList.add('active');
-  renderPrimaryTabs('patient-record');renderSubTabs('patient-record');renderMobileNav('patient-record');
+  const recordNav=patientRecordOrigin==='update-register'?'update-register':'patient-record';
+  renderPrimaryTabs(recordNav);renderSubTabs(recordNav);renderMobileNav(recordNav);
   const currentLabel=document.getElementById('mob-current-tab');if(currentLabel)currentLabel.textContent='Patient record';
   renderNavBack();
   window.scrollTo(0,0);
@@ -20407,7 +20428,6 @@ function renderAddPatientForm(){
     idEl.addEventListener('input',scheduleNewPatientIdCheck);
   }
   pfShowStep('ap',1);
-  document.getElementById('ap-idcard')?.focus({preventScroll:true});
 }
 let apDupTimer=null,apDupSeq=0;
 function scheduleNewPatientIdCheck(){

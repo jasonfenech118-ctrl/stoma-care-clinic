@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Saving an outcome keeps the patient record on Outcome, including subsequent live refreshes. Patient-record navigation no longer leaves Add Patient selected.'};
+const MANUAL_META={updated:'18 October 2026 — Registry now has a separate Update Register tab for existing patients’ details and outcomes. Add Patient retains its previous layout and entry behaviour.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -85,9 +85,10 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'registry',title:'Registry & Patients',icon:'👥',color:'#16a34a',blurb:'Add patients, open records, record operations, find duplicates.',pages:[
+  {id:'update-register',title:'Update Register',keywords:'update register existing patient details outcome ID search edit',html:`<p>Open <b>Registry → Update Register</b>, enter an ID number or patient name, then choose <b>Edit details</b> or <b>Outcome</b>. Editing starts with ID; its letters become uppercase, and each word in names starts with a capital letter.</p><p>Saving details opens that patient’s Outcome tab; confirming the outcome stays there, and Back to Update Register returns to the search.</p>`},
   {id:'add',title:'Add a new patient',keywords:'add patient new register demographics id card create',html:`
-    <p>After editing an existing patient and saving, the patient record opens on <b>Outcome</b>; edits opened from an appointment return to that appointment.</p>
-    <p>Enter the <b>ID card number first</b>, then first name and surname; the ID field is focused when Add Patient opens. ID letters become uppercase automatically; each word in first name and surname starts with a capital letter, with the remaining letters lowercase.</p>
+    <p>After editing an existing patient and saving, the patient record opens on <b>Outcome</b> when using Update Register; edits opened from an appointment return to that appointment.</p>
+
     ${manMap('patients')}
     ${manWhen('A patient is new to the stoma service and is not yet on the system.')}
     ${manSteps([
