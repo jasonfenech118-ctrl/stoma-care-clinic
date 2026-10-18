@@ -35,7 +35,7 @@ window.UpdateRegister=(()=>{
         host.textContent='No existing patient found. Complete the ID number with its final letter to open a new patient form, or search by name.';return;
       }
       host.innerHTML=data.map(p=>`<div class="ur-row">
-        <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong><br>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}<br><small>${htmlSafe(followupStatusText(p.followup_status))}</small></div>
+        <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''}<br>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}<br><small>${htmlSafe(followupStatusText(p.followup_status))}</small></div>
         <div><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open profile</button>
 </div>
       </div>`).join('')+(data.length===30?'<p>Showing the first 30 matches. Enter more of the ID or name to narrow the search.</p>':'');
