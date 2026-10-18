@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Audit Trail is back under Audit & Reports. App Access Audit remains inside Profile → Administration, with existing access permissions retained.'};
+const MANUAL_META={updated:'18 October 2026 — The top-left Profile button is light blue. Audit Trail remains under Audit & Reports.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -47,7 +47,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use this manual.',pages:[
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
-    <p>Open <b>Profile</b> in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
+    <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
   {id:'basics',title:'Finding your way around',keywords:'login sign in navigation tabs menu home start version build refresh help button bell',html:`
     ${manNote('tip','❓','Open this manual any time from the <b>❓ button next to the 🔔 bell</b>, top-right. It opens beside your work — read a step, do it, read the next.')}
