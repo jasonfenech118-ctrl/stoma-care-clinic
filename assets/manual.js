@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Audit tools are now inside Jason’s Profile under Administration, with no audit buttons in the main navigation. Profile remains in the top-left corner.'};
+const MANUAL_META={updated:'18 October 2026 — Audit controls remain inside Jason’s Profile under Administration. Audit Trail, access records and recovery history are restricted to Jason in the database.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
