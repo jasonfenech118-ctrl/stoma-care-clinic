@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — The pouch assistant now uses the detailed preview-style artwork with the rear flange removed. Its eyes, talking mouth and walking legs remain animated.'};
+const MANUAL_META={updated:'18 October 2026 — The visible assistant keeps waving, stepping, swaying and dancing automatically, even with its card closed. Click only to open the steady Help card; × hides the character.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'pouch assistant clippy helper assistant animation movements hide help page search',html:`<p>The pouch assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the pouch assistant once. Click or tap it again to minimise the bubble.</p><p>The textured beige stoma pouch assistant has eyes, eyebrows, hands and legs, with no circular flange behind it. Click it to see it walk to the side holding the Help card; its mouth moves as it talks. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the pouch assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the pouch assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'pouch assistant clippy helper assistant animation movements hide help page search',html:`<p>The pouch assistant appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the pouch assistant once. Click or tap it again to minimise the bubble.</p><p>The textured beige stoma pouch assistant has eyes, eyebrows, hands and legs, with no circular flange behind it. Click it to see it wave hello and walk to the side holding the Help card; it keeps waving, stepping, swaying and dancing whenever visible, even with the card closed. Its mouth moves while speaking; clicking is needed only to open or close the Help card. Where supported, your browser reads its greeting and search feedback aloud; use the speaker button to mute or unmute. The <b>×</b> hides the pouch assistant for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the pouch assistant to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -809,7 +809,7 @@ function manualSearchKey(e){
 /* Local manual companion: reads navigation and help text only, never records. */
 function stomaHelperShow(){
   const helper=document.getElementById('stoma-helper');
-  if(helper){helper.dispatchEvent(new Event('stoma-helper-reset'));helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
+  if(helper){helper.dispatchEvent(new Event('stoma-helper-reset'));helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open','pa-walking');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
 (function(){
@@ -826,16 +826,17 @@ function stomaHelperShow(){
     <button type="button" class="sh-character" aria-label="Open pouch assistant help" title="Click for help; drag to move" aria-expanded="false">
     <svg viewBox="0 0 1280 1280" aria-hidden="true">
       <defs>
-        <clipPath id="pq-outline"><path d="M645 15 C410 5 320 135 300 350 L267 620 C255 795 360 850 432 870 L685 880 C885 855 920 780 920 603 L920 280 C908 85 820 5 645 15Z"/><path d="M65 260H250V430L350 440V560H220L150 510L60 460Z"/><path d="M875 470H1100V530H1245V690H980L870 625Z"/><path d="M425 780H730V1000H425Z"/><path d="M435 955H550L570 1245H265V1040Z"/><path d="M635 825H735L895 980V1245H650L620 970Z"/></clipPath><clipPath id="pq-upper"><path d="M0 0H1280V850H660V985H440V850H0Z"/></clipPath>
+        <clipPath id="pq-outline"><path d="M645 15 C410 5 320 135 300 350 L267 620 C255 795 360 850 432 870 L685 880 C885 855 920 780 920 603 L920 280 C908 85 820 5 645 15Z"/><path d="M65 260H250V430L350 440V560H220L150 510L60 460Z"/><path d="M875 470H1100V530H1245V690H980L870 625Z"/><path d="M425 780H730V1000H425Z"/><path d="M435 955H550L570 1245H265V1040Z"/><path d="M635 825H735L895 980V1245H650L620 970Z"/></clipPath><clipPath id="pq-upper"><path clip-rule="evenodd" d="M0 0H1280V850H660V985H440V850H0Z M900 440H1280V710H900Z"/></clipPath><clipPath id="pq-wave"><path d="M900 510L980 500L1030 460H1110V525L1250 530V690L965 700L900 640Z"/></clipPath>
         <clipPath id="pq-left-leg"><path d="M440 965H530L550 1235H260V1050Z"/></clipPath>
         <clipPath id="pq-right-leg"><path d="M650 830L720 850L890 1000V1240H660L640 980Z"/></clipPath>
         <clipPath id="pq-eyes"><ellipse cx="517" cy="312" rx="91" ry="109"/><ellipse cx="707" cy="339" rx="88" ry="108"/></clipPath>
         <clipPath id="pq-mouth"><ellipse cx="590" cy="477" rx="108" ry="76"/></clipPath>
       </defs>
-      <g clip-path="url(#pq-outline)"><g class="pq-leg pq-leg-left" clip-path="url(#pq-left-leg)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/></g>
+      <g><g class="pq-leg pq-leg-left" clip-path="url(#pq-left-leg)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/></g>
       <g class="pq-leg pq-leg-right" clip-path="url(#pq-right-leg)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/></g>
       <g class="pq-torso">
-        <image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280" clip-path="url(#pq-upper)"/>
+        <g clip-path="url(#pq-upper)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280" clip-path="url(#pq-outline)"/></g>
+        <g class="pq-wave-arm" clip-path="url(#pq-wave)"><image href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280" clip-path="url(#pq-outline)"/></g>
         <g clip-path="url(#pq-eyes)"><image class="pq-eye-look" href="assets/pouch-helper-open.webp?v=590" width="1280" height="1280"/><image class="pq-blink" href="assets/pouch-helper-rest.webp?v=590" width="1280" height="1280"/></g>
         <image class="pq-mouth-rest" href="assets/pouch-helper-rest.webp?v=590" width="1280" height="1280" clip-path="url(#pq-mouth)"/>
       </g>
@@ -844,7 +845,7 @@ function stomaHelperShow(){
     document.body.appendChild(root);
     const bubble=root.querySelector('.sh-bubble'),character=root.querySelector('.sh-character');
     root.hidden=false; // Available on every fresh app visit; × hides it for this visit.
-    let muted=false,utterance=null,walkTimer=null,talkTimer=null;
+    let muted=false,utterance=null,talkTimer=null;
     try{muted=localStorage.getItem('stoma-helper-muted')==='1';}catch(e){}
     const voiceButton=root.querySelector('.pa-voice');
     const speechAvailable='speechSynthesis' in window&&typeof window.SpeechSynthesisUtterance==='function';
@@ -863,17 +864,17 @@ function stomaHelperShow(){
       talkTimer=setTimeout(()=>root.classList.remove('pa-talking'),5000);
     }
     voiceButton.onclick=()=>{muted=!muted;try{localStorage.setItem('stoma-helper-muted',muted?'1':'0');}catch(e){}voiceLabel();if(muted)stopTalking();else if(!bubble.hidden)speak('What would you like help with?');};
-    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);if(!open)stopTalking();}
+    function toggle(open){bubble.hidden=!open;character.setAttribute('aria-expanded',String(open));root.classList.toggle('sh-open',open);if(!open){stopTalking();root.classList.remove('pa-walking');}}
     function walkToSide(){
       const start=root.getBoundingClientRect();
       const end=place(window.innerWidth-(root.offsetWidth||Math.min(470,window.innerWidth-20))-12,start.top);
       const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      if(!reduced){root.classList.add('pa-walking');clearTimeout(walkTimer);walkTimer=setTimeout(()=>root.classList.remove('pa-walking'),1100);
+      if(!reduced){root.classList.add('pa-walking');
         if(root.animate)root.animate([{transform:'translateX('+Math.max(-200,Math.min(200,start.left-end.x))+'px)'},{transform:'translateX(0)'}],{duration:1000,easing:'ease-in-out'});
       }
     }
     let dragged=false;
-    character.onclick=()=>{if(dragged){dragged=false;return;}const opening=bubble.hidden;toggle(opening);if(opening){walkToSide();speak('What would you like help with?');}};
+    character.onclick=()=>{if(dragged){dragged=false;return;}const opening=bubble.hidden;toggle(opening);if(opening){walkToSide();speak('Hello! What would you like help with?');}};
     character.style.touchAction='none';
     character.style.cursor='grab';
     function place(x,y){
