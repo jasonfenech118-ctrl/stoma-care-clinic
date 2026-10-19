@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 October 2026 — Background refreshes pause while an Outcome confirmation or date form is open, including reversal dates. Save with OK or cancel before continuing.'};
+const MANUAL_META={updated:'19 October 2026 — Data Analysis refreshes after case saves, when returning to its window and every 30 seconds while visible. Open incomplete-record lists update too, without interrupting patient edit forms.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -599,6 +599,7 @@ const MANUAL_SECTIONS=[
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
   {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>The paperclip appears automatically with its help bubble closed. Click it to search for a Help topic or browse the manual.</p>`},
+  {id:'analysis-live',title:'Data Analysis updates',keywords:'data analysis complete incomplete live refresh cases',html:`<p>Data Analysis refreshes after patient saves, when returning to its window and every 30 seconds while visible; the incomplete-record worklist updates with it.</p><p>Patient edit forms pause background redraws until you finish; a failed background read keeps the previous results.</p>`},
   {id:'catalogue',title:'Full automations catalogue',keywords:'automation automatic auto does for you refashion supersede appliance discharge letter rod present removed removal date wizard dntu pause reversal reminder snapshot 4pm follow up due booking worklist infection',html:`
     ${manWhen('To understand what the app handles on its own — so staff can trust it and not double-enter.')}
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
