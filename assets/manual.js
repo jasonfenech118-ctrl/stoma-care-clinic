@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'19 October 2026 — Complete/incomplete checks recognise operation details saved on individual stomas, including historical and refashioned stomas. Cases no longer stay incomplete solely because the older patient-level operation field is blank.'};
+const MANUAL_META={updated:'20 October 2026 — The animated help assistant now wears a blonde bob hairstyle.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with a blonde bob haircut, large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -827,6 +827,7 @@ function stomaHelperShow(){
     <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
     <svg viewBox="0 0 200 230" aria-hidden="true">
       <defs>
+        <linearGradient id="sh-blonde" x1="0" y1="0" x2="1" y2=".3"><stop stop-color="#b67d25"/><stop offset=".22" stop-color="#f4cd73"/><stop offset=".43" stop-color="#fff1b3"/><stop offset=".65" stop-color="#e9b952"/><stop offset=".84" stop-color="#f9dc8a"/><stop offset="1" stop-color="#b8802d"/></linearGradient>
         <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
         <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
         <radialGradient id="sh-eye" cx=".35" cy=".25" r=".8"><stop offset=".35" stop-color="#fff"/><stop offset=".7" stop-color="#f5f3fc"/><stop offset="1" stop-color="#a8a1bc"/></radialGradient>
@@ -841,6 +842,19 @@ function stomaHelperShow(){
       <g class="sh-body">
         <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="#5e587b" stroke-width="9" stroke-linecap="round"/>
         <path d="M84 96 L82 144 C80 177 109 180 113 148 L124 44 C129 9 79 6 75 40 L65 140 C59 198 128 204 131 152 L134 108" fill="none" stroke="url(#sh-metal)" stroke-width="6.5" stroke-linecap="round"/>
+        <!-- The bob moves with the paperclip; eyes and brows stay in front. -->
+        <g class="sh-hair" stroke-linejoin="round">
+          <path d="M98 15 C69 6 51 28 43 56 C37 77 37 96 45 105 Q54 113 64 104 C54 97 53 85 58 64 C64 43 78 31 96 30 C118 29 133 48 137 70 C140 89 139 105 129 113 Q144 119 153 106 C162 91 153 52 142 35 C132 19 116 10 98 15Z" fill="url(#sh-blonde)" stroke="#b7893f" stroke-width="1"/>
+          <path d="M98 16 C78 14 63 30 58 48 Q69 44 80 48 L84 42 L85 49 Q97 53 109 52 L110 45 L114 53 Q127 57 137 66 C132 38 116 20 98 16Z" fill="url(#sh-blonde)" stroke="#c89848" stroke-width=".7"/>
+          <g fill="none" stroke="#fff0b0" stroke-width="1.3" opacity=".7">
+            <path d="M93 19 Q56 30 47 77 Q43 98 52 104"/>
+            <path d="M87 22 Q61 39 57 65"/>
+            <path d="M98 20 Q83 31 80 44"/>
+            <path d="M103 21 Q110 31 111 46"/>
+            <path d="M110 21 Q140 34 148 76 Q155 101 141 110"/>
+            <path d="M117 26 Q138 44 141 69"/>
+          </g>
+        </g>
         <g class="sh-eyes">
           <ellipse cx="70" cy="66" rx="22" ry="18" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(-10 70 66)"/>
           <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
