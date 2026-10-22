@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'20 October 2026 — The animated help assistant now wears a blonde bob hairstyle.'};
+const MANUAL_META={updated:'22 October 2026 — Stick Paste is available in the appliance picker’s accessories list.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -296,7 +296,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','For a new missed appointment, the follow-up due month is selected from clinic availability. <b>Three did-not-turn-ups in a row pause</b> follow-up instead. Recording an older miss does not replace follow-up after a later saved outcome. Deceased and reversed follow-up statuses stay closed.')}
   `},
-  {id:'complete',title:'Complete a visit (Seen)',keywords:'complete visit seen stepper attendance complications appliances follow up review nurse owner stoma assessment colour function output clinical notes rod handover',html:`
+  {id:'complete',title:'Complete a visit (Seen)',keywords:'complete visit seen stepper attendance complications appliances accessories stick paste filler paste follow up review nurse owner stoma assessment colour function output clinical notes rod handover',html:`
     ${manMap('appointments')}
     ${manWhen('The patient attended and you are writing the visit up.')}
     ${manFlow(['Attendance','→','Clinical','→','Appliances','→','Follow-up','→','Review'])}
@@ -305,7 +305,7 @@ const MANUAL_SECTIONS=[
       `<b>Attendance</b> — confirm date, time and outcome, and set the <b>Nurse owner</b> (shown as a gold badge).`,
       `<b>Clinical</b> — record complications if any. For <b>every nurse</b>, a <b>Stoma assessment</b> comes first: one column per stoma, named by type (e.g. <b>End Colostomy</b>, <b>Loop Ileostomy</b>), each with colour / appearance, function / output, <b>Peristomal skin</b> (Healthy skin, or findings such as Irritation, Excoriation, Ulcerated — a finding is saved as a complication of that stoma and sets “A complication is identified”), <b>＋ Add other…</b> on colour, function/output and skin, and its own <b>clinical notes</b>. It shows on the Review step and in the patient’s visit history. In the Seen visit these assessment fields are <b>optional</b> — unlike the inpatient stoma assessment you can complete the visit with colour, function / output or peristomal skin left blank (a recorded unhealthy skin finding still counts as a complication).`,
       `<b>Visit reviews.</b> In the patient record’s <b>Appointments</b> tab (and in follow-up history) a visit with a stoma assessment has <b>📝 Open review</b>. It shows the assessment per stoma with its versions (<b>V1, V2 …</b>), each <b>signed automatically</b> with the nurse’s name and time; <b>Show changes</b> marks what changed from the previous version in <b>red</b> (removed items struck through). <b>Edit review</b> saves the next version — and is available <b>only on the day the review was recorded</b>; after that it is locked (🔒). While editing, changed values and added notes show in red.`,
-      `<b>Appliances &amp; accessories</b> — the appliance picker <b>opens by itself</b> on this step (for every user). When the stoma already has an appliance on record, the first choice is <b>Keep same appliance</b> (it shows what is on record): press it when nothing changed and the visit records it as continued unchanged. Otherwise pick <b>One-piece</b>, <b>Two-piece</b> or <b>Dressing only</b> and set the new appliance and accessories. For a first appliance there is nothing to keep, so only the three systems are offered. If you step back out of the picker it does not reopen by itself — use the button.`,
+      `<b>Appliances &amp; accessories</b> — the appliance picker <b>opens by itself</b> on this step (for every user). When the stoma already has an appliance on record, the first choice is <b>Keep same appliance</b> (it shows what is on record): press it when nothing changed and the visit records it as continued unchanged. Otherwise pick <b>One-piece</b>, <b>Two-piece</b> or <b>Dressing only</b> and set the new appliance and accessories. <b>Stick Paste</b> is available in the accessories list alongside <b>Filler Paste</b>. For a first appliance there is nothing to keep, so only the three systems are offered. If you step back out of the picker it does not reopen by itself — use the button.`,
       `<b>Follow-up</b> — choose the next follow-up owner and due month.`,
       `<b>Review</b> — check the summary (it shows the last follow-up date and outcome) and save.`
     ])}
