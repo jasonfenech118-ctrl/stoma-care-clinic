@@ -125,7 +125,7 @@ test('appliances and accessories are alphabetical and Deodorant is retired',()=>
   assert.deepEqual(accessories,[
     'Dilators','Filler Paste','Flange Extenders','Gelling Agents',
     'Hydrocolloid 5x20','Hydrocolloid 20x20','Powder','Protective Wipes',
-    'Stoma Belt','Stoma Seals','None'
+    'Stick Paste','Stoma Belt','Stoma Seals','None'
   ]);
   const withHistorical=Array.from(vm.runInContext("accessoryChoices(['Zinc barrier','Deodorant'])",context));
   assert.equal(withHistorical.includes('Deodorant'),false);
