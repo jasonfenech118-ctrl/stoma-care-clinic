@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'22 October 2026 — Stick Paste is available in the appliance picker’s accessories list.'};
+const MANUAL_META={updated:'23 October 2026 — MW11 is listed as a Blue block ward on level −1.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -400,7 +400,7 @@ const MANUAL_SECTIONS=[
     ${manNote('auto','📝','Ward, bed and notes save when you change a field and leave it. The handover rows stay editable on a computer and phone; there is no row <b>Edit / Save</b> button. On a phone, <b>Profile</b> opens the patient’s read-only details.')}
     <p class="man-lede">Patients are listed by <b>ward, ID number, surname and first name</b> only — no patient pictures, so the sheet stays compact and prints cleanly. (The patient record itself still shows the avatar.) The same applies to <b>Postop Discharges</b>.</p>
     ${manH2('🎨','Ward colours and the walking order')}
-    <p class="man-lede">Type the <b>ward</b> (it is forced to CAPITALS) and the cell takes the <b>colour of that ward's foyer / block</b> — Orange, Red, Brown, Yellow, Green and Blue foyers, Blocks A, B and C each their own colour, so the sheet reads like the colour plan on the wall. The rows then <b>sort in walking order</b>: across the foyers left-to-right, then each foyer's <b>floors from the top down</b>, then by bed number.</p>
+    <p class="man-lede">Type the <b>ward</b> (it is forced to CAPITALS) and the cell takes the <b>colour of that ward's foyer / block</b> — Orange, Red, Brown, Yellow, Green and Blue foyers, Blocks A, B and C each their own colour, so the sheet reads like the colour plan on the wall. <b>MW11</b> is in the <b>Blue block, level −1</b>, and is available in the ward list. The rows then <b>sort in walking order</b>: across the foyers left-to-right, then each foyer's <b>floors from the top down</b>, then by bed number.</p>
     ${manNote('auto','🏥','<b>SAMOC — the Sir Anthony Mamo Oncology Centre</b> (across the road from Mater Dei) is included as its own hospital, in its own violet colour, listed <b>after all the Mater Dei wards</b>, with the full centre name shown beneath the ward. Its wards — <b>ONC 1</b>, <b>ONC 2</b>, <b>HEMA</b>, <b>RAINBOW</b> (paediatric) and <b>PALLIATIVE</b> — are a <b>SAMOC group in the ward dropdown</b> when you admit a patient, and show in <b>SAMOC violet</b> on the handover. Longer spellings (Oncology 1 / 2, Haematology, Palliative Care) and anything starting SAMOC / SAMOK are recognised too.')}
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
