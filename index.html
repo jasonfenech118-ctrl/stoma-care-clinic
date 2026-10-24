@@ -21,12 +21,12 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.24-611"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.24-612"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<script src="assets/manual.js?v=2026.10.24-611"></script>
+<script src="assets/manual.js?v=2026.10.24-612"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3934,7 +3934,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.24-611';
+const APP_BUILD='2026.10.24-612';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21425,7 +21425,7 @@ function handoverRowHTML(p,cls){
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
       ${fistula?`<button class="ncb-btn" style="background:#f3e8ff;color:#6b21a8;" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}','${isBaggingPatient(p)?'bagging':'fistula'}')" title="Off the handover; fistula and bagging-advice patients are not on the Postop Discharges list">Discharge patient</button>`:`<button class="ncb-btn" style="background:#e0e7ff;color:#3730a3;font-weight:800;" onclick="openDischargeModal('${p.id}','${nameArg}')" title="Discharge this patient — choose postop discharge, old case, Gozo or relocated overseas, each with its consequence">🏷️ Discharge patient</button>`}
-      <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Patient profile (read-only)">🪪 Profile</button>
+      <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Open patient profile">🪪 Profile</button>
     </div></td>
   </tr>`;
 }
@@ -21609,48 +21609,9 @@ async function handoverSitingNoStoma(id,name){
   await SB.from('siting_sessions').update({surgery_performed:true,stoma_formed:false,status:'done',updated_at:new Date().toISOString()}).eq('id',ss.id);
   loadHandover();refreshReminders();
 }
-/* A read-only look at the patient behind the card. Deliberately has no inputs
-   at all — it is for checking, never for changing. */
-async function openHandoverProfile(patientId){
-  const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
-  if(error||!p){alert('Could not open this profile: '+(error?error.message:'they are no longer in the registry'));return;}
-  // The admission they are on, so its reference can be quoted from the ward.
-  let ep=null;
-  try{
-    let q=await SB.from('clinical_records').select('id,record_date,episode_ref')
-      .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).limit(1);
-    if(q.error&&/episode_ref/.test(String(q.error.message||'')))
-      q=await SB.from('clinical_records').select('id,record_date')
-        .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).limit(1);
-    ep=(q.data||[])[0]||null;
-  }catch(e){}
-  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
-  const row=(l,v)=>v?`<span>${htmlSafe(l)}</span><span>${htmlSafe(v)}</span>`:'';
-  const d=v=>v?fmtShortDate(v):'';
-  const mb=document.getElementById('mb');mb.className='mb';
-  mb.innerHTML=`<h2>Patient profile</h2>
-    <div class="patient-modal-identity">${patientNameAvatarHTML(p,nm,p.id_card?`<span>${htmlSafe(p.id_card)}</span>`:'','md')}</div>
-    <div class="msub"><strong>Read-only</strong> — nothing on this screen can be changed.</div>
-    <div class="hv-prof">
-      ${row('ID card',p.id_card)}
-      ${row('Born',d(p.date_of_birth))}
-      ${row('Sex',p.sex)}
-      ${row('Phone',p.phone_number)}
-      ${row('Locality',p.locality)}
-      ${row('Firm',p.consultant)}
-      ${row('Episode',ep&&ep.episode_ref?ep.episode_ref:'')}
-      ${row('Ward',[p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' - '))}
-      ${row('Inpatient since',d(p.inpatient_since))}
-      ${row('Stoma',p.stoma_type)}
-      ${row('Site',p.stoma_location)}
-      ${row('Surgery',d(p.surgery_date))}
-      ${row('Operation',p.procedure_performed)}
-      ${row('Findings',p.findings)}
-      ${row('Appliance',p.inpatient_notes)}
-      ${row('Ward note',p.inpatient_nurse_notes)}
-    </div>
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
-  openMo();
+/* Handover Profile opens the same full patient record as the registry. */
+function openHandoverProfile(patientId){
+  return openPatientRecord(patientId,{panel:'demographics'});
 }
 /* How many days from today — negative once the date has gone by. */
 function daysUntilDate(d){
