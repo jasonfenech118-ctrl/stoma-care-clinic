@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'24 October 2026 — The Handover Profile button opens the full patient profile.'};
+const MANUAL_META={updated:'24 October 2026 — The monthly register shows Locality separately beside Address.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -252,7 +252,7 @@ const MANUAL_SECTIONS=[
     ${manMap('patients')}
     ${manSteps([
       `${manBtn('📱 Quick Look','#e7e6fb','#3a34a0')} — a fast phone-friendly lookup to check a patient at the bedside.`,
-      `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed <b>at MDH</b>, grouped by month (newest first). Every <i>new</i> stoma is a line of its own, in the month it was formed.`
+      `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed <b>at MDH</b>, grouped by month (newest first). <b>Locality</b> appears beside <b>Address</b>, using the saved patient locality. Every <i>new</i> stoma is a line of its own, in the month it was formed.`
     ])}
     ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is never a line of its own. Each stoma keeps a <b>single register row</b>, in the month it was <i>first</i> formed, and any refashioning is <b>folded into that same row</b>: the refashioning’s operation, date and type stack <b>above</b> the first-performed ones (latest at the very top, the original “first stoma” at the foot). When <b>one operation remade more than one stoma</b> (e.g. an ileostomy and its mucus fistula together) it shows as a <b>single line</b>, naming the stoma types it produced — not a duplicate. A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — the refashioning shows on the one row of their first formation.')}
     ${manH2('🌍','Stomas formed outside MDH')}
