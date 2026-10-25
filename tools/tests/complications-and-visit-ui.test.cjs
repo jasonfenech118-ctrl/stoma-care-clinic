@@ -174,3 +174,47 @@ test('changing a complication outcome refreshes the matching visit review only',
   assert.equal(context.esState.patient.complications,updated);
   assert.equal(renders,1);
 });
+
+test('failed hernia save retains its selection and reports the underlying error',async()=>{
+  const boxes=[{value:'Parastomal hernia',checked:true},{value:'Granuloma',checked:true}];
+  const alerts=[],err={hidden:true,textContent:''};
+  const context=vm.createContext({
+    document:{querySelectorAll:()=>boxes.filter(b=>b.checked),getElementById:id=>id==='of-review-error'?err:null},
+    addComplicationToPatient:async(id,entry)=>entry.text==='Parastomal hernia'?{error:{message:'Permission denied'}}:{list:[{text:'Granuloma'}]},
+    clrState:{},esState:{},esMaybeAutoAdvance:()=>{},TODAY:'2026-10-25',alert:m=>alerts.push(m)
+  });
+  vm.runInContext(sourceBetween('async function onApptAddComplicationsMulti(','/* Save one complication'),context);
+  assert.equal(await context.onApptAddComplicationsMulti('p1'),false);
+  assert.equal(boxes[0].checked,true);
+  assert.equal(boxes[1].checked,false);
+  assert.equal(context.esState.cmpAdded,false);
+  assert.match(alerts[0],/Parastomal hernia: Permission denied/);
+  assert.equal(err.hidden,false);
+});
+
+test('Clinical review stays put when a selected complication cannot save',async()=>{
+  const steps=[];
+  const context=vm.createContext({
+    esState:{patientId:'p1',apptId:'a1'},window:{},
+    document:{getElementById:()=>null,querySelector:()=>({value:'new-added'}),querySelectorAll:()=>[{value:'Parastomal hernia'}]},
+    esOutcomeAttended:()=>true,onApptAddComplicationsMulti:async()=>false,esGoStep:n=>steps.push(n)
+  });
+  vm.runInContext(sourceBetween('async function esFollowupNext(){','/* The Appliances step'),context);
+  await context.esFollowupNext();
+  assert.deepEqual(steps,[]);
+});
+
+test('adding parastomal hernia preserves granulomas already saved on the patient',async()=>{
+  const prior={id:'g1',text:'Granuloma',status:'open',events:[{id:'e1'}]};
+  let saved;
+  const context=vm.createContext({
+    fetchPatientById:async()=>({data:{complications:[prior]}}),parseComplications:p=>p.complications.slice(),
+    getCurrentUserForAudit:async()=>({name:'Nurse'}),TODAY:'2026-10-25',
+    saveComplicationsWithEvent:async(id,list)=>{saved=list;return{list};}
+  });
+  vm.runInContext(sourceBetween('async function addComplicationToPatient(','async function removeComplicationFromPatient('),context);
+  await context.addComplicationToPatient('p1',{text:'Parastomal hernia',stoma:'1'});
+  assert.equal(saved.length,2);
+  assert.equal(saved[0],prior);
+  assert.equal(saved[1].text,'Parastomal hernia');
+});
