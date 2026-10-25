@@ -139,3 +139,38 @@ test('appliances and accessories are alphabetical and Deodorant is retired',()=>
   assert.doesNotMatch(html,/ACCESSORIES\.concat\([^\n]*\.map\(/);
   assert.doesNotMatch(html,/ACCESSORIES\.map\(n=>applianceChkHTML/);
 });
+
+test('visit Review excludes resolved history and stale chips but keeps open and newly selected findings',()=>{
+  const pane={innerHTML:''};
+  const context=vm.createContext({
+    document:{
+      getElementById:id=>id==='es-pane-5'?pane:null,
+      querySelector:selector=>selector.includes('of-cmp-review')?{value:'new-added'}:null,
+      querySelectorAll:selector=>selector==='.of-cmp-multi:checked'?[{value:'New finding'}]:[{textContent:'Stale resolved chip'}]
+    },
+    esState:{apptId:'a',complications:[{text:'Old resolved complication',status:'resolved'},{text:'Current concern',status:'open'}]},
+    esResume:null,window:{},htmlSafe:String,attDMY:String
+  });
+  vm.runInContext(sourceBetween('function esRenderReview(){','function esOnOutcomeChange(){'),context);
+  context.esRenderReview();
+  assert.match(pane.innerHTML,/Current concern/);
+  assert.match(pane.innerHTML,/New finding/);
+  assert.doesNotMatch(pane.innerHTML,/Old resolved complication|Stale resolved chip/);
+});
+
+test('changing a complication outcome refreshes the matching visit review only',()=>{
+  let renders=0;
+  const context=vm.createContext({
+    document:{getElementById:()=>null},clrState:{},cmpMgrPatient:null,
+    esState:{patientId:'p1',step:5,patient:{},complications:[]},
+    esRenderReview:()=>renders++
+  });
+  vm.runInContext(sourceBetween('function refreshComplicationViews(','/* ── Complications manager'),context);
+  const updated=[{text:'Prior complication',status:'resolved'}];
+  context.refreshComplicationViews('p2',updated);
+  assert.equal(renders,0);
+  context.refreshComplicationViews('p1',updated);
+  assert.equal(context.esState.complications,updated);
+  assert.equal(context.esState.patient.complications,updated);
+  assert.equal(renders,1);
+});
