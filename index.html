@@ -21,12 +21,12 @@
 <script src="assets/cancellations.js"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/daily-attendance.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.25-614"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.25-615"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<script src="assets/manual.js?v=2026.10.25-614"></script>
+<script src="assets/manual.js?v=2026.10.25-615"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3934,7 +3934,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.25-614';
+const APP_BUILD='2026.10.25-615';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -7157,7 +7157,8 @@ async function esFollowupNext(){
   // record it now.
   if(cmp==='new-added'&&!isNewCase&&!isDntu&&esState.patientId){
     if(document.querySelectorAll('.of-cmp-multi:checked').length){
-      try{await onApptAddComplicationsMulti(esState.patientId);}catch(e){}
+      try{if(!await onApptAddComplicationsMulti(esState.patientId))return;}
+      catch(e){alert('Could not save the selected complications: '+(e.message||e));return;}
     }
   }
   esGoStep(3);   // Appliances & accessories — the picker opens from there
@@ -17658,15 +17659,18 @@ function complicationMultiAddHTML(patient){
 async function onApptAddComplicationsMulti(patientId){
   const boxes=[...document.querySelectorAll('.of-cmp-multi:checked')];
   const names=[...new Set(boxes.map(b=>b.value).filter(Boolean))];
-  if(!names.length){alert('Tick at least one complication first.');return;}
+  if(!names.length){alert('Tick at least one complication first.');return false;}
   const stomaEl=document.getElementById('of-cmp-multi-stoma');
   const stoma=stomaEl?stomaEl.value:'';
-  if(stomaEl?.dataset?.requiresChoice==='1'&&!stoma){alert('Choose which stoma these complications are on.');return;}
+  if(stomaEl?.dataset?.requiresChoice==='1'&&!stoma){alert('Choose which stoma these complications are on.');return false;}
   let lastList=null;const failed=[];
   for(const text of names){
-    const res=await addComplicationToPatient(patientId,{text,stoma,date:TODAY,note:'',source:'Appointment'});
-    if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return;}
-    if(res.error){failed.push(text);continue;}
+    let res;
+    try{res=await addComplicationToPatient(patientId,{text,stoma,date:TODAY,note:'',source:'Appointment'});}
+    catch(error){res={error};}
+    if(res.missing){alert('This could not be saved yet — the complications column is not in the database.\n\nRun sql/add-complications.sql once in Supabase, then add it again.');return false;}
+    if(res.error){failed.push(text+': '+(res.error.message||String(res.error)));continue;}
+    boxes.filter(b=>b.value===text).forEach(b=>{b.checked=false;});
     lastList=res.list;
   }
   if(lastList){
@@ -17674,11 +17678,16 @@ async function onApptAddComplicationsMulti(patientId){
     const host=document.getElementById('of-cmp-list');
     if(host)host.innerHTML=complicationListHTML(lastList,{removable:true,patientId});
   }
-  boxes.forEach(b=>{b.checked=false;});
-  if(failed.length)alert('Could not save: '+failed.join(', '));
+  if(failed.length){
+    const message='Could not save:\n'+failed.join('\n')+'\n\nYour unsaved selections have been kept. Please try again.';
+    const err=document.getElementById('of-review-error');
+    if(err){err.hidden=false;err.textContent=message;}
+    alert(message);
+  }
   // Complications recorded — mark the step's complications answer as settled and
   // move the visit stepper on (once the appliance review is also answered).
-  if(lastList&&typeof esState!=='undefined'&&esState){esState.cmpAdded=true;esState.complications=lastList;esMaybeAutoAdvance();}
+  if(lastList&&typeof esState!=='undefined'&&esState){esState.cmpAdded=!failed.length;esState.complications=lastList;esMaybeAutoAdvance();}
+  return failed.length===0;
 }
 /* Save one complication and refresh every view that might be showing the list —
    the picker, the appointment card, the patient card and the handover row — so
@@ -18044,13 +18053,16 @@ async function mgrAddComplication(patientId){
   const note=document.getElementById('cmpm-note')?.value||'';
   const failed=[];let saved=false;
   for(const text of names){
-    const res=await addComplicationToPatient(patientId,{text,stoma,note,source:cmpMgrSource});
+    let res;
+    try{res=await addComplicationToPatient(patientId,{text,stoma,note,source:cmpMgrSource});}
+    catch(error){res={error};}
     if(res&&res.missing){cmpSaveAlert(res);return;}
-    if(res&&res.error){failed.push(text);continue;}
+    if(res&&res.error){failed.push(text+': '+(res.error.message||String(res.error)));continue;}
+    [...document.querySelectorAll('.cmpm-type:checked')].filter(b=>b.value===text).forEach(b=>{b.checked=false;});
     saved=true;
   }
   if(failed.length)alert('Could not save: '+failed.join(', '));
-  if(!saved)return;
+  if(!saved||failed.length)return;
   await cmpMgrRefresh(patientId);
 }
 async function mgrAddUpdate(patientId,compId){
