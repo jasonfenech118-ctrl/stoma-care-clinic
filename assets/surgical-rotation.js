@@ -117,13 +117,19 @@ window.SurgicalRotation=(()=>{
   function cancel(){if(busy)return;pending=null;$('sr-preview').hidden=true;$('sr-preview-data').innerHTML='';message('');}
 
   const installIcon='<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4V3H5v18h9v-1M9 17h1M18 8v8M14 12h8"/></svg>';
-  let rotationInstallPrompt=null, installing=false, rotationInstalled=false;
+  let installing=false;
+  function installState(){return window.srInstallState||(window.srInstallState={prompt:null,installed:false});}
+  function installMessage(text){
+    let note=$('sr-install-status');
+    if(!note&&$('sr-phone')){note=document.createElement('p');note.id='sr-install-status';note.setAttribute('role','status');note.setAttribute('aria-live','polite');note.style.cssText='padding:12px;border-radius:8px;background:#ede9fe;color:#4c1d95;font-weight:600;';$('sr-phone').closest('.sr-heading').insertAdjacentElement('afterend',note);}
+    if(note){note.textContent=text;note.hidden=!text;}
+  }
   function preparePhoneInstall(){
     const manifest=document.querySelector('link[rel="manifest"]');
     if(manifest&&!manifest.getAttribute('href').startsWith('surgical-rotation.webmanifest')){
-      rotationInstallPrompt=null;
+      installState().prompt=null;
       if(typeof qlDeferred!=='undefined')qlDeferred=null;
-      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-635';
+      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-637';
     }
     const icon=document.querySelector('link[rel="apple-touch-icon"]');
     if(icon)icon.href='assets/surgical-rotation-192.png';
@@ -134,37 +140,32 @@ window.SurgicalRotation=(()=>{
     btn.innerHTML=installIcon+'<span>Add to phone</span>';
     btn.disabled=installing;
     const phoneMode=new URLSearchParams(location.search).get('view')==='surgical-rotation';
-    btn.hidden=rotationInstalled||(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone());
+    btn.hidden=installState().installed||(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone());
   }
   async function phoneShortcut(){
     preparePhoneInstall();
     if(installing)return;
-    if(rotationInstallPrompt){
-      const prompt=rotationInstallPrompt;rotationInstallPrompt=null;installing=true;updateInstallButton();
+    if(installState().prompt){
+      const prompt=installState().prompt;installState().prompt=null;installing=true;updateInstallButton();
       try{
+        installMessage('Confirm Install in your phone’s installation prompt.');
         await prompt.prompt();
         const choice=await prompt.userChoice;
-        message(choice.outcome==='accepted'?'Installation accepted. Look for the purple Surgical Rotation icon on your phone.':'Installation cancelled. You can add Surgical Rotation later.');
-      }catch(e){message('Installation could not open. Try again or use your browser’s Add to Home screen option.',true);}
+        installMessage(choice.outcome==='accepted'?'Installation accepted. Look for the purple Surgical Rotation icon on your phone.':'Installation cancelled. You can add Surgical Rotation later.');
+      }catch(e){installMessage('Chrome could not open installation. Use its menu → Add to Home screen → Install.');}
       finally{installing=false;updateInstallButton();}
       return;
     }
     const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-    message(ios?'To add the purple Surgical Rotation icon, tap Safari’s Share button → Add to Home Screen.':'Your browser has not offered installation yet, or this app is already installed. If it is not installed, use the browser menu → Add to Home screen → Install. No separate link is needed.');
+    installMessage(ios?'To add the purple Surgical Rotation icon, tap Safari’s Share button → Add to Home Screen.':'Your browser has not offered installation yet, or this app is already installed. If it is not installed, use the browser menu → Add to Home screen → Install. No separate link is needed.');
   }
-  window.addEventListener('beforeinstallprompt',event=>{
-    const manifest=document.querySelector('link[rel="manifest"]');
-    if(!manifest?.getAttribute('href').startsWith('surgical-rotation.webmanifest'))return;
-    event.preventDefault();rotationInstallPrompt=event;
+  window.addEventListener('sr-install-ready',()=>{
     updateInstallButton();
-    if($('page-surgical-rotation')?.classList.contains('active'))message('Ready to add to your phone. Tap Add to phone, then confirm Install.');
+    if($('page-surgical-rotation')?.classList.contains('active'))installMessage('Ready. Tap Add to phone, then confirm Install.');
   });
-  window.addEventListener('appinstalled',()=>{
-    const manifest=document.querySelector('link[rel="manifest"]');
-    if(!manifest?.getAttribute('href').startsWith('surgical-rotation.webmanifest'))return;
-    rotationInstallPrompt=null;rotationInstalled=true;
+  window.addEventListener('sr-install-complete',()=>{
     updateInstallButton();
-    message('Surgical Rotation installed. Look for the purple clipboard icon on your phone.');
+    installMessage('Installed. Look for the purple Surgical Rotation icon on your phone.');
   });
   function autoRefresh(){if(db&&document.visibilityState!=='hidden'&&document.getElementById('page-surgical-rotation')?.classList.contains('active'))refresh(true);}
   window.addEventListener('focus',autoRefresh);
@@ -180,6 +181,8 @@ window.SurgicalRotation=(()=>{
       const drop=$('sr-drop');for(const type of ['dragenter','dragover'])drop.addEventListener(type,e=>{e.preventDefault();drop.classList.add('sr-over');});
       drop.addEventListener('dragleave',()=>drop.classList.remove('sr-over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('sr-over');if(e.dataTransfer.files.length!==1){message('Drop one Excel file at a time.',true);return;}receive(e.dataTransfer.files[0]);});
     }
+    updateInstallButton();
+    if(installState().prompt)installMessage('Ready. Tap Add to phone, then confirm Install.');
     refresh();
   }
   return {open,parse,contacts,matchingRows};
