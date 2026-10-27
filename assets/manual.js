@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Ms. Clippy’s purple cat-eye frames are slimmer, with smooth curves and a softer finish.'};
+const MANUAL_META={updated:'27 October 2026 — Ms. Clippy’s purple cat-eye glasses use sculpted filled frames with a polished shaded finish.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -828,7 +828,7 @@ function stomaHelperShow(){
     <button type="button" class="sh-character" aria-label="Open paperclip help" title="Click for help; drag to move" aria-expanded="false">
     <svg viewBox="0 0 200 230" aria-hidden="true" shape-rendering="geometricPrecision">
       <defs>
-        <linearGradient id="sh-frames" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#a17ac4"/><stop offset=".4" stop-color="#77509b"/><stop offset="1" stop-color="#543372"/></linearGradient>
+        <linearGradient id="sh-frames" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#b18ad3"/><stop offset=".18" stop-color="#8960b0"/><stop offset=".5" stop-color="#69428f"/><stop offset=".82" stop-color="#8055a5"/><stop offset="1" stop-color="#4d2c6c"/></linearGradient>
         <linearGradient id="sh-blonde" x1="0" y1="0" x2="1" y2=".3"><stop stop-color="#b67d25"/><stop offset=".22" stop-color="#f4cd73"/><stop offset=".43" stop-color="#fff1b3"/><stop offset=".65" stop-color="#e9b952"/><stop offset=".84" stop-color="#f9dc8a"/><stop offset="1" stop-color="#b8802d"/></linearGradient>
         <linearGradient id="sh-metal" x1="0" y1="0" x2="1" y2=".2"><stop stop-color="#565171"/><stop offset=".22" stop-color="#9994bb"/><stop offset=".45" stop-color="#ddd8ee"/><stop offset=".66" stop-color="#a09abf"/><stop offset="1" stop-color="#595371"/></linearGradient>
         <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
@@ -862,16 +862,10 @@ function stomaHelperShow(){
           <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
           <g class="sh-pupils"><ellipse cx="70" cy="67" rx="11.5" ry="9.5" fill="url(#sh-pupil)"/><ellipse cx="116" cy="79" rx="11.5" ry="10" fill="url(#sh-pupil)"/></g>
         </g>
-        <g class="sh-glasses" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <g stroke="url(#sh-frames)" stroke-width="4.2">
-            <path d="M44 50 C53 46 72 45 83 49 C91 52 94 57 92 65 C90 73 88 80 82 83 C72 88 59 84 54 77 C49 70 46 59 44 50Z"/>
-            <path d="M97 68 C98 60 106 56 116 57 C127 58 139 61 145 65 C142 77 136 88 129 93 C121 99 109 97 104 90 C100 84 98 76 97 68Z"/>
-            <path d="M93 63 C95 62 97 63 99 66" stroke-width="3"/>
-            <path d="M44 53 L41 52 M143 68 L146 67" stroke-width="2.8"/>
-          </g>
-          <g stroke="#d5bce9" stroke-width=".7" opacity=".65">
-            <path d="M48 50 C59 47 74 47 83 51 M103 64 C112 58 129 61 140 65"/>
-          </g>
+        <g class="sh-glasses" fill="url(#sh-frames)" fill-rule="evenodd">
+          <path d="M42 49 C53 44 74 44 85 49 C94 53 97 59 94 68 C92 78 88 85 80 87 C68 91 57 86 51 77 C46 69 43 57 42 49Z M49 53 C58 50 73 50 82 53 C89 56 91 60 89 66 C87 74 84 80 78 82 C69 85 60 81 56 75 C52 68 50 60 49 53Z"/>
+          <path d="M95 66 C97 57 106 53 118 55 C130 56 141 60 147 64 C144 78 138 90 130 96 C120 102 108 99 102 91 C97 84 95 74 95 66Z M101 67 C103 61 109 59 117 60 C127 61 136 63 141 67 C138 77 133 86 126 91 C119 96 111 93 107 87 C103 82 101 73 101 67Z"/>
+          <path d="M91 60 C95 58 99 60 103 65 L101 70 C98 65 95 64 92 66Z M43 50 C38 48 37 53 42 55 L47 56 L46 51Z M143 64 C149 62 152 66 147 69 L142 71Z"/>
         </g>
         <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
       </g>
