@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'25 October 2026 — Complication save failures show the reason and retain unsaved selections. The visit stays on Clinical review until the selected complications save.'};
+const MANUAL_META={updated:'27 October 2026 — Discharge letters is available below Profile on each inpatient handover row.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -397,7 +397,7 @@ const MANUAL_SECTIONS=[
   {id:'sheet',title:'Reading the handover sheet',keywords:'handover ward inpatient sheet phone mobile editable automatic save profile appliance notes encounter keep same appliance modify appliance set appliance picker latest Lentell duplicate closed stoma legacy links flange due rod loop stoma end ileostomy end colostomy urostomy removal date removed discharge letter complications button infection cre vre chip urgency reminders schedule 5 permit bell green yellow orange red daily colour foyer block level floor walking order samoc oncology mamo hospital sort',html:`
     ${manMap('handover')}
     ${manWhen('Walking the ward, or preparing the printed sheet.')}
-    ${manNote('auto','📝','Ward, bed and notes save when you change a field and leave it. The handover rows stay editable on a computer and phone; there is no row <b>Edit / Save</b> button. <b>Profile</b> opens that patient’s full profile on Overview, with Stomas, Outcome, Appointments and Episodes available.')}
+    ${manNote('auto','📝','Ward, bed and notes save when you change a field and leave it. The handover rows stay editable on a computer and phone; there is no row <b>Edit / Save</b> button. <b>Profile</b> opens that patient’s full profile on Overview, with Stomas, Outcome, Appointments and Episodes available. <b>Discharge letters</b>, below Profile, opens a new tab with the selected patient’s current details and stoma appliances filled in for the discharge letter.')}
     <p class="man-lede">Patients are listed by <b>ward, ID number, surname and first name</b> only — no patient pictures, so the sheet stays compact and prints cleanly. (The patient record itself still shows the avatar.) The same applies to <b>Postop Discharges</b>.</p>
     ${manH2('🎨','Ward colours and the walking order')}
     <p class="man-lede">Type the <b>ward</b> (it is forced to CAPITALS) and the cell takes the <b>colour of that ward's foyer / block</b> — Orange, Red, Brown, Yellow, Green and Blue foyers, Blocks A, B and C each their own colour, so the sheet reads like the colour plan on the wall. <b>MW11</b> is in the <b>Blue block, level −1</b>, and is available in the ward list. <b>GYNEA</b> is also available in the ward list, in the <b>Blue block, first floor</b>. The rows then <b>sort in walking order</b>: across the foyers left-to-right, then each foyer's <b>floors from the top down</b>, then by bed number.</p>
