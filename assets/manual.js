@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — The letter toolbar includes Bullets, Numbering, Indent and Outdent controls.'};
+const MANUAL_META={updated:'27 October 2026 — Discharge letters automatically use the signed-in nurse’s name. Indent and Outdent buttons have been removed.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -537,7 +537,7 @@ const MANUAL_SECTIONS=[
       `Open the patient and press <b>Discharge letter</b> (available for inpatients).`,
       `Review the saved details. <b>Every current stoma</b> has its own heading, operation and date, latest appliance and accessories, open complications and care plan. Closed or superseded stomas remain in the patient history.`,
       `On <b>Discharge assessment</b>, use the stoma buttons to complete each stoma’s colour, function and peristomal skin. Confirm urostomy stents if applicable. Missing observations remain clearly marked until completed.`,
-      `Complete <b>Teaching session</b>, press <b>Finish</b>, then check the letter and <b>Save / Print</b> or export to Word. Single-stoma letters omit the stoma headings in the letter body and care plan; multiple-stoma letters keep their headings. Select text or place the cursor in the editable letter, then use <b>Bullets</b>, <b>Numbering</b>, <b>Indent</b> or <b>Outdent</b> to format lists. Use <b>Undo</b> and <b>Redo</b> for typing and formatting in the editable letter; line spacing is <b>1</b> on screen, in print and Word exports. With one current stoma, the wizard opens directly on discharge assessment, followed by teaching. With multiple current stomas, the review page comes first.`
+      `The signature automatically uses the signed-in nurse’s profile name. Complete <b>Teaching session</b>, press <b>Finish</b>, then check the letter and <b>Save / Print</b> or export to Word. Single-stoma letters omit the stoma headings in the letter body and care plan; multiple-stoma letters keep their headings. Select text or place the cursor in the editable letter, then use <b>Bullets</b> or <b>Numbering</b> to format lists. Use <b>Undo</b> and <b>Redo</b> for typing and formatting in the editable letter; line spacing is <b>1</b> on screen, in print and Word exports. With one current stoma, the wizard opens directly on discharge assessment, followed by teaching. With multiple current stomas, the review page comes first.`
     ])}
     ${manNote('auto','⚙️','The letter uses the <b>latest saved selection for each stoma</b>, even when different stomas were last updated on different days. Stoma powder and other accessories are carried across automatically. Open complications include their latest recorded note; complications not linked to a particular stoma appear separately. A cleared selection stays cleared.')}
     ${manNote('auto','⚙️','Rod status and dates come from the saved handover record. While in situ, its removal-due date is included; once marked removed, its removal date is included and in-situ care instructions stop. There is <b>no rod, complication, accessory or appliance selection page</b> to repeat when opening a recorded patient’s letter. If a current appliance is missing, update the stoma record and reopen the letter.')}
@@ -646,6 +646,7 @@ const MANUAL_SECTIONS=[
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
         ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
+        ['✍️','Discharge letter signature','The letter automatically uses the signed-in nurse’s profile name, including print, Word and email copies.','Discharge letter'],
         ['✉️','Discharge letter for every stoma','Each current ileostomy, colostomy, urostomy or mucus fistula has its own section and care plan, with its latest appliance and accessories. Different update dates do not drop another stoma’s selection.','Discharge letter'],
         ['🩹','Discharge powder and complications','Recorded stoma powder and open complications, with their latest notes, enter the correct stoma’s discharge section automatically. Unassigned complications appear once in a separate section.','Discharge letter'],
         ['📅','Discharge rod details','Rod due-removal and removed dates come from handover. A removed rod stops in-situ care instructions; recorded-patient letters omit the rod questions.','Discharge letter'],
