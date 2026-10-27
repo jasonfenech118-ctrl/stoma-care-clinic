@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Ms. Clippy’s purple cat-eye glasses use sculpted filled frames with a polished shaded finish.'};
+const MANUAL_META={updated:'27 October 2026 — Single-stoma letters omit repeated stoma headings. The letter editor includes Undo and Redo and uses single line spacing.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -537,7 +537,7 @@ const MANUAL_SECTIONS=[
       `Open the patient and press <b>Discharge letter</b> (available for inpatients).`,
       `Review the saved details. <b>Every current stoma</b> has its own heading, operation and date, latest appliance and accessories, open complications and care plan. Closed or superseded stomas remain in the patient history.`,
       `On <b>Discharge assessment</b>, use the stoma buttons to complete each stoma’s colour, function and peristomal skin. Confirm urostomy stents if applicable. Missing observations remain clearly marked until completed.`,
-      `Complete <b>Teaching session</b>, press <b>Finish</b>, then check the letter and <b>Save / Print</b> or export to Word. With one current stoma, the wizard opens directly on discharge assessment, followed by teaching. With multiple current stomas, the review page comes first.`
+      `Complete <b>Teaching session</b>, press <b>Finish</b>, then check the letter and <b>Save / Print</b> or export to Word. Single-stoma letters omit the stoma headings in the letter body and care plan; multiple-stoma letters keep their headings. Use <b>Undo</b> and <b>Redo</b> for typing and formatting in the editable letter; line spacing is <b>1</b> on screen, in print and Word exports. With one current stoma, the wizard opens directly on discharge assessment, followed by teaching. With multiple current stomas, the review page comes first.`
     ])}
     ${manNote('auto','⚙️','The letter uses the <b>latest saved selection for each stoma</b>, even when different stomas were last updated on different days. Stoma powder and other accessories are carried across automatically. Open complications include their latest recorded note; complications not linked to a particular stoma appear separately. A cleared selection stays cleared.')}
     ${manNote('auto','⚙️','Rod status and dates come from the saved handover record. While in situ, its removal-due date is included; once marked removed, its removal date is included and in-situ care instructions stop. There is <b>no rod, complication, accessory or appliance selection page</b> to repeat when opening a recorded patient’s letter. If a current appliance is missing, update the stoma record and reopen the letter.')}

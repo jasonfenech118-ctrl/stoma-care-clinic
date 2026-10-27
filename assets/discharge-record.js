@@ -193,8 +193,8 @@ function applyRecordedLetter(){
       var tpl=bodyTemplateFor(WZ.type),defaults=DEFAULT_BODY_TEMPLATES[WZ.type]||DEFAULT_BODY_TEMPLATES.colostomy;
       // Keep customised discharge wording; standard teaching is written once.
       var discharge=tpl.discharge===defaults.discharge?tpl.discharge.split(' During hospitalisation')[0]:tpl.discharge;
-      body.push('<p class="record-stoma-title"><strong>'+_esc(label)+'</strong></p>',
-        '<p>'+fillBodyTemplate(tpl.opening,vars)+'</p>',
+      if(recordedStomas.length>1)body.push('<p class="record-stoma-title"><strong>'+_esc(label)+'</strong></p>');
+      body.push('<p>'+fillBodyTemplate(tpl.opening,vars)+'</p>',
         '<p>'+fillBodyTemplate(discharge,vars)+'</p>');
       if(s.findings)body.push('<p><strong>Operation findings:</strong> '+_esc(s.findings)+'</p>');
       if((s.complications||[]).length)body.push('<p><strong>Recorded complications:</strong> '+
@@ -213,8 +213,10 @@ function applyRecordedLetter(){
   document.querySelector('.body').innerHTML=body.join('');
   var ul=document.getElementById('planList');ul.innerHTML='';
   plans.forEach(function(plan){
-    var title=document.createElement('li');title.className='record-plan-title';
-    title.innerHTML='<strong>'+_esc(plan.heading)+'</strong>';ul.appendChild(title);
+    if(recordedStomas.length>1){
+      var title=document.createElement('li');title.className='record-plan-title';
+      title.innerHTML='<strong>'+_esc(plan.heading)+'</strong>';ul.appendChild(title);
+    }
     plan.bullets.forEach(function(text){var li=document.createElement('li');li.innerHTML=text;ul.appendChild(li);});
   });
   ['title','fname','sname','id'].forEach(function(key){

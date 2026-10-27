@@ -148,6 +148,9 @@ test('one recorded stoma opens assessment directly and Back never adds the revie
   const {w,d}=page(s);
   assert.deepEqual(Array.from(w.stepsForWizard()),['recordAssessment','teaching']);
   assert.equal(d.querySelector('#wzTotal').textContent,'2');
+  assert.equal(d.querySelectorAll('.record-stoma-title,.record-plan-title').length,0);
+  assert.match(textOf(d,'.body'),/underwent/);
+  assert.ok(d.querySelectorAll('#planList li').length>0);
   assert.match(d.querySelector('#wzTitle').textContent,/Discharge assessment/);
   w.wzNext();assert.match(d.querySelector('#wzTitle').textContent,/Teaching/);
   w.wzBack();assert.match(d.querySelector('#wzTitle').textContent,/Discharge assessment/);
