@@ -143,6 +143,15 @@ test('the recorded-patient wizard has only review, per-stoma assessment and teac
   w.wzNext();assert.equal(d.querySelectorAll('.wz-record-tab').length,3);
   assert.doesNotMatch(textOf(d,'#wzBody'),/Expected date of rod removal|Choose the one-piece/);
 });
+test('one recorded stoma opens assessment directly and Back never adds the review page',()=>{
+  const s=snapshot();s.stomas=s.stomas.slice(0,1);
+  const {w,d}=page(s);
+  assert.deepEqual(Array.from(w.stepsForWizard()),['recordAssessment','teaching']);
+  assert.equal(d.querySelector('#wzTotal').textContent,'2');
+  assert.match(d.querySelector('#wzTitle').textContent,/Discharge assessment/);
+  w.wzNext();assert.match(d.querySelector('#wzTitle').textContent,/Teaching/);
+  w.wzBack();assert.match(d.querySelector('#wzTitle').textContent,/Discharge assessment/);
+});
 test('multiple complication updates on the same day retain the last recorded note',()=>{
   const c=context(),s=c.dischargeLetterRecord(patient({initial_stomas:[],complications:[{
     text:'Skin redness',stoma:'1',events:[{date:'2026-10-01',note:'Morning observation'},
@@ -179,7 +188,7 @@ test('a recorded complication does not invent treatment, healthy skin, or a stom
   ]}),[episode([row('base','2026-10-01',['Dansac 8080 drainable pouch'])])],[]);
   const {d,w}=page(s);assert.match(textOf(d,'.body'),/Mucocutaneous separation|Retraction/);
   assert.doesNotMatch(textOf(d,'#planList'),/powder|Orabase|Stoma belt/);
-  w.wzNext();assert.equal(d.querySelector('#record-skin').value,'');
+  assert.equal(d.querySelector('#record-skin').value,'');
 });
 test('rod in situ is tied to its stoma and removed status stops in-situ instructions',()=>{
   const s=snapshot(),{d}=page(s);assert.match(textOf(d,'.body'),/Rod in situ, due for removal on 4 October 2026/);
