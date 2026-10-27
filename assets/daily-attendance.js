@@ -16,17 +16,18 @@
     til_off: 'Time off in lieu',
     check: 'Needs checking'
   };
-  // Attendance is only marked for people on duty: tap Present (or Absent if a
-  // rostered person did not come in). Anyone who is off or on leave is left with
+  // Select Sick to record an unexpected sick day and update the roster.
+  // Anyone who is off or on leave is left with
   // no selection — their status already comes from the roster.
   const STATUS_OPTIONS = [
     {value: 'not_recorded', label: '—'},
     {value: 'present', label: 'Present'},
-    {value: 'absent', label: 'Absent'}
+    {value: 'sick', label: 'Sick'}
   ];
   // Earlier sheets used these statuses. Keep their saved meaning and show the
   // existing selection without adding extra choices to new attendance rows.
   const LEGACY_STATUS_LABELS = {
+    absent: 'Absent (previous record)',
     late: 'Present (recorded late)',
     left_early: 'Present (recorded early departure)',
     off_leave: 'Off / leave (recorded)'
@@ -409,7 +410,7 @@
           '<small>' + escape(plannedDetail) + '</small></td>' +
           '<td data-label="Attendance"><select data-field="attendance_status" ' +
           'onchange="DailyAttendance.queueSave(this)">' +
-          statusOptions(row.attendance_status) + '</select></td>' +
+          statusOptions(row.planned_code === 'sick_leave' && row.attendance_status === 'off_leave' ? 'sick' : row.attendance_status) + '</select></td>' +
           '<td data-label="Time in"><input type="time" data-field="time_in" value="' +
           escape(row.time_in) + '" onchange="DailyAttendance.queueSave(this)"></td>' +
           '<td data-label="Time out"><input type="time" data-field="time_out" value="' +
@@ -422,9 +423,10 @@
   }
 
   function countsFromRows(rows) {
-    const counts = {total: rows.length, present: 0, absent: 0, off: 0, pending: 0};
+    const counts = {total: rows.length, present: 0, sick: 0, absent: 0, off: 0, pending: 0};
     rows.forEach(row => {
       if (PRESENT_STATUSES.has(row.attendance_status)) counts.present++;
+      else if (row.attendance_status === 'sick' || row.planned_code === 'sick_leave') counts.sick++;
       else if (row.attendance_status === 'absent') counts.absent++;
       else if (row.attendance_status === 'off_leave' || isPlannedOff(row)) counts.off++;   // rostered off / on leave — no mark needed
       else counts.pending++;                       // rostered on duty, not yet marked
@@ -438,8 +440,9 @@
       '</strong><span>Staff listed</span></div>' +
       '<div class="da-stat da-stat-present"><strong>' + counts.present +
       '</strong><span>Present</span></div>' +
-      '<div class="da-stat da-stat-absent"><strong>' + counts.absent +
-      '</strong><span>Absent</span></div>' +
+      '<div class="da-stat da-stat-absent"><strong>' + counts.sick +
+      '</strong><span>Sick</span></div>' +
+      (counts.absent ? '<div class="da-stat"><strong>' + counts.absent + '</strong><span>Absent (previous records)</span></div>' : '') +
       '<div class="da-stat"><strong>' + counts.off +
       '</strong><span>Off / leave</span></div>' +
       '<div class="da-stat"><strong>' + counts.pending +
@@ -459,7 +462,7 @@
       planned_source: row.planned_source || null,
       planned_hours: row.planned_hours || null,
       roster_notes: row.roster_notes || null,
-      attendance_status: row.attendance_status || 'not_recorded',
+      attendance_status: row.attendance_status === 'sick' ? 'off_leave' : (row.attendance_status || 'not_recorded'),
       time_in: row.time_in || null,
       time_out: row.time_out || null,
       remarks: row.remarks || null,
@@ -621,6 +624,20 @@
     }
   }
 
+  async function syncSickRoster(row, date, options) {
+    if (!row.staff_id) throw new Error('Sick leave needs a roster staff record. Update this bank duty in the roster.');
+    const existing = await options.db.from('roster').select('notes')
+      .eq('staff_id', row.staff_id).eq('roster_date', date).maybeSingle();
+    if (existing.error) throw existing.error;
+    const result = await options.db.from('roster').upsert({
+      staff_id: row.staff_id, roster_date: date, status: 'sick_leave',
+      notes: existing.data?.notes || null
+    }, {onConflict: 'staff_id,roster_date'}).select('staff_id');
+    if (result.error) throw result.error;
+    if (!result.data?.length) throw new Error('The sick leave roster entry was not saved.');
+    if (typeof options.onRosterChanged === 'function') options.onRosterChanged(row, date);
+  }
+
   async function saveElement(element, version, options) {
     const rowElement = element.closest('tr[data-attendance-key]');
     if (!rowElement) return;
@@ -633,16 +650,32 @@
     setRowSave(row.person_key, 'Saving…', 'saving');
     setGlobalSave('Saving changes…', 'saving');
 
-    const actor = await actorFrom(options);
-    const {error} = await options.db.from(TABLE).upsert(
-      rowPayload(row, date, actor),
-      {onConflict: 'attendance_date,person_key'}
-    );
-
-    if (saveVersions.get(row.person_key) !== version) return;
-    if (error) {
-      setRowSave(row.person_key, 'Not saved', 'error');
-      setGlobalSave('A change could not be saved', 'error');
+    try {
+      if (row.attendance_status === 'sick') {
+        await syncSickRoster(row, date, options);
+        row.planned_code = 'sick_leave';
+        row.planned_duty = 'Sick leave';
+        row.planned_source = 'Roster entry';
+        row.planned_hours = '';
+        row.working = false;
+        row.time_in = '';
+        row.time_out = '';
+        rowElement.querySelector('[data-field="time_in"]').value = '';
+        rowElement.querySelector('[data-field="time_out"]').value = '';
+        const duty = rowElement.querySelector('.da-duty');
+        if (duty) { duty.textContent = 'Sick leave'; duty.className = 'da-duty da-duty-sick_leave'; }
+        rowsByKey.set(row.person_key, row);
+      }
+      const actor = await actorFrom(options);
+      const {error} = await options.db.from(TABLE).upsert(
+        rowPayload(row, date, actor), {onConflict: 'attendance_date,person_key'}
+      );
+      if (error) throw error;
+      if (saveVersions.get(row.person_key) !== version) return;
+      refreshVisibleSummary();
+    } catch (error) {
+      setRowSave(row.person_key, 'Not saved — retry', 'error');
+      setGlobalSave('Could not save: ' + (error.message || error), 'error');
       return;
     }
 
@@ -694,6 +727,7 @@
           date: row.attendance_date,
           rows: 0,
           present: 0,
+          sick: 0,
           absent: 0,
           off: 0,
           pending: 0,
@@ -703,6 +737,7 @@
       const group = groups.get(row.attendance_date);
       group.rows++;
       if (['present', 'late', 'left_early'].includes(row.attendance_status)) group.present++;
+      else if (row.attendance_status === 'sick' || row.planned_code === 'sick_leave') group.sick++;
       else if (row.attendance_status === 'absent') group.absent++;
       else if (row.attendance_status === 'off_leave' || isPlannedOff(row)) group.off++;
       else group.pending++;
@@ -728,11 +763,12 @@
     }
     return '<div class="da-records-wrap"><table class="da-records">' +
       '<thead><tr><th>Date</th><th>Staff</th><th>Present</th>' +
-      '<th>Absent</th><th>Off / leave</th><th>Not recorded</th><th>Last saved</th><th></th></tr></thead>' +
+      '<th>Sick</th><th>Absent (previous records)</th><th>Off / leave</th><th>Not recorded</th><th>Last saved</th><th></th></tr></thead>' +
       '<tbody>' + groups.map(group =>
         '<tr><td data-label="Date"><strong>' + escape(group.date) + '</strong></td>' +
         '<td data-label="Staff">' + group.rows + '</td>' +
         '<td data-label="Present">' + group.present + '</td>' +
+        '<td data-label="Sick">' + (group.sick || 0) + '</td>' +
         '<td data-label="Absent">' + group.absent + '</td>' +
         '<td data-label="Off / leave">' + group.off + '</td>' +
         '<td data-label="Not recorded">' + group.pending + '</td>' +
@@ -805,6 +841,7 @@
     load,
     loadRecords,
     queueSave,
+    syncSickRoster,
     changeDay,
     today,
     clearRecordFilter

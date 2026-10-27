@@ -197,7 +197,7 @@
       {attendance_status: 'off_leave'},
       {attendance_status: 'not_recorded'}
     ]);
-    assert.deepEqual(JSON.parse(JSON.stringify(counts)), {total: 6, present: 3, absent: 1, off: 1, pending: 1});
+    assert.deepEqual(JSON.parse(JSON.stringify(counts)), {total: 6, present: 3, sick: 0, absent: 1, off: 1, pending: 1});
   });
 
   test('record archive aggregates dates independently and newest first', () => {
@@ -373,8 +373,32 @@
       const select=dom.window.document.querySelector('select');
       assert.equal(select.value,status);
       assert.deepEqual(Array.from(select.options,o=>o.value),status==='not_recorded'
-        ? ['not_recorded','present','absent'] : ['not_recorded','present','absent',status]);
+        ? ['not_recorded','present','sick'] : ['not_recorded','present','sick',status]);
       dom.window.close();
     }
+  });
+
+  test('Sick saves the selected staff and date in the roster and retains notes', async () => {
+    const {api}=app(); const writes=[]; let notified=false;
+    const query={eq(){return this;}, async maybeSingle(){return {data:{notes:'Existing duty note'},error:null};}};
+    const db={from(table){assert.equal(table,'roster');return {
+      select(){return query;},
+      upsert(payload,options){writes.push({payload,options});return {async select(){return {data:[{staff_id:'nurse-a'}],error:null};}};}
+    };}};
+    await api.syncSickRoster({staff_id:'nurse-a'},'2026-10-27',{db,onRosterChanged(){notified=true;}});
+    assert.equal(writes[0].payload.status,'sick_leave');
+    assert.equal(writes[0].payload.staff_id,'nurse-a');
+    assert.equal(writes[0].payload.roster_date,'2026-10-27');
+    assert.equal(writes[0].payload.notes,'Existing duty note');
+    assert.equal(writes[0].options.onConflict,'staff_id,roster_date');
+    assert.equal(notified,true);
+  });
+  test('a rejected roster save fails visibly rather than reporting success', async () => {
+    const {api}=app();const query={eq(){return this;},async maybeSingle(){return {error:{message:'Permission denied'}};}};
+    await assert.rejects(api.syncSickRoster({staff_id:'a'},day,{db:{from(){return {select(){return query;}};}}}),error => error.message === 'Permission denied');
+  });
+  test('sick leave counts separately from other leave and historical absences', () => {
+    const counts=app().api.countsFromRows([{attendance_status:'sick'}, {attendance_status:'off_leave',planned_code:'sick_leave'}, {attendance_status:'absent'}, {attendance_status:'off_leave'}]);
+    assert.equal(counts.sick,2);assert.equal(counts.absent,1);assert.equal(counts.off,1);
   });
 })();
