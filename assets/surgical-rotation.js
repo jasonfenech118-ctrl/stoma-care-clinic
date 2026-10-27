@@ -133,42 +133,108 @@ window.SurgicalRotation=(()=>{
     if(manifest&&!manifest.getAttribute('href').startsWith('surgical-rotation.webmanifest')){
       installState().prompt=null;
       if(typeof qlDeferred!=='undefined')qlDeferred=null;
-      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-637';
+      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-641';
     }
     const icon=document.querySelector('link[rel="apple-touch-icon"]');
     if(icon)icon.href='assets/surgical-rotation-192.png';
-    document.querySelector('meta[name="apple-mobile-web-app-title"]').content='Surgical Rotation';
+    const favicon=document.querySelector('link[rel="icon"]');
+    if(favicon)favicon.href='assets/surgical-rotation-192.png';
+    const title=document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if(title)title.content='Surgical Rotation';
   }
+  function isStandalone(){try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return navigator.standalone===true;}}
   function updateInstallButton(){
     const btn=$('sr-phone');if(!btn)return;
     btn.innerHTML=installIcon+'<span>Add to phone</span>';
     btn.disabled=installing;
     const phoneMode=new URLSearchParams(location.search).get('view')==='surgical-rotation';
-    btn.hidden=installState().installed||(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone());
+    btn.hidden=installState().installed||(phoneMode&&isStandalone());
+  }
+  // A manual shortcut must reopen this page even in browsers that ignore start_url.
+  // This changes the address in place; it does not open or reload another page.
+  function setShortcutAddress(){
+    const url=new URL('index.html',location.href);
+    url.searchParams.set('view','surgical-rotation');url.hash='surgical-rotation';
+    try{history.replaceState(history.state,'',url.href);}catch(e){}
+    document.title='Surgical Rotation';
+  }
+  function phoneBrowser(){
+    const ua=navigator.userAgent;
+    if(/; wv\)|\bwv\b|FBAN|FBAV|Instagram|\bLine\/|ChatGPT/i.test(ua))return 'embedded';
+    if(/iphone|ipad|ipod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))return 'ios';
+    if(/SamsungBrowser/i.test(ua))return 'samsung';
+    if(/android/i.test(ua))return /Firefox|Fennec/i.test(ua)?'firefox':'android';
+    return /Mobile/i.test(ua)?'other':'computer';
+  }
+  const installGuides={
+    samsung:{name:'Samsung Internet',intro:'Use Samsung Internet’s home-screen menu if an install prompt is not offered.',steps:['Tap the browser’s <b>☰ menu</b> or the <b>＋</b> beside its address bar.','Choose <b>Add page to → Home screen</b>, or <b>Add shortcut on Home screen</b>.','Confirm <b>Add</b> or <b>Install</b>.']},
+    android:{name:'Chrome / Edge on Android',intro:'Use your browser’s menu if an install prompt is not offered.',steps:['Tap the browser’s <b>⋮</b> or <b>… menu</b>.','Choose <b>Add to Home screen</b> or <b>Install app</b>.','Confirm <b>Add</b> or <b>Install</b>.']},
+    ios:{name:'iPhone / iPad',intro:'Add the icon using your browser’s Share menu.',steps:['Tap <b>Share</b>, or open the browser menu and choose <b>Share</b>.','Choose <b>Add to Home Screen</b>. If this option is unavailable, open this page in <b>Safari</b>.','Keep <b>Open as Web App</b> enabled if shown, then tap <b>Add</b>.']},
+    firefox:{name:'Firefox on Android',intro:'Add the icon using Firefox’s menu.',steps:['Tap Firefox’s <b>⋮ menu</b>.','Choose <b>Install</b> or <b>Add to Home screen</b>.','Confirm <b>Add</b> or <b>Install</b>.']},
+    embedded:{name:'Inside another app',intro:'This app’s built-in browser may not offer home-screen installation.',steps:['Open this app’s <b>… menu</b>.','Choose <b>Open in browser</b> or <b>Open in Safari</b>, if available.','On the same Surgical Rotation page, tap <b>Add to phone</b> and follow that browser’s instructions.']},
+    other:{name:'Another phone browser',intro:'Home-screen installation depends on your browser.',steps:['Open the browser’s <b>menu</b> or <b>Share</b> menu.','Look for <b>Add to Home screen</b> or <b>Install app</b>.','Confirm <b>Add</b> or <b>Install</b>. If neither option exists, open this page in your phone’s main browser.']},
+    computer:{name:'Computer',intro:'A home-screen icon is added on the device you are using.',steps:['Open the clinic app on your <b>phone</b> and sign in.','Choose <b>Surgical Rotation</b>, then tap <b>Add to phone</b>.','Confirm your phone’s <b>Add</b> or <b>Install</b> request.']}
+  };
+  function updateInstallHelp(){
+    const picker=$('sr-install-browser');if(!picker)return;
+    const guide=installGuides[picker.value]||installGuides.other;
+    $('sr-install-intro').textContent=guide.intro;
+    $('sr-install-steps').innerHTML=guide.steps.map(step=>'<li>'+step+'</li>').join('');
+    const ready=!!installState().prompt&&picker.value!=='computer';
+    $('sr-install-now').hidden=!ready;
+    $('sr-install-availability').textContent=ready?'Ready to add. Tap Install now, then confirm on your phone.':'Your browser controls adding the icon. Follow the steps below; there is no separate download page.';
+  }
+  function closeInstallHelp(){
+    const dialog=$('sr-install-dialog');if(!dialog)return;
+    if(typeof dialog.close==='function'&&dialog.open)dialog.close();else dialog.removeAttribute('open');
+  }
+  function openInstallHelp(reason=''){
+    let dialog=$('sr-install-dialog');
+    if(!dialog){
+      dialog=document.createElement('dialog');dialog.id='sr-install-dialog';dialog.className='sr-install-dialog';
+      dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','sr-install-title');
+      dialog.innerHTML='<div class="sr-install-heading"><img src="assets/surgical-rotation-192.png" alt="" width="64" height="64"><div><h3 id="sr-install-title">Add Surgical Rotation</h3><p>Your home-screen icon</p></div><button id="sr-install-close" type="button" aria-label="Close installation instructions">×</button></div><p id="sr-install-reason" role="status"></p><p id="sr-install-availability" role="status" aria-live="polite"></p><button id="sr-install-now" type="button" hidden>Install now</button><label for="sr-install-browser">Your browser</label><select id="sr-install-browser">'+Object.entries(installGuides).map(([id,g])=>'<option value="'+id+'">'+g.name+'</option>').join('')+'</select><p id="sr-install-intro"></p><ol id="sr-install-steps"></ol><p class="sr-install-note">Your phone requires confirmation. The icon opens only Surgical Rotation and checks for the latest list while online.</p>';
+      document.body.appendChild(dialog);
+      $('sr-install-close').onclick=closeInstallHelp;
+      $('sr-install-browser').onchange=updateInstallHelp;
+      $('sr-install-now').onclick=phoneShortcut;
+      dialog.addEventListener('close',()=>{if(!$('sr-phone')?.hidden)$('sr-phone')?.focus();});
+    }
+    $('sr-install-browser').value=phoneBrowser();
+    $('sr-install-reason').textContent=reason;$('sr-install-reason').hidden=!reason;
+    updateInstallHelp();
+    if(!dialog.open){if(typeof dialog.showModal==='function')dialog.showModal();else{dialog.setAttribute('open','');$('sr-install-close').focus();}}
   }
   async function phoneShortcut(){
     preparePhoneInstall();
     if(installing)return;
+    if(installState().installed){installMessage('Surgical Rotation is installed. Open its purple icon on your phone.');return;}
+    setShortcutAddress();
     if(installState().prompt){
       const prompt=installState().prompt;installState().prompt=null;installing=true;updateInstallButton();
+      closeInstallHelp();
       try{
-        installMessage('Confirm Install in your phone’s installation prompt.');
-        await prompt.prompt();
-        const choice=await prompt.userChoice;
-        installMessage(choice.outcome==='accepted'?'Installation accepted. Look for the purple Surgical Rotation icon on your phone.':'Installation cancelled. You can add Surgical Rotation later.');
-      }catch(e){installMessage('Chrome could not open installation. Use its menu → Add to Home screen → Install.');}
+        installMessage('Confirm Add or Install in your phone’s installation prompt.');
+        // Invoke directly inside this click, before awaiting anything. A delayed
+        // event only enables Install now; it must never prompt from a timer.
+        const result=await prompt.prompt();
+        const choice=result?.outcome?result:await prompt.userChoice;
+        installMessage(choice?.outcome==='accepted'?'Request accepted. Finish any phone confirmation, then look for the purple Surgical Rotation icon.':'Installation cancelled. You can add Surgical Rotation later.');
+      }catch(e){
+        installMessage('Your browser could not open its installation prompt. Follow the home-screen steps.');
+        openInstallHelp('The installation prompt was unavailable. You can still use your browser’s home-screen menu.');
+      }
       finally{installing=false;updateInstallButton();}
       return;
     }
-    const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-    installMessage(ios?'To add the purple Surgical Rotation icon, tap Safari’s Share button → Add to Home Screen.':'Your browser has not offered installation yet, or this app is already installed. If it is not installed, use the browser menu → Add to Home screen → Install. No separate link is needed.');
+    openInstallHelp();
   }
   window.addEventListener('sr-install-ready',()=>{
-    updateInstallButton();
+    updateInstallButton();updateInstallHelp();
     if($('page-surgical-rotation')?.classList.contains('active'))installMessage('Ready. Tap Add to phone, then confirm Install.');
   });
   window.addEventListener('sr-install-complete',()=>{
-    updateInstallButton();
+    closeInstallHelp();updateInstallButton();
     installMessage('Installed. Look for the purple Surgical Rotation icon on your phone.');
   });
   function autoRefresh(){if(db&&document.visibilityState!=='hidden'&&document.getElementById('page-surgical-rotation')?.classList.contains('active'))refresh(true);}
