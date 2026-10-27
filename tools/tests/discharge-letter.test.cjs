@@ -259,3 +259,12 @@ test('failed history reads close the reserved tab and report failure without exp
   fakeReads(c,patient(),[],[],'clinical_records');await c.openDischargeLetterFor('p1');
   assert.equal(target.closed,true);assert.match(alerts[0],/Could not load the current appliances/);
 });
+
+test('edited bullet and numbered lists retain separate items in Word export',()=>{
+  const {w,d}=page(snapshot());
+  const host=d.createElement('div');host.innerHTML='<ol><li>First action<ul><li>Nested advice</li></ul></li><li>Second action</li></ol>';
+  const xml=w.bodyBlockWord(host.firstChild,0);
+  assert.match(xml,/1\. /);assert.match(xml,/2\. /);assert.match(xml,/• /);
+  assert.equal(xml.split('Nested advice').length-1,1);
+  assert.match(xml,/w:left="850"/);
+});

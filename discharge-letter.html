@@ -253,7 +253,7 @@
   .wz-added-item button{border:none;background:none;color:rgba(255,255,255,.7);font-weight:700;font-size:15px;cursor:pointer;line-height:1;padding:0 4px}
   .wz-tag{display:inline-block;font-family:var(--sans);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#2f6fb0;background:#e3edf8;border-radius:4px;padding:1px 7px;margin-left:6px;vertical-align:middle}
   .wz-note{font-size:12px;color:#5b6b85;font-style:italic;margin:2px 0 10px}
-  .format-tools{display:inline-flex;align-items:center;gap:6px;border-left:1px solid rgba(255,255,255,.35);padding-left:8px;margin-left:4px}
+  .format-tools{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;border-left:1px solid rgba(255,255,255,.35);padding-left:8px;margin-left:4px}
   .btn.fmt{min-width:30px;padding:6px 8px;text-align:center}
   .inline-row{display:flex;gap:8px;align-items:center}
   .inline-row .wz-field{flex:1}
@@ -350,6 +350,10 @@
       <button class="btn yellow" onclick="openWizard()" title="Step-by-step questions that fill in the letter">Fill in / Edit Letter</button>
       <button class="btn amber" onclick="clearForm()">Clear</button>
       <span class="format-tools" aria-label="Text formatting tools">
+        <button class="btn grey" title="Bulleted list" onmousedown="event.preventDefault()" onclick="formatDoc('insertUnorderedList')">• Bullets</button>
+        <button class="btn grey" title="Numbered list" onmousedown="event.preventDefault()" onclick="formatDoc('insertOrderedList')">1. Numbering</button>
+        <button class="btn grey" title="Decrease indent" onmousedown="event.preventDefault()" onclick="formatDoc('outdent')">← Outdent</button>
+        <button class="btn grey" title="Increase indent" onmousedown="event.preventDefault()" onclick="formatDoc('indent')">→ Indent</button>
         <button class="btn grey" title="Undo typing or formatting" onmousedown="event.preventDefault()" onclick="formatDoc('undo')">↶ Undo</button>
         <button class="btn grey" title="Redo typing or formatting" onmousedown="event.preventDefault()" onclick="formatDoc('redo')">↷ Redo</button>
         <button class="btn grey fmt" title="Bold" onclick="formatDoc('bold')"><b>B</b></button>
@@ -2618,6 +2622,24 @@
     return out;
   }
   // Runs from letter HTML (bold/italic/underline/colour survive).
+  function bodyBlockWord(node,depth){
+    var tag=(node.tagName||'').toLowerCase(),out='';
+    if(tag==='ul'||tag==='ol'){
+      Array.from(node.children).forEach(function(item,index){
+        var copy=item.cloneNode(true);
+        Array.from(copy.querySelectorAll('ul,ol')).forEach(function(list){list.remove();});
+        var marker=tag==='ol'?String((parseInt(node.getAttribute('start'),10)||1)+index)+'. ':'• ';
+        out+=_wp(_wrun(marker)+_domRunsX(copy),'<w:spacing w:after="75"/><w:ind w:left="'+(425*(depth+1))+'" w:hanging="212"/>');
+        Array.from(item.children).forEach(function(child){if(/^(UL|OL)$/.test(child.tagName))out+=bodyBlockWord(child,depth+1);});
+      });
+      return out;
+    }
+    if(node.querySelector&&node.querySelector('ul,ol')){
+      Array.from(node.childNodes).forEach(function(child){out+=bodyBlockWord(child,depth);});return out;
+    }
+    return _wp(_domRunsX(node),(node.classList&&node.classList.contains('record-stoma-title')?'<w:keepNext/>':'')+'<w:spacing w:after="150"/><w:jc w:val="both"/>');
+  }
+
   function _domRunsX(node){
     var out = '';
     function walk(n, o){
@@ -2684,7 +2706,7 @@
     var bodyEl = document.querySelector('.body');
     var ps = bodyEl ? bodyEl.children : [];
     for(var bi=0; bi<ps.length; bi++){
-      doc += _wp(_domRunsX(ps[bi]), (ps[bi].classList.contains('record-stoma-title')?'<w:keepNext/>':'')+'<w:spacing w:after="' + (bi === ps.length-1 ? 340 : 150) + '"/><w:jc w:val="both"/>');
+      doc += bodyBlockWord(ps[bi],0);
     }
     doc += _wp(_wrun('Stoma Care Plan:', { b:true, u:true }), GAP);
     var planUl = document.getElementById('planList');
