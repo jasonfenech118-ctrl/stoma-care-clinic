@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Surgical Rotation now has a consultant dropdown with an All consultants option.'};
+const MANUAL_META={updated:'27 October 2026 — Gozo Surgery is excluded automatically from Surgical Rotation and future Excel imports.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -534,7 +534,7 @@ const MANUAL_SECTIONS=[
  {id:'rotation',title:'Upload and search surgical teams',keywords:'phone shortcut home screen install automatically update consultant search surgical rotation doctors consultants resident specialist HST BST FY pager phone contact number Excel drag drop replace upload teams secretary specialties',html:`
  <p>Open <b>Surgical Rotation</b> and choose a name from the <b>Search by consultant</b> dropdown to show that consultant’s full team. Choose <b>All consultants</b> to show everyone. The dropdown updates with each new rotation. Use <b>Search the team</b> to narrow by another doctor, specialty or number, or <b>Clear search</b> to show all teams. Each doctor’s name appears above their number, with shared-team notes below. Shared assignments in merged Excel cells are shown for each affected team.</p>
  <ol><li>Drop the latest <b>.xlsx</b> file into the upload area or choose it from your device. Keep the five original columns: Consultants, Resident Specialist, HSTs, BSTs and FYs.</li><li>Review the proposed rotation. Select <b>Replace current rotation</b> to replace every doctor, assignment and number, or Cancel to keep the current list.</li><li>The current list is shared across clinic accounts and refreshes every minute while visible and connected, and when you return to it. You can also press Refresh.</li></ol>
- <p>Press <b>＋ Phone shortcut</b> to open or copy the phone-only link. Open it on your phone, sign in with your clinic account, then use the browser’s Install app / Add to Home screen option. The shortcut opens only Surgical Rotation and automatically checks the same current list; it needs an internet connection. Only the current extracted rotation is retained by the app. Workbook files and previous rotations are not archived. Invalid files leave the current rotation intact. If someone updates it while you are reviewing, refresh and upload again.</p>`}
+ <p>Press <b>＋ Phone shortcut</b> to open or copy the phone-only link. Open it on your phone, sign in with your clinic account, then use the browser’s Install app / Add to Home screen option. The shortcut opens only Surgical Rotation and automatically checks the same current list; it needs an internet connection. The <b>Gozo Surgery</b> section is excluded automatically from every Excel import. Only the current extracted rotation is retained by the app. Workbook files and previous rotations are not archived. Invalid files leave the current rotation intact. If someone updates it while you are reviewing, refresh and upload again.</p>`}
 ]},
 {id:'letter',title:'Discharge Letter',icon:'✉️',color:'#4338ca',blurb:'Generate the stoma discharge letter, pre-filled from the record.',pages:[
   {id:'generate',title:'Create a discharge letter',keywords:'discharge letter print pdf appliance one piece two piece pre filled care plan consultant multiple stomas ileostomy colostomy urostomy powder complications rod removal teaching',html:`

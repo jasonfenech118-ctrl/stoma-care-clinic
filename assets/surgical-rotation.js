@@ -9,7 +9,7 @@ window.SurgicalRotation=(()=>{
     if(header<0)throw Error('Expected the rotation columns: Consultants, Resident Specialist, HSTs, BSTs and FYs.');
     const columns=rows[header].slice(0,5).map(clean);
     if(columns.length!==5||!/^consultants?$/i.test(columns[0])||!/^resident specialist/i.test(columns[1])||!/^HSTs?$/i.test(columns[2])||!/^BSTs?$/i.test(columns[3])||!/^FYs?$/i.test(columns[4]))throw Error('The five rotation columns have changed. Keep the original column order.');
-    const sections=[];let section;
+    let sections=[];let section;
     for(let r=header+1;r<rows.length;r++){
       const row=Array.from({length:5},(_,c)=>clean(rows[r]?.[c]));
       if(!row.some(Boolean))continue;
@@ -25,6 +25,7 @@ window.SurgicalRotation=(()=>{
       if(!section){section={name:'Surgery',contact:'',rows:[]};sections.push(section);}
       section.rows.push(row);
     }
+    sections=sections.filter(s=>! /\bgozo\b/i.test(s.name));
     const count=sections.reduce((n,s)=>n+s.rows.length,0);
     if(!count||!sections.some(s=>s.rows.some(row=>row.some(v=>/\d{4,}/.test(v)))))throw Error('No rotation teams with contact numbers were found.');
     if(count>1000)throw Error('This sheet has too many rotation rows.');
