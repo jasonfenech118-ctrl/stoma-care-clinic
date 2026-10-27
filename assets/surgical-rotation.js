@@ -4,6 +4,8 @@ window.SurgicalRotation=(()=>{
   const $=id=>document.getElementById(id);
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
+  const excludedSpecialties=/\b(?:gozo|orthop(?:ae|e)dic(?:s)?|hdu|itu|intervention(?:al|s)?\s+radiology|ent|maxillo[\s-]?facial|neuro[\s-]?surg(?:ery|ical)|plastics?|burns?|urolog(?:y|ical|ic)|cardio[\s-]?thoracic|vascular)\b/i;
+  const includedSections=data=>(data?.sections||[]).filter(s=>!excludedSpecialties.test(clean(s.name)));
   function parse(rows,merges=[]){
     const header=rows.findIndex(row=>row.some(v=>/^consultants?$/i.test(clean(v)))&&row.some(v=>/^FYs?$/i.test(clean(v))));
     if(header<0)throw Error('Expected the rotation columns: Consultants, Resident Specialist, HSTs, BSTs and FYs.');
@@ -25,7 +27,7 @@ window.SurgicalRotation=(()=>{
       if(!section){section={name:'Surgery',contact:'',rows:[]};sections.push(section);}
       section.rows.push(row);
     }
-    sections=sections.filter(s=>! /\bgozo\b/i.test(s.name));
+    sections=includedSections({sections});
     const count=sections.reduce((n,s)=>n+s.rows.length,0);
     if(!count||!sections.some(s=>s.rows.some(row=>row.some(v=>/\d{4,}/.test(v)))))throw Error('No rotation teams with contact numbers were found.');
     if(count>1000)throw Error('This sheet has too many rotation rows.');
@@ -66,7 +68,7 @@ window.SurgicalRotation=(()=>{
   function consultantOptions(){
     const options=$('sr-consultant');if(!options)return;
     const selected=options.value;
-    const names=[...new Set((current?.data?.sections||[]).flatMap(s=>s.rows.flatMap(r=>contacts(r[0]).map(p=>p.name))).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const names=[...new Set(includedSections(current?.data).flatMap(s=>s.rows.flatMap(r=>contacts(r[0]).map(p=>p.name))).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     options.innerHTML='<option value="">All consultants</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join('');
     options.value=names.includes(selected)?selected:'';
   }
@@ -76,7 +78,7 @@ window.SurgicalRotation=(()=>{
     $('sr-meta').textContent=current?'Updated '+new Date(current.updated_at).toLocaleString('en-GB',{timeZone:'Europe/Malta'})+(current.updated_by?' · '+current.updated_by:''):'';
     if(!data){$('sr-list').innerHTML='<p>No surgical rotation has been uploaded yet.</p>';return;}
     let shown=0;
-    $('sr-list').innerHTML='<h3>'+esc(data.title)+'</h3>'+data.sections.map(s=>{
+    $('sr-list').innerHTML='<h3>'+esc(data.title)+'</h3>'+includedSections(data).map(s=>{
       const rows=matchingRows(s,q,consultant);
       if(!rows.length)return '';shown+=rows.length;
       return '<section class="sr-section"><h3>'+esc(s.name)+'</h3>'+(s.contact?'<div class="sr-secretary"><b>Secretary / coordinator:</b> '+contactHTML(s.contact)+'</div>':'')+'<div class="sr-scroll"><table><thead><tr>'+data.columns.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map((c,i)=>'<td data-label="'+esc(data.columns[i])+'">'+contactHTML(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div></section>';
@@ -133,7 +135,7 @@ window.SurgicalRotation=(()=>{
     if(manifest&&!manifest.getAttribute('href').startsWith('surgical-rotation.webmanifest')){
       installState().prompt=null;
       if(typeof qlDeferred!=='undefined')qlDeferred=null;
-      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-641';
+      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-642';
     }
     const icon=document.querySelector('link[rel="apple-touch-icon"]');
     if(icon)icon.href='assets/surgical-rotation-192.png';
