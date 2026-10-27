@@ -67,5 +67,7 @@ test('a valid email code completes Quick Look authentication', async () => {
 
 test('the installed Quick Look app starts at the secure gateway', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'quicklook.webmanifest'), 'utf8'));
-  assert.equal(manifest.start_url, 'quicklook.html?v=2');
+  assert.equal(manifest.start_url, 'quick-look/');
+  const entry=fs.readFileSync(path.join(__dirname, '..', '..', 'quick-look/index.html'), 'utf8');
+  assert.match(entry, /src="\.\.\/quicklook\.html\?phoneFrame=quick-look"/);
 });
