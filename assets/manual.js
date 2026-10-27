@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Discharge letters skip the recorded-stoma review page when there is one current stoma.'};
+const MANUAL_META={updated:'27 October 2026 — Ms. Clippy now wears purple glasses with her blonde bob.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -46,7 +46,7 @@ function manH2(ic,t){return `<div class="man-h2">${ic?`<span>${ic}</span>`:''}${
 /* ---- Help content -------------------------------------------------- */
 const MANUAL_SECTIONS=[
 {id:'start',title:'Getting Started',icon:'🚀',color:'#0d7377',blurb:'Sign in, find your way around, print, and use Help.',pages:[
-  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with a blonde bob haircut, large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
+  {id:'helper',title:'Animated help assistant',keywords:'paperclip clippy helper assistant animation movements hide help page search',html:`<p>The paperclip appears automatically on screen with its text window closed. Click the icon to show <b>What would you like help with?</b>, enter a task and press <b>Find</b>; select a matching Help topic, or choose <b>Browse all help topics</b>. Press its small <b>×</b> to hide it; press ❓ to open Help and bring the character back. On a phone, tap the paperclip once. Click or tap it again to minimise the bubble.</p><p>The silver-purple paperclip sits on yellow lined paper, with a blonde bob haircut, purple glasses, large eyes and expressive eyebrows. It blinks, looks around and bounces when opened. The <b>×</b> hides the paperclip for the current visit; it appears again when the app reloads. Keyboard users can focus it and press Enter or Space to open its help bubble. Drag the paperclip to move it; its position is remembered in this browser and kept within the screen. Reduced-motion settings stop the animation.</p>`},
   {id:'profile',title:'My Profile and App Access Audit',keywords:'profile password change account login audit Jason top left security',html:`
     <p>Open the light-blue <b>Profile</b> button in the top-left corner, change your display name or enter and confirm a new password, then select <b>Save profile</b>; leave both password boxes empty to keep your password.</p>
     <p>Open <b>Audit & Reports → Audit Trail</b> for the change history and recovery tools; access remains restricted to Jason. Only Jason can see and read <b>App Access Audit</b> inside Profile → Administration: it lists the nurse, account, visit start and last activity in Malta time for 90 days, including access while already signed in; a return after 15 minutes of inactivity starts a new visit.</p>`},
@@ -860,6 +860,11 @@ function stomaHelperShow(){
           <ellipse cx="70" cy="66" rx="22" ry="18" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(-10 70 66)"/>
           <ellipse cx="116" cy="78" rx="22" ry="19" fill="url(#sh-eye)" stroke="#bdb6cd" stroke-width=".7" transform="rotate(10 116 78)"/>
           <g class="sh-pupils"><ellipse cx="70" cy="67" rx="11.5" ry="9.5" fill="url(#sh-pupil)"/><ellipse cx="116" cy="79" rx="11.5" ry="10" fill="url(#sh-pupil)"/></g>
+        </g>
+        <g class="sh-glasses" fill="none" stroke="#54366f" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="70" cy="66" rx="24" ry="21" transform="rotate(-10 70 66)"/>
+          <ellipse cx="116" cy="78" rx="24" ry="22" transform="rotate(10 116 78)"/>
+          <path d="M93 68 Q97 64 96 73 M46 62 L39 57 M140 78 L148 72"/>
         </g>
         <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
       </g>
