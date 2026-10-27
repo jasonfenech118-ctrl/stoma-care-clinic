@@ -116,45 +116,56 @@ window.SurgicalRotation=(()=>{
   }
   function cancel(){if(busy)return;pending=null;$('sr-preview').hidden=true;$('sr-preview-data').innerHTML='';message('');}
 
-  function phoneURL(){const url=new URL('index.html',location.href);url.searchParams.set('view','surgical-rotation');url.hash='surgical-rotation';return url.href;}
-  function phoneShortcut(){
-    const phoneMode=new URLSearchParams(location.search).get('view')==='surgical-rotation';
-    const mobile=/android|iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-    if(mobile&&!phoneMode){location.assign(phoneURL());return;}
-    if(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone()){message('Surgical Rotation is already open as an installed app.');return;}
-    if(phoneMode&&typeof qlDeferred!=='undefined'&&qlDeferred){
-      const prompt=qlDeferred;qlDeferred=null;
-      prompt.prompt().then(()=>prompt.userChoice).then(choice=>{
-        message(choice?.outcome==='accepted'?'Installation accepted. Your phone will add Surgical Rotation.':'Installation cancelled. Tap Install Surgical Rotation to try again when available.');
-        updateInstallButton();
-      }).catch(()=>message('Chrome could not open installation. Use its menu → Add to Home screen → Install.',true));
-      return;
+  const installIcon='<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4V3H5v18h9v-1M9 17h1M18 8v8M14 12h8"/></svg>';
+  let rotationInstallPrompt=null, installing=false, rotationInstalled=false;
+  function preparePhoneInstall(){
+    const manifest=document.querySelector('link[rel="manifest"]');
+    if(manifest&&!manifest.getAttribute('href').startsWith('surgical-rotation.webmanifest')){
+      rotationInstallPrompt=null;
+      if(typeof qlDeferred!=='undefined')qlDeferred=null;
+      manifest.href='surgical-rotation.webmanifest?v=2026.10.27-635';
     }
-    if(mobile&&phoneMode){
-      message(/android/i.test(navigator.userAgent)?'Chrome has not offered installation yet. When ready, tap Install Surgical Rotation. You can also use Chrome’s menu → Add to Home screen → Install.':'On iPhone, tap Safari’s Share button, then Add to Home Screen. Apple requires this confirmation.');
-      return;
-    }
-    let dialog=$('sr-phone-dialog');
-    if(!dialog){
-      dialog=document.createElement('dialog');dialog.id='sr-phone-dialog';dialog.className='sr-phone-dialog';
-      dialog.innerHTML='<h3>Surgical Rotation on your phone</h3><p>Open this link on your phone. It shows only Surgical Rotation after you sign in with your clinic account.</p><input id="sr-phone-link" readonly aria-label="Surgical Rotation phone link"><p><a id="sr-phone-open" target="_blank" rel="noopener">Open phone view</a> <button id="sr-phone-copy" type="button">Copy link</button></p><p><b>Android:</b> open the link in Chrome, then choose <b>Install app</b> or <b>Add to Home screen</b> from the browser menu.</p><p><b>iPhone:</b> open the link in Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</p><p>The latest rotation loads when opened and refreshes every minute while visible and online. No rotation files or old lists are stored on the phone.</p><p id="sr-copy-status" role="status"></p><button id="sr-phone-close" type="button">Close</button>';
-      document.body.appendChild(dialog);
-      $('sr-phone-close').onclick=()=>dialog.close();
-      $('sr-phone-copy').onclick=async()=>{try{await navigator.clipboard.writeText(phoneURL());$('sr-copy-status').textContent='Link copied. Send it to your phone.';}catch(e){$('sr-phone-link').select();$('sr-copy-status').textContent='Select and copy the link above.';}};
-    }
-    $('sr-phone-link').value=phoneURL();$('sr-phone-open').href=phoneURL();dialog.showModal();
+    const icon=document.querySelector('link[rel="apple-touch-icon"]');
+    if(icon)icon.href='assets/surgical-rotation-192.png';
+    document.querySelector('meta[name="apple-mobile-web-app-title"]').content='Surgical Rotation';
   }
   function updateInstallButton(){
     const btn=$('sr-phone');if(!btn)return;
+    btn.innerHTML=installIcon+'<span>Add to phone</span>';
+    btn.disabled=installing;
     const phoneMode=new URLSearchParams(location.search).get('view')==='surgical-rotation';
-    btn.textContent=phoneMode?'＋ Install Surgical Rotation':'＋ Add to phone';
-    if(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone())btn.hidden=true;
+    btn.hidden=rotationInstalled||(phoneMode&&typeof qlIsStandalone==='function'&&qlIsStandalone());
   }
-  window.addEventListener('beforeinstallprompt',()=>{
+  async function phoneShortcut(){
+    preparePhoneInstall();
+    if(installing)return;
+    if(rotationInstallPrompt){
+      const prompt=rotationInstallPrompt;rotationInstallPrompt=null;installing=true;updateInstallButton();
+      try{
+        await prompt.prompt();
+        const choice=await prompt.userChoice;
+        message(choice.outcome==='accepted'?'Installation accepted. Look for the purple Surgical Rotation icon on your phone.':'Installation cancelled. You can add Surgical Rotation later.');
+      }catch(e){message('Installation could not open. Try again or use your browser’s Add to Home screen option.',true);}
+      finally{installing=false;updateInstallButton();}
+      return;
+    }
+    const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    message(ios?'To add the purple Surgical Rotation icon, tap Safari’s Share button → Add to Home Screen.':'Your browser has not offered installation yet, or this app is already installed. If it is not installed, use the browser menu → Add to Home screen → Install. No separate link is needed.');
+  }
+  window.addEventListener('beforeinstallprompt',event=>{
+    const manifest=document.querySelector('link[rel="manifest"]');
+    if(!manifest?.getAttribute('href').startsWith('surgical-rotation.webmanifest'))return;
+    event.preventDefault();rotationInstallPrompt=event;
     updateInstallButton();
-    if(new URLSearchParams(location.search).get('view')==='surgical-rotation')message('Ready to add to your phone. Tap Install Surgical Rotation, then confirm Install.');
+    if($('page-surgical-rotation')?.classList.contains('active'))message('Ready to add to your phone. Tap Add to phone, then confirm Install.');
   });
-  window.addEventListener('appinstalled',()=>{if($('sr-phone'))$('sr-phone').hidden=true;message('Surgical Rotation installed. Open it from your phone’s app icon.');});
+  window.addEventListener('appinstalled',()=>{
+    const manifest=document.querySelector('link[rel="manifest"]');
+    if(!manifest?.getAttribute('href').startsWith('surgical-rotation.webmanifest'))return;
+    rotationInstallPrompt=null;rotationInstalled=true;
+    updateInstallButton();
+    message('Surgical Rotation installed. Look for the purple clipboard icon on your phone.');
+  });
   function autoRefresh(){if(db&&document.visibilityState!=='hidden'&&document.getElementById('page-surgical-rotation')?.classList.contains('active'))refresh(true);}
   window.addEventListener('focus',autoRefresh);
   window.addEventListener('online',autoRefresh);
@@ -162,6 +173,7 @@ window.SurgicalRotation=(()=>{
   setInterval(autoRefresh,60000);
   function open(context){
     db=context.db;reader=context.readExcel;
+    preparePhoneInstall();
     if(!$('sr-file')){
       $('page-surgical-rotation').innerHTML='<div class="sr-shell"><div class="sr-heading"><h2>Surgical Rotation</h2><button id="sr-phone" class="btn-add" type="button">＋ Phone shortcut</button><button id="sr-phone-signout" class="btn-add" type="button" onclick="doLogout()">Sign out</button></div><p>Current doctors, team assignments and contact numbers.</p><div class="sr-tools"><label>Search by consultant<select id="sr-consultant" aria-label="Search by consultant"><option value="">All consultants</option></select></label><label>Search the team<input id="sr-search" type="search" placeholder="Doctor, specialty or number…"></label><button id="sr-clear" class="btn-add">Clear search</button><button id="sr-refresh" class="btn-add">Refresh</button></div><p id="sr-result-count" role="status" aria-live="polite"></p><div id="sr-drop" class="sr-drop"><b>Drop the latest Excel file here</b><p>or <label class="btn-add" for="sr-file" tabindex="0">Choose Excel file</label><input id="sr-file" type="file" accept=".xlsx" aria-label="Upload surgical rotation"></p><small>Each update replaces the complete rotation. Uploaded files and previous versions are not retained by the app.</small></div><p id="sr-status" role="status" aria-live="polite"></p><div id="sr-preview" class="sr-section" hidden><h3>Review replacement</h3><p id="sr-preview-text"></p><div id="sr-preview-data"></div><button id="sr-replace" class="btn-add">Replace current rotation</button> <button id="sr-cancel" class="btn-add">Cancel</button></div><p class="sr-live-note">Updates automatically every minute while this page is open and connected.</p><p id="sr-meta"></p><div id="sr-list"></div></div>';
       updateInstallButton();$('sr-phone').onclick=phoneShortcut;$('sr-file').onchange=e=>receive(e.target.files[0]);$('sr-replace').onclick=replace;$('sr-cancel').onclick=cancel;$('sr-refresh').onclick=refresh;$('sr-search').oninput=draw;$('sr-consultant').onchange=draw;$('sr-clear').onclick=()=>{$('sr-search').value='';$('sr-consultant').value='';draw();};
