@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Discharge letters automatically use the signed-in nurse’s name. Indent and Outdent buttons have been removed.'};
+const MANUAL_META={updated:'27 October 2026 — Surgical Rotation replaces all doctors, team assignments and contact numbers from Excel without keeping uploaded files or previous rotations.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -530,6 +530,12 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
+{id:'surgical-rotation',title:'Surgical Rotation',icon:'🩺',color:'#6d28d9',blurb:'Current surgical teams and contact numbers, replaced from Excel.',pages:[
+ {id:'rotation',title:'Upload and search surgical teams',keywords:'surgical rotation doctors consultants resident specialist HST BST FY pager phone contact number Excel drag drop replace upload teams secretary specialties',html:`
+ <p>Open <b>Surgical Rotation</b> to search the current doctors, teams, specialties and numbers. Shared assignments in merged Excel cells are shown for each affected team.</p>
+ <ol><li>Drop the latest <b>.xlsx</b> file into the upload area or choose it from your device. Keep the five original columns: Consultants, Resident Specialist, HSTs, BSTs and FYs.</li><li>Review the proposed rotation. Select <b>Replace current rotation</b> to replace every doctor, assignment and number, or Cancel to keep the current list.</li><li>The current list is shared across clinic accounts. Press Refresh to see another nurse’s latest upload.</li></ol>
+ <p>Only the current extracted rotation is retained by the app. Workbook files and previous rotations are not archived. Invalid files leave the current rotation intact. If someone updates it while you are reviewing, refresh and upload again.</p>`}
+]},
 {id:'letter',title:'Discharge Letter',icon:'✉️',color:'#4338ca',blurb:'Generate the stoma discharge letter, pre-filled from the record.',pages:[
   {id:'generate',title:'Create a discharge letter',keywords:'discharge letter print pdf appliance one piece two piece pre filled care plan consultant multiple stomas ileostomy colostomy urostomy powder complications rod removal teaching',html:`
     ${manWhen('A patient is going home and needs their stoma discharge letter.')}
@@ -647,6 +653,7 @@ const MANUAL_SECTIONS=[
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
         ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
         ['✍️','Discharge letter signature','The letter automatically uses the signed-in nurse’s profile name, including print, Word and email copies.','Discharge letter'],
+        ['🩺','Surgical Rotation replacement','Each confirmed Excel import replaces every doctor, team assignment and number. Only the current extracted list is kept; no uploaded files or rotation archive.','Surgical Rotation'],
         ['✉️','Discharge letter for every stoma','Each current ileostomy, colostomy, urostomy or mucus fistula has its own section and care plan, with its latest appliance and accessories. Different update dates do not drop another stoma’s selection.','Discharge letter'],
         ['🩹','Discharge powder and complications','Recorded stoma powder and open complications, with their latest notes, enter the correct stoma’s discharge section automatically. Unassigned complications appear once in a separate section.','Discharge letter'],
         ['📅','Discharge rod details','Rod due-removal and removed dates come from handover. A removed rod stops in-situ care instructions; recorded-patient letters omit the rod questions.','Discharge letter'],
