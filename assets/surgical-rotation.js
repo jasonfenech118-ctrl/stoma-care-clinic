@@ -47,11 +47,15 @@ window.SurgicalRotation=(()=>{
     people[people.length-1].note=clean(people[people.length-1].note+' '+text.slice(start));
     return people;
   }
+  const contactIcons={
+    name:'<svg class="sr-contact-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg>',
+    pager:'<svg class="sr-contact-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><rect x="7" y="8" width="10" height="5" rx="1"/><path d="M7 16h3m4 0h3"/></svg>'
+  };
   function contactHTML(value){
     const people=contacts(value);
     return people.length?'<div class="sr-contacts">'+people.map(p=>'<div class="sr-person">'+
-      (p.name?'<span class="sr-person-name">'+esc(p.name)+'</span>':'')+
-      (p.number?'<span class="sr-person-number" aria-label="Contact number '+esc(p.number)+'">'+esc(p.number)+'</span>':'')+
+      (p.name?'<span class="sr-person-name">'+contactIcons.name+'<span>'+esc(p.name)+'</span></span>':'')+
+      (p.number?'<span class="sr-person-number" aria-label="Pager number '+esc(p.number)+'">'+contactIcons.pager+'<span>'+esc(p.number)+'</span></span>':'')+
       (p.note?'<span class="sr-person-note">'+esc(p.note)+'</span>':'')+'</div>').join('')+'</div>':'<span class="sr-empty">—</span>';
   }
   function matchingRows(section,query,consultant){
