@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-651"></script>
+<script src="assets/phone-route.js?v=2026.10.28-652"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-651"/>
-<script src="assets/cancellations.js?v=2026.10.28-651"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-652"/>
+<script src="assets/cancellations.js?v=2026.10.28-652"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-651"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-651"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-651"/>
+<script src="assets/leave-hours.js?v=2026.10.28-652"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-652"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-652"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-651"><script src="assets/surgical-rotation.js?v=2026.10.28-651"></script>
-<script src="assets/manual.js?v=2026.10.28-651"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-652"><script src="assets/surgical-rotation.js?v=2026.10.28-652"></script>
+<script src="assets/manual.js?v=2026.10.28-652"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-651';
+const APP_BUILD='2026.10.28-652';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23758,11 +23758,13 @@ function handoverSheetDocHTML(opts){
   if(!dataTrs.length)return null;
   const teamContacts=firm=>{
     const contact=opts.rotation&&window.SurgicalRotation?.handoverContacts?.(opts.rotation.data,firm);
-    if(!contact)return '<div class="hv-team-contact">Contacts unavailable</div>';
-    if(contact.status!=='matched')return '<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>';
+    if(!contact)return {consultant:'',team:'<div class="hv-team-contact">Contacts unavailable</div>'};
+    if(contact.status!=='matched')return {consultant:'',team:'<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>'};
+    const number=numbers=>'<span class="hv-team-number">'+(numbers.length?numbers.map(n=>htmlSafe(n)).join(' / '):'—')+'</span>';
     const line=(role,numbers)=>'<div class="hv-team-contact"><b>'+htmlSafe(role)+'</b> '+
-      (numbers.length?numbers.map(n=>htmlSafe(n)).join(' / '):'—')+'</div>';
-    return line(contact.senior.numbers.length?contact.senior.role:'HST / RS',contact.senior.numbers)+line('BST',contact.bst);
+      number(numbers)+'</div>';
+    return {consultant:' <span class="hv-consultant-number">'+number(contact.consultant)+'</span>',
+      team:'<div class="hv-team-contacts">'+line('RS',contact.rs)+line('HST',contact.hst)+line('BST',contact.bst)+'</div>'};
   };
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
@@ -23819,10 +23821,11 @@ function handoverSheetDocHTML(opts){
     const start=`<tr class="${cls}${fis?' pfisrow':''}"><td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
       <td>${htmlSafe(surname)}${fis?` <span class="pfis">${htmlSafe(fisTag)}</span>`:''}</td><td>${htmlSafe(txt(3))}</td>`;
     const surgery=surgeryDetails(tr);
+    const contacts=teamContacts(surgery.firm);
     return {
       front:start+`<td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
         <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`,
-      reverse:start+`<td class="cop">${htmlSafe(surgery.operation)}</td><td><div class="hv-firm-name">${htmlSafe(surgery.firm)}</div>${teamContacts(surgery.firm)}</td><td>${htmlSafe(surgery.date)}</td></tr>`
+      reverse:start+`<td class="cop">${htmlSafe(surgery.operation)}</td><td><div class="hv-firm-name"><b class="hv-consultant-name">${htmlSafe(surgery.firm)}</b>${contacts.consultant}</div>${contacts.team}</td><td>${htmlSafe(surgery.date)}</td></tr>`
     };
   });
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
@@ -23834,11 +23837,10 @@ function handoverSheetDocHTML(opts){
     '<tr class="wgblank"><td class="cwb"></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
   ).join('');
   const fpx=handoverManualFont??(HANDOVER_FONT_PX+1);
-  const autoFit=handoverManualFont===null;
   const pageHTML=reverse=>`<section class="handover-page ${reverse?'handover-reverse':'handover-front'}" data-side="${reverse?'reverse':'front'}">
-    <table><colgroup>
+    <div class="handover-content"><table><colgroup>
       <col style="width:5.5%"><col style="width:6.5%"><col style="width:8%"><col style="width:8.5%">
-      ${reverse?'<col style="width:45%"><col style="width:16%"><col style="width:10.5%">':'<col style="width:58%"><col style="width:5.5%"><col style="width:8%">'}
+      ${reverse?'<col style="width:33%"><col style="width:28%"><col style="width:10.5%">':'<col style="width:58%"><col style="width:5.5%"><col style="width:8%">'}
     </colgroup><thead>
       <tr class="hdate"><td colspan="7"><div class="hv-title-date"><h1>${reverse?'Surgical Details':'Care Handover'}</h1><span class="hv-print-date">${htmlSafe(fmtLabel(TODAY))}</span></div></td></tr>
       <tr class="cols"><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th>
@@ -23846,7 +23848,7 @@ function handoverSheetDocHTML(opts){
       </tr></thead><tbody>${rows.map(row=>reverse?row.reverse:row.front).join('')}${blanks}</tbody></table>
     ${reverse?'':`<div class="hv-legend"><b class="hv-page-label">Care Handover · Sheet 1 of 1</b> &nbsp;|&nbsp;
       <b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date
-    </div>`}
+    </div>`}</div>
   </section>`;
   // Serialized into every saved sheet, so its PDF print button works without
   // the main app being open. Patient data stays in this browser throughout.
@@ -23868,7 +23870,7 @@ function handoverSheetDocHTML(opts){
     async function build(){
       if(document.documentElement.dataset.handoverReady!=='1')throw Error('The handover is still being prepared. Try again.');
       const pages=[...document.querySelectorAll('#sheet > .handover-page')];
-      if(!pages.length||pages.length%2||pages.some((page,i)=>page.dataset.side!==(i%2?'reverse':'front')))
+      if(pages.length!==2||pages.some((page,i)=>page.dataset.side!==(i?'reverse':'front')))
         throw Error('The matching care and surgical pages could not be prepared.');
       await Promise.all([
         library('canvas','https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',()=>!!window.html2canvas),
@@ -23937,7 +23939,8 @@ function handoverSheetDocHTML(opts){
     .hv-print-controls{font:14px Arial,Helvetica,sans-serif;padding:12px 16px;background:#eef4f8;border-bottom:1px solid #b8c9d6;}
     .hv-print-controls button{font:700 14px Arial,Helvetica,sans-serif;padding:8px 14px;margin-right:8px;cursor:pointer;}
     .hv-print-controls p{margin:8px 0 0;}
-    .handover-page{width:287mm;padding:2mm 1mm;break-after:page;page-break-after:always;}
+    .handover-page{width:287mm;height:199mm;padding:2mm 1mm;overflow:hidden;break-after:page;page-break-after:always;}
+    .handover-content{width:100%;transform-origin:top left;break-inside:avoid;page-break-inside:avoid;}
     .handover-page:last-child{break-after:auto;page-break-after:auto;}
     .handover-reverse{display:none;}
     .hv-measuring .handover-reverse{display:block;position:absolute;visibility:hidden;}
@@ -23946,41 +23949,45 @@ function handoverSheetDocHTML(opts){
       .handover-page{width:100%;}
       .handover-reverse{display:block;position:static;visibility:visible;}
     }
-    h1{font-size:calc(var(--fs) + 5px);font-weight:800;margin:0;line-height:1.15;text-align:left;}
+    h1{font-size:calc(var(--fs) * 1.36);font-weight:800;margin:0;line-height:1.15;text-align:left;}
     .hv-title-date{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;}
     .hv-print-date{white-space:nowrap;}
-    .hv-firm-name{font-size:calc(var(--fs) + 2px);font-weight:700;line-height:1.15;}
-    .hv-team-contact{font-size:calc(var(--fs) + 2px);line-height:1.15;margin-top:2px;}
+    .hv-firm-name{font-size:calc(var(--fs) * 1.2);font-weight:400;line-height:1.15;}
+    .hv-consultant-name{font-weight:700;}
+    .hv-team-contacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:calc(var(--fs) * 0.2);margin-top:calc(var(--fs) * 0.14);}
+    .hv-team-contact{font-size:calc(var(--fs) * 1.2);font-weight:400;line-height:1.15;}
+    .hv-team-contact b{font-weight:700;}
+    .hv-team-number{font-weight:400;}
     table{width:100%;border-collapse:collapse;font-size:var(--fs);table-layout:fixed;}
     /* Everything reads left-aligned, and a long name wraps onto a second line
        inside its narrow column rather than widening it. */
-    th,td{border:0.75pt solid #000;padding:3px 4px;text-align:left;vertical-align:top;
+    th,td{border:0.75pt solid #000;padding:calc(var(--fs) * 0.23) calc(var(--fs) * 0.3);text-align:left;vertical-align:top;
       overflow-wrap:break-word;word-wrap:break-word;line-height:1.25;}
     tr{page-break-inside:avoid;}
     /* Row height and vertical padding scale with the font, so shrinking to fit
        pulls the rows in with the type instead of leaving tall gaps. */
     tbody td{height:calc(var(--fs) * 2.6);padding-top:calc(var(--fs) * 0.34);padding-bottom:calc(var(--fs) * 0.34);}
-    thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:calc(var(--fs) + 4px);border-color:#000;}
+    thead .hdate td{background:#c6e0b4;color:#000;text-align:center;font-weight:800;font-size:calc(var(--fs) * 1.3);border-color:#000;}
     thead .cols th{background:#000;color:#fff;text-align:left;font-weight:800;}
     /* An emoji prints faint and thin on a mono laser printer, so the two
        document columns are headed with bold letters the legend spells out. */
     thead .cols th.icon{background:#ffd54a;color:#000;text-align:center;
-      font-size:calc(var(--fs) + 2px);font-weight:800;letter-spacing:0.5px;}
-    td.cbx{text-align:center;font-size:calc(var(--fs) + 9px);font-weight:700;line-height:1;}
-    td.cbx .cbx-d{font-size:calc(var(--fs) - 2px);font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
+      font-size:calc(var(--fs) * 1.15);font-weight:800;letter-spacing:0.5px;}
+    td.cbx{text-align:center;font-size:calc(var(--fs) * 1.65);font-weight:700;line-height:1;}
+    td.cbx .cbx-d{font-size:calc(var(--fs) * 0.85);font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
     td.capp b{font-weight:800;}
     td.cop{white-space:pre-wrap;}
     /* Infection alert on the printout: a red bar + tint on the cell and the +ve
        marker bold/underlined, so it carries to a black-and-white ward copy. */
     .pinf{font-weight:800;color:#b10000;text-decoration:underline;}
-    .pfis{display:inline-block;border:1pt solid #000;padding:0 3px;font-size:calc(var(--fs) - 2px);font-weight:800;letter-spacing:.04em;}
+    .pfis{display:inline-block;border:1pt solid #000;padding:0 3px;font-size:calc(var(--fs) * 0.85);font-weight:800;letter-spacing:.04em;}
     tr.pfisrow td.cwb{border-left:3pt solid #000;}
     td.capp-inf{border-left:4px solid #c40000;background:#ffe3e3!important;}
     /* Widths live in the colgroup above; these classes carry the other styling. */
     tbody tr.wg-odd td{background:#cfcfcf;}
     tbody tr.wg-even td{background:#fff;}
     tbody tr.wgblank td{background:#fff;height:calc(var(--fs) * 2.6);}
-    .hv-legend{margin-top:6px;font-size:calc(var(--fs) - 2px);color:#333;}
+    .hv-legend{margin-top:calc(var(--fs) * 0.45);font-size:calc(var(--fs) * 0.85);color:#333;}
   </style></head><body>
     <div class="hv-print-controls" data-html2canvas-ignore="true">
       <button type="button" id="hv-pdf-button" onclick="handoverPdf.print()">Print / PDF</button>
@@ -23991,10 +23998,11 @@ function handoverSheetDocHTML(opts){
     <script>
     (${handoverDuplexPdfClient.toString()})();
     (function(){
-      var PXMM=96/25.4, budgetH=(210-2*5)*PXMM-6;
+      var PXMM=96/25.4, budgetH=(199-2*2)*PXMM-2;
       var root=document.documentElement, sheet=document.getElementById('sheet');
       var front=sheet.querySelector('.handover-front'), back=sheet.querySelector('.handover-reverse');
-      // Equalise both sides before fitting or paginating: matching patients,
+      var contents=[front.querySelector('.handover-content'),back.querySelector('.handover-content')];
+      // Equalise both sides before fitting: matching patients,
       // writing rows and headers must have the same top and bottom edges.
       function align(){
         var a=front.querySelectorAll('tr'), b=back.querySelectorAll('tr');
@@ -24006,41 +24014,35 @@ function handoverSheetDocHTML(opts){
       }
       function fit(){
         root.classList.add('hv-measuring');
-        var fs=${fpx}, guard=0;
-        align();
-        // Keep the operation text and team numbers readable; continue on another
-        // matched sheet rather than shrinking a long list to tiny print.
-        while(${autoFit} && Math.max(front.getBoundingClientRect().height,back.getBoundingClientRect().height)>budgetH && fs>10 && guard<120){
-          fs-=0.5; root.style.setProperty('--fs',fs+'px'); align(); guard++;
-        }
-        // A long list or a larger manual font can need several physical sheets.
-        // Split both sides at the same patient, interleaving front/back pairs.
-        var fronts=Array.from(front.querySelectorAll('tbody tr'));
-        var backs=Array.from(back.querySelectorAll('tbody tr'));
-        var frontTemplate=front.cloneNode(true), backTemplate=back.cloneNode(true);
-        frontTemplate.querySelector('tbody').innerHTML='';backTemplate.querySelector('tbody').innerHTML='';
-        sheet.innerHTML='';
-        var pairs=[],pair;
-        function newPair(){
-          pair=[frontTemplate.cloneNode(true),backTemplate.cloneNode(true)];
-          pair.forEach(function(page){sheet.appendChild(page);});pairs.push(pair);
-        }
-        newPair();
-        fronts.forEach(function(row,i){
-          pair[0].querySelector('tbody').appendChild(row);pair[1].querySelector('tbody').appendChild(backs[i]);
-          if(Math.max(pair[0].getBoundingClientRect().height,pair[1].getBoundingClientRect().height)<=budgetH)return;
-          // Writing spaces may be dropped, but must never make a blank-only sheet.
-          if(row.classList.contains('wgblank')){row.remove();backs[i].remove();return;}
-          if(pair[0].querySelector('tbody').rows.length>1){
-            row.remove();backs[i].remove();newPair();
-            pair[0].querySelector('tbody').appendChild(row);pair[1].querySelector('tbody').appendChild(backs[i]);
+        var fs=${fpx};
+        var blanks=[Array.from(front.querySelectorAll('.wgblank')),Array.from(back.querySelectorAll('.wgblank'))];
+        // Patients take priority over spare writing spaces. Fit the full list to
+        // the largest possible type, even if a larger screen font was selected.
+        blanks.forEach(function(rows){rows.forEach(function(row){row.remove();});});
+        function height(){return Math.max(contents[0].getBoundingClientRect().height,contents[1].getBoundingClientRect().height);}
+        function size(value){fs=value;root.style.setProperty('--fs',fs+'px');align();return height();}
+        if(size(fs)>budgetH){
+          var low=0.5,high=fs;
+          if(size(low)<=budgetH){
+            for(var n=0;n<12;n++){
+              var mid=(low+high)/2;
+              if(size(mid)<=budgetH)low=mid;else high=mid;
+            }
+            size(Math.floor(low*100)/100);
           }
-        });
-        pairs.forEach(function(p,n){p.forEach(function(page,i){
-          page.dataset.sheet=String(n+1);
-          var label=page.querySelector('.hv-page-label');
-          if(label)label.textContent='Care Handover · Sheet '+(n+1)+' of '+pairs.length;
-        });});
+        }
+        // Borders have a finite height even at tiny type. Scale both complete
+        // contents equally as a final fallback; no patient or detail is cut off.
+        var scale=Math.min(1,budgetH/height());
+        if(scale===1){
+          for(var i=0;i<blanks[0].length;i++){
+            front.querySelector('tbody').appendChild(blanks[0][i]);back.querySelector('tbody').appendChild(blanks[1][i]);align();
+            if(height()>budgetH){blanks[0][i].remove();blanks[1][i].remove();break;}
+          }
+        }
+        contents.forEach(function(content){content.style.transform='scale('+scale+')';});
+        front.dataset.sheet=back.dataset.sheet='1';
+        root.dataset.handoverFitScale=String(scale);
         root.classList.remove('hv-measuring');
         root.dataset.handoverReady='1';
         if(${autoPrint})setTimeout(function(){window.handoverPdf.print();},60);

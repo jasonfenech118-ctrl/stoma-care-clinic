@@ -21,7 +21,10 @@ function fixture(t,count=3,autoPrint=false){
   Object.defineProperty(d,'readyState',{get:()=> 'complete'});
   win.setTimeout=(fn,ms)=>{callbacks.push({fn,ms});return callbacks.length;};
   win.HTMLElement.prototype.getBoundingClientRect=function(){
-    return {height:this.tagName==='TR'?28:70+28*this.querySelectorAll('tr').length};
+    const fs=parseFloat(d.documentElement.style.getPropertyValue('--fs'))||14;
+    if(this.tagName==='TR')return {height:Math.max(parseFloat(this.style.height)||0,28*fs/14)};
+    const scale=Number(this.style.transform.match(/scale\(([^)]+)\)/)?.[1]||1);
+    return {height:scale*(35*fs/14+[...this.querySelectorAll('tr')].reduce((n,tr)=>n+tr.getBoundingClientRect().height,0))};
   };
   win.URL.createObjectURL=blob=>{seen.push({blob});return 'about:blank#pdf-preview';};
   class PDF{
@@ -39,7 +42,7 @@ function fixture(t,count=3,autoPrint=false){
     const clone=d.cloneNode(true);options.onclone(clone);
     assert.equal(clone.querySelector('.handover-reverse').style.display,'block');
     assert.equal(win.getComputedStyle(d.querySelector('.handover-reverse')).display,'none','capturing must not expose the reverse on screen');
-    seen.push({side:page.dataset.side,sheet:page.dataset.sheet,scale:options.scale});
+    seen.push({side:page.dataset.side,sheet:page.dataset.sheet,scale:options.scale,rows:page.querySelectorAll('tbody tr:not(.wgblank)').length});
     return {width:3210,height:1800,toDataURL:type=>{assert.equal(type,'image/png');return 'data:image/png;base64,example';}};
   };
   win.jspdf={jsPDF:PDF};win.html2canvas=async(page,options)=>canvas(page,options);
@@ -47,7 +50,7 @@ function fixture(t,count=3,autoPrint=false){
   return {win,d,seen,instances,callbacks,out,canvas};
 }
 
-test('handover PDF requests short-edge duplex and actual size, retaining every front/reverse pair',async t=>{
+test('handover PDF requests duplex and includes exactly two pages with every patient on each',async t=>{
   const f=fixture(t,60);
   const blob=await f.win.handoverPdf.build(),pdf=f.instances[0];
   assert.equal(blob.type,'application/pdf');
@@ -55,7 +58,8 @@ test('handover PDF requests short-edge duplex and actual size, retaining every f
   assert.equal(pdf.preferences.Duplex,'DuplexFlipShortEdge');assert.equal(pdf.preferences.PrintScaling,'None');
   assert.equal(pdf.autoPrintOptions.variant,'javascript');
   const pages=[...f.d.querySelectorAll('#sheet > .handover-page')];
-  assert.ok(pages.length>2);assert.equal(pdf.pages,pages.length);assert.equal(pdf.images.length,pages.length);
+  assert.equal(pages.length,2);assert.equal(pdf.pages,2);assert.equal(pdf.images.length,2);
+  assert.ok(f.seen.every(x=>x.rows===60));
   assert.deepEqual(f.seen.map(x=>x.side),pages.map(page=>page.dataset.side));
   assert.ok(f.seen.every(x=>x.scale===3));
   for(const image of pdf.images){assert.equal(image[2],5);assert.equal(image[3],5);assert.equal(image[4],287);assert.ok(image[5]<=200);}
@@ -88,9 +92,12 @@ test('a PDF preparation failure keeps the sheet and offers an explicit manual-se
   assert.equal(f.win.getComputedStyle(f.d.querySelector('.handover-reverse')).display,'none');
 });
 
-test('PDF creation rejects missing reverse pages and oversized captures instead of dropping data',async t=>{
+test('PDF creation rejects missing or extra pages and oversized captures instead of dropping data',async t=>{
   const f=fixture(t);f.d.querySelector('.handover-reverse').remove();
   await assert.rejects(f.win.handoverPdf.build(),/matching care and surgical/);assert.equal(f.instances.length,0);
+  const extra=fixture(t);extra.d.getElementById('sheet').appendChild(extra.d.querySelector('.handover-front').cloneNode(true));
+  extra.d.getElementById('sheet').appendChild(extra.d.querySelector('.handover-reverse').cloneNode(true));
+  await assert.rejects(extra.win.handoverPdf.build(),/matching care and surgical/);assert.equal(extra.instances.length,0);
   const g=fixture(t);
   g.win.html2canvas=async()=>({width:100,height:1000});
   await assert.rejects(g.win.handoverPdf.build(),/too large to print safely/);assert.equal(g.instances[0].images.length,0);

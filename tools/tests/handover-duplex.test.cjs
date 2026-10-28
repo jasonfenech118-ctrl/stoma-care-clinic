@@ -16,7 +16,7 @@ function fixture(t,patients,options={}){
   Object.defineProperty(w.HTMLElement.prototype,'innerText',{configurable:true,get(){return this.textContent;}});
   Object.assign(w,{TODAY:'2026-10-28',fmtLabel:d=>d,fmtShortDate:d=>d,initialStomaCode:d=>d,
     htmlSafe:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
-    hvIsInfectionNote:s=>/CRE|VRE|\+ve/i.test(s),handoverManualFont:null,HANDOVER_FONT_PX:13,HANDOVER_ROWS_PER_PAGE:16});
+    hvIsInfectionNote:s=>/CRE|VRE|\+ve/i.test(s),handoverManualFont:options.manualFont??null,HANDOVER_FONT_PX:13,HANDOVER_ROWS_PER_PAGE:16});
   for(const name of ['parseInitialStomas','parseRefashionings','parseStomas','stomaOperationHistory','patientStomaList','handoverSheetDocHTML'])w.eval(source(name));
   w.eval(fs.readFileSync(path.join(__dirname,'../../assets/surgical-rotation.js'),'utf8'));
   const body=w.document.querySelector('tbody');
@@ -39,6 +39,22 @@ function fixture(t,patients,options={}){
 }
 const patient=extra=>({first_name:'Sample',surname:'Patient',id_card:'TEST-ONLY',inpatient_ward:'SW4',
   stoma_type:'End colostomy',surgery_date:'2026-10-12',procedure_performed:'Recorded resection',consultant:'Example firm',...extra});
+function layout(t,out,fixedRows=false){
+  const dom=new JSDOM(out,{runScripts:'outside-only'});t.after(()=>dom.window.close());
+  const w=dom.window,d=w.document;
+  Object.defineProperty(d,'readyState',{get:()=> 'complete'});
+  w.HTMLElement.prototype.getBoundingClientRect=function(){
+    const fs=parseFloat(d.documentElement.style.getPropertyValue('--fs'))||14;
+    if(this.tagName==='TR')return {height:Math.max(parseFloat(this.style.height)||0,(this.textContent.length>180?80:28)*(fixedRows?1:fs/14))};
+    if(this.classList.contains('handover-content')){
+      const scale=Number(this.style.transform.match(/scale\(([^)]+)\)/)?.[1]||1);
+      return {height:scale*(35*fs/14+[...this.querySelectorAll('tr')].reduce((n,tr)=>n+tr.getBoundingClientRect().height,0))};
+    }
+    return {height:199*96/25.4};
+  };
+  w.eval(d.querySelector('script').textContent);
+  return {w,d,pages:[...d.querySelectorAll('.handover-page')]};
+}
 
 test('printing always includes a reverse with the same identifiers, ward blocks and writing rows',t=>{
   const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
@@ -64,15 +80,20 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
 
 test('Surgical Details prints only its own firm contacts without a footer',t=>{
   const rotation={updated_at:'2026-10-27T16:06:00Z',data:{sections:[{name:'Surgery',rows:[
-    ['Mr. Alex Example','Senior 1111','Trainee 2222','Basic 3333',''],
-    ['Mr. Bruno Other','Senior 4444','','Basic 5555','']
+    ['Mr. Alex Example 79000001','Senior 1111','Trainee 2222','Basic 3333',''],
+    ['Mr. Bruno Other 79000002','Senior 4444','','Basic 5555','']
   ]}]}};
   const f=fixture(t,[patient({consultant:'Mr. A. Example'}),patient({consultant:'Mr. B. Other'}),
     patient({consultant:'Mr. U. Unlisted'})],{rotation});
   const a=f.document.querySelector('.handover-front'),b=f.document.querySelector('.handover-reverse');
   const rows=b.querySelectorAll('tbody tr');
-  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['HST 2222','BST 3333']);
-  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 4444','BST 5555']);
+  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 1111','HST 2222','BST 3333']);
+  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 4444','HST —','BST 5555']);
+  assert.equal(rows[0].querySelector('.hv-consultant-number').textContent,'79000001');
+  const styles=f.document.defaultView;
+  assert.equal(styles.getComputedStyle(rows[0].querySelector('.hv-consultant-name')).fontWeight,'700');
+  for(const label of rows[0].querySelectorAll('.hv-team-contact b'))assert.equal(styles.getComputedStyle(label).fontWeight,'700');
+  for(const number of rows[0].querySelectorAll('.hv-team-number'))assert.equal(styles.getComputedStyle(number).fontWeight,'400');
   assert.match(rows[2].textContent,/Firm not matched/);
   assert.doesNotMatch(a.textContent,/2222|3333|4444|5555|Team contacts/);
   assert.equal(b.querySelector('.hv-legend'),null);
@@ -129,34 +150,35 @@ test('fistula operation text stored in Findings retains the fistula operation da
   assert.equal(row.children[4].textContent,'Saved fistula operation');assert.equal(row.children[6].textContent,'2026-10-21');
 });
 
-test('long lists paginate as front/reverse pairs with identical patient groups and no lost rows',t=>{
-  const f=fixture(t,Array.from({length:60},(_,i)=>patient({id_card:'TEST-'+i,
-    procedure_performed:i%4===0?'Long operation description. '.repeat(8):'Recorded operation'})));
-  const dom=new JSDOM(f.out,{runScripts:'outside-only'});t.after(()=>dom.window.close());
-  const w=dom.window,d=w.document;
-  Object.defineProperty(d,'readyState',{get:()=> 'complete'});
-  // Fixed page geometry isolates the pagination behavior from a browser engine.
-  w.HTMLElement.prototype.getBoundingClientRect=function(){
-    if(this.tagName==='TR')return {height:Math.max(parseFloat(this.style.height)||0,this.textContent.length>180?80:28)};
-    if(this.classList.contains('handover-page'))return {height:70+[...this.querySelectorAll('tr')].reduce((n,tr)=>n+tr.getBoundingClientRect().height,0)};
-    return {height:0};
-  };
-  w.eval(d.querySelector('script').textContent);
-  const pages=[...d.querySelectorAll('.handover-page')],ids=[];
-  assert.ok(pages.length>2);assert.equal(pages.length%2,0);
-  assert.equal(d.documentElement.style.getPropertyValue('--fs'),'10px','long lists retain readable type and continue in pairs');
-  for(let i=0;i<pages.length;i+=2){
-    assert.equal(pages[i].dataset.side,'front');assert.equal(pages[i+1].dataset.side,'reverse');
-    assert.equal(pages[i].dataset.sheet,pages[i+1].dataset.sheet);
-    const a=[...pages[i].querySelectorAll('tbody tr')],b=[...pages[i+1].querySelectorAll('tbody tr')];
-    assert.equal(a.length,b.length);assert.ok(a.some(row=>!row.classList.contains('wgblank')));
-    a.forEach((row,j)=>{
-      assert.equal(row.children[1].textContent,b[j].children[1].textContent);
-      assert.equal(row.style.height,b[j].style.height);ids.push(row.children[1].textContent);
-    });
-    assert.equal(w.getComputedStyle(pages[i+1]).display,'none');
+test('automatic fitting always keeps the full list on exactly two pages, including a large manual font',t=>{
+  for(const manualFont of [null,24]){
+    const f=fixture(t,Array.from({length:60},(_,i)=>patient({id_card:'TEST-'+i,
+      procedure_performed:i%4===0?'Long operation description. '.repeat(8):'Recorded operation'})),{manualFont});
+    const {w,d,pages}=layout(t,f.out);
+    assert.equal(pages.length,2);assert.equal(pages[0].dataset.side,'front');assert.equal(pages[1].dataset.side,'reverse');
+    const a=[...pages[0].querySelectorAll('tbody tr')],b=[...pages[1].querySelectorAll('tbody tr')];
+    assert.equal(a.length,60);assert.equal(b.length,60);
+    assert.deepEqual(a.map(row=>row.children[1].textContent),Array.from({length:60},(_,i)=>'TEST-'+i));
+    a.forEach((row,i)=>{assert.equal(row.children[1].textContent,b[i].children[1].textContent);assert.equal(row.style.height,b[i].style.height);});
+    assert.ok(parseFloat(d.documentElement.style.getPropertyValue('--fs'))<(manualFont||14));
+    for(const page of pages)assert.ok(page.querySelector('.handover-content').getBoundingClientRect().height<=(199-4)*96/25.4-2+0.01);
+    assert.equal(w.getComputedStyle(pages[1]).display,'none');
   }
-  assert.deepEqual(ids,Array.from({length:60},(_,i)=>'TEST-'+i));
+});
+
+test('the final scale fallback keeps every patient on both pages when row borders cannot shrink further',t=>{
+  const f=fixture(t,Array.from({length:120},(_,i)=>patient({id_card:'TEST-'+i})));
+  const {d,pages}=layout(t,f.out,true);
+  assert.equal(pages.length,2);assert.ok(Number(d.documentElement.dataset.handoverFitScale)<1);
+  for(const page of pages){assert.equal(page.querySelectorAll('tbody tr').length,120);assert.ok(page.querySelector('.handover-content').getBoundingClientRect().height<=(199-4)*96/25.4-2+0.01);}
+});
+
+test('spare writing rows give way before reducing the patient text size',t=>{
+  const f=fixture(t,Array.from({length:5},(_,i)=>patient({id_card:'TEST-'+i})),{manualFont:24});
+  const {d,pages}=layout(t,f.out);
+  assert.equal(d.documentElement.style.getPropertyValue('--fs'),'24px');
+  assert.equal(pages.length,2);
+  for(const page of pages){assert.equal(page.querySelectorAll('tbody tr:not(.wgblank)').length,5);assert.ok(page.querySelectorAll('tbody tr').length<16);}
 });
 
 test('future and reverted operations do not replace the latest performed operation',t=>{

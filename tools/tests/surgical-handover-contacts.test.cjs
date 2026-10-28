@@ -18,6 +18,7 @@ test('firm contacts resolve titles, initials and compound surnames without guess
   const w=fixture(t),lookup=w.SurgicalRotation.handoverContacts;
   const data=directory([row('Mr. Alex Example 79000001'),row('Ms. Beatrice Sample-Name 79000002')]);
   assert.equal(lookup(data,'Mr.A.Example').status,'matched');
+  assert.deepEqual(plain(lookup(data,'Mr.A.Example').consultant),['79000001']);
   assert.equal(lookup(data,'Ms. B. Sample Name').status,'matched');
   assert.equal(lookup(data,'Mr. B. Example').status,'unmatched');
   assert.equal(lookup(data,'Mr. Example').status,'unmatched','a surname alone does not select a team');
@@ -25,16 +26,19 @@ test('firm contacts resolve titles, initials and compound surnames without guess
   const ambiguous=directory([row('Mr. Alex Example'),row('Mr. Andrew Example')]);
   assert.equal(lookup(ambiguous,'Mr. A. Example').status,'ambiguous');
   assert.equal(lookup(ambiguous,'Mr. Alex Example').status,'matched','an exact full name resolves its own team');
+  const shared=directory([row('Mr. Alex Example 79000001 Mr. Bruno Other 79000002')]);
+  assert.deepEqual(plain(lookup(shared,'Mr. A. Example').consultant),['79000001']);
+  assert.deepEqual(plain(lookup(shared,'Mr. B. Other').consultant),['79000002']);
 });
 
-test('HST is preferred, RS is the fallback, and shared numbers are retained only for the matched firm',t=>{
+test('consultant, RS, HST and BST numbers are all retained only for the matched firm',t=>{
   const w=fixture(t),lookup=w.SurgicalRotation.handoverContacts;
   const data=directory([row('Mr. Alex Example','Senior 1111','First 2222 Second 2345','Basic 3333'),
     row('Mr. Bruno Other','Senior 4444','','Basic 5555'),row('Mr. Alex Example','Senior 1111','First 2222','Extra 3456')]);
-  assert.deepEqual(plain(lookup(data,'Mr. A. Example')),{status:'matched',senior:{role:'HST',numbers:['2222','2345']},bst:['3333','3456']});
-  assert.deepEqual(plain(lookup(data,'Mr. B. Other')),{status:'matched',senior:{role:'RS',numbers:['4444']},bst:['5555']});
+  assert.deepEqual(plain(lookup(data,'Mr. A. Example')),{status:'matched',consultant:[],rs:['1111'],hst:['2222','2345'],bst:['3333','3456']});
+  assert.deepEqual(plain(lookup(data,'Mr. B. Other')),{status:'matched',consultant:[],rs:['4444'],hst:[],bst:['5555']});
   const missing=lookup(directory([row('Mr. Alex Example','Senior only','Trainee only','')]),'Mr. A. Example');
-  assert.deepEqual(plain(missing.senior.numbers),[]);assert.deepEqual(plain(missing.bst),[]);
+  assert.deepEqual(plain(missing),{status:'matched',consultant:[],rs:[],hst:[],bst:[]});
 });
 
 test('excluded specialties cannot supply printed contact matches',t=>{

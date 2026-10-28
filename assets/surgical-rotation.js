@@ -66,14 +66,13 @@ window.SurgicalRotation=(()=>{
       return initial(short[0],long[0])&&short.slice(1).every((v,i)=>v===long[long.length-short.length+1+i]);
     };
     const candidates=includedSections(data).flatMap(section=>section.rows.flatMap(row=>
-      contacts(row[0]).map(person=>({row,name:tokens(person.name)}))));
+      contacts(row[0]).map(person=>({row,name:tokens(person.name),number:person.number}))));
     const exact=candidates.filter(c=>c.name.join(' ')===wanted.join(' '));
     const matches=exact.length?exact:candidates.filter(c=>same(wanted,c.name));
     const names=new Set(matches.map(c=>c.name.join(' ')));
     if(names.size!==1)return {status:names.size?'ambiguous':'unmatched'};
-    const numbers=column=>[...new Set(matches.flatMap(c=>contacts(c.row[column]).map(p=>p.number).filter(Boolean)))];
-    const hst=numbers(2),rs=numbers(1);
-    return {status:'matched',senior:{role:hst.length?'HST':'RS',numbers:hst.length?hst:rs},bst:numbers(3)};
+    const numbers=column=>[...new Set(matches.flatMap(c=>column===0?[c.number]:contacts(c.row[column]).map(p=>p.number)).filter(Boolean))];
+    return {status:'matched',consultant:numbers(0),rs:numbers(1),hst:numbers(2),bst:numbers(3)};
   }
   async function handoverDirectory(database){
     let timer;
