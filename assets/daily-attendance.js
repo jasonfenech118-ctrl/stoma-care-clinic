@@ -231,14 +231,18 @@
       const incoming = person.activities.filter(activity => activity.code !== 'til_off');
       const absences = [...new Set([
         ...(LEAVE_CODES.has(base) ? [base] : []),
-        ...person.leave.map(record => record.leave_type)
+        ...person.leave.filter(record => !root.LeaveHours?.read(record)).map(record => record.leave_type)
       ])];
+      const partialLeave = [...new Set([person.roster,...person.leave]
+        .filter(record => root.LeaveHours?.read(record)).map(record => root.LeaveHours.label(record)))];
 
       let plannedCode;
       let working;
       let source;
 
-      if (tilOff.length) {
+      if (partialLeave.length && (absences.length || base === 'off' || tilOff.length)) {
+        plannedCode = 'check'; working = null; source = 'Conflicting duty or leave records';
+      } else if (tilOff.length) {
         plannedCode = 'til_off';
         working = false;
         source = 'Recorded time off in lieu';
@@ -270,6 +274,7 @@
 
       const swap = dutySwap(person.roster?.notes, date);
       if (swap) source += ' · ' + swap;
+      if (partialLeave.length) source += ' · ' + partialLeave.join(' · ');
 
       const records = [
         ...(person.roster ? [person.roster] : []),
@@ -277,9 +282,9 @@
         ...person.activities
       ];
       const hours = [...new Set(person.activities.map(timeRange).filter(Boolean))].join(', ');
-      const notes = [...new Set(records.map(record =>
+      const notes = [...new Set([...records.map(record =>
         String(record.notes || '').trim()
-      ).filter(Boolean))].join(' · ');
+      ).filter(Boolean),...partialLeave])].join(' · ');
 
       return {
         person_key: person.person_key,
@@ -657,6 +662,7 @@
         row.planned_duty = 'Sick leave';
         row.planned_source = 'Roster entry';
         row.planned_hours = '';
+        if (root.LeaveHours) row.roster_notes = root.LeaveHours.stripPrinted(row.roster_notes);
         row.working = false;
         row.time_in = '';
         row.time_out = '';
