@@ -58,7 +58,7 @@ test('handover PDF requests short-edge duplex and actual size, retaining every f
   assert.ok(pages.length>2);assert.equal(pdf.pages,pages.length);assert.equal(pdf.images.length,pages.length);
   assert.deepEqual(f.seen.map(x=>x.side),pages.map(page=>page.dataset.side));
   assert.ok(f.seen.every(x=>x.scale===3));
-  for(const image of pdf.images){assert.equal(image[2],7);assert.equal(image[3],7);assert.equal(image[4],283);assert.ok(image[5]<=196);}
+  for(const image of pdf.images){assert.equal(image[2],5);assert.equal(image[3],5);assert.equal(image[4],287);assert.ok(image[5]<=200);}
   assert.equal(f.d.documentElement.dataset.handoverReady,'1');
 });
 

@@ -62,7 +62,7 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   assert.equal(f.w.document.querySelectorAll('.handover-reverse').length,0,'the app receives no extra page');
 });
 
-test('Surgical Details prints only its own firm contacts and the captured rotation update date',t=>{
+test('Surgical Details prints only its own firm contacts without a footer',t=>{
   const rotation={updated_at:'2026-10-27T16:06:00Z',data:{sections:[{name:'Surgery',rows:[
     ['Mr. Alex Example','Senior 1111','Trainee 2222','Basic 3333',''],
     ['Mr. Bruno Other','Senior 4444','','Basic 5555','']
@@ -75,7 +75,8 @@ test('Surgical Details prints only its own firm contacts and the captured rotati
   assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 4444','BST 5555']);
   assert.match(rows[2].textContent,/Firm not matched/);
   assert.doesNotMatch(a.textContent,/2222|3333|4444|5555|Team contacts/);
-  assert.match(b.querySelector('.hv-legend').textContent,/Surgical Rotation · updated 27\/10\/2026, 17:06/);
+  assert.equal(b.querySelector('.hv-legend'),null);
+  assert.ok(a.querySelector('.hv-legend'));
   rotation.data.sections[0].rows[0][2]='New trainee 9999';
   assert.match(rows[0].textContent,/2222/,'saved HTML retains the contacts captured at the time');
   assert.doesNotMatch(rows[0].textContent,/9999/);
