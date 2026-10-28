@@ -60,7 +60,7 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
   const front=f.document.querySelector('.handover-front'),back=f.document.querySelector('.handover-reverse');
   assert.ok(front);assert.ok(back,'there is no opt-out from the reverse');
-  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Firm / team contacts','Surgery date']);
+  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Surgeon / firm','Surgery date']);
   assert.equal(front.querySelector('h1').textContent,'Care Handover');
   assert.equal(back.querySelector('h1').textContent,'Surgical Details');
   assert.doesNotMatch(back.textContent,/Reverse|Reversal/i);
@@ -72,13 +72,13 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   });
   assert.match(front.textContent,/Example appliance.*Routine review/s);
   assert.doesNotMatch(back.textContent,/Example appliance|Routine review|Appliance \+ notes/);
-  assert.equal(b[0].children[4].textContent,'Recorded resection');
+  assert.equal(b[0].querySelector('.hv-operation-text').textContent,'Recorded resection');
   assert.equal(b[0].querySelector('.hv-firm-name').textContent,'Example firm');
   assert.equal(b[0].children[6].textContent,'2026-10-12');
   assert.equal(f.w.document.querySelectorAll('.handover-reverse').length,0,'the app receives no extra page');
 });
 
-test('Surgical Details prints only its own firm contacts without a footer',t=>{
+test('all contact numbers print under the operation, leaving the surgeon/firm column for the bold name',t=>{
   const rotation={updated_at:'2026-10-27T16:06:00Z',data:{sections:[{name:'Surgery',rows:[
     ['Mr. Alex Example 79000001','Senior 1111','Trainee 2222','Basic 3333',''],
     ['Mr. Bruno Other 79000002','Senior 4444','','Basic 5555','']
@@ -87,9 +87,13 @@ test('Surgical Details prints only its own firm contacts without a footer',t=>{
     patient({consultant:'Mr. U. Unlisted'})],{rotation});
   const a=f.document.querySelector('.handover-front'),b=f.document.querySelector('.handover-reverse');
   const rows=b.querySelectorAll('tbody tr');
-  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 1111','HST 2222','BST 3333']);
-  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 4444','HST —','BST 5555']);
-  assert.equal(rows[0].querySelector('.hv-consultant-number').textContent,'79000001');
+  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['Consultant 79000001','RS 1111','HST 2222','BST 3333']);
+  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['Consultant 79000002','RS 4444','HST —','BST 5555']);
+  assert.equal(rows[0].querySelector('.hv-team-number').textContent,'79000001');
+  assert.equal(rows[0].children[4].querySelectorAll('.hv-team-contact').length,4);
+  assert.equal(rows[0].children[5].textContent,'Mr. A. Example');
+  assert.equal(rows[0].children[5].querySelector('.hv-team-number'),null);
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Recorded resection');
   const styles=f.document.defaultView;
   assert.equal(styles.getComputedStyle(rows[0].querySelector('.hv-consultant-name')).fontWeight,'700');
   for(const label of rows[0].querySelectorAll('.hv-team-contact b'))assert.equal(styles.getComputedStyle(label).fontWeight,'700');
@@ -109,8 +113,8 @@ test('latest refashioning uses its own operation/date and an unknown date never 
     {kind:'refashion',date_unknown:true,operation:'Latest unknown-date operation',affected:[]}
   ]})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
-  assert.equal(rows[0].children[4].textContent,'Recorded refashioning');assert.equal(rows[0].children[6].textContent,'2026-10-20');
-  assert.equal(rows[1].children[4].textContent,'Latest unknown-date operation');assert.equal(rows[1].children[6].textContent,'Not recorded');
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Recorded refashioning');assert.equal(rows[0].children[6].textContent,'2026-10-20');
+  assert.equal(rows[1].querySelector('.hv-operation-text').textContent,'Latest unknown-date operation');assert.equal(rows[1].children[6].textContent,'Not recorded');
 });
 
 test('legacy Findings print when the operation field is blank, keeping the recorded surgery date',t=>{
@@ -119,10 +123,10 @@ test('legacy Findings print when the operation field is blank, keeping the recor
     patient({procedure_performed:'Current operation description',findings:'Earlier wording'}),
     patient({procedure_performed:'   ',findings:'  Saved legacy operation  '})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
-  assert.equal(rows[0].children[4].textContent,finding);
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,finding);
   assert.equal(rows[0].children[6].textContent,'2026-08-16','a date mentioned inside the text is not the surgery-date field');
-  assert.equal(rows[1].children[4].textContent,'Current operation description');
-  assert.equal(rows[2].children[4].textContent,'Saved legacy operation');
+  assert.equal(rows[1].querySelector('.hv-operation-text').textContent,'Current operation description');
+  assert.equal(rows[2].querySelector('.hv-operation-text').textContent,'Saved legacy operation');
 });
 
 test('later and refashioned stomas use their own Findings and never inherit the original operation',t=>{
@@ -130,9 +134,9 @@ test('later and refashioned stomas use their own Findings and never inherit the 
     patient({findings:'Original operation',newstoma_formed_date:'2026-10-22',newstoma_findings:'Legacy later-stoma description'}),
     patient({findings:'Original operation',extra_stomas:[{uid:'later',type:'End ileostomy',formed_date:'2026-10-23'}]})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
-  assert.equal(rows[0].children[4].textContent,'Legacy refashioning description');assert.equal(rows[0].children[6].textContent,'2026-10-20');
-  assert.equal(rows[1].children[4].textContent,'Legacy later-stoma description');assert.equal(rows[1].children[6].textContent,'2026-10-22');
-  assert.equal(rows[2].children[4].textContent,'Not recorded');assert.equal(rows[2].children[6].textContent,'2026-10-23');
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Legacy refashioning description');assert.equal(rows[0].children[6].textContent,'2026-10-20');
+  assert.equal(rows[1].querySelector('.hv-operation-text').textContent,'Legacy later-stoma description');assert.equal(rows[1].children[6].textContent,'2026-10-22');
+  assert.equal(rows[2].querySelector('.hv-operation-text').textContent,'Not recorded');assert.equal(rows[2].children[6].textContent,'2026-10-23');
 });
 
 test('operation-history entries can use Findings from their exact stoma without borrowing older text',t=>{
@@ -140,14 +144,14 @@ test('operation-history entries can use Findings from their exact stoma without 
     stoma_operation_history:[{kind:'new',new_uid:'later',date:'2026-10-23',operation:null,affected:[]}]}),
     patient({findings:'Original operation',stoma_operation_history:[{kind:'reversal',date:'2026-10-24',operation:null,affected:[]}]})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
-  assert.equal(rows[0].children[4].textContent,'Saved later operation');assert.equal(rows[0].children[6].textContent,'2026-10-23');
-  assert.equal(rows[1].children[4].textContent,'Reversal / closure');assert.equal(rows[1].children[6].textContent,'2026-10-24');
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Saved later operation');assert.equal(rows[0].children[6].textContent,'2026-10-23');
+  assert.equal(rows[1].querySelector('.hv-operation-text').textContent,'Reversal / closure');assert.equal(rows[1].children[6].textContent,'2026-10-24');
 });
 
 test('fistula operation text stored in Findings retains the fistula operation date',t=>{
   const f=fixture(t,[{patient_kind:'fistula',findings:'Saved fistula operation',fistula_operation_date:'2026-10-21'}]);
   const row=f.document.querySelector('.handover-reverse tbody tr');
-  assert.equal(row.children[4].textContent,'Saved fistula operation');assert.equal(row.children[6].textContent,'2026-10-21');
+  assert.equal(row.querySelector('.hv-operation-text').textContent,'Saved fistula operation');assert.equal(row.children[6].textContent,'2026-10-21');
 });
 
 test('automatic fitting always keeps the full list on exactly two pages, including a large manual font',t=>{
@@ -188,7 +192,7 @@ test('future and reverted operations do not replace the latest performed operati
     {kind:'new',date:'2026-11-12',operation:'Future entry',affected:[]}
   ]})]);
   const row=f.document.querySelector('.handover-reverse tbody tr');
-  assert.equal(row.children[4].textContent,'Performed operation');assert.equal(row.children[6].textContent,'2026-10-19');
+  assert.equal(row.querySelector('.hv-operation-text').textContent,'Performed operation');assert.equal(row.children[6].textContent,'2026-10-19');
 });
 
 test('all pending-surgery row types distinguish a plan from a performed operation',t=>{
@@ -196,9 +200,9 @@ test('all pending-surgery row types distinguish a plan from a performed operatio
     patient({_rowClass:'hv-awaiting hv-surgery',upcoming_surgery_date:'2026-10-28'}),
     patient({_rowClass:'hv-awaiting hv-reversal',proposed_reversal_date:'2026-10-28'})]);
   for(const row of [...f.document.querySelectorAll('.handover-reverse tbody tr')].slice(0,3)){
-    assert.match(row.children[4].textContent,/Awaiting .*not yet performed/);
+    assert.match(row.querySelector('.hv-operation-text').textContent,/Awaiting .*not yet performed/);
     assert.equal(row.children[6].textContent,'Planned 2026-10-28');
-    assert.doesNotMatch(row.children[4].textContent,/Recorded resection/);
+    assert.doesNotMatch(row.querySelector('.hv-operation-text').textContent,/Recorded resection/);
   }
 });
 
@@ -206,9 +210,9 @@ test('fistula surgery and missing fields print without inventing details or inte
   const f=fixture(t,[{patient_kind:'fistula',procedure_performed:'Recorded fistula procedure',fistula_operation_date:'2026-10-21'},
     {},patient({procedure_performed:'<img src=x onerror="alert(1)"> & review',consultant:'<Example>'})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
-  assert.equal(rows[0].children[4].textContent,'Recorded fistula procedure');assert.equal(rows[0].children[6].textContent,'2026-10-21');
-  assert.deepEqual([rows[1].children[4].textContent,rows[1].querySelector('.hv-firm-name').textContent,rows[1].children[6].textContent],['Not recorded','Not recorded','Not recorded']);
-  assert.equal(rows[2].children[4].textContent,'<img src=x onerror="alert(1)"> & review');
+  assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Recorded fistula procedure');assert.equal(rows[0].children[6].textContent,'2026-10-21');
+  assert.deepEqual([rows[1].querySelector('.hv-operation-text').textContent,rows[1].querySelector('.hv-firm-name').textContent,rows[1].children[6].textContent],['Not recorded','Not recorded','Not recorded']);
+  assert.equal(rows[2].querySelector('.hv-operation-text').textContent,'<img src=x onerror="alert(1)"> & review');
   assert.equal(rows[2].querySelector('.hv-firm-name').textContent,'<Example>');assert.equal(f.document.querySelector('img'),null);
 });
 
