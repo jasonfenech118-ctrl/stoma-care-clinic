@@ -108,6 +108,8 @@ test('the consultant pager prints under Surgeon / firm, with RS, HST and BST und
   assert.equal(rows[0].children[5].querySelector('.hv-consultant-name').textContent,'Mr. A. Example');
   assert.equal(rows[0].children[5].querySelector('.hv-team-number').textContent,'79000001');
   assert.equal(rows[1].children[5].querySelector('.hv-team-number').textContent,'79000002');
+  assert.equal(rows[0].querySelector('.hv-consultant-pager').textContent,'79000001');
+  assert.doesNotMatch(b.textContent,/Consultant:/);
   assert.equal(rows[0].children[4].querySelector('.hv-consultant-pager'),null);
   assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Recorded resection');
   const styles=f.document.defaultView;
