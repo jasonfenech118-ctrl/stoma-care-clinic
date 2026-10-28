@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 October 2026 — Quick Look and Surgical Rotation have separate phone icons and destinations. Add to phone detects the browser automatically without a browser selector.'};
+const MANUAL_META={updated:'28 October 2026 — Patient outcome changes warn about upcoming bookings, cancel them with a recorded status reason, and open the affected appointment date. Cancelled boxes use the outcome colour and remain in the history.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -186,6 +186,7 @@ const MANUAL_SECTIONS=[
       `Choose the stoma that was reversed or closed. Enter its reversal / closure date, or select <b>Date not known</b>.`,
       `Check the selected stoma and details, then press <b>OK</b> to save. <b>Cancel</b> leaves the record unchanged. The selected stoma's history is retained; any other present stomas remain present.`
     ])}
+    ${manNote('auto','📅','Changing an existing patient to <b>Deceased, Reversed, Discharged to Gozo or Relocated Overseas</b> checks for appointments booked today or later. Before saving, the notice names the patient and ID card, lists the booked dates and times, and explains that those bookings will become <b>Cancelled — [new status]</b>. Cancel the notice to leave both the patient and appointments unchanged. After saving, the app opens <b>Appointments</b> on the earliest affected date, highlights the cancelled box and lists buttons for any other affected dates. The boxes use the register colours: black for Deceased, purple for Reversed, dark blue for Gozo and yellow for Overseas. The original bookings and their cancellation reasons remain in the history; their slots become available for rebooking. Earlier completed visits and DNTU records are retained. A reversal which leaves another stoma present keeps the patient active and does not cancel their follow-up appointments.')}
     ${manH2('↺','Revert an outcome')}
     ${manSteps([
       `Open <b>Outcome</b> and press <b>Revert status</b>. This is available for any outcome other than Active, including a status with no date on file.`,
@@ -656,6 +657,7 @@ const MANUAL_SECTIONS=[
         ['✍️','Discharge letter signature','The letter automatically uses the signed-in nurse’s profile name, including print, Word and email copies.','Discharge letter'],
         ['🩺','Surgical Rotation specialty exclusions','Gozo, Orthopaedic / Orthopedic Surgery, HDU / ITU / Interventional Radiology, ENT / Maxillofacial Surgery, Neurosurgery, Plastic and Burns, Urology Surgery, Cardiothoracic Surgery and Vascular Surgery are excluded from the current list, consultant dropdown and every Excel import automatically.','Surgical Rotation'],
         ['🩺','Surgical Rotation replacement','Each confirmed Excel import replaces every doctor, team assignment and number. Only the current extracted list is kept; no uploaded files or rotation archive.','Surgical Rotation'],
+        ['📅','Status change cancels future bookings','Changing to Deceased, Reversed, Discharged to Gozo or Relocated Overseas warns about booked dates, then cancels only today/future booked appointments when saved. The app opens the earliest affected appointment date and highlights boxes in the status colour; cancellation history and DNTU records are retained.','Patient record › Outcome / Appointments'],
         ['📱','Separate phone shortcuts','Quick Look and Surgical Rotation keep their own icon, destination and installation state. Add to phone detects the browser automatically; it uses an available native prompt or shows only that browser’s home-screen steps.','Quick Look / Surgical Rotation'],
         ['📱','Surgical Rotation phone updates','The home-screen icon opens only Surgical Rotation. Its current list refreshes every minute while visible and online, and when the page regains focus or connectivity.','Surgical Rotation'],
         ['✉️','Discharge letter for every stoma','Each current ileostomy, colostomy, urostomy or mucus fistula has its own section and care plan, with its latest appliance and accessories. Different update dates do not drop another stoma’s selection.','Discharge letter'],

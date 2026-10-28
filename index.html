@@ -7,23 +7,23 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.27-643"></script>
+<script src="assets/phone-route.js?v=2026.10.28-644"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css"/>
-<script src="assets/cancellations.js"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-644"/>
+<script src="assets/cancellations.js?v=2026.10.28-644"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.27-643"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.27-643"/>
+<script src="assets/daily-attendance.js?v=2026.10.28-644"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-644"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.27-643"><script src="assets/surgical-rotation.js?v=2026.10.27-643"></script>
-<script src="assets/manual.js?v=2026.10.27-643"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-644"><script src="assets/surgical-rotation.js?v=2026.10.28-644"></script>
+<script src="assets/manual.js?v=2026.10.28-644"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3917,7 +3917,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.27-643';
+const APP_BUILD='2026.10.28-644';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4946,11 +4946,11 @@ async function loadTodaySnapshot(){
   const sc={booked:'ps-booked',attended:'ps-attended',cancelled:'ps-cancelled',did_not_attend:'ps-dna'};
   const sl={booked:'Booked',attended:'Seen',cancelled:'Cancelled',did_not_attend:'DNTU'};
   const rowBg={booked:'pt-row-booked',attended:'pt-row-attended',cancelled:'pt-row-cancelled',did_not_attend:'pt-row-dna'};
-  body.innerHTML=appts.map(a=>`<div class="pt-row ${rowBg[a.status]||'pt-row-booked'}" style="align-items:flex-start;">
+  body.innerHTML=appts.map(a=>`<div class="pt-row ${rowBg[a.status]||'pt-row-booked'} ${statusCancellationClass(a)}" style="align-items:flex-start;">
     <div class="pt-slot">${a.appt_slot?.slice(0,5)}</div>
     <div class="patient-name-avatar" style="flex:1;min-width:180px;align-items:flex-start;">${patientAvatarHTML(a.patients||{},'xs')}<div class="patient-name-avatar-copy"><div style="font-weight:800;color:var(--navy);">${htmlSafe(a.patients?.first_name||'')} ${htmlSafe(a.patients?.surname||'')}</div><div class="appt-contact-row" style="margin-top:4px;"><span class="appt-contact-pill"><span class="appt-contact-label">ID</span><span class="appt-contact-value">${htmlSafe(a.patients?.id_card||'No ID')}</span></span>${a.patients?.phone_number?`<span class="appt-contact-pill phone"><span class="appt-contact-label">Tel</span><span class="appt-contact-value">☎ ${htmlSafe(a.patients.phone_number)}</span></span>`:''}</div>${followupStatusBadge(a.patients?.followup_status)}</div></div>
     ${(a.staff||a.bank_staff||(!a.assigned_to&&!a.bank_staff_id))?`<div style="font-size:11px;color:var(--muted);min-width:90px;">${htmlSafe(a.staff?.full_name||a.bank_staff?.full_name||'Common')}</div>`:''}
-    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${sl[a.status]||''}</span>
+    <span style="padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;cursor:default;" class="${sc[a.status]||'ps-booked'}">${a.status==='cancelled'?htmlSafe(statusLabel(a.status,a)):sl[a.status]||''}</span>
     <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:270px;">
       ${a.status!=='attended'&&a.status!=='cancelled'?`<button class="ncb-btn ncb-attended" title="Seen" onclick="setAS('${a.id}','attended')">✅</button>`:''}
       ${a.status!=='did_not_attend'?`<button class="ncb-btn ncb-dna" onclick="setAS('${a.id}','did_not_attend')">DNTU</button>`:''}
@@ -5325,13 +5325,13 @@ function visiblePatientContactHTML(patient){
 }
 
 function cancelledSlotHistoryHTML(cancelledRows){
-  const rows=cancelledRows||[];
+  const rows=[...(cancelledRows||[])].sort((a,b)=>Number(statusAppointmentFocused(b))-Number(statusAppointmentFocused(a)));
   if(!rows.length)return '';
   const shown=rows.slice(0,5).map(a=>{
     const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Patient';
     const id=a.patients?.id_card?htmlSafe(a.patients.id_card):'No ID';
     const phone=a.patients?.phone_number?htmlSafe(a.patients.phone_number):'No phone';
-    return `<div class="cancel-history-item">
+    return `<div class="cancel-history-item ${statusCancellationClass(a)}">
       <span class="cancel-chip">${htmlSafe(cancellationSourceLabel(a))}</span>
       <span class="cancel-text"><strong>${htmlSafe(nm)}</strong><br/><span style="font-weight:900;">ID ${id}</span> · <span style="font-weight:900;">☎ ${phone}</span></span>
       <span class="cancel-history-actions">
@@ -5385,7 +5385,7 @@ async function loadAppts(){
 
   // Important fix: show existing bookings even when that nurse is now off/sick/leave or not rostered.
   // Without this, the appointment exists in Supabase but has no visible column, so it looks as if it disappeared.
-  for(const a of(appts||[]).filter(x=>x.status!=='cancelled')){
+  for(const a of(appts||[]).filter(x=>x.status!=='cancelled'||statusCancellationReason(x))){
     if(a.assigned_to && !nurses.some(n=>String(n.id)===String(a.assigned_to))){
       const coreStaff=staffList.find(s=>String(s.id)===String(a.assigned_to));
       addNurse({id:a.assigned_to,name:coreStaff?.full_name||a.staff?.full_name||'Booked Nurse',type:'absent'});
@@ -5399,7 +5399,7 @@ async function loadAppts(){
   // The Common (general) column is for the Monday–Saturday lists; on a nurse-led
   // clinic day (Sunday / public holiday) it is dropped, unless a Common booking
   // already exists that day so nothing is hidden.
-  const hasCommonAppt=(appts||[]).some(a=>a.status!=='cancelled'&&!a.assigned_to&&!a.bank_staff_id);
+  const hasCommonAppt=(appts||[]).some(a=>(a.status!=='cancelled'||statusCancellationReason(a))&&!a.assigned_to&&!a.bank_staff_id);
   if(!isClinicDay(date)||hasCommonAppt)nurses.push({id:'common',name:'Common',type:'common'});
 
   const workingCount=nurses.filter(n=>!['common','absent','ot-booked'].includes(n.type)).length;
@@ -5502,7 +5502,7 @@ async function loadAppts(){
           </div>
         </td>`;
       }else if(n.type==='absent'||n.type==='ot-booked'){
-        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;"><div class="cell-time-badge warning">${slot}</div><br/>Not rostered</td>`;
+        html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;"><div class="cell-time-badge warning">${slot}</div>${cancelledSlotHistoryHTML(cancelledHere)}<br/>Not rostered</td>`;
       }else{
         html+=`<td class="appt-cell-empty" style="padding:8px;background:${cellBg};vertical-align:top;">
           <div class="cell-time-badge muted">${slot}</div>
@@ -5515,6 +5515,7 @@ async function loadAppts(){
   });
   html+='</tbody></table>';
   con.innerHTML=html;
+  if(typeof focusStatusCancelledAppointment==='function')focusStatusCancelledAppointment();
   }catch(err){
     console.error('loadAppts failed:',err);
     const con=document.getElementById('slots-container');
@@ -8223,8 +8224,9 @@ async function saveEditedAppointment(apptId,patientId){
   const followupType=document.getElementById('e-followup-type')?.value||'follow_up';
   if(!fn||!sn||!idcard||!date||!slot){alert('Please fill in first name, surname, ID card, date and time.');return;}
   const patientUpdate={first_name:fn,surname:sn,id_card:idcard,phone_number:phone||null,followup_owner:followupOwner,followup_type:followupType,followup_status:followupStatus};
-  const{error:pErr}=await SB.from('patients').update(patientUpdate).eq('id',patientId);
+  const{error:pErr,statusAppointmentChange}=await updatePatientTolerant(patientId,patientUpdate);
   if(pErr){alert('Patient update error: '+pErr.message);return;}
+  if(statusAppointmentChange?.status){closeModal();finishStatusAppointmentChange(statusAppointmentChange);return;}
   const apptUpdate={appt_date:date,appt_slot:slot,assigned_to:null,bank_staff_id:null,status};
   if(nurse.startsWith('core:')) apptUpdate.assigned_to=nurse.replace('core:','');
   if(nurse.startsWith('bank:')) apptUpdate.bank_staff_id=nurse.replace('bank:','');
@@ -11390,9 +11392,10 @@ async function savePatientFollowup(patientId){
   const owner=document.getElementById('fu-owner-'+patientId)?.value||selectedFollowupOwner;
   const status=document.getElementById('fu-status-'+patientId)?.value||'active';
   if(!month||!year){alert('Please select Due Month and Follow-up Year.');return;}
-  const{error}=await updatePatientTolerant(patientId,{followup_due_month:Number(month),followup_year:Number(year),followup_flexible:!!flexible,followup_owner:owner,followup_status:status});
+  const{error,statusAppointmentChange}=await updatePatientTolerant(patientId,{followup_due_month:Number(month),followup_year:Number(year),followup_flexible:!!flexible,followup_owner:owner,followup_status:status});
   if(error){alert('Could not save follow-up details: '+error.message);return;}
   loadStaffAudit();
+  if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(statusAppointmentChange);
 }
 async function transferFollowupOwner(patientId){
   const sel=document.getElementById('fuh-owner');
@@ -11994,7 +11997,7 @@ async function loadAppointmentOutcomes(){
     const rowClick=latest.status==='cancelled'?`openCancelledAppointmentModal('${latest.id}','${r.patientId}')`:`openFollowupHistory('${r.patientId}')`;
     const rowTitle=latest.status==='cancelled'?'Open cancelled appointment details':'Open full follow-up history';
     const rowSubLabel=latest.status==='cancelled'?'Click row for cancellation details':'Click row for history';
-    return `<tr class="outcome-click-row ${rowCls}" onclick="${rowClick}" title="${rowTitle}">
+    return `<tr class="outcome-click-row ${rowCls} ${statusCancellationClass(latest)}" onclick="${rowClick}" title="${rowTitle}">
       <td>${patientNameAvatarHTML(p,nm,`<span>${rowSubLabel}</span>`,'xs')}</td>
       <td style="font-family:monospace;font-size:12px;">${htmlSafe(p.id_card||'—')}</td>
       <td>${htmlSafe(p.phone_number||'—')}</td>
@@ -12009,12 +12012,13 @@ async function loadAppointmentOutcomes(){
 }
 async function saveAppointmentOutcomeFollowupStatus(patientId){
   const status=document.getElementById('ao-status-'+patientId)?.value||'active';
-  const{error}=await SB.from('patients').update({followup_status:status}).eq('id',patientId);
+  const{error,statusAppointmentChange}=await updatePatientTolerant(patientId,{followup_status:status});
   if(error){alert('Could not update follow-up status: '+error.message);return;}
   loadAppointmentOutcomes();
   if(document.getElementById('page-staff-audit')?.classList.contains('active'))loadStaffAudit();
   if(document.getElementById('page-dntu-policy')?.classList.contains('active'))loadDntuPolicy();
   if(document.getElementById('page-appointments')?.classList.contains('active'))loadAppts();
+  if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(statusAppointmentChange);
 }
 async function openCancelledAppointmentModal(apptId,patientId){
   return showCancellationDetails(apptId);
@@ -16350,10 +16354,20 @@ async function patientDetailsExtrasHTML(pat){
    is retried without whichever column the database rejected, and the caller is
    told what had to be left out. */
 async function updatePatientTolerant(patientId,payload){
+  const statusCheck=typeof confirmStatusAppointmentCancellations==='function'
+    ?await confirmStatusAppointmentCancellations(patientId,payload):null;
+  if(statusCheck?.error)return {error:statusCheck.error,dropped:[]};
   const body={...payload},dropped=[];
   for(let i=0;i<10;i++){
-    const{error}=await SB.from('patients').update(body).eq('id',patientId);
-    if(!error){auditPatientWrite('update',patientId,payload,dropped);return{error:null,dropped};}
+    let query=SB.from('patients').update(body).eq('id',patientId);
+    if(statusCheck?.status){
+      query=statusCheck.previousStatus===null?query.is('followup_status',null):query.eq('followup_status',statusCheck.previousStatus);
+      if(statusCheck.updatedAt)query=query.eq('updated_at',statusCheck.updatedAt);
+      query=query.select('id');
+    }
+    const{error,data}=await query;
+    if(!error&&statusCheck?.status&&!data?.length)return {error:{code:'PATIENT_CHANGED',message:'The patient record changed or is no longer available. Reopen it before saving. Nothing was changed.'},dropped};
+    if(!error){auditPatientWrite('update',patientId,payload,dropped);if(typeof refreshStatusAppointmentViews==='function')await refreshStatusAppointmentViews(statusCheck);return{error:null,dropped,...(statusCheck?.status?{statusAppointmentChange:statusCheck}:{})};}
     const bad=missingColumnFromError(error);
     if(!bad||!(bad in body))return{error,dropped};
     delete body[bad];dropped.push(bad);
@@ -17232,6 +17246,7 @@ async function saveStomaOperation(){
       await afterStomaSaved(ctx.patientId);
       if(fresh.is_inpatient&&ctx.kind!=='reversal')await openHandoverAppliance(ctx.patientId);
     }catch(e){alert('The operation was saved. Refresh handover and select an appliance for the new stoma ID.');}
+    if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(ctx.statusAppointmentChange);
   }catch(e){stomaOperationError(e.message||'Could not save the operation.');}
   finally{ctx.busy=false;btn.disabled=false;}
 }
@@ -17239,6 +17254,9 @@ async function saveStomaOperation(){
 async function persistStomaOperation(ctx){
   const{data:fresh,error}=await fetchPatientById(ctx.patientId);if(error||!fresh)throw Error('Could not check the latest patient record.');
   if(stomaOperationFingerprint(fresh)!==stomaOperationFingerprint(ctx.pat))throw Error('This patient’s record has changed. Cancel and reopen this form to review the latest record.');
+  const statusCheck=typeof confirmStatusAppointmentCancellations==='function'
+    ?await confirmStatusAppointmentCancellations(ctx.patientId,ctx.patch,fresh):null;
+  if(statusCheck?.error)throw Error(statusCheck.error.message);
   // Strict single update: an unavailable column must never silently drop part of an operation.
   // Optimistic lock on the operation history. A NULL column (no history recorded yet — e.g. a
   // patient imported before this column existed, like one whose stoma is on file but with no
@@ -17252,6 +17270,8 @@ async function persistStomaOperation(ctx){
   const saved=await query.select('id').single();
   if(saved.error&&(saved.error.code==='PGRST116'||/0 rows/.test(saved.error.message||'')))throw Error('The patient record changed while saving. Cancel and reopen this form to review the latest record.');
   if(saved.error)throw Error(/stoma_operation_history/.test(saved.error.message||'')?'Database setup is needed: run sql/add-stoma-operation-history.sql, then save again. Nothing from this operation has been saved.':saved.error.message);
+  if(typeof refreshStatusAppointmentViews==='function')await refreshStatusAppointmentViews(statusCheck);
+  ctx.statusAppointmentChange=statusCheck;
   return fresh;
 }
 
@@ -18454,6 +18474,7 @@ async function croApplyReversal(){
     try{await refreshReminders();}catch(e){}
     try{await afterStomaSaved(ctx.patientId);switchPatientPanel('outcomes');}
     catch(e){alert('Reversal / closure saved. Refresh the patient record to see it.');}
+    if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(ctx.statusAppointmentChange);
   }catch(e){say(e.message||'Could not save the reversal / closure.');}
   finally{ctx.busy=false;states.forEach(([el,disabled])=>{el.disabled=disabled;});if(btn)btn.textContent='OK';}
 }
@@ -18497,7 +18518,7 @@ async function croApply(key){
     holder.remove();
     const btn=document.querySelector('#cro-confirm .pf-sc-ok');
     if(btn){btn.disabled=true;btn.textContent='Saving…';}
-    const{error,dropped}=await updatePatientTolerant(pat.id,payload);
+    const{error,dropped,statusAppointmentChange}=await updatePatientTolerant(pat.id,payload);
     if(error){say('Could not save: '+(error.message||error));if(btn){btn.disabled=false;btn.textContent='OK';}return;}
     if(dropped&&dropped.length)alert(`Saved, except for: ${dropped.join(', ')}.\n\nThose columns are not in the database yet — run the matching file in sql/ once in Supabase.`);
     try{await refreshReminders();}catch(e){}
@@ -18505,6 +18526,7 @@ async function croApply(key){
     // all read the change, then land back on the Outcome tab.
     await openPatientRecord(pat.id,{panel:'outcomes'});
     switchPatientPanel('outcomes');
+    if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(statusAppointmentChange);
   }finally{
     if(document.body.contains(holder))holder.remove();
   }
@@ -21921,7 +21943,7 @@ async function confirmDischargeModal(patientId){
   try{const{data:eps}=await SB.from('clinical_records').select('id,is_current,status,discharge_date')
       .eq('patient_id',patientId).eq('kind','episode').eq('is_current',true).order('record_date',{ascending:false}).limit(1);
     if(eps&&eps[0])epSnap={id:eps[0].id,is_current:eps[0].is_current,status:eps[0].status,discharge_date:eps[0].discharge_date};}catch(e){}
-  let label='',listNote='';
+  let label='',listNote='',statusAppointmentChange=null;
   try{
     if(v==='postop'){
       label='Postop discharge';listNote='They are on the Postop Discharges list to be booked for follow-up.';
@@ -21938,7 +21960,8 @@ async function confirmDischargeModal(patientId){
       listNote=isGozo?'Their care continues in Gozo.':'Their follow-up is paused while they are overseas.';
       const dateCol=isGozo?'discharged_gozo_date':'relocated_overseas_date';
       const otherCol=isGozo?'relocated_overseas_date':'discharged_gozo_date';
-      const{error,dropped}=await updatePatientTolerant(patientId,{is_inpatient:false,followup_status:v,followup_status_effective_date:TODAY,[dateCol]:TODAY,[otherCol]:null});
+      const result=await updatePatientTolerant(patientId,{is_inpatient:false,followup_status:v,followup_status_effective_date:TODAY,[dateCol]:TODAY,[otherCol]:null});
+      const{error,dropped}=result;statusAppointmentChange=result.statusAppointmentChange;
       if(error)throw error;
       if(dropped&&dropped.includes('followup_status'))throw new Error('the follow-up status column is not in the database yet');
       await closeOpenInpatientEpisode(patientId,{postop:false});
@@ -21952,6 +21975,7 @@ async function confirmDischargeModal(patientId){
   closeModal();
   await loadHandover();
   try{await refreshReminders();}catch(e){}
+  if(typeof finishStatusAppointmentChange==='function')finishStatusAppointmentChange(statusAppointmentChange);
 }
 /* The one-time Undo banner: after a discharge it sits above the handover list,
    naming who left and how, with an Undo that puts them back exactly. It is held
@@ -25631,7 +25655,8 @@ async function runPatientImport(){
     let patch={...u.patch};
     for(;;){
       if(!Object.keys(patch).length){done++;return;}
-      const{error}=await SB.from('patients').update(patch).eq('id',u.id);
+      const{error,dropped}=await updatePatientTolerant(u.id,patch);
+      (dropped||[]).forEach(col=>skippedCols.add(col));
       if(!error){done++;return;}
       const col=importMissingColumnName(error);
       if(col){skippedCols.add(col);delete patch[col];continue;}

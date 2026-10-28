@@ -1,20 +1,98 @@
 /* Appointment cancellations are independent of attendance and follow-up.
    The database saves the outcome, details and audit trail in one transaction. */
+const STATUS_CANCELLATION_REASONS={
+  deceased:'Deceased',reversed:'Reversed',discharged_gozo:'Discharged to Gozo',relocated_overseas:'Relocated Overseas'
+};
 const CANCELLATION_REASONS={
   patient:[['unavailable','Unable to attend'],['unwell','Unwell'],['transport','Transport difficulty'],['personal','Personal / family commitments'],['not_given','Reason not provided'],['other','Other']],
-  clinic:[['availability','Clinic availability'],['staff_unavailable','Staff unavailable'],['clinic_closed','Clinic closed'],['schedule_change','Schedule change'],['other','Other']]
+  clinic:[['availability','Clinic availability'],['staff_unavailable','Staff unavailable'],['clinic_closed','Clinic closed'],['schedule_change','Schedule change'],...Object.entries(STATUS_CANCELLATION_REASONS),['other','Other']]
 };
 let cancellationFormState=null;
 let cancellationReportRows=[];
 let cancellationReportRequest=0;
 let cancellationReportLinks=null;
+let statusAppointmentFocusIds=new Set();
 
 function cancellationSource(a){return ['patient','clinic'].includes(a?.cancellation_source)?a.cancellation_source:'unknown';}
-function cancellationSourceLabel(a){return {patient:'Cancelled by patient',clinic:'Cancelled by clinic',unknown:'Cancellation source not recorded'}[cancellationSource(a)];}
+function statusCancellationReason(a){return a?.status==='cancelled'&&a.cancellation_source==='clinic'&&Object.hasOwn(STATUS_CANCELLATION_REASONS,a.cancellation_reason)?a.cancellation_reason:'';}
+function statusAppointmentFocused(a){return statusAppointmentFocusIds.has(String(a?.id));}
+function statusCancellationClass(a){const reason=statusCancellationReason(a);return reason?'status-cancelled-for-patient status-cancelled-'+reason+(statusAppointmentFocused(a)?' status-appointment-focus':''):'';}
+function cancellationSourceLabel(a){const reason=statusCancellationReason(a);return reason?'Cancelled — '+STATUS_CANCELLATION_REASONS[reason]:{patient:'Cancelled by patient',clinic:'Cancelled by clinic',unknown:'Cancellation source not recorded'}[cancellationSource(a)];}
 function cancellationReasonLabel(a){return (CANCELLATION_REASONS[cancellationSource(a)]||[]).find(([key])=>key===a.cancellation_reason)?.[1]||'Reason not recorded';}
 function cancellationHistory(a){return Array.isArray(a?.cancellation_history)?a.cancellation_history:[];}
 function cancellationStamp(value){return value?new Date(value).toLocaleString('en-GB',{timeZone:'Europe/Malta'}):'Not recorded';}
-function cancellationBadge(a){return `<span class="status-badge sb-cancelled">${htmlSafe(cancellationSourceLabel(a))}</span>`;}
+function cancellationBadge(a){return `<span class="status-badge sb-cancelled ${statusCancellationClass(a)}">${htmlSafe(cancellationSourceLabel(a))}</span>`;}
+
+// The database cancels the bookings in the same transaction as the status save.
+// This check is for the nurse's notice; it never writes an appointment itself.
+async function confirmStatusAppointmentCancellations(patientId,payload,currentPatient=null){
+  const target=String(payload?.followup_status||'').trim().toLowerCase();
+  if(!Object.hasOwn(STATUS_CANCELLATION_REASONS,target))return {error:null,status:null};
+  try{
+    let patient=currentPatient;
+    if(!patient){
+      const result=await SB.from('patients').select('id,first_name,surname,id_card,followup_status,updated_at').eq('id',patientId).single();
+      if(result.error||!result.data)throw Error('Could not check the patient’s current status. Try again before saving.');
+      patient=result.data;
+    }
+    if(String(patient.followup_status||'active').toLowerCase()===target)return {error:null,status:null};
+    const appointments=await fetchAllRows(()=>SB.from('appointments').select('id,appt_date,appt_slot')
+      .eq('patient_id',patientId).eq('status','booked').gte('appt_date',TODAY).order('appt_date').order('appt_slot'));
+    if(appointments.error)throw Error('Could not check booked appointments. Try again before saving.');
+    const rows=appointments.rows||[],label=STATUS_CANCELLATION_REASONS[target];
+    if(rows.length){
+      const name=[patient.first_name,patient.surname].filter(Boolean).join(' ')||'This patient';
+      const identity=name+(patient.id_card?' ('+patient.id_card+')':'');
+      const dates=rows.slice(0,10).map(a=>'• '+fmtShortDate(a.appt_date)+' at '+String(a.appt_slot||'').slice(0,5)).join('\n');
+      const more=rows.length>10?'\nAnd '+(rows.length-10)+' more booked appointments.':'';
+      const text=identity+' has '+(rows.length===1?'an appointment booked on:':'appointments booked on:')+'\n'+dates+more+
+        '\n\n'+(rows.length===1?'This appointment will':'All '+rows.length+' appointments will')+' automatically be marked “Cancelled — '+label+'” when you save. '+
+        'Each appointment box will use the '+label+' status colour. The Appointments page will open on the affected booking date.\n\nSave the status change?';
+      if(!confirm(text))return {error:{code:'STATUS_CHANGE_CANCELLED',message:'Status change cancelled. The patient and booked appointments have not been changed.'},status:null};
+    }
+    return {error:null,status:target,patientId,previousStatus:patient.followup_status??null,updatedAt:patient.updated_at||null,appointments:rows,appointmentCount:rows.length};
+  }catch(error){return {error:{message:error?.message||'Could not check booked appointments. The status has not been saved.'},status:null};}
+}
+async function refreshStatusAppointmentViews(check){
+  if(!check?.status)return;
+  if(check.appointments?.length){
+    try{
+      const ids=check.appointments.map(a=>a.id);
+      const result=await fetchAllRows(()=>SB.from('appointments').select('id,appt_date,appt_slot')
+        .eq('patient_id',check.patientId).eq('status','cancelled').eq('cancellation_source','clinic')
+        .eq('cancellation_reason',check.status).in('id',ids).order('appt_date').order('appt_slot'));
+      if(result.error)check.reloadFailed=true;
+      else check.appointments=result.rows||[];
+    }catch(error){check.reloadFailed=true;}
+  }
+  // A refresh error cannot turn a committed status change into a failed save.
+  try{if(typeof refreshAppointmentViews==='function')await refreshAppointmentViews();}catch(error){console.warn('Status saved; appointment views need refreshing.');}
+}
+function focusStatusCancelledAppointment(){
+  const box=document.querySelector('#slots-container .status-appointment-focus');
+  if(box&&typeof box.scrollIntoView==='function')box.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function openStatusCancelledDate(date){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return;
+  const field=document.getElementById('appt-date');if(!field)return;
+  field.value=date;loadAppts();
+}
+function finishStatusAppointmentChange(check){
+  const rows=check?.appointments;if(!check?.status||!rows?.length)return false;
+  const field=document.getElementById('appt-date'),slots=document.getElementById('slots-container');
+  if(!field||!slots)return false;
+  statusAppointmentFocusIds=new Set(rows.map(a=>String(a.id)));
+  field.value=rows[0].appt_date;
+  if(typeof closeModal==='function')closeModal();
+  switchTab('appointments');
+  let notice=document.getElementById('status-appointment-notice');
+  if(!notice){notice=document.createElement('div');notice.id='status-appointment-notice';notice.className='status-appointment-notice';notice.setAttribute('role','status');slots.parentNode.insertBefore(notice,slots);}
+  const summary=check.reloadFailed?'The status was saved. Cancelled bookings could not be reloaded; please check the appointments below.':
+    'Patient status changed to '+STATUS_CANCELLATION_REASONS[check.status]+'. '+(rows.length===1?'The booked appointment was':'The booked appointments were')+' automatically marked “Cancelled — '+STATUS_CANCELLATION_REASONS[check.status]+'”.';
+  const dates=[...new Set(rows.map(a=>a.appt_date))];
+  notice.innerHTML='<p>'+htmlSafe(summary)+'</p><div class="status-appointment-dates">'+dates.map(date=>'<button type="button" onclick="openStatusCancelledDate(\''+date+'\')">'+htmlSafe(fmtShortDate(date))+'</button>').join('')+'</div>';
+  return true;
+}
 function cancellationFieldsChanged(a,b){return ['cancellation_source','cancellation_reason','cancellation_note','cancellation_date'].some(k=>(a[k]||'')!==(b[k]||''));}
 function cancellationPayload(appt,form,today=TODAY){
   if(!['booked','cancelled'].includes(appt.status))throw new Error('Only a booked appointment can be cancelled. Review the recorded outcome first.');
