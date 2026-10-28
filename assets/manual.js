@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 October 2026 — Patient outcome changes warn about upcoming bookings, cancel them with a recorded status reason, and open the affected appointment date. Cancelled boxes use the outcome colour and remain in the history.'};
+const MANUAL_META={updated:'28 October 2026 — Upcoming surgery dates appear on the patient’s Overview and Stomas tabs, including when an older siting assessment is on file. Saved dates remain visible after reopening the profile.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -202,7 +202,7 @@ const MANUAL_SECTIONS=[
     ${manWhen('An existing stoma patient is coming in for an operation and you want the ward to expect them.')}
     ${manSteps([
       `Open the patient → <b>Stomas</b>. Under <b>Upcoming surgery</b> press ${manBtn('＋ Add surgery date','#e7f7ef','#1c8f5f')}.`,
-      `Pick the operation date and save.`
+      `Pick the operation date and save. The saved date appears under <b>Upcoming surgery</b> on both <b>Overview</b> and <b>Stomas</b>, and remains visible when you reopen the profile. An older siting assessment stays on file alongside the planned date.`
     ])}
     ${manNote('auto','⚙️','From that date the patient rides at the <b>top of the Handover, highlighted</b>, so the ward is expecting them. The date <b>clears itself</b> once they are admitted.')}
     ${manNote('tip','ℹ️','For a brand-new patient with no stoma yet, use <b>Siting</b> instead — the button there is "Add siting session".')}
@@ -628,7 +628,7 @@ const MANUAL_SECTIONS=[
         ['🔄','Latest handover appliance','All nurses see the saved appliance per present stoma. Other open handovers update automatically, with a check every 30 seconds and on returning to the page. Refreshes wait while you edit. Closed stomas and earlier selections remain in history.','Handover'],
         ['🆕','Unassigned appliance is kept','An appliance set before the stoma is on the registry still shows on the handover, and attaches to the stoma once it is recorded.','Handover'],
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
-        ['🔪','Upcoming surgery shows up','An existing patient’s surgery date makes them appear (highlighted) at the top of the handover on the day; it clears when they are admitted.','Handover'],
+        ['🔪','Upcoming surgery shows up','The planned date appears on the patient’s Overview and Stomas tabs, alongside any earlier siting assessment. On the day, the patient appears highlighted at the top of the handover; the planned date clears when they are admitted.','Handover'],
         ['📍','Awaiting surgery / reversal','A sited patient (surgery day) or a planned reversal (reversal day) appears at the top of the handover automatically.','Handover'],
         ['📍','Siting diagram stays with its sites','New assessments and printed forms use the cropped black-and-white abdomen. Saved sites retain the diagram on which they were marked, so their positions do not shift. Clear all starts a fresh map on the current diagram.','Siting › Pre-operative Assessment'],
         ['↩','Closure keeps the stoma history','Saving reversal / closure closes only the selected stoma, retains its history and clears the planned reversal date. Other present stomas remain open; follow-up is updated from the remaining stomas.','Registry › Outcome'],
