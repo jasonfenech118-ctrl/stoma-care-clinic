@@ -10,8 +10,10 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const source=fs.readFileSync(path.join(root,'assets/leave-hours.js'),'utf8');
 const attendance=fs.readFileSync(path.join(root,'assets/daily-attendance.js'),'utf8');
 const sql=fs.readFileSync(path.join(root,'supabase/migrations/20261028154013_vacation_leave_hours.sql'),'utf8');
+const rangeSQL=fs.readFileSync(path.join(root,'supabase/migrations/20261028162807_vacation_leave_time_range.sql'),'utf8');
 const nurse='00000000-0000-0000-0000-000000000001',other='00000000-0000-0000-0000-000000000002';
 const day='2026-11-04';
+const dateString=value=>value instanceof Date?value.toISOString().slice(0,10):value;
 let db;
 function fn(name){const match=html.match(new RegExp('(?:async )?function '+name+'\\('));assert.ok(match,name);const a=match.index,b=html.indexOf('\n',a);return html.slice(a,html.slice(a,b).trim().endsWith('}')?b:html.indexOf('\n}',a)+2);}
 test.before(async()=>{
@@ -28,7 +30,7 @@ test.before(async()=>{
     create policy member on leave_records to authenticated using(private.is_clinic_member()) with check(private.is_clinic_member());
     create policy member on appointments to authenticated using(private.is_clinic_member()) with check(private.is_clinic_member());
     insert into staff values('${nurse}','Example Nurse'),('${other}','Other Nurse');insert into bank_staff values('${nurse}','Example Nurse');`);
-  await db.exec(sql);await db.exec(sql);
+  await db.exec(sql);await db.exec(rangeSQL);await db.exec(rangeSQL);
 });
 test.after(async()=>db?.close());
 async function reset(){await db.exec('reset role;truncate appointments,leave_records,roster;');}
@@ -36,7 +38,7 @@ async function shift(hours=2,start='10:00',status='working'){
   return db.query(`insert into roster(staff_id,roster_date,status,leave_hours,leave_start_time) values($1,$2,$3,$4,$5)
     on conflict(staff_id,roster_date) do update set status=excluded.status,leave_hours=excluded.leave_hours,leave_start_time=excluded.leave_start_time returning *`,[nurse,day,status,hours,start]);
 }
-async function book(slot,id=nurse,status='booked',bank=false){return db.query(`insert into appointments(assigned_to,bank_staff_id,appt_date,appt_slot,status) values($1,$2,$3,$4,$5) returning id`,[bank?null:id,bank?id:null,day,slot,status]);}
+async function book(slot,id=nurse,status='booked',bank=false,date=day){return db.query(`insert into appointments(assigned_to,bank_staff_id,appt_date,appt_slot,status) values($1,$2,$3,$4,$5) returning id`,[bank?null:id,bank?id:null,date,slot,status]);}
 test('hours save as hours with zero days, while full-day vacation remains one day',async()=>{
   await reset();await shift(2.5,'09:45');let rows=(await db.query('select * from leave_records')).rows;
   assert.equal(rows.length,1);assert.equal(Number(rows[0].total_days),0);assert.equal(Number(rows[0].leave_hours),2.5);assert.equal(rows[0].leave_start_time,'09:45:00');
@@ -56,8 +58,8 @@ test('a direct sick or off update clears earlier vacation hours and keeps leave 
   const leave=(await db.query('select * from leave_records')).rows;assert.equal(leave.length,1);assert.equal(leave[0].leave_type,'sick_leave');
   await db.query("update roster set status='off' where staff_id=$1",[nurse]);assert.equal((await db.query('select * from leave_records')).rows.length,0);
 });
-test('invalid hours, fractions, missing start times and overnight windows roll back',async()=>{
-  for(const [hours,start] of [[0,'10:00'],[-1,'10:00'],[0.1,'10:00'],[25,'00:00'],[3,'22:00'],[2,'10:00:30'],[2,null],[null,'10:00']]){
+test('invalid hours, fractions and invalid or missing start times roll back',async()=>{
+  for(const [hours,start] of [[0,'10:00'],[-1,'10:00'],[0.1,'10:00'],[25,'00:00'],[2,'10:00:30'],[2,null],[null,'10:00']]){
     await reset();await assert.rejects(shift(hours,start),/check constraint/);assert.equal((await db.query('select * from roster')).rows.length,0);assert.equal((await db.query('select * from leave_records')).rows.length,0);
   }
 });
@@ -113,7 +115,10 @@ function app(t,entry){
 function chooseHours(f,hours='2.5',start='09:45'){
   const c=f.c;c.pickCode('annual_leave',c.document.querySelector('.sp-btn.dc-L'));
   c.document.getElementById('s-leave-unit').value='hours';c.LeaveHours.toggle('s','annual_leave');
-  c.document.getElementById('s-leave-hours').value=hours;c.document.getElementById('s-leave-from').value=start;c.LeaveHours.preview('s');
+  const [h,m]=start.split(':').map(Number),end=h*60+m+Number(hours)*60;
+  c.document.getElementById('s-leave-from').value=start;
+  c.document.getElementById('s-leave-to').value=String(Math.floor((end%1440)/60)).padStart(2,'0')+':'+String(end%60).padStart(2,'0');
+  c.document.getElementById('s-leave-next-day').checked=end>=1440;c.LeaveHours.preview('s');
 }
 test('the shift form saves hours and time, reopens with the saved duration, and keeps full-day mode',async t=>{
   const f=app(t);chooseHours(f);await f.c.saveShift(nurse,day);
@@ -124,7 +129,7 @@ test('the shift form saves hours and time, reopens with the saved duration, and 
 });
 test('invalid input or a failed save retains the form and does not report success',async t=>{
   const f=app(t);chooseHours(f,'0.1');await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);assert.equal(f.saved,false);
-  chooseHours(f,'2','23:00');await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);
+  chooseHours(f,'25','09:00');await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);
   chooseHours(f);f.c.saveError={message:'Save denied'};await f.c.saveShift(nurse,day);assert.equal(f.saved,false);assert.equal(f.refreshes,0);assert.equal(f.logs.length,0);assert.match(f.alerts.at(-1),/Save denied/);
 });
 test('switching to day duty clears hours, and duplicate Save clicks produce one write',async t=>{
@@ -189,4 +194,69 @@ test('siting needs a nurse free for the whole hour, including when leave starts 
   assert.equal(blocked.querySelector('button'),null);assert.ok(free.querySelector('button'));assert.equal(c.sitingChosenSlot,'');
   c.nurseListForDate=async()=>[];c.sitingChosenSlot='12:30';await c.refreshSitingSlotAvail();
   assert.equal(c.document.querySelectorAll('#sit-slot-avail button').length,0);assert.equal(c.sitingChosenSlot,'');
+});
+test('start and end times calculate 18:00–06:00 as 12 hours with an explicit following-day finish',async t=>{
+  const f=app(t),c=f.c;c.pickCode('annual_leave',c.document.querySelector('.sp-btn.dc-L'));
+  c.document.getElementById('s-leave-unit').value='hours';c.LeaveHours.toggle('s','annual_leave');
+  c.document.getElementById('s-leave-from').value='18:00';c.document.getElementById('s-leave-to').value='06:00';c.LeaveHours.preview('s',true);
+  assert.equal(c.document.getElementById('s-leave-hours').value,'12');assert.equal(c.document.getElementById('s-leave-hours').readOnly,true);
+  assert.equal(c.document.getElementById('s-leave-next-day').checked,true);assert.match(c.document.getElementById('s-leave-preview').textContent,/12h.*18:00–06:00.*\+1 day/);
+  await c.saveShift(nurse,day);assert.equal(f.writes[0].body.leave_hours,12);assert.equal(f.writes[0].body.leave_start_time,'18:00');
+  const reopened=app(t,f.writes[0].body);assert.equal(reopened.c.document.getElementById('s-leave-to').value,'06:00');assert.equal(reopened.c.document.getElementById('s-leave-next-day').checked,true);
+});
+test('matching clocks need an explicit next-day selection for 24 hours',async t=>{
+  const f=app(t);chooseHours(f,'24','06:00');f.c.document.getElementById('s-leave-next-day').checked=false;
+  await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);
+  f.c.document.getElementById('s-leave-next-day').checked=true;f.c.LeaveHours.preview('s');
+  assert.equal(f.c.document.getElementById('s-leave-hours').value,'24');await f.c.saveShift(nurse,day);assert.equal(f.writes[0].body.leave_hours,24);
+});
+test('overnight leave is saved once and blocks appointments only until its following-day end',async()=>{
+  await reset();await shift(12,'18:00');const rows=(await db.query('select * from leave_records')).rows;
+  assert.equal(rows.length,1);assert.equal(dateString(rows[0].start_date),day);assert.equal(dateString(rows[0].end_date),'2026-11-05');assert.equal(Number(rows[0].leave_hours),12);assert.equal(Number(rows[0].total_days),0);
+  await book('17:30');await assert.rejects(book('18:00'),/vacation leave/);
+  await assert.rejects(book('05:30',nurse,'booked',false,'2026-11-05'),/vacation leave/);
+  await book('06:00',nurse,'booked',false,'2026-11-05');await book('08:30',nurse,'booked',false,'2026-11-05');
+});
+test('changing or removing an overnight booking removes its old following-day leave record',async()=>{
+  await reset();await shift(12,'18:00');await shift(1,'13:00');let rows=(await db.query('select * from leave_records')).rows;
+  assert.equal(rows.length,1);assert.equal(dateString(rows[0].end_date),day);assert.equal(Number(rows[0].leave_hours),1);
+  await book('05:30',nurse,'booked',false,'2026-11-05');
+  await shift(12,'18:00');await shift(null,null);rows=(await db.query('select * from leave_records')).rows;assert.equal(rows.length,0);
+});
+test('a midnight finish creates no phantom next-day leave and a 24-hour interval keeps its exact boundaries',async()=>{
+  await reset();await shift(2,'22:00');assert.equal(dateString((await db.query('select end_date from leave_records')).rows[0].end_date),day);
+  await book('00:00',nurse,'booked',false,'2026-11-05');
+  await shift(24,'18:00');await assert.rejects(book('17:30',nurse,'booked',false,'2026-11-05'),/vacation leave/);await book('18:00',nurse,'booked',false,'2026-11-05');
+});
+test('an appointment crossing midnight also checks a leave period starting on the following date',async()=>{
+  await reset();await db.query("insert into roster(staff_id,roster_date,status,leave_hours,leave_start_time) values($1,'2026-11-05','working',1,'00:00')",[nurse]);
+  await book('23:30');await assert.rejects(book('23:45'),/vacation leave/);
+});
+test('overnight staffing and capacity include the previous month without applying its duty status',t=>{
+  const f=app(t),api=f.c.LeaveHours,record={staff_id:nurse,roster_date:'2026-10-31',leave_hours:15,leave_start_time:'18:00',status:'working'};
+  const index={rosterByKey:{[nurse+'_2026-10-31']:record,[nurse+'_2026-11-01']:{status:'working'}},bankByDate:{}};
+  assert.equal(api.previousDate('2026-11-01'),'2026-10-31');
+  const attached=api.attach([{id:nurse}],Object.values(index.rosterByKey),'2026-11-01');
+  assert.equal(api.blocked(attached[0],'08:30'),true);assert.equal(api.blocked(attached[0],'09:00'),false);
+  assert.equal(api.capacity('2026-11-01',index,{id:nurse},[],['08:30','09:00','09:30'],()=>true,()=>null),2);
+  assert.equal(api.windows([record],nurse,'2026-10-31')[0].hours,6);assert.equal(api.windows([record],nurse,'2026-11-01')[0].hours,9);
+});
+test('attendance splits an overnight duration across its dates without changing the following rest day',t=>{
+  const f=app(t),c=f.c;c.window=c;vm.runInContext(attendance,c);
+  const record={staff_id:nurse,leave_type:'annual_leave',start_date:day,end_date:'2026-11-05',leave_hours:12,leave_start_time:'18:00'};
+  const first=c.DailyAttendance.buildPlannedRows({date:day,staff:c.staffList,roster:[{...record,roster_date:day,status:'working'}],leave:[record],bank:[]},()=> 'working')[0];
+  const second=c.DailyAttendance.buildPlannedRows({date:'2026-11-05',staff:c.staffList,roster:[],leave:[record],bank:[]},()=> 'off')[0];
+  assert.equal(c.LeaveHours.printed(first),'6h 18:00–24:00');assert.equal(c.LeaveHours.printed(second),'6h 00:00–06:00');
+  assert.equal(first.working,true);assert.equal(second.working,false);assert.equal(second.planned_code,'off');
+});
+test('the time-range migration also installs correctly before the earlier hours migration was applied',async()=>{
+  const fresh=new PGlite();
+  try{
+    await fresh.exec(`create schema clinic_private;create table staff(id uuid primary key,full_name text);create table bank_staff(id uuid primary key,full_name text);
+      create table roster(id uuid primary key default gen_random_uuid(),staff_id uuid,roster_date date,status text,notes text,unique(staff_id,roster_date));
+      create table leave_records(id uuid primary key default gen_random_uuid(),staff_id uuid,leave_type text,start_date date,end_date date,total_days numeric,notes text);
+      create table appointments(id uuid primary key default gen_random_uuid(),patient_id uuid,assigned_to uuid,bank_staff_id uuid,appt_date date,appt_slot time,status text);`);
+    await fresh.exec(rangeSQL);await fresh.query("insert into roster(staff_id,roster_date,status,leave_hours,leave_start_time) values($1,$2,'working',12,'18:00')",[nurse,day]);
+    assert.equal(dateString((await fresh.query('select end_date from leave_records')).rows[0].end_date),'2026-11-05');
+  }finally{await fresh.close();}
 });
