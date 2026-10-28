@@ -86,21 +86,22 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   assert.equal(f.w.document.querySelectorAll('.handover-reverse').length,0,'the app receives no extra page');
 });
 
-test('all contact numbers print under the operation, leaving the surgeon/firm column for the bold name',t=>{
+test('the consultant pager prints under Surgeon / firm, with RS, HST and BST under the operation',t=>{
   const rotation={updated_at:'2026-10-27T16:06:00Z',data:{sections:[{name:'Surgery',rows:[
-    ['Mr. Alex Example 79000001','Senior 1111','Trainee 2222','Basic 3333',''],
-    ['Mr. Bruno Other 79000002','Senior 4444','','Basic 5555','']
+    ['Mr. Alex Example 79000001','Mr. Adrian Example 1111','Miss Beatrice Sample 2222','Dr. Clara Other 3333',''],
+    ['Mr. Bruno Other 79000002','Mr. Daniel Person 4444','','Miss Emma Sample 5555','']
   ]}]}};
   const f=fixture(t,[patient({consultant:'Mr. A. Example'}),patient({consultant:'Mr. B. Other'}),
     patient({consultant:'Mr. U. Unlisted'})],{rotation});
   const a=f.document.querySelector('.handover-front'),b=f.document.querySelector('.handover-reverse');
   const rows=b.querySelectorAll('tbody tr');
-  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['Consultant 79000001','RS 1111','HST 2222','BST 3333']);
-  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['Consultant 79000002','RS 4444','HST —','BST 5555']);
-  assert.equal(rows[0].querySelector('.hv-team-number').textContent,'79000001');
-  assert.equal(rows[0].children[4].querySelectorAll('.hv-team-contact').length,4);
-  assert.equal(rows[0].children[5].textContent,'Mr. A. Example');
-  assert.equal(rows[0].children[5].querySelector('.hv-team-number'),null);
+  assert.deepEqual([...rows[0].children[4].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS: Mr. A. Example — 1111','HST: Miss B. Sample — 2222','BST: Dr. C. Other — 3333']);
+  assert.deepEqual([...rows[1].children[4].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS: Mr. D. Person — 4444','HST: —','BST: Miss E. Sample — 5555']);
+  assert.equal(rows[0].children[4].querySelectorAll('.hv-team-contact').length,3);
+  assert.equal(rows[0].children[5].querySelector('.hv-consultant-name').textContent,'Mr. A. Example');
+  assert.equal(rows[0].children[5].querySelector('.hv-team-number').textContent,'79000001');
+  assert.equal(rows[1].children[5].querySelector('.hv-team-number').textContent,'79000002');
+  assert.equal(rows[0].children[4].querySelector('.hv-consultant-pager'),null);
   assert.equal(rows[0].querySelector('.hv-operation-text').textContent,'Recorded resection');
   const styles=f.document.defaultView;
   assert.equal(styles.getComputedStyle(rows[0].querySelector('.hv-consultant-name')).fontWeight,'700');

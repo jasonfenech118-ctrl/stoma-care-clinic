@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-654"></script>
+<script src="assets/phone-route.js?v=2026.10.28-656"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-654"/>
-<script src="assets/cancellations.js?v=2026.10.28-654"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-656"/>
+<script src="assets/cancellations.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-654"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-654"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-654"/>
+<script src="assets/leave-hours.js?v=2026.10.28-656"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-656"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-654"><script src="assets/surgical-rotation.js?v=2026.10.28-654"></script>
-<script src="assets/manual.js?v=2026.10.28-654"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
+<script src="assets/manual.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-654';
+const APP_BUILD='2026.10.28-656';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23758,12 +23758,15 @@ function handoverSheetDocHTML(opts){
   if(!dataTrs.length)return null;
   const teamContacts=firm=>{
     const contact=opts.rotation&&window.SurgicalRotation?.handoverContacts?.(opts.rotation.data,firm);
-    if(!contact)return '<div class="hv-team-contact">Contacts unavailable</div>';
-    if(contact.status!=='matched')return '<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>';
+    if(!contact)return {consultant:'',team:'<div class="hv-team-contact">Contacts unavailable</div>'};
+    if(contact.status!=='matched')return {consultant:'',team:'<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>'};
     const number=numbers=>'<span class="hv-team-number">'+(numbers.length?numbers.map(n=>htmlSafe(n)).join(' / '):'—')+'</span>';
-    const line=(role,numbers)=>'<div class="hv-team-contact"><b>'+htmlSafe(role)+'</b> '+
-      number(numbers)+'</div>';
-    return '<div class="hv-team-contacts">'+line('Consultant',contact.consultant)+line('RS',contact.rs)+line('HST',contact.hst)+line('BST',contact.bst)+'</div>';
+    const line=(role,numbers,people)=>'<div class="hv-team-contact"><b>'+htmlSafe(role)+':</b> '+
+      (people?.length?people.map(p=>'<span class="hv-team-person">'+
+        (p.name?'<span class="hv-team-person-name">'+htmlSafe(p.name)+'</span> — ':'')+
+        number(p.number?[p.number]:[])+'</span>').join(' / '):number(numbers))+'</div>';
+    return {consultant:'<div class="hv-consultant-pager">'+line('Consultant',contact.consultant)+'</div>',
+      team:'<div class="hv-team-contacts">'+line('RS',contact.rs,contact.rsPeople)+line('HST',contact.hst,contact.hstPeople)+line('BST',contact.bst,contact.bstPeople)+'</div>'};
   };
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
@@ -23824,7 +23827,7 @@ function handoverSheetDocHTML(opts){
     return {
       front:start+`<td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
         <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`,
-      reverse:start+`<td class="cop"><div class="hv-operation-cell"><div class="hv-operation-text">${htmlSafe(surgery.operation)}</div><div class="hv-contacts-bottom">${contacts}</div></div></td><td><div class="hv-firm-name"><b class="hv-consultant-name">${htmlSafe(surgery.firm)}</b></div></td><td>${htmlSafe(surgery.date)}</td></tr>`
+      reverse:start+`<td class="cop"><div class="hv-operation-cell"><div class="hv-operation-text">${htmlSafe(surgery.operation)}</div><div class="hv-contacts-bottom">${contacts.team}</div></div></td><td><div class="hv-firm-name"><b class="hv-consultant-name">${htmlSafe(surgery.firm)}</b></div>${contacts.consultant}</td><td>${htmlSafe(surgery.date)}</td></tr>`
     };
   });
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
@@ -23953,7 +23956,8 @@ function handoverSheetDocHTML(opts){
     .hv-print-date{white-space:nowrap;}
     .hv-firm-name{font-size:calc(var(--fs) * 1.2);font-weight:400;line-height:1.15;}
     .hv-consultant-name{font-weight:700;}
-    .hv-team-contacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:calc(var(--fs) * 0.2);}
+    .hv-consultant-pager{margin-top:calc(var(--fs) * 0.2);}
+    .hv-team-contacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:calc(var(--fs) * 0.2);}
     .hv-team-contact{font-size:var(--fs);font-weight:400;line-height:1.15;}
     .hv-team-contact b{font-weight:700;}
     .hv-team-number{font-weight:400;}

@@ -13,6 +13,10 @@ function fixture(t){
 const directory=rows=>({sections:[{name:'Surgery',rows}]});
 const row=(name,rs='Senior 1111',hst='Trainee 2222',bst='Basic 3333')=>[name,rs,hst,bst,''];
 const plain=v=>JSON.parse(JSON.stringify(v));
+const numberResult=value=>{
+  const {rsPeople,hstPeople,bstPeople,...numbers}=plain(value);
+  return numbers;
+};
 
 test('firm contacts resolve titles, initials and compound surnames without guessing another person',t=>{
   const w=fixture(t),lookup=w.SurgicalRotation.handoverContacts;
@@ -35,10 +39,26 @@ test('consultant, RS, HST and BST numbers are all retained only for the matched 
   const w=fixture(t),lookup=w.SurgicalRotation.handoverContacts;
   const data=directory([row('Mr. Alex Example','Senior 1111','First 2222 Second 2345','Basic 3333'),
     row('Mr. Bruno Other','Senior 4444','','Basic 5555'),row('Mr. Alex Example','Senior 1111','First 2222','Extra 3456')]);
-  assert.deepEqual(plain(lookup(data,'Mr. A. Example')),{status:'matched',consultant:[],rs:['1111'],hst:['2222','2345'],bst:['3333','3456']});
-  assert.deepEqual(plain(lookup(data,'Mr. B. Other')),{status:'matched',consultant:[],rs:['4444'],hst:[],bst:['5555']});
+  assert.deepEqual(numberResult(lookup(data,'Mr. A. Example')),{status:'matched',consultant:[],rs:['1111'],hst:['2222','2345'],bst:['3333','3456']});
+  assert.deepEqual(numberResult(lookup(data,'Mr. B. Other')),{status:'matched',consultant:[],rs:['4444'],hst:[],bst:['5555']});
   const missing=lookup(directory([row('Mr. Alex Example','Senior only','Trainee only','')]),'Mr. A. Example');
-  assert.deepEqual(plain(missing),{status:'matched',consultant:[],rs:[],hst:[],bst:[]});
+  assert.deepEqual(numberResult(missing),{status:'matched',consultant:[],rs:[],hst:[],bst:[]});
+});
+
+test('printed team names retain their own titles, first initials, surnames and paired numbers',t=>{
+  const w=fixture(t),lookup=w.SurgicalRotation.handoverContacts;
+  const rs='Mr. Adrian Michael Example 1111 Miss Beatrice Other 1234';
+  const hst='Dr. Clara de Example 2222';
+  const data=directory([row('Mr. Alex Example',rs,hst,'Daniel Sample-Name 3333'),
+    row('Mr. Alex Example',rs,hst,'Miss Ava Only')]);
+  const found=plain(lookup(data,'Mr. A. Example'));
+  assert.deepEqual(found.rsPeople,[{name:'Mr. A. Example',number:'1111'},{name:'Miss B. Other',number:'1234'}]);
+  assert.deepEqual(found.hstPeople,[{name:'Dr. C. de Example',number:'2222'}]);
+  assert.deepEqual(found.bstPeople,[{name:'D. Sample-Name',number:'3333'},{name:'Miss A. Only',number:''}]);
+  assert.deepEqual(found.rs,['1111','1234'],'existing number lookup remains available');
+  const single=plain(lookup(directory([row('Mr. Alex Example','Drake Smith 4444','','2222')]),'Mr. A. Example'));
+  assert.deepEqual(single.rsPeople,[{name:'D. Smith',number:'4444'}],'a name beginning with Dr is not given a title');
+  assert.deepEqual(single.bstPeople,[{name:'',number:'2222'}],'number-only entries do not acquire a guessed name');
 });
 
 test('excluded specialties cannot supply printed contact matches',t=>{

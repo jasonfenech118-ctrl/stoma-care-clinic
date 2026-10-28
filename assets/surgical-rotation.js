@@ -49,6 +49,20 @@ window.SurgicalRotation=(()=>{
     people[people.length-1].note=clean(people[people.length-1].note+' '+text.slice(start));
     return people;
   }
+  // Keep the directory's title; never infer Mr/Miss from a name. Shorten given
+  // names for the printed ward sheet while retaining compound surname prefixes.
+  function handoverName(value){
+    let name=clean(value).replace(/^[,;/&·\s]+/,'');
+    const title=name.match(/^(mr|mrs|ms|miss|dr|prof|profs|professor)(?:\.\s*|\s+)/i);
+    const titles={mr:'Mr.',mrs:'Mrs.',ms:'Ms.',miss:'Miss',dr:'Dr.',prof:'Prof.',profs:'Prof.',professor:'Prof.'};
+    if(title)name=name.slice(title[0].length);
+    const parts=name.split(/\s+/).filter(Boolean);
+    if(parts.length<2)return clean((title?titles[title[1].toLowerCase()]+' ':'')+name);
+    let surname=parts.length-1;
+    while(surname>1&&/^(?:de|del|della|di|da|das|do|dos|du|la|le|van|von|der|den|ter)$/i.test(parts[surname-1]))surname--;
+    const initial=Array.from(parts[0])[0].toLocaleUpperCase();
+    return (title?titles[title[1].toLowerCase()]+' ':'')+initial+'. '+parts.slice(surname).join(' ');
+  }
   // Resolve a firm's printed contacts from one freshly read rotation. Initials
   // may expand to full first names, but surnames must agree and the person must
   // be unique. Never fall back to a similar surname or a previously loaded list.
@@ -72,7 +86,16 @@ window.SurgicalRotation=(()=>{
     const names=new Set(matches.map(c=>c.name.join(' ')));
     if(names.size!==1)return {status:names.size?'ambiguous':'unmatched'};
     const numbers=column=>[...new Set(matches.flatMap(c=>column===0?[c.number]:contacts(c.row[column]).map(p=>p.number)).filter(Boolean))];
-    return {status:'matched',consultant:numbers(0),rs:numbers(1),hst:numbers(2),bst:numbers(3)};
+    const people=column=>{
+      const unique=new Map();
+      matches.forEach(c=>contacts(c.row[column]).forEach(p=>{
+        const person={name:handoverName(p.name),number:p.number};
+        unique.set(clean(p.name).toLowerCase()+'\u0000'+p.number,person);
+      }));
+      return [...unique.values()];
+    };
+    return {status:'matched',consultant:numbers(0),rs:numbers(1),hst:numbers(2),bst:numbers(3),
+      rsPeople:people(1),hstPeople:people(2),bstPeople:people(3)};
   }
   async function handoverDirectory(database){
     let timer;
