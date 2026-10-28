@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 October 2026 — Upcoming surgery dates appear on the patient’s Overview and Stomas tabs, including when an older siting assessment is on file. Saved dates remain visible after reopening the profile.'};
+const MANUAL_META={updated:'28 October 2026 — Annual/Vacation Leave can be booked as a full day or a number of hours with a start time. Hours appear on the roster and attendance sheet; only the leave period is unavailable for appointments.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -554,12 +554,13 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'calendar',title:'Roster & Attendance',icon:'📅',color:'#7c3aed',blurb:'Monthly roster, daily attendance and change of duty.',pages:[
-  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota shift change of duty cod staff schedule tracey galea shift a 2 on 1 off overtime ot column duplicate default pattern',html:`
+  {id:'roster',title:'Monthly Roster & Change of Duty',keywords:'roster monthly rota vacation annual leave hours duration part day shift change of duty cod staff schedule tracey galea shift a 2 on 1 off overtime ot column duplicate default pattern',html:`
     ${manMap('calendar')}
     <ul class="man-ul">
       <li>${manBtn('🗓 Monthly Roster','#efe7fb','#5b3aa8')} — the staff rota for the month.</li>
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
+    ${manNote('tip','🌴','Select the nurse’s date on the Monthly Roster and choose <b>Annual Leave</b>. Choose <b>Full day</b> or <b>Number of hours</b>. For hours, enter the duration (e.g. <b>2</b> or <b>2.5</b>) and the start time, then save. Hours use quarter-hour steps and must finish by midnight on the same date. The roster shows <b>L</b> with the hours; reopen the cell to change them. Choosing Day duty clears the leave booking.')}
     ${manNote('tip','🗓️','Each nurse has a default rotation that fills the roster automatically; clicking a day cell records an exception over it. <b>Tracey Galea</b> is on <b>Shift A — 2 days on, 1 day off — from 8 October 2026</b>. To bring a nurse in on an off day, use <b>⏰ Add OT Nurse</b> (enter the name, date and the start/finish time) — the overtime shows as <b>OT</b> on that day and in the Overtime list.')}
     ${manNote('auto','⚙️','A nurse on overtime gets a booking column on that day in the <b>Daily Clinic</b>, the <b>postop follow-up booking</b> and the <b>siting</b> picker alike. A core nurse is always <b>one column</b>, even if their OT was also entered on the Overtime list under a slightly different spelling (e.g. “Tracy” / “Tracey” with the same surname). A <b>cancelled</b> OT entry stays in the OT audit but no longer adds a column; any patient already booked under it stays in that nurse’s own column (so the slot is still shown as taken).')}
   `},
@@ -571,7 +572,7 @@ const MANUAL_SECTIONS=[
     </ul>
     ${manSteps([
       `Choose the date. Planned duty follows the current roster, including leave, overtime and duty changes. A person off or on leave needs no attendance mark; the summary counts sick leave under <b>Sick</b> and other time off under <b>Off / leave</b>.`,
-      `For someone on duty, choose <b>Present</b> or <b>Sick</b>; a blank selection means not recorded. <b>Sick</b> updates the core staff member’s monthly roster to Sick leave for the selected attendance date, keeps roster notes and clears attendance times. If sick leave needs correcting, edit the monthly roster then refresh attendance. Enter times and remarks as needed.`,
+      `For someone on duty, choose <b>Present</b> or <b>Sick</b>; a blank selection means not recorded. <b>Sick</b> updates the core staff member’s monthly roster to Sick leave for the selected attendance date, keeps roster notes and clears attendance times. If sick leave needs correcting, edit the monthly roster then refresh attendance. Enter times and remarks as needed. A nurse taking some vacation hours can still be marked <b>Present</b> for the remaining duty; the leave hours and timing appear in Planned duty and the printed sheet’s <b>VL</b> column.`,
       `Older sheets retain a recorded <b>late</b>, <b>early departure</b> or <b>off / leave</b> selection. It appears only on that existing row. Late and early departure count as Present; recorded off / leave counts as Off / leave. You can correct the selection using the usual choices.`,
       `Roster refreshes update planned duty while retaining the attendance, times and remarks already recorded.`,
       `If a TIL In or overtime shift is <b>cancelled or deleted</b> after the person was marked Present, the sheet corrects itself next time it opens: a core nurse now off has the Present mark and times cleared (remarks stay), and bank / extra staff who were only listed for that shift are removed from the sheet and the saved record.`
@@ -639,6 +640,7 @@ const MANUAL_SECTIONS=[
         ['🚫','3 DNTUs pause follow-up','Three did-not-turn-ups in a row automatically pause the patient’s follow-up; the streak shows as "N of 3".','Appointments'],
         ['💾','DNTU save and retry protection','Save locks before availability is read. Every added past date is checked against existing appointments. Partial-save retries retain saved history and a pending due-month update without recording the same miss twice.','Appointments › DNTU'],
         ['✅','Attendance survives roster updates','Current planned duty refreshes while recorded attendance, times and remarks stay intact, including legacy late, early-departure and off/leave selections.','Clinic Calendar › Daily Attendance'],
+        ['🌴','Vacation leave in hours','An hours booking saves its duration and start time separately from days. The roster and automatic leave record save together. Attendance retains the remaining duty and shows the hours in VL when printed. Appointment and siting pickers block the leave period; existing bookings stay visible for review, while new or moved appointments cannot be saved into those hours.','Clinic Calendar › Monthly Roster'],
         ['🤒','Sick updates the roster','Selecting Sick in Daily Attendance saves Sick leave in the monthly roster for that staff member and selected date. Roster notes stay and attendance times are cleared.','Clinic Calendar › Daily Attendance'],
         ['✅','Cancelled TIL / overtime clears Present','When a TIL In or overtime shift is cancelled or deleted, the person is no longer counted as Present: a core nurse now off has the mark and times cleared, and bank / extra staff listed only for that shift are removed from the saved sheet.','Clinic Calendar › Daily Attendance'],
         ['🩹','Fistulas &amp; bagging advice kept apart','A patient in the Fistulas &amp; Bagging Advice registry (a fistula, or a drain/wound needing bagging advice) is marked FISTULA or BAGGING on the handover (tag and stripe, printed too), sees the Fistula / wound manager products first in the appliance picker, gets its own column in encounters and visits (no colour or rod questions), has no nurse owner or due month, and is kept out of every stoma list and count. Each admission is an episode with its encounters.','Registry › Fistulas & Bagging / Handover'],

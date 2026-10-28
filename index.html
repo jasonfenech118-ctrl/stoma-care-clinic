@@ -7,23 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-645"></script>
+<script src="assets/phone-route.js?v=2026.10.28-646"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-645"/>
-<script src="assets/cancellations.js?v=2026.10.28-645"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-646"/>
+<script src="assets/cancellations.js?v=2026.10.28-646"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/daily-attendance.js?v=2026.10.28-645"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-645"/>
+<script src="assets/leave-hours.js?v=2026.10.28-646"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-646"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-646"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-645"><script src="assets/surgical-rotation.js?v=2026.10.28-645"></script>
-<script src="assets/manual.js?v=2026.10.28-645"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-646"><script src="assets/surgical-rotation.js?v=2026.10.28-646"></script>
+<script src="assets/manual.js?v=2026.10.28-646"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3917,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-645';
+const APP_BUILD='2026.10.28-646';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4489,6 +4490,8 @@ function attMarksFor(r){
     if(pc==='overtime'&&!m.OT)m.OT=attTimeRange(r)||'X';
     else if(pc==='til_in'&&!m.OT)m.OT='TIL-In'+(attTimeRange(r)?' '+attTimeRange(r):'');
   }
+  const vacationHours=typeof LeaveHours!=='undefined'?LeaveHours.printed(r):'';
+  if(vacationHours)m.VL=vacationHours;
   if(cod){
     // State the change of duty instead of a bare "X": "COD-Off" on the day the
     // nurse now rests, "COD-In" on the day they work instead, with the swapped
@@ -4541,6 +4544,7 @@ function attendanceSheetPrintHTML(dateStr,dbRows,who){
     td.mk-sl{background:#fff4d6;color:#8a5a00;} td.mk-vl{background:#fff1c9;color:#7a4a00;}
     td.mk-cod{background:#ede9fe;color:#5b21b6;} td.mk-ot{background:#e0f2f1;color:#0b6b64;} td.mk-toil{background:#e0f2f1;color:#0b6b64;}
     td.mk-cod,td.mk-ot,td.mk-toil{font-size:9px;line-height:1.15;letter-spacing:0;font-weight:700;word-break:keep-all;}
+    td.mk-vl{font-size:9px;line-height:1.15;overflow-wrap:anywhere;}
     tr.na-row td.na{height:82px;text-align:center;background:repeating-linear-gradient(45deg,#fbfcfe,#fbfcfe 12px,#f4f7fb 12px,#f4f7fb 24px);}
     .na-txt{font-size:34px;font-weight:900;letter-spacing:8px;color:#d5dde7;text-transform:uppercase;}
     .foot{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:14px;font-size:11px;}
@@ -4788,11 +4792,12 @@ async function renderRoster(){
       const dt=new Date(y,m,d),ds=fmt(dt),dow=dt.getDay();
       const hol=isHol(ds),isT=ds===TODAY,isSun=dow===0,isSel=selectedJumpDate&&ds===selectedJumpDate;
       const entry=rCache[`${st.id}_${ds}`];
+      const vacation=typeof LeaveHours!=='undefined'?LeaveHours.read(entry):null;
       const coreOT=coreOTByKey[`${st.id}_${ds}`];
       const coreTIL=coreTILByKey[`${st.id}_${ds}`];
       const isCoreTilOff=coreTIL?.notes?.startsWith('TIL-Off');
       const isCoreTilIn=coreTIL?.notes?.startsWith('TIL-In');
-      const code=coreTIL?(isCoreTilOff?'TOL':'TIL'):(coreOT?'OT':(entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D'));
+      const code=coreTIL?(isCoreTilOff?'TOL':'TIL'):(coreOT?'OT':vacation?'L':(entry?CODE_MAP[entry.status]||'D':CODE_MAP[defaultCode(st,ds)]||'D'));
       const tdCls=isSel?'td-sel':isT?'td-today':hol?'td-hol':isSun?'td-sun':'';
       const otTimes=coreOT?.source==='core_leave'?parseNoteTimeRange(coreOT.notes):null;
       const otStart=(coreOT?.shift_start||otTimes?.start||'07:00').slice(0,5);
@@ -4805,9 +4810,11 @@ async function renderRoster(){
       const codViceLabel=codViceInfo?.label||'COD';
       const codViceType=codViceInfo?.type||'';
       const baseChipTitle=coreTIL?`Core staff ${isCoreTilOff?'TIL Off':'TIL In'}${tilEnd?` ${tilStart}–${tilEnd}`:''}`:(coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`);
-      const chipTitle=codViceDate?`${baseChipTitle} — ${codViceLabel} ${formatViceDate(codViceDate)} (${codViceDate})`:baseChipTitle;
+      const vacationTitle=vacation?LeaveHours.label(entry):baseChipTitle;
+      const chipTitle=codViceDate?`${vacationTitle} — ${codViceLabel} ${formatViceDate(codViceDate)} (${codViceDate})`:vacationTitle;
       const chipClass=codViceDate?` cod-chip ${codViceType}`:'';
-      const chipText=codViceDate?`<span class="cod-code">${code}</span><span class="cod-vice"><span class="cod-vice-date">${formatViceDate(codViceDate)}</span></span>`:code;
+      const chipCode=vacation?`${code}<small style="display:block;font-size:8px;line-height:1;">${vacation.hours}h</small>`:code;
+      const chipText=codViceDate?`<span class="cod-code">${chipCode}</span><span class="cod-vice"><span class="cod-vice-date">${formatViceDate(codViceDate)}</span></span>`:chipCode;
       html+=`<td class="${tdCls}"><div class="dchip${chipClass} dc-${code}" onclick="openShift('${st.id}','${st.full_name}','${ds}')" title="${htmlSafe(chipTitle)}">${chipText}</div></td>`;
     }
     html+='</tr>';
@@ -5065,7 +5072,7 @@ async function addTIL(type){
 // SHIFT MODAL
 function openShift(staffId,staffName,date){
   const hol=isHol(date),entry=rCache[`${staffId}_${date}`];
-  selCode=entry?entry.status:defaultCode(staffList.find(s=>s.id===staffId),date);
+  selCode=LeaveHours.read(entry)?'annual_leave':entry?entry.status:defaultCode(staffList.find(s=>s.id===staffId),date);
   document.getElementById('mb').innerHTML=`
     <h2>Update Shift</h2>
     <div class="msub">${staffName} &mdash; ${date}${hol?` &nbsp;🇲🇹 ${hol}`:''}</div>
@@ -5074,46 +5081,34 @@ function openShift(staffId,staffName,date){
         <div style="font-size:15px;">${c.l}</div><div style="font-size:9px;opacity:.85;margin-top:3px;">${c.s}</div>
       </div>`).join('')}
     </div>
+    ${LeaveHours.fields('s',selCode,entry)}
     <div class="fg" style="margin-top:14px;"><label>Notes (optional)</label>
-      <input type="text" id="snotes" value="${entry?.notes||''}" placeholder="Any notes..."/>
+      <input type="text" id="snotes" value="${htmlSafe(entry?.notes||'')}" placeholder="Any notes..."/>
     </div>
     <div class="mact">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveShift('${staffId}','${date}')">Save</button>
+      <button class="btn-save" id="shift-save" onclick="saveShift('${staffId}','${date}')">Save</button>
     </div>`;
   openMo();
+  LeaveHours.toggle('s',selCode);
 }
-function pickCode(v,el){selCode=v;document.querySelectorAll('.sp-btn').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');}
+function pickCode(v,el){selCode=v;document.querySelectorAll('.sp-btn').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');LeaveHours.toggle('s',v);}
 async function saveShift(staffId,date){
   const notes=document.getElementById('snotes').value.trim();
-  await SB.from('roster').upsert({staff_id:staffId,roster_date:date,status:selCode,notes},{onConflict:'staff_id,roster_date'});
-
-  // Keep Follow-up Planning / audit views aligned with roster changes.
-  // Only delete records auto-created by the roster, never manually entered records.
-  await SB.from('leave_records')
-    .delete()
-    .eq('staff_id',staffId)
-    .eq('start_date',date)
-    .eq('end_date',date)
-    .like('notes','Auto roster:%');
-
-  const leaveTypes=['sick_leave','maternity_leave','study_leave','annual_leave'];
-  if(leaveTypes.includes(selCode)){
-    const label={sick_leave:'Sick Leave',maternity_leave:'Maternity Leave',study_leave:'Study Leave',annual_leave:'Annual Leave'}[selCode]||selCode;
-    await SB.from('leave_records').insert({
-      staff_id:staffId,
-      leave_type:selCode,
-      start_date:date,
-      end_date:date,
-      total_days:1,
-      notes:`Auto roster: ${label}${notes?' — '+notes:''}`
-    });
-  }
-
+  const button=document.getElementById('shift-save');if(button?.disabled)return;
+  let hours;try{hours=LeaveHours.readForm('s',selCode);}catch(error){alert(error.message);return;}
+  if(button)button.disabled=true;
+  try{
+  // The database keeps the roster and its automatic leave record in one transaction.
+  const{error,data}=await SB.from('roster').upsert({staff_id:staffId,roster_date:date,status:hours?'working':selCode,notes,
+    leave_hours:hours?.leave_hours??null,leave_start_time:hours?.leave_start_time??null},{onConflict:'staff_id,roster_date'}).select('id');
+  if(error||!data?.length){alert('Could not save the shift: '+(error?.message||'The roster entry was not saved.'));return;}
   const _nm=(staffList.find(s=>String(s.id)===String(staffId))||{}).full_name||'A nurse';
-  const _code=(CODES.find(c=>c.v===selCode)||{}).l||selCode;
-  logRoster('update',_nm,`Roster — ${_nm}: ${_code} on ${fmtShortDate(date)}${notes?' ('+notes+')':''}`,{date,code:selCode,notes});
-  closeModal();renderRoster();loadStaffAudit();
+  const _code=hours?LeaveHours.label(hours):(CODES.find(c=>c.v===selCode)||{}).l||selCode;
+  logRoster('update',_nm,`Roster — ${_nm}: ${_code} on ${fmtShortDate(date)}${notes?' ('+notes+')':''}`,{date,code:selCode,...hours,notes});
+  invalidateAvailabilityCaches();closeModal();renderRoster();loadStaffAudit();
+  }catch(error){alert('Could not save the shift: '+error.message);}
+  finally{if(button)button.disabled=false;}
 }
 
 // APPOINTMENTS — MULTI-COLUMN PER NURSE
@@ -5190,7 +5185,7 @@ async function getWorkingNurses(date){
     }
   }
 
-  return nurses;
+  return typeof LeaveHours!=='undefined'?LeaveHours.attach(nurses,rd):nurses;
 }
 
 // Get ALL nurses who have bookings on a date — even if now absent (sick etc.)
@@ -5312,7 +5307,7 @@ function buildRosterNurses(day,date){
       else addNurse({id:b.bank_staff.id,name:b.bank_staff.full_name,type:'ot'});
     }
   }
-  return nurses;
+  return typeof LeaveHours!=='undefined'?LeaveHours.attach(nurses,rd):nurses;
 }
 
 function visiblePatientContactHTML(patient){
@@ -5414,7 +5409,7 @@ async function loadAppts(){
   // A siting takes one nurse for its hour, so it shows in a free nurse column
   // (falling back to Common only if no nurse is free) — not a column of its own,
   // and never blocking Common. Several sitings can run at once, one per nurse.
-  const busyAt=(n,sl)=>appointmentsForSlotAndColumn(appts,sl,n).some(a=>a.status!=='cancelled');
+  const busyAt=(n,sl)=>(typeof LeaveHours!=='undefined'&&LeaveHours.blocked(n,sl))||appointmentsForSlotAndColumn(appts,sl,n).some(a=>a.status!=='cancelled');
   const hostCandidates=nurses.filter(n=>!['absent','ot-booked'].includes(n.type))
     .sort((a,b)=>(a.type==='common'?1:0)-(b.type==='common'?1:0));   // nurses first, Common last
   const nurseBusy={};
@@ -5476,6 +5471,7 @@ async function loadAppts(){
       const slotAppts=appointmentsForSlotAndColumn(appts,slot,n);
       const appt=slotAppts.find(a=>a.status!=='cancelled');
       const cancelledHere=slotAppts.filter(a=>a.status==='cancelled');
+      const vacationBlocked=typeof LeaveHours!=='undefined'&&LeaveHours.blocked(n,slot);
       const cellBg=n.type==='common'?'#fafafa':(n.type==='absent'||n.type==='ot-booked')?'#fff5f5':'#fff';
       if(appt){
         const bg={booked:'#f0faf9',attended:'#d4edda',cancelled:'#fff5f5',did_not_attend:'#fff3cd'}[appt.status]||'#f0faf9';
@@ -5486,6 +5482,7 @@ async function loadAppts(){
           <div class="patient-name-avatar" style="gap:7px;margin:4px 0;">${patientAvatarHTML(appt.patients||{},'xs')}<div class="appt-patient-name" style="margin:0;">${htmlSafe(nm)}</div></div>
           ${visiblePatientContactHTML(appt.patients)}
           ${(n.type==='absent'||n.type==='ot-booked')?'<div style="font-size:10px;color:#c0392b;font-weight:700;margin-top:3px;">⚠ Nurse not rostered today</div>':''}
+          ${vacationBlocked?'<div style="font-size:11px;color:#9a3412;font-weight:800;">⚠ Vacation leave at this time — review this booking</div>':''}
           <div style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;align-items:center;">
             <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(0,0,0,.08);">${sl}</span>
           </div>
@@ -5501,6 +5498,8 @@ async function loadAppts(){
             <button title="Delete" onclick="delApp('${appt.id}')" style="padding:2px 6px;border-radius:5px;font-size:9px;font-weight:700;cursor:pointer;border:none;background:#f8d7da;color:#721c24;">🗑</button>
           </div>
         </td>`;
+      }else if(vacationBlocked){
+        html+=`<td style="padding:8px;background:#fff7df;color:#7a4a00;text-align:center;"><div class="cell-time-badge warning">${slot}</div>${cancelledSlotHistoryHTML(cancelledHere)}<strong>Vacation leave</strong><br/>${htmlSafe(LeaveHours.label(n.vacationLeave))}</td>`;
       }else if(n.type==='absent'||n.type==='ot-booked'){
         html+=`<td style="padding:8px;border-bottom:1px solid #dde3ea;border-left:1px solid #dde3ea;background:${cellBg};text-align:center;color:#c0392b;font-size:10px;border-radius:7px;"><div class="cell-time-badge warning">${slot}</div>${cancelledSlotHistoryHTML(cancelledHere)}<br/>Not rostered</td>`;
       }else{
@@ -5923,7 +5922,7 @@ function isStaffAvailableForClinicSlot(staff,dateStr,rosterByKey,tilByKey,coreOt
    once so per-day staffing questions are cheap to answer. */
 async function loadClinicStaffingIndex(startDate,endDate){
   const rosterByKey={},tilByKey={},coreOtByKey={},bankByDate={};
-  const{data:rosterRows}=await SB.from('roster').select('staff_id,roster_date,status,notes').gte('roster_date',startDate).lte('roster_date',endDate);
+  const{data:rosterRows}=await SB.from('roster').select('*').gte('roster_date',startDate).lte('roster_date',endDate);
   (rosterRows||[]).forEach(r=>{rosterByKey[`${r.staff_id}_${r.roster_date}`]=r;});
   const{data:otRows}=await SB.from('leave_records').select('staff_id,start_date,notes,leave_type').eq('leave_type','overtime').gte('start_date',startDate).lte('start_date',endDate);
   (otRows||[]).forEach(r=>{
@@ -6062,7 +6061,7 @@ async function getMonthlyClinicAvailability(year,context){
       // actually carry slots for this owner, so "N slots over D days" always
       // divides cleanly instead of quoting days that contribute nothing.
       load[m].openDays++;
-      const daySlots=owner==='Common'
+      const daySlots=typeof LeaveHours!=='undefined'?LeaveHours.capacity(ds,index,owner==='Common'?null:targetStaff||false,staffList,SLOTS,isNurseWorkingClinicDay,findCoreStaffByName):owner==='Common'
         ? countClinicNursesForDate(ds,index)*SLOTS.length
         : (isNurseWorkingClinicDay(targetStaff,ds,index)?SLOTS.length:0);
       if(daySlots>0){
@@ -6092,7 +6091,7 @@ async function getClinicDayAvailability(dateStrs,owner){
   const targetStaff=normOwner==='Common'?null:ownerStaffForCapacity(normOwner);
   dates.forEach(ds=>{
     // Day capacity is always the whole clinic — a patient can be placed in any open column.
-    out[ds].capacity=countClinicNursesForDate(ds,index)*SLOTS.length;
+    out[ds].capacity=typeof LeaveHours!=='undefined'?LeaveHours.capacity(ds,index,null,staffList,SLOTS,isNurseWorkingClinicDay,findCoreStaffByName):countClinicNursesForDate(ds,index)*SLOTS.length;
     out[ds].ownerWorking=targetStaff?isNurseWorkingClinicDay(targetStaff,ds,index):true;
   });
   return out;
@@ -9135,7 +9134,8 @@ function bcDayCode(ds){
 function bcDayIsOpen(ds){
   if(bookCalState.calOwner==='Common')return isCommonDay(ds);
   if(!bookCalState.ownerStaff)return isCommonDay(ds);   // unknown nurse → weekday default
-  return BC_WORK_CODES.includes(bcDayCode(ds));
+  if(!BC_WORK_CODES.includes(bcDayCode(ds)))return false;
+  return typeof LeaveHours==='undefined'||LeaveHours.slotCount(LeaveHours.forIndex(bookCalState.index,bookCalState.ownerStaff,ds),BC_WINDOW)>0||bookCalState.bookings.some(a=>a.appt_date===ds&&bcColumnMatch(a,bookCalState.calOwner));
 }
 function renderBookingCalendar(){
   const root=document.getElementById('bookcal-root');
@@ -9174,7 +9174,7 @@ function bcMonthHTML(){
     const hol=holidays[ds]||'';
     const holTag=hol?`<span class="bc-hol">${htmlSafe(hol)}</span>`:'';
     if(!open){cells+=`<div class="bc-day off"><span class="bc-dnum">${d}</span>${codeTag}${holTag}</div>`;continue;}
-    const n=bcDayCounts(ds),cap=BC_WINDOW.length;
+    const n=bcDayCounts(ds),cap=typeof LeaveHours!=='undefined'?LeaveHours.slotCount(LeaveHours.forIndex(bookCalState.index,bookCalState.ownerStaff,ds),BC_WINDOW):BC_WINDOW.length;
     // Sundays and public holidays (the nurse-led clinic days) read green even at
     // 0, to mark them as available clinic days; they still shade toward red as
     // they fill.
@@ -9202,6 +9202,7 @@ function bcDayViewHTML(){
     const a=filledBy[t];
     if(a){const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked';
       return `<div class="bc-slot filled"><span class="bc-time">${t}</span><span class="bc-slot-nm">${htmlSafe(nm)}</span><button class="bc-undo" onclick="event.stopPropagation();bcUndoBooking('${a.id}')" title="Undo this booking — removes it and frees the slot">↺ Undo</button></div>`;}
+    if(typeof LeaveHours!=='undefined'&&LeaveHours.blocked(LeaveHours.forIndex(bookCalState.index,bookCalState.ownerStaff,ds),t))return `<div class="bc-slot filled"><span class="bc-time">${t}</span><span>Vacation leave</span></div>`;
     return `<div class="bc-slot free" data-date="${ds}" data-slot="${t}" onclick="bcSlotTap('${ds}','${t}')"><span class="bc-time">${t}</span><span style="color:var(--muted);">Free — drop or tap a patient here</span></div>`;
   }).join('');
   const sp=bookCalState.selId?bookCalState.patients.find(x=>String(x.id)===String(bookCalState.selId)):null;
@@ -9603,6 +9604,7 @@ function otfGridHTML(){
     const a=otfState.bookings.find(x=>String(x.appt_slot||'').slice(0,5)===sl&&appointmentMatchesNurseColumn(x,n));
     if(a){const nm=`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim()||'Booked';
       return `<td class="otf-cell booked"><div class="otf-bk">${htmlSafe(nm)}${a.patients?.id_card?`<span>${htmlSafe(a.patients.id_card)}</span>`:''}</div><button class="otf-x" title="Remove this booking" onclick="otfUndoBooking('${jsSafe(String(a.id))}')">✕</button></td>`;}
+    if(typeof LeaveHours!=='undefined'&&LeaveHours.blocked(n,sl))return '<td class="otf-cell">Vacation leave</td>';
     return `<td class="otf-cell otf-slot free" data-nurse="${idx}" data-slot="${sl}" onclick="otfSlotTap(${idx},'${sl}')" title="Book the selected patient here">+</td>`;
   };
   const headRow=`<tr><th class="otf-time">Time</th>${shown.map(x=>{const c=otfNurseColor(x.n.name);
@@ -10975,7 +10977,7 @@ function birdsEyeSlotDays(s,ctx){
   for(let d=1;d<=dim;d++){
     const ds=`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const working=staff?isNurseWorkingClinicDay(staff,ds,index):isCommonDay(ds);
-    const slots=BC_WINDOW.map(t=>({time:t,appt:bySlot[ds+'|'+t]||null}));
+    const slots=BC_WINDOW.map(t=>({time:t,appt:bySlot[ds+'|'+t]||null,leave:typeof LeaveHours!=='undefined'&&LeaveHours.blocked(LeaveHours.forIndex(index,staff,ds),t)}));
     if(!working&&!slots.some(x=>x.appt))continue;   // skip off days with no bookings
     days.push({ds,working,slots});
   }
@@ -10987,6 +10989,7 @@ function birdsEyeTableHTML(s,ctx,cls){
   const head=`<tr><th style="width:22%;">Day</th>${BC_WINDOW.map(t=>`<th>${t}</th>`).join('')}</tr>`;
   const rows=days.map(day=>{
     const tds=day.slots.map(sl=>{
+      if(sl.leave&&!sl.appt)return '<td class="be-off">Vacation leave</td>';
       if(sl.appt){const p=sl.appt.patients||{};const nm=`${p.surname||''} ${p.first_name||''}`.trim()||'Patient';return `<td class="be-bk"><span class="be-nm">${htmlSafe(nm)}</span>${p.id_card?`<span class="be-id">${htmlSafe(p.id_card)}</span>`:''}${p.locality?`<span class="be-loc">${htmlSafe(p.locality)}</span>`:''}</td>`;}
       return `<td></td>`;
     }).join('');
@@ -11136,6 +11139,7 @@ async function printBookingSheet(blank,mode='month',selectedDays=[]){
         return `<td class="bk"><span class="bn">${htmlSafe(nm)}</span>${p.id_card?`<span class="bi">${htmlSafe(p.id_card)}</span>`:''}${p.locality?`<span class="bl">${htmlSafe(p.locality)}</span>`:''}</td>`;
       }
       if(greyBlank)return `<td class="off">Off day</td>`;
+      if(typeof LeaveHours!=='undefined'&&LeaveHours.blocked(LeaveHours.forIndex(ctx.index,ctx.staff,ds),t))return '<td class="off">Vacation leave</td>';
       return `<td class="sl">Stick label here</td>`;
     });
     const holName=holidays[ds]||'';
@@ -22624,7 +22628,7 @@ async function refreshSitingSlotAvail(){
     if(!nid){const spare=nurses.find(n=>!(cell[sl]&&cell[sl][n.id]));nid=spare?spare.id:null;}
     setCell(sl,nid,bookingCellHTML(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim(),a.patients?.id_card,false));});
   // Existing sitings take the first nurse free for their whole hour.
-  const busy={}; nurses.forEach(n=>busy[n.id]=new Set());
+  const busy={}; nurses.forEach(n=>{busy[n.id]=new Set();if(typeof LeaveHours!=='undefined')SLOTS.forEach(sl=>{if(LeaveHours.blocked(n,sl)){busy[n.id].add(sl);setCell(sl,n.id,'Vacation leave');}});});
   Object.keys(cell).forEach(sl=>Object.keys(cell[sl]).forEach(nid=>{if(busy[nid])busy[nid].add(sl);}));
   sit.slice().sort((a,b)=>String(a.session_slot).localeCompare(String(b.session_slot))).forEach(x=>{
     const st=String(x.session_slot||'').slice(0,5);const i=SLOTS.indexOf(st);if(i<0||!SLOTS[i+1])return;
@@ -22637,7 +22641,7 @@ async function refreshSitingSlotAvail(){
   // two 30-min slots), not two half-hour rows.
   const nurseHasHour=(n,sl,h)=>!!(cell[sl]&&cell[sl][n.id])||!!(cell[h]&&cell[h][n.id]);
   const hourFreeCount=(sl,h)=>nurses.filter(n=>!nurseHasHour(n,sl,h)).length;
-  const hourFull=(sl,h)=>nurses.length>0&&hourFreeCount(sl,h)<=0;
+  const hourFull=(sl,h)=>hourFreeCount(sl,h)<=0;
   const hourStarts=SLOTS.map((s,i)=>i).filter(i=>i%2===0&&SLOTS[i+1]);
   if(sitingChosenSlot){const i=SLOTS.indexOf(sitingChosenSlot);
     if(i<0||i%2!==0||!SLOTS[i+1]||hourFull(sitingChosenSlot,SLOTS[i+1]))sitingChosenSlot='';}
@@ -22680,6 +22684,8 @@ async function saveSitingSession(){
   if(!sitedFor){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Choose what the patient is being sited for.</div>';return;}
   if(!slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a free hour for the session.</div>';return;}
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
+  await refreshSitingSlotAvail();
+  if(sitingChosenSlot!==slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error">That hour is no longer available. Choose another time.</div>';return;}
   const surgdate=val('sit-surgdate');
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,
@@ -23572,6 +23578,9 @@ async function refreshPostopSlots(){
     (cell[sl]=cell[sl]||{});cell[sl][nid]=bookingCellHTML(`${a.patients?.first_name||''} ${a.patients?.surname||''}`.trim(),a.patients?.id_card,false);
   });
   const sel=postopBookCtx||{};
+  if(sel.slot&&typeof LeaveHours!=='undefined'&&LeaveHours.blocked(nurses.find(n=>String(n.id)===String(sel.nurseId)),sel.slot)){
+    sel.slot=null;sel.nurseId=null;sel.nurseName=null;
+  }
   const head=`<tr>
     <th style="position:sticky;left:0;background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;text-align:left;">Time</th>
     ${nurses.map(n=>`<th style="background:#0d1b2a;color:#fff;padding:6px 8px;font-size:10px;white-space:nowrap;">${htmlSafe(firstNameOf(n.name))}${pickerNurseTag(n)}</th>`).join('')}</tr>`;
@@ -23579,6 +23588,7 @@ async function refreshPostopSlots(){
     const cells=nurses.map(n=>{
       const c=cell[sl]&&cell[sl][n.id];
       if(c)return `<td style="padding:4px 6px;border-top:1px solid var(--border);white-space:nowrap;color:#1a2e4a;background:#fff;">${c}</td>`;
+      if(typeof LeaveHours!=='undefined'&&LeaveHours.blocked(n,sl))return '<td style="padding:6px;color:#7a4a00;background:#fff7df;">Vacation leave</td>';
       const isSel=sel.slot===sl&&String(sel.nurseId)===String(n.id);
       return `<td style="padding:3px 5px;border-top:1px solid var(--border);text-align:center;background:${isSel?'#e8f5f4':'#f7fbf7'};">`
         +`<button type="button" onclick="pickPostopSlot('${jsSafe(n.id)}','${jsSafe(n.name)}','${sl}')" style="padding:4px 9px;border-radius:6px;border:1.5px solid #0d7377;background:${isSel?'#0d7377':'#fff'};color:${isSel?'#fff':'#0d7377'};font-size:10px;font-weight:800;cursor:pointer;font-family:inherit;">${isSel?'✓':'Pick'}</button></td>`;
@@ -25834,7 +25844,7 @@ async function openModal(type,...args){
     html=`<h2>Add Leave Record</h2>
       <div class="fg"><label>Staff Member *</label><select id="l-staff"><option value="">— Select —</option>${opts}</select></div>
       <div class="fg"><label>Leave Type *</label>
-        <select id="l-type">
+        <select id="l-type" onchange="LeaveHours.toggle('l',this.value)">
           <option value="sick_leave">🤒 Sick Leave</option>
           <option value="annual_leave">🌴 Annual Leave</option>
           <option value="maternity_leave">🤱 Maternity Leave</option>
@@ -25842,6 +25852,7 @@ async function openModal(type,...args){
           <option value="overtime">⏰ Overtime</option>
         </select>
       </div>
+      ${LeaveHours.fields('l','sick_leave')}
       <div class="fg"><label>From Date *</label><input type="date" id="l-start"/></div>
       <div class="fg"><label>To Date *</label><input type="date" id="l-end"/></div>
       <div class="fg"><label>Notes</label><input type="text" id="l-notes" placeholder="Optional..."/></div>
@@ -25853,6 +25864,7 @@ async function openModal(type,...args){
   document.getElementById('mb').innerHTML=html;
   openMo();
   if(type==='appt')setBookingReady(false);
+  if(type==='leave')LeaveHours.toggle('l','sick_leave');
 }
 
 async function saveAppt(slot,date,nurseId){
@@ -25886,10 +25898,16 @@ async function saveLeave(){
   const sd=new Date(start+'T12:00:00'),ed=new Date(end+'T12:00:00');
   if(ed<sd){alert('End date cannot be before start date.');return;}
   const totalDays=Math.round((ed-sd)/86400000)+1;
-  await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes});
+  let hours;try{hours=LeaveHours.readForm('l',type);}catch(error){alert(error.message);return;}
+  if(hours&&start!==end){alert('An hours booking is for one date. Set From and To to the same day.');return;}
+  const result=hours
+    ?await SB.from('roster').upsert({staff_id:sid,roster_date:start,status:'working',notes,...hours},{onConflict:'staff_id,roster_date'}).select('id')
+    :await SB.from('leave_records').insert({staff_id:sid,leave_type:type,start_date:start,end_date:end,total_days:totalDays,notes}).select('id');
+  if(result.error||!result.data?.length){alert('Could not save leave: '+(result.error?.message||'The record was not saved.'));return;}
   const _ln=(staffList.find(x=>String(x.id)===String(sid))||{}).full_name||'A nurse',_lt=String(type||'').replace(/_/g,' ');
-  logRoster('create',_ln,`Leave — ${_ln}: ${_lt} ${fmtShortDate(start)}→${fmtShortDate(end)} (${totalDays} day${totalDays===1?'':'s'})`,{type,start,end,total_days:totalDays,notes});
-  closeModal();loadStaffAudit();renderRoster();
+  const quantity=hours?LeaveHours.label(hours):`${totalDays} day${totalDays===1?'':'s'}`;
+  logRoster('create',_ln,`Leave — ${_ln}: ${_lt} ${fmtShortDate(start)}→${fmtShortDate(end)} (${quantity})`,{type,start,end,total_days:hours?0:totalDays,...hours,notes});
+  invalidateAvailabilityCaches();closeModal();loadStaffAudit();renderRoster();
 }
 
 async function delOT(id){
