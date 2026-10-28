@@ -18,6 +18,7 @@ function fixture(t,patients,options={}){
     htmlSafe:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
     hvIsInfectionNote:s=>/CRE|VRE|\+ve/i.test(s),handoverManualFont:null,HANDOVER_FONT_PX:13,HANDOVER_ROWS_PER_PAGE:16});
   for(const name of ['parseInitialStomas','parseRefashionings','parseStomas','stomaOperationHistory','patientStomaList','handoverSheetDocHTML'])w.eval(source(name));
+  w.eval(fs.readFileSync(path.join(__dirname,'../../assets/surgical-rotation.js'),'utf8'));
   const body=w.document.querySelector('tbody');
   patients.forEach((p,i)=>{
     const tr=w.document.createElement('tr');tr.className=p._rowClass||'';
@@ -43,7 +44,10 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
   const front=f.document.querySelector('.handover-front'),back=f.document.querySelector('.handover-reverse');
   assert.ok(front);assert.ok(back,'there is no opt-out from the reverse');
-  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Firm','Surgery date']);
+  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Firm / team contacts','Surgery date']);
+  assert.equal(front.querySelector('h1').textContent,'Care Handover');
+  assert.equal(back.querySelector('h1').textContent,'Surgical Details');
+  assert.doesNotMatch(back.textContent,/Reverse|Reversal/i);
   const a=front.querySelectorAll('tbody tr'),b=back.querySelectorAll('tbody tr');
   assert.equal(a.length,16);assert.equal(b.length,a.length);
   a.forEach((row,i)=>{
@@ -53,9 +57,28 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   assert.match(front.textContent,/Example appliance.*Routine review/s);
   assert.doesNotMatch(back.textContent,/Example appliance|Routine review|Appliance \+ notes/);
   assert.equal(b[0].children[4].textContent,'Recorded resection');
-  assert.equal(b[0].children[5].textContent,'Example firm');
+  assert.equal(b[0].querySelector('.hv-firm-name').textContent,'Example firm');
   assert.equal(b[0].children[6].textContent,'2026-10-12');
   assert.equal(f.w.document.querySelectorAll('.handover-reverse').length,0,'the app receives no extra page');
+});
+
+test('Surgical Details prints only its own firm contacts and the captured rotation update date',t=>{
+  const rotation={updated_at:'2026-10-27T16:06:00Z',data:{sections:[{name:'Surgery',rows:[
+    ['Mr. Alex Example','Senior 1111','Trainee 2222','Basic 3333',''],
+    ['Mr. Bruno Other','Senior 4444','','Basic 5555','']
+  ]}]}};
+  const f=fixture(t,[patient({consultant:'Mr. A. Example'}),patient({consultant:'Mr. B. Other'}),
+    patient({consultant:'Mr. U. Unlisted'})],{rotation});
+  const a=f.document.querySelector('.handover-front'),b=f.document.querySelector('.handover-reverse');
+  const rows=b.querySelectorAll('tbody tr');
+  assert.deepEqual([...rows[0].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['HST 2222','BST 3333']);
+  assert.deepEqual([...rows[1].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS 4444','BST 5555']);
+  assert.match(rows[2].textContent,/Firm not matched/);
+  assert.doesNotMatch(a.textContent,/2222|3333|4444|5555|Team contacts/);
+  assert.match(b.querySelector('.hv-legend').textContent,/Surgical Rotation · updated 27\/10\/2026, 17:06/);
+  rotation.data.sections[0].rows[0][2]='New trainee 9999';
+  assert.match(rows[0].textContent,/2222/,'saved HTML retains the contacts captured at the time');
+  assert.doesNotMatch(rows[0].textContent,/9999/);
 });
 
 test('latest refashioning uses its own operation/date and an unknown date never inherits the original date',t=>{
@@ -120,6 +143,7 @@ test('long lists paginate as front/reverse pairs with identical patient groups a
   w.eval(d.querySelector('script').textContent);
   const pages=[...d.querySelectorAll('.handover-page')],ids=[];
   assert.ok(pages.length>2);assert.equal(pages.length%2,0);
+  assert.equal(d.documentElement.style.getPropertyValue('--fs'),'10px','long lists retain readable type and continue in pairs');
   for(let i=0;i<pages.length;i+=2){
     assert.equal(pages[i].dataset.side,'front');assert.equal(pages[i+1].dataset.side,'reverse');
     assert.equal(pages[i].dataset.sheet,pages[i+1].dataset.sheet);
@@ -160,9 +184,9 @@ test('fistula surgery and missing fields print without inventing details or inte
     {},patient({procedure_performed:'<img src=x onerror="alert(1)"> & review',consultant:'<Example>'})]);
   const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
   assert.equal(rows[0].children[4].textContent,'Recorded fistula procedure');assert.equal(rows[0].children[6].textContent,'2026-10-21');
-  assert.deepEqual([...rows[1].children].slice(4).map(td=>td.textContent),['Not recorded','Not recorded','Not recorded']);
+  assert.deepEqual([rows[1].children[4].textContent,rows[1].querySelector('.hv-firm-name').textContent,rows[1].children[6].textContent],['Not recorded','Not recorded','Not recorded']);
   assert.equal(rows[2].children[4].textContent,'<img src=x onerror="alert(1)"> & review');
-  assert.equal(rows[2].children[5].textContent,'<Example>');assert.equal(f.document.querySelector('img'),null);
+  assert.equal(rows[2].querySelector('.hv-firm-name').textContent,'<Example>');assert.equal(f.document.querySelector('img'),null);
 });
 
 test('empty handover returns no print document',t=>{

@@ -90,7 +90,7 @@ test('a PDF preparation failure keeps the sheet and offers an explicit manual-se
 
 test('PDF creation rejects missing reverse pages and oversized captures instead of dropping data',async t=>{
   const f=fixture(t);f.d.querySelector('.handover-reverse').remove();
-  await assert.rejects(f.win.handoverPdf.build(),/matching front and reverse/);assert.equal(f.instances.length,0);
+  await assert.rejects(f.win.handoverPdf.build(),/matching care and surgical/);assert.equal(f.instances.length,0);
   const g=fixture(t);
   g.win.html2canvas=async()=>({width:100,height:1000});
   await assert.rejects(g.win.handoverPdf.build(),/too large to print safely/);assert.equal(g.instances[0].images.length,0);

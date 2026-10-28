@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-649"></script>
+<script src="assets/phone-route.js?v=2026.10.28-650"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-649"/>
-<script src="assets/cancellations.js?v=2026.10.28-649"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-650"/>
+<script src="assets/cancellations.js?v=2026.10.28-650"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-649"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-649"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-649"/>
+<script src="assets/leave-hours.js?v=2026.10.28-650"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-650"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-650"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-649"><script src="assets/surgical-rotation.js?v=2026.10.28-649"></script>
-<script src="assets/manual.js?v=2026.10.28-649"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-650"><script src="assets/surgical-rotation.js?v=2026.10.28-650"></script>
+<script src="assets/manual.js?v=2026.10.28-650"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-649';
+const APP_BUILD='2026.10.28-650';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23756,6 +23756,16 @@ function handoverSheetDocHTML(opts){
   let prevWard=null, wg=0;
   const dataTrs=[...table.querySelectorAll('tbody tr')];
   if(!dataTrs.length)return null;
+  const teamContacts=firm=>{
+    const contact=opts.rotation&&window.SurgicalRotation?.handoverContacts?.(opts.rotation.data,firm);
+    if(!contact)return '<div class="hv-team-contact">Contacts unavailable</div>';
+    if(contact.status!=='matched')return '<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>';
+    const line=(role,numbers)=>'<div class="hv-team-contact"><b>'+htmlSafe(role)+'</b> '+
+      (numbers.length?numbers.map(n=>htmlSafe(n)).join(' / '):'—')+'</div>';
+    return line(contact.senior.numbers.length?contact.senior.role:'HST / RS',contact.senior.numbers)+line('BST',contact.bst);
+  };
+  const updated=new Date(opts.rotation?.updated_at||'');
+  const rotationNote=opts.rotation?'Team contacts: Surgical Rotation'+(Number.isNaN(updated.getTime())?'':' · updated '+updated.toLocaleString('en-GB',{timeZone:'Europe/Malta',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}))+' · — = not listed.':'Team contacts unavailable · check Surgical Rotation.';
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
     const txt=i=>{const c=cell(i);const inp=c&&c.querySelector('input');return (inp?inp.value:(c?c.innerText:'')).trim();};
@@ -23814,7 +23824,7 @@ function handoverSheetDocHTML(opts){
     return {
       front:start+`<td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
         <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`,
-      reverse:start+`<td class="cop">${htmlSafe(surgery.operation)}</td><td>${htmlSafe(surgery.firm)}</td><td>${htmlSafe(surgery.date)}</td></tr>`
+      reverse:start+`<td class="cop">${htmlSafe(surgery.operation)}</td><td><div class="hv-firm-name">${htmlSafe(surgery.firm)}</div>${teamContacts(surgery.firm)}</td><td>${htmlSafe(surgery.date)}</td></tr>`
     };
   });
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
@@ -23828,17 +23838,18 @@ function handoverSheetDocHTML(opts){
   const fpx=handoverManualFont??HANDOVER_FONT_PX;
   const autoFit=handoverManualFont===null;
   const pageHTML=reverse=>`<section class="handover-page ${reverse?'handover-reverse':'handover-front'}" data-side="${reverse?'reverse':'front'}">
-    <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
+    <header class="hv-page-heading"><p>MDH Nursing Stoma Care — Inpatients Handover</p>
+      <h1>${reverse?'Surgical Details':'Care Handover'}</h1></header>
     <table><colgroup>
       <col style="width:7.5%"><col style="width:8.5%"><col style="width:8%"><col style="width:8.5%">
       ${reverse?'<col style="width:45%"><col style="width:12%"><col style="width:10.5%">':'<col style="width:54%"><col style="width:5.5%"><col style="width:8%">'}
     </colgroup><thead>
       <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
       <tr class="cols"><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th>
-        ${reverse?'<th>Performed operation</th><th>Firm</th><th>Surgery date</th>':'<th>Appliance + notes</th><th class="icon" title="Care discharge letter">DL</th><th class="icon" title="Schedule 5 permit">S5</th>'}
+        ${reverse?'<th>Performed operation</th><th>Firm / team contacts</th><th>Surgery date</th>':'<th>Appliance + notes</th><th class="icon" title="Care discharge letter">DL</th><th class="icon" title="Schedule 5 permit">S5</th>'}
       </tr></thead><tbody>${rows.map(row=>reverse?row.reverse:row.front).join('')}${blanks}</tbody></table>
-    <div class="hv-legend"><b class="hv-page-label">${reverse?'Reverse':'Front'} · Sheet 1 of 1</b> &nbsp;|&nbsp;
-      ${reverse?'Surgical details · patient rows match the front.':`<b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date`}
+    <div class="hv-legend"><b class="hv-page-label">${reverse?'Surgical Details':'Care Handover'} · Sheet 1 of 1</b> &nbsp;|&nbsp;
+      ${reverse?htmlSafe(rotationNote):`<b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date`}
     </div>
   </section>`;
   // Serialized into every saved sheet, so its PDF print button works without
@@ -23862,7 +23873,7 @@ function handoverSheetDocHTML(opts){
       if(document.documentElement.dataset.handoverReady!=='1')throw Error('The handover is still being prepared. Try again.');
       const pages=[...document.querySelectorAll('#sheet > .handover-page')];
       if(!pages.length||pages.length%2||pages.some((page,i)=>page.dataset.side!==(i%2?'reverse':'front')))
-        throw Error('The matching front and reverse pages could not be prepared.');
+        throw Error('The matching care and surgical pages could not be prepared.');
       await Promise.all([
         library('canvas','https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',()=>!!window.html2canvas),
         library('pdf','https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',()=>!!window.jspdf?.jsPDF)
@@ -23939,7 +23950,10 @@ function handoverSheetDocHTML(opts){
       .handover-page{width:100%;}
       .handover-reverse{display:block;position:static;visibility:visible;}
     }
-    h1{font-size:calc(var(--fs) + 3px);font-weight:800;margin:0 0 5px;}
+    .hv-page-heading{border-bottom:2pt solid #000;padding-bottom:4px;margin-bottom:5px;}
+    .hv-page-heading p{font-size:calc(var(--fs) - 1px);margin:0 0 2px;}
+    h1{font-size:calc(var(--fs) + 5px);font-weight:800;margin:0;line-height:1.15;}
+    .hv-team-contact{font-size:calc(var(--fs) - 1px);line-height:1.15;margin-top:2px;}
     table{width:100%;border-collapse:collapse;font-size:var(--fs);table-layout:fixed;}
     /* Everything reads left-aligned, and a long name wraps onto a second line
        inside its narrow column rather than widening it. */
@@ -23986,6 +24000,9 @@ function handoverSheetDocHTML(opts){
       // Equalise both sides before fitting or paginating: matching patients,
       // writing rows and headers must have the same top and bottom edges.
       function align(){
+        var ah=front.querySelector('.hv-page-heading'),bh=back.querySelector('.hv-page-heading');
+        ah.style.height=bh.style.height='';
+        ah.style.height=bh.style.height=Math.max(ah.getBoundingClientRect().height,bh.getBoundingClientRect().height)+'px';
         var a=front.querySelectorAll('tr'), b=back.querySelectorAll('tr');
         a.forEach(function(row,i){row.style.height='';b[i].style.height='';});
         a.forEach(function(row,i){
@@ -23997,7 +24014,9 @@ function handoverSheetDocHTML(opts){
         root.classList.add('hv-measuring');
         var fs=${fpx}, guard=0;
         align();
-        while(${autoFit} && Math.max(front.getBoundingClientRect().height,back.getBoundingClientRect().height)>budgetH && fs>6 && guard<120){
+        // Keep the operation text and team numbers readable; continue on another
+        // matched sheet rather than shrinking a long list to tiny print.
+        while(${autoFit} && Math.max(front.getBoundingClientRect().height,back.getBoundingClientRect().height)>budgetH && fs>10 && guard<120){
           fs-=0.5; root.style.setProperty('--fs',fs+'px'); align(); guard++;
         }
         // A long list or a larger manual font can need several physical sheets.
@@ -24025,7 +24044,7 @@ function handoverSheetDocHTML(opts){
         });
         pairs.forEach(function(p,n){p.forEach(function(page,i){
           page.dataset.sheet=String(n+1);
-          page.querySelector('.hv-page-label').textContent=(i?'Reverse':'Front')+' · Sheet '+(n+1)+' of '+pairs.length;
+          page.querySelector('.hv-page-label').textContent=(i?'Surgical Details':'Care Handover')+' · Sheet '+(n+1)+' of '+pairs.length;
         });});
         root.classList.remove('hv-measuring');
         root.dataset.handoverReady='1';
@@ -24038,11 +24057,17 @@ function handoverSheetDocHTML(opts){
   </body></html>`;
 }
 // Open the ward sheet in a new tab and print it.
-function printHandover(){
-  const html=handoverSheetDocHTML({autoPrint:true});
-  if(!html){alert('There is nobody on the handover list to print.');return;}
+async function printHandover(){
+  if(!document.querySelector('#hv-table tbody tr')){alert('There is nobody on the handover list to print.');return;}
   const w=window.open('','_blank');
   if(!w){alert('The print window was blocked. Allow pop-ups for this site and try again.');return;}
+  w.document.write('<!DOCTYPE html><title>Preparing handover</title><p>Preparing Care Handover and Surgical Details…</p>');
+  w.document.close();
+  const rotation=await window.SurgicalRotation?.handoverDirectory?.(SB);
+  if(w.closed)return;
+  const html=handoverSheetDocHTML({autoPrint:true,rotation});
+  if(!html){w.close();alert('There is nobody on the handover list to print.');return;}
+  w.document.open();
   w.document.write(html);
   w.document.close();
 }
@@ -24088,8 +24113,9 @@ async function captureHandoverSnapshot(opts){
     }
     // Save the sheet as the SAME self-contained HTML it prints as — flattened
     // text, no picture — so a day's handover is a few KB instead of a ~½ MB PNG.
+    const rotation=await window.SurgicalRotation?.handoverDirectory?.(SB);
     const count=body.querySelectorAll('#hv-table tbody tr').length;
-    const htmlDoc=handoverSheetDocHTML({autoPrint:false});
+    const htmlDoc=handoverSheetDocHTML({autoPrint:false,rotation});
     if(!htmlDoc){if(opts.manual)alert('There is nobody on the handover to save yet.');return;}
     let who='4pm auto';
     if(opts.manual){try{const u=await getCurrentUserForAudit();who=(u&&u.name)||'Captured by hand';}catch(e){}}

@@ -49,6 +49,43 @@ window.SurgicalRotation=(()=>{
     people[people.length-1].note=clean(people[people.length-1].note+' '+text.slice(start));
     return people;
   }
+  // Resolve a firm's printed contacts from one freshly read rotation. Initials
+  // may expand to full first names, but surnames must agree and the person must
+  // be unique. Never fall back to a similar surname or a previously loaded list.
+  function handoverContacts(data,firm){
+    const tokens=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/\([^)]*\)/g,' ').replace(/\b(?:mr|mrs|ms|miss|dr|prof|profs|professor)\b\.?/gi,' ')
+      .replace(/[^a-z\s]/gi,' ').toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const wanted=tokens(firm);
+    if(wanted.length<2)return {status:'unmatched'};
+    const same=(a,b)=>{
+      if(a.join(' ')===b.join(' '))return true;
+      if(a.length<2||b.length<2)return false;
+      const short=a.length<=b.length?a:b,long=a.length<=b.length?b:a;
+      const initial=(x,y)=>x===y||(x.length===1&&y.startsWith(x))||(y.length===1&&x.startsWith(y));
+      return initial(short[0],long[0])&&short.slice(1).every((v,i)=>v===long[long.length-short.length+1+i]);
+    };
+    const candidates=includedSections(data).flatMap(section=>section.rows.flatMap(row=>
+      contacts(row[0]).map(person=>({row,name:tokens(person.name)}))));
+    const exact=candidates.filter(c=>c.name.join(' ')===wanted.join(' '));
+    const matches=exact.length?exact:candidates.filter(c=>same(wanted,c.name));
+    const names=new Set(matches.map(c=>c.name.join(' ')));
+    if(names.size!==1)return {status:names.size?'ambiguous':'unmatched'};
+    const numbers=column=>[...new Set(matches.flatMap(c=>contacts(c.row[column]).map(p=>p.number).filter(Boolean)))];
+    const hst=numbers(2),rs=numbers(1);
+    return {status:'matched',senior:{role:hst.length?'HST':'RS',numbers:hst.length?hst:rs},bst:numbers(3)};
+  }
+  async function handoverDirectory(database){
+    let timer;
+    try{
+      const {data,error}=await Promise.race([
+        database.from('surgical_rotation_current').select('data,updated_at').eq('id',1).maybeSingle(),
+        new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Rotation lookup timed out')),6000);})
+      ]);
+      return !error&&Array.isArray(data?.data?.sections)?data:null;
+    }catch(e){return null;}
+    finally{clearTimeout(timer);}
+  }
   const contactIcons={
     name:'<svg class="sr-contact-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg>',
     pager:'<svg class="sr-contact-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><rect x="7" y="8" width="10" height="5" rx="1"/><path d="M7 16h3m4 0h3"/></svg>'
@@ -147,5 +184,5 @@ window.SurgicalRotation=(()=>{
     updateInstallButton();
     refresh();
   }
-  return {open,parse,contacts,matchingRows};
+  return {open,parse,contacts,matchingRows,handoverContacts,handoverDirectory};
 })();
