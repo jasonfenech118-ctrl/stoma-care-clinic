@@ -75,7 +75,7 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
   const front=f.document.querySelector('.handover-front'),back=f.document.querySelector('.handover-reverse');
   assert.ok(front);assert.ok(back,'there is no opt-out from the reverse');
-  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','IDNO','Surname','First Name','Performed operation','Surgeon / firm','Surgery date']);
+  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: No','Surname','First Name','Performed operation','Surgeon / firm','Surgery date']);
   assert.equal(front.querySelector('h1').textContent,'Care Handover');
   assert.equal(back.querySelector('h1').textContent,'Surgical Details');
   assert.doesNotMatch(back.textContent,/Reverse|Reversal/i);
