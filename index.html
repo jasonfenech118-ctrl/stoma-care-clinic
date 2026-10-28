@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-646"></script>
+<script src="assets/phone-route.js?v=2026.10.28-647"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-646"/>
-<script src="assets/cancellations.js?v=2026.10.28-646"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-647"/>
+<script src="assets/cancellations.js?v=2026.10.28-647"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-646"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-646"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-646"/>
+<script src="assets/leave-hours.js?v=2026.10.28-647"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-647"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-647"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-646"><script src="assets/surgical-rotation.js?v=2026.10.28-646"></script>
-<script src="assets/manual.js?v=2026.10.28-646"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-647"><script src="assets/surgical-rotation.js?v=2026.10.28-647"></script>
+<script src="assets/manual.js?v=2026.10.28-647"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-646';
+const APP_BUILD='2026.10.28-647';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20889,7 +20889,7 @@ async function loadHandover(){
   if(!body)return;
   if(typeof renderDischargeUndoBanner==='function')renderDischargeUndoBanner();
   const version=++handoverLoadVersion;
-  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category';
+  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category,procedure_performed,consultant';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -21022,6 +21022,10 @@ async function loadHandover(){
       <th>Ward</th><th>ID number</th><th>Surname</th><th>First name</th><th>Appliance + notes</th>
       <th class="icon">📨 Discharge letter</th><th class="icon">📋 Schedule 5 permit</th><th></th>
     </tr></thead><tbody>${awaitingTrs}${trs}</tbody></table></div>`;
+  // Keep the source record with its displayed row for printing only. The reverse
+  // has no screen UI, and ward/bed edits are still read directly from the inputs.
+  const printPatients=[...awaiting,...revDue,...surgDue,...rows];
+  body.querySelectorAll('#hv-table tbody tr').forEach((tr,i)=>{tr._handoverPrintPatient=printPatients[i];});
   fitAllWardBed();
 }
 /* The sheet prints at one fixed size — it has to match the ward's paper copy. */
@@ -23700,6 +23704,35 @@ function handoverSheetDocHTML(opts){
   const autoPrint=opts.autoPrint!==false;
   const table=document.getElementById('hv-table');
   if(!table)return null;
+  // Pair operation wording with its own date; never label a planned operation
+  // as performed or put an older operation's date beside a newer procedure.
+  const surgeryDetails=tr=>{
+    const p=tr._handoverPrintPatient||{};
+    const firm=String(p.consultant||'').trim()||'Not recorded';
+    if(tr.classList.contains('hv-awaiting')){
+      const reversal=tr.classList.contains('hv-reversal');
+      const date=reversal?p.proposed_reversal_date:tr.classList.contains('hv-surgery')?p.upcoming_surgery_date:p.surgery_date;
+      return {operation:(reversal?'Awaiting reversal':'Awaiting surgery')+' — not yet performed',firm,
+        date:date?'Planned '+fmtShortDate(date):'Not recorded'};
+    }
+    const stomas=typeof patientStomaList==='function'?patientStomaList(p):[];
+    const latest=stomas.filter(s=>!s.formed_date||String(s.formed_date)<=TODAY)
+      .sort((a,b)=>String(b.formed_date||'').localeCompare(String(a.formed_date||'')))[0];
+    const events=typeof stomaOperationHistory==='function'?stomaOperationHistory(p):[];
+    const event=events.filter(e=>!e.reverted_at&&(!e.date||String(e.date)<=TODAY)).slice(-1)[0];
+    let operation,date;
+    if(event&&(!event.date||!latest?.formed_date||String(event.date)>=String(latest.formed_date))){
+      operation=event.operation||({refashion:'Refashioning',new:'New stoma formation',reversal:'Reversal / closure'}[event.kind])||'';
+      date=event.date_unknown?null:event.date;
+    }else if(latest){
+      operation=latest.operation||(['first','initial'].includes(latest.kind)?p.procedure_performed:'');
+      date=latest.formed_date;
+    }else{
+      operation=p.procedure_performed;
+      date=p.fistula_operation_date||p.surgery_date;
+    }
+    return {operation:String(operation||'').trim()||'Not recorded',firm,date:date?fmtShortDate(date):'Not recorded'};
+  };
   // Discharge letter and Schedule 5 permit print as marks that stay distinct on a
   // black-and-white printout: a tick for done/signed, a filled square for a permit
   // left in the ward, an empty box for not done.
@@ -23716,6 +23749,7 @@ function handoverSheetDocHTML(opts){
   // one shade, and the shade flips to the next ward — not per-row zebra striping.
   let prevWard=null, wg=0;
   const dataTrs=[...table.querySelectorAll('tbody tr')];
+  if(!dataTrs.length)return null;
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
     const txt=i=>{const c=cell(i);const inp=c&&c.querySelector('input');return (inp?inp.value:(c?c.innerText:'')).trim();};
@@ -23750,7 +23784,7 @@ function handoverSheetDocHTML(opts){
     const docDate=i=>{const dl=cell(i)?.querySelector('.hs-date-line');return dl?String(dl.innerText||'').trim():'';};
     // Ward and bed live in one cell on screen too, so read them by name.
     const iv=sel=>{const el=tr.querySelector(sel);return el?String(el.value||'').trim():'';};
-    const ward=iv('.hv-ward'), bed=iv('.hv-bed');
+    const ward=iv('.hv-ward')||txt(0), bed=iv('.hv-bed');
     if(prevWard===null||ward!==prevWard){wg++;prevWard=ward;}
     const cls=(wg%2)?'wg-odd':'wg-even';
     const wb=htmlSafe(ward)+(bed?' - '+htmlSafe(bed):'');
@@ -23768,32 +23802,55 @@ function handoverSheetDocHTML(opts){
     const fis=tr.classList.contains('hv-fistula');
     const surname=fis?String(cell(2)?.querySelector('strong')?.innerText||'').trim():txt(2);
     const fisTag=fis?String(cell(2)?.querySelector('.fistula-tag')?.textContent||'FISTULA').trim():'';
-    return `<tr class="${cls}${fis?' pfisrow':''}">
-      <td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
-      <td>${htmlSafe(surname)}${fis?` <span class="pfis">${htmlSafe(fisTag)}</span>`:''}</td><td>${htmlSafe(txt(3))}</td><td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
-      <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`;
-  }).join('');
+    const start=`<tr class="${cls}${fis?' pfisrow':''}"><td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
+      <td>${htmlSafe(surname)}${fis?` <span class="pfis">${htmlSafe(fisTag)}</span>`:''}</td><td>${htmlSafe(txt(3))}</td>`;
+    const surgery=surgeryDetails(tr);
+    return {
+      front:start+`<td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
+        <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`,
+      reverse:start+`<td class="cop">${htmlSafe(surgery.operation)}</td><td>${htmlSafe(surgery.firm)}</td><td>${htmlSafe(surgery.date)}</td></tr>`
+    };
+  });
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
      the Excel sheet's empty rows. They fill out the first page and no further:
      spilling onto a second sheet of blank boxes is waste, so once the patients
      alone fill the page no blanks are added at all. */
   const blankCount=Math.max(0,HANDOVER_ROWS_PER_PAGE-dataTrs.length);
   const blanks=Array.from({length:blankCount},()=>
-    `<tr class="wgblank"><td class="cwb"></td><td></td><td></td><td></td><td class="capp"></td><td class="cbx"></td><td class="cbx"></td></tr>`
+    '<tr class="wgblank"><td class="cwb"></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
   ).join('');
   const fpx=handoverManualFont??HANDOVER_FONT_PX;
   const autoFit=handoverManualFont===null;
-  /* Every size on the sheet keys off one CSS variable (--fs). The front-page-only
-     rule means the whole list has to land on a single A4 sheet, so after the
-     window lays out, a small script measures the sheet and shrinks --fs — which
-     scales the type, the row height and everything with it — until it fits one
-     page. When the list is short it never shrinks and prints at the usual size. */
+  const pageHTML=reverse=>`<section class="handover-page ${reverse?'handover-reverse':'handover-front'}" data-side="${reverse?'reverse':'front'}">
+    <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
+    <table><colgroup>
+      <col style="width:7.5%"><col style="width:8.5%"><col style="width:8%"><col style="width:8.5%">
+      ${reverse?'<col style="width:45%"><col style="width:12%"><col style="width:10.5%">':'<col style="width:54%"><col style="width:5.5%"><col style="width:8%">'}
+    </colgroup><thead>
+      <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
+      <tr class="cols"><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th>
+        ${reverse?'<th>Performed operation</th><th>Firm</th><th>Surgery date</th>':'<th>Appliance + notes</th><th class="icon" title="Care discharge letter">DL</th><th class="icon" title="Schedule 5 permit">S5</th>'}
+      </tr></thead><tbody>${rows.map(row=>reverse?row.reverse:row.front).join('')}${blanks}</tbody></table>
+    <div class="hv-legend"><b class="hv-page-label">${reverse?'Reverse':'Front'} · Sheet 1 of 1</b> &nbsp;|&nbsp;
+      ${reverse?'Surgical details · patient rows match the front.':`<b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date`}
+    </div>
+  </section>`;
+  // Every front is followed by its compulsory reverse. The screen and archived
+  // document view hide reverses; the print stylesheet always includes them.
   return `<!DOCTYPE html><html><head><title>Inpatients Handover ${htmlSafe(TODAY)}</title><style>
     @page{size:A4 landscape;margin:7mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     *{box-sizing:border-box}
     :root{--fs:${fpx}px;}
-    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:5mm 4mm;}
+    body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
     #sheet{width:100%;}
+    .handover-page{width:283mm;padding:5mm 4mm;break-after:page;page-break-after:always;}
+    .handover-page:last-child{break-after:auto;page-break-after:auto;}
+    .handover-reverse{display:none;}
+    .hv-measuring .handover-reverse{display:block;position:absolute;visibility:hidden;}
+    @media print{
+      .handover-page{width:100%;}
+      .handover-reverse{display:block;position:static;visibility:visible;}
+    }
     h1{font-size:calc(var(--fs) + 3px);font-weight:800;margin:0 0 5px;}
     table{width:100%;border-collapse:collapse;font-size:var(--fs);table-layout:fixed;}
     /* Everything reads left-aligned, and a long name wraps onto a second line
@@ -23813,6 +23870,7 @@ function handoverSheetDocHTML(opts){
     td.cbx{text-align:center;font-size:calc(var(--fs) + 9px);font-weight:700;line-height:1;}
     td.cbx .cbx-d{font-size:calc(var(--fs) - 2px);font-weight:600;line-height:1.05;margin-top:1px;white-space:normal;}
     td.capp b{font-weight:800;}
+    td.cop{white-space:pre-wrap;}
     /* Infection alert on the printout: a red bar + tint on the cell and the +ve
        marker bold/underlined, so it carries to a black-and-white ward copy. */
     .pinf{font-weight:800;color:#b10000;text-decoration:underline;}
@@ -23825,48 +23883,57 @@ function handoverSheetDocHTML(opts){
     tbody tr.wgblank td{background:#fff;height:calc(var(--fs) * 2.6);}
     .hv-legend{margin-top:6px;font-size:calc(var(--fs) - 2px);color:#333;}
   </style></head><body>
-    <div id="sheet">
-    <h1>MDH Nursing Stoma Care — Inpatients Handover</h1>
-    <table>
-      <!-- The date banner is one colspan cell, so with table-layout:fixed the
-           column widths have to come from a colgroup, not from the header cells. -->
-      <colgroup>
-        <col style="width:7.5%"><col style="width:8.5%"><col style="width:8%"><col style="width:8.5%">
-        <col style="width:54%"><col style="width:5.5%"><col style="width:8%">
-      </colgroup>
-      <thead>
-        <tr class="hdate"><td colspan="7">${htmlSafe(fmtLabel(TODAY))}</td></tr>
-        <tr class="cols">
-          <th class="cwb">Ward</th><th class="cid">ID: Number</th>
-          <th class="csur">Surname</th><th class="cfn">First Name</th><th class="capp">Appliance + notes</th>
-          <th class="icon cdoc" title="Care discharge letter">DL</th><th class="icon cdoc" title="Schedule 5 permit">S5</th>
-        </tr>
-      </thead>
-      <tbody>${rows}${blanks}</tbody>
-    </table>
-    <div class="hv-legend">
-      <b>DL</b> = care discharge letter &nbsp;&nbsp; <b>S5</b> = Schedule 5 permit &nbsp;&nbsp;|&nbsp;&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done &nbsp; · a signed permit shows its Signed date
-    </div>
-    </div>
+    <div id="sheet">${pageHTML(false)}${pageHTML(true)}</div>
     <script>
     (function(){
-      var PXMM=96/25.4;                       // CSS px per mm at layout resolution
-      // The sheet must sit inside one A4 landscape page: page height minus the
-      // @page margins (7mm) minus the body's own top/bottom padding (5mm).
-      var budgetH=(210 - 2*7 - 2*5)*PXMM - 6; // small safety cushion
-      // Pin the sheet to the exact printed content width (page width minus the
-      // margins and the body side padding) so its on-screen wrapping and height
-      // match the printout regardless of how wide this browser window happens to
-      // be — then the measured height is a true stand-in for the printed height.
-      var contentW=(297 - 2*7 - 2*4)*PXMM;
+      var PXMM=96/25.4, budgetH=(210-2*7)*PXMM-6;
       var root=document.documentElement, sheet=document.getElementById('sheet');
+      var front=sheet.querySelector('.handover-front'), back=sheet.querySelector('.handover-reverse');
+      // Equalise both sides before fitting or paginating: matching patients,
+      // writing rows and headers must have the same top and bottom edges.
+      function align(){
+        var a=front.querySelectorAll('tr'), b=back.querySelectorAll('tr');
+        a.forEach(function(row,i){row.style.height='';b[i].style.height='';});
+        a.forEach(function(row,i){
+          var height=Math.max(row.getBoundingClientRect().height,b[i].getBoundingClientRect().height);
+          row.style.height=b[i].style.height=height+'px';
+        });
+      }
       function fit(){
-        sheet.style.width=contentW+'px';
+        root.classList.add('hv-measuring');
         var fs=${fpx}, guard=0;
-        while(${autoFit} && sheet.getBoundingClientRect().height>budgetH && fs>6 && guard<120){
-          fs-=0.5; root.style.setProperty('--fs',fs+'px'); guard++;
+        align();
+        while(${autoFit} && Math.max(front.getBoundingClientRect().height,back.getBoundingClientRect().height)>budgetH && fs>6 && guard<120){
+          fs-=0.5; root.style.setProperty('--fs',fs+'px'); align(); guard++;
         }
-        sheet.style.width='';                 // hand the width back to the page box for print
+        // A long list or a larger manual font can need several physical sheets.
+        // Split both sides at the same patient, interleaving front/back pairs.
+        var fronts=Array.from(front.querySelectorAll('tbody tr'));
+        var backs=Array.from(back.querySelectorAll('tbody tr'));
+        var frontTemplate=front.cloneNode(true), backTemplate=back.cloneNode(true);
+        frontTemplate.querySelector('tbody').innerHTML='';backTemplate.querySelector('tbody').innerHTML='';
+        sheet.innerHTML='';
+        var pairs=[],pair;
+        function newPair(){
+          pair=[frontTemplate.cloneNode(true),backTemplate.cloneNode(true)];
+          pair.forEach(function(page){sheet.appendChild(page);});pairs.push(pair);
+        }
+        newPair();
+        fronts.forEach(function(row,i){
+          pair[0].querySelector('tbody').appendChild(row);pair[1].querySelector('tbody').appendChild(backs[i]);
+          if(Math.max(pair[0].getBoundingClientRect().height,pair[1].getBoundingClientRect().height)<=budgetH)return;
+          // Writing spaces may be dropped, but must never make a blank-only sheet.
+          if(row.classList.contains('wgblank')){row.remove();backs[i].remove();return;}
+          if(pair[0].querySelector('tbody').rows.length>1){
+            row.remove();backs[i].remove();newPair();
+            pair[0].querySelector('tbody').appendChild(row);pair[1].querySelector('tbody').appendChild(backs[i]);
+          }
+        });
+        pairs.forEach(function(p,n){p.forEach(function(page,i){
+          page.dataset.sheet=String(n+1);
+          page.querySelector('.hv-page-label').textContent=(i?'Reverse':'Front')+' · Sheet '+(n+1)+' of '+pairs.length;
+        });});
+        root.classList.remove('hv-measuring');
         if(${autoPrint})setTimeout(function(){window.focus();window.print();},60);
       }
       if(document.readyState==='complete')fit();

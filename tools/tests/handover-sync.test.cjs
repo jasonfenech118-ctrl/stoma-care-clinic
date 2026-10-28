@@ -79,7 +79,7 @@ function session(db,name='Nurse A'){
     'handoverApplianceRowText','handoverStomaLine','stripHandoverFlangeDue','handoverComplicationLine','pickPostopDischargePatch','handoverRowHTML',
     'attachHandoverApplianceLines','loadHandover','currentInpatientEpisode','commitEpisodeAppliances',
     'handoverReminderDate','daysUntilDate','flangeDueMeta','flangeDueChipHTML','episodeFlangeDueDate'];
-  vm.runInContext('let handoverLoadVersion=0;let handoverWasPhone=false;let plLoaded=true;',c);
+  vm.runInContext('let handoverLoadVersion=0;let handoverWasPhone=false;let plLoaded=true;let patientRecordLoading=false;',c);
   vm.runInContext(fistulaHelpers,c);
   names.forEach(n=>vm.runInContext(source(n),c));
   const reminderStart=html.indexOf('const HANDOVER_REMINDER_COLS=');
@@ -97,6 +97,19 @@ function session(db,name='Nurse A'){
 }
 const pending={patientId:'patient-1',ward:'SW1',bed:'1'};
 const onePiece=[{uid:'base',short:'Colo',stoma_type:'End colostomy',appliances:['Lentell'],accessories:['None']}];
+
+test('print-only surgical data follows the displayed row after handover refreshes',async()=>{
+  const db=database(),a=session(db);
+  Object.assign(db.patients[0],{procedure_performed:'Example operation',consultant:'Example firm',surgery_date:'2026-09-29'});
+  await a.c.loadHandover();
+  let row=a.dom.window.document.querySelector('#hv-table tbody tr');
+  assert.equal(row._handoverPrintPatient.procedure_performed,'Example operation');
+  assert.equal(row._handoverPrintPatient.consultant,'Example firm');
+  assert.equal(a.dom.window.document.querySelector('.handover-reverse'),null);
+  db.patients[0].procedure_performed='Updated example operation';await a.c.loadHandover();
+  row=a.dom.window.document.querySelector('#hv-table tbody tr');
+  assert.equal(row._handoverPrintPatient.procedure_performed,'Updated example operation');
+});
 
 test('two separate users see the same saved replacement through database broadcasts',async()=>{
   const db=database(),a=session(db),b=session(db,'Nurse B');

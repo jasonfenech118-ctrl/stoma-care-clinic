@@ -1,0 +1,134 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {JSDOM}=require('jsdom');
+const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
+function source(name){
+  const start=html.indexOf('function '+name+'(');assert.ok(start>=0,name);
+  const lineEnd=html.indexOf('\n',start);
+  return html.slice(start,html.slice(start,lineEnd).trim().endsWith('}')?lineEnd:html.indexOf('\n}',start)+2);
+}
+function fixture(t,patients,options={}){
+  const dom=new JSDOM('<body><table id="hv-table"><tbody></tbody></table></body>',{runScripts:'outside-only'});
+  t.after(()=>dom.window.close());
+  const w=dom.window;
+  Object.defineProperty(w.HTMLElement.prototype,'innerText',{configurable:true,get(){return this.textContent;}});
+  Object.assign(w,{TODAY:'2026-10-28',fmtLabel:d=>d,fmtShortDate:d=>d,initialStomaCode:d=>d,
+    htmlSafe:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
+    hvIsInfectionNote:s=>/CRE|VRE|\+ve/i.test(s),handoverManualFont:null,HANDOVER_FONT_PX:13,HANDOVER_ROWS_PER_PAGE:16});
+  for(const name of ['parseInitialStomas','parseRefashionings','parseStomas','stomaOperationHistory','patientStomaList','handoverSheetDocHTML'])w.eval(source(name));
+  const body=w.document.querySelector('tbody');
+  patients.forEach((p,i)=>{
+    const tr=w.document.createElement('tr');tr.className=p._rowClass||'';
+    tr.innerHTML=`<td><input class="hv-ward"><input class="hv-bed"></td><td></td><td><strong></strong></td><td></td>
+      <td><button class="hv-appl"></button><input class="hv-note"></td><td><button class="hs-btn" data-value="done"></button></td><td></td>`;
+    tr.querySelector('.hv-ward').value=p.inpatient_ward||'SW4';
+    tr.querySelector('.hv-bed').value=String(i+1);
+    tr.children[1].textContent=p.id_card||'TEST-'+i;
+    tr.querySelector('strong').textContent=p.surname||'Example';
+    tr.children[3].textContent=p.first_name||'Patient';
+    tr.querySelector('.hv-appl').dataset.appliance=p._appliance||'Example appliance';
+    tr.querySelector('.hv-note').value=p._note||'Routine review';
+    tr._handoverPrintPatient=p;body.appendChild(tr);
+  });
+  const out=w.handoverSheetDocHTML({autoPrint:false,...options});
+  const printed=new JSDOM(out);t.after(()=>printed.window.close());
+  return {w,out,document:printed.window.document};
+}
+const patient=extra=>({first_name:'Sample',surname:'Patient',id_card:'TEST-ONLY',inpatient_ward:'SW4',
+  stoma_type:'End colostomy',surgery_date:'2026-10-12',procedure_performed:'Recorded resection',consultant:'Example firm',...extra});
+
+test('printing always includes a reverse with the same identifiers, ward blocks and writing rows',t=>{
+  const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
+  const front=f.document.querySelector('.handover-front'),back=f.document.querySelector('.handover-reverse');
+  assert.ok(front);assert.ok(back,'there is no opt-out from the reverse');
+  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Firm','Surgery date']);
+  const a=front.querySelectorAll('tbody tr'),b=back.querySelectorAll('tbody tr');
+  assert.equal(a.length,16);assert.equal(b.length,a.length);
+  a.forEach((row,i)=>{
+    assert.equal(row.className,b[i].className);
+    for(let j=0;j<4;j++)assert.equal(row.children[j].textContent,b[i].children[j].textContent);
+  });
+  assert.match(front.textContent,/Example appliance.*Routine review/s);
+  assert.doesNotMatch(back.textContent,/Example appliance|Routine review|Appliance \+ notes/);
+  assert.equal(b[0].children[4].textContent,'Recorded resection');
+  assert.equal(b[0].children[5].textContent,'Example firm');
+  assert.equal(b[0].children[6].textContent,'2026-10-12');
+  assert.equal(f.w.document.querySelectorAll('.handover-reverse').length,0,'the app receives no extra page');
+});
+
+test('latest refashioning uses its own operation/date and an unknown date never inherits the original date',t=>{
+  const refashion={uid:'new-stoma',type:'End colostomy',formed_date:'2026-10-20',operation:'Recorded refashioning',target_uid:'base'};
+  const f=fixture(t,[patient({extra_refashionings:[refashion]}),patient({stoma_operation_history:[
+    {kind:'refashion',date_unknown:true,operation:'Latest unknown-date operation',affected:[]}
+  ]})]);
+  const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
+  assert.equal(rows[0].children[4].textContent,'Recorded refashioning');assert.equal(rows[0].children[6].textContent,'2026-10-20');
+  assert.equal(rows[1].children[4].textContent,'Latest unknown-date operation');assert.equal(rows[1].children[6].textContent,'Not recorded');
+});
+
+test('long lists paginate as front/reverse pairs with identical patient groups and no lost rows',t=>{
+  const f=fixture(t,Array.from({length:60},(_,i)=>patient({id_card:'TEST-'+i,
+    procedure_performed:i%4===0?'Long operation description. '.repeat(8):'Recorded operation'})));
+  const dom=new JSDOM(f.out,{runScripts:'outside-only'});t.after(()=>dom.window.close());
+  const w=dom.window,d=w.document;
+  Object.defineProperty(d,'readyState',{get:()=> 'complete'});
+  // Fixed page geometry isolates the pagination behavior from a browser engine.
+  w.HTMLElement.prototype.getBoundingClientRect=function(){
+    if(this.tagName==='TR')return {height:Math.max(parseFloat(this.style.height)||0,this.textContent.length>180?80:28)};
+    if(this.classList.contains('handover-page'))return {height:70+[...this.querySelectorAll('tr')].reduce((n,tr)=>n+tr.getBoundingClientRect().height,0)};
+    return {height:0};
+  };
+  w.eval(d.querySelector('script').textContent);
+  const pages=[...d.querySelectorAll('.handover-page')],ids=[];
+  assert.ok(pages.length>2);assert.equal(pages.length%2,0);
+  for(let i=0;i<pages.length;i+=2){
+    assert.equal(pages[i].dataset.side,'front');assert.equal(pages[i+1].dataset.side,'reverse');
+    assert.equal(pages[i].dataset.sheet,pages[i+1].dataset.sheet);
+    const a=[...pages[i].querySelectorAll('tbody tr')],b=[...pages[i+1].querySelectorAll('tbody tr')];
+    assert.equal(a.length,b.length);assert.ok(a.some(row=>!row.classList.contains('wgblank')));
+    a.forEach((row,j)=>{
+      assert.equal(row.children[1].textContent,b[j].children[1].textContent);
+      assert.equal(row.style.height,b[j].style.height);ids.push(row.children[1].textContent);
+    });
+    assert.equal(w.getComputedStyle(pages[i+1]).display,'none');
+  }
+  assert.deepEqual(ids,Array.from({length:60},(_,i)=>'TEST-'+i));
+});
+
+test('future and reverted operations do not replace the latest performed operation',t=>{
+  const f=fixture(t,[patient({stoma_operation_history:[
+    {kind:'refashion',date:'2026-10-19',operation:'Performed operation',affected:[]},
+    {kind:'new',date:'2026-10-27',operation:'Reverted entry',reverted_at:'2026-10-28',affected:[]},
+    {kind:'new',date:'2026-11-12',operation:'Future entry',affected:[]}
+  ]})]);
+  const row=f.document.querySelector('.handover-reverse tbody tr');
+  assert.equal(row.children[4].textContent,'Performed operation');assert.equal(row.children[6].textContent,'2026-10-19');
+});
+
+test('all pending-surgery row types distinguish a plan from a performed operation',t=>{
+  const f=fixture(t,[patient({_rowClass:'hv-awaiting',surgery_date:'2026-10-28'}),
+    patient({_rowClass:'hv-awaiting hv-surgery',upcoming_surgery_date:'2026-10-28'}),
+    patient({_rowClass:'hv-awaiting hv-reversal',proposed_reversal_date:'2026-10-28'})]);
+  for(const row of [...f.document.querySelectorAll('.handover-reverse tbody tr')].slice(0,3)){
+    assert.match(row.children[4].textContent,/Awaiting .*not yet performed/);
+    assert.equal(row.children[6].textContent,'Planned 2026-10-28');
+    assert.doesNotMatch(row.children[4].textContent,/Recorded resection/);
+  }
+});
+
+test('fistula surgery and missing fields print without inventing details or interpreting markup',t=>{
+  const f=fixture(t,[{patient_kind:'fistula',procedure_performed:'Recorded fistula procedure',fistula_operation_date:'2026-10-21'},
+    {},patient({procedure_performed:'<img src=x onerror="alert(1)"> & review',consultant:'<Example>'})]);
+  const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
+  assert.equal(rows[0].children[4].textContent,'Recorded fistula procedure');assert.equal(rows[0].children[6].textContent,'2026-10-21');
+  assert.deepEqual([...rows[1].children].slice(4).map(td=>td.textContent),['Not recorded','Not recorded','Not recorded']);
+  assert.equal(rows[2].children[4].textContent,'<img src=x onerror="alert(1)"> & review');
+  assert.equal(rows[2].children[5].textContent,'<Example>');assert.equal(f.document.querySelector('img'),null);
+});
+
+test('empty handover returns no print document',t=>{
+  const dom=new JSDOM('<table id="hv-table"><tbody></tbody></table>',{runScripts:'outside-only'});t.after(()=>dom.window.close());
+  dom.window.eval(source('handoverSheetDocHTML'));assert.equal(dom.window.handoverSheetDocHTML(),null);
+});
