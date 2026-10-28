@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.28-656"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-656"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-657"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.10.28-656"></script>
+<script src="assets/manual.js?v=2026.10.28-657"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-656';
+const APP_BUILD='2026.10.28-657';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23758,15 +23758,19 @@ function handoverSheetDocHTML(opts){
   if(!dataTrs.length)return null;
   const teamContacts=firm=>{
     const contact=opts.rotation&&window.SurgicalRotation?.handoverContacts?.(opts.rotation.data,firm);
-    if(!contact)return {consultant:'',team:'<div class="hv-team-contact">Contacts unavailable</div>'};
-    if(contact.status!=='matched')return {consultant:'',team:'<div class="hv-team-contact">'+(contact.status==='ambiguous'?'Check firm match':'Firm not matched')+'</div>'};
-    const number=numbers=>'<span class="hv-team-number">'+(numbers.length?numbers.map(n=>htmlSafe(n)).join(' / '):'—')+'</span>';
-    const line=(role,numbers,people)=>'<div class="hv-team-contact"><b>'+htmlSafe(role)+':</b> '+
-      (people?.length?people.map(p=>'<span class="hv-team-person">'+
-        (p.name?'<span class="hv-team-person-name">'+htmlSafe(p.name)+'</span> — ':'')+
-        number(p.number?[p.number]:[])+'</span>').join(' / '):number(numbers))+'</div>';
-    return {consultant:'<div class="hv-consultant-pager">'+line('Consultant',contact.consultant)+'</div>',
-      team:'<div class="hv-team-contacts">'+line('RS',contact.rs,contact.rsPeople)+line('HST',contact.hst,contact.hstPeople)+line('BST',contact.bst,contact.bstPeople)+'</div>'};
+    if(!contact||contact.status!=='matched')return {consultant:'',team:''};
+    const number=numbers=>numbers.length?'<span class="hv-team-number">'+numbers.map(n=>htmlSafe(n)).join(' / ')+'</span>':'';
+    const line=(role,numbers,people)=>{
+      const detail=people?.length?people.map(p=>[
+        p.name?'<span class="hv-team-person-name">'+htmlSafe(p.name)+'</span>':'',
+        number(p.number?[p.number]:[])
+      ].filter(Boolean).join(' — ')).filter(Boolean).map(p=>'<span class="hv-team-person">'+p+'</span>').join(' / '):number(numbers);
+      return detail?'<div class="hv-team-contact"><b>'+htmlSafe(role)+':</b> '+detail+'</div>':'';
+    };
+    const consultant=line('Consultant',contact.consultant);
+    const team=line('RS',contact.rs,contact.rsPeople)+line('HST',contact.hst,contact.hstPeople)+line('BST',contact.bst,contact.bstPeople);
+    return {consultant:consultant?'<div class="hv-consultant-pager">'+consultant+'</div>':'',
+      team:team?'<div class="hv-team-contacts">'+team+'</div>':''};
   };
   const rows=dataTrs.map(tr=>{
     const cell=i=>tr.children[i];
@@ -23820,14 +23824,14 @@ function handoverSheetDocHTML(opts){
     const fis=tr.classList.contains('hv-fistula');
     const surname=fis?String(cell(2)?.querySelector('strong')?.innerText||'').trim():txt(2);
     const fisTag=fis?String(cell(2)?.querySelector('.fistula-tag')?.textContent||'FISTULA').trim():'';
-    const start=`<tr class="${cls}${fis?' pfisrow':''}"><td class="cwb">${wb}</td><td>${htmlSafe(txt(1))}</td>
-      <td>${htmlSafe(surname)}${fis?` <span class="pfis">${htmlSafe(fisTag)}</span>`:''}</td><td>${htmlSafe(txt(3))}</td>`;
+    const start=`<tr class="${cls}${fis?' pfisrow':''}"><td class="cwb"><span class="hv-fit-text">${wb}</span></td><td><span class="hv-fit-text hv-id-value">${htmlSafe(txt(1))}</span></td>
+      <td><span class="hv-fit-text hv-name-value hv-surname-value">${htmlSafe(surname)}</span>${fis?` <span class="pfis">${htmlSafe(fisTag)}</span>`:''}</td><td><span class="hv-fit-text hv-name-value hv-firstname-value">${htmlSafe(txt(3))}</span></td>`;
     const surgery=surgeryDetails(tr);
     const contacts=teamContacts(surgery.firm);
     return {
       front:start+`<td class="capp${inf?' capp-inf':''}">${notes(appText)}</td>
         <td class="cbx">${box[val(5)]||'☐'}${docDate(5)?`<div class="cbx-d">${htmlSafe(docDate(5))}</div>`:''}</td><td class="cbx">${s5Mark}${s5Body?`<div class="cbx-d">${htmlSafe(s5Body)}</div>`:''}</td></tr>`,
-      reverse:start+`<td class="cop"><div class="hv-operation-cell"><div class="hv-operation-text">${htmlSafe(surgery.operation)}</div><div class="hv-contacts-bottom">${contacts.team}</div></div></td><td><div class="hv-firm-name"><b class="hv-consultant-name">${htmlSafe(surgery.firm)}</b></div>${contacts.consultant}</td><td>${htmlSafe(surgery.date)}</td></tr>`
+      reverse:start+`<td class="cop"><div class="hv-operation-cell"><div class="hv-operation-text">${htmlSafe(surgery.operation)}</div><div class="hv-contacts-bottom">${contacts.team}</div></div></td><td><div class="hv-firm-name"><b class="hv-consultant-name">${htmlSafe(surgery.firm)}</b></div>${contacts.consultant}</td><td><span class="hv-fit-text hv-date-value">${htmlSafe(surgery.date)}</span></td></tr>`
     };
   });
   /* Blank writing rows so a nurse can add new/pending patients by hand, like
@@ -23841,12 +23845,12 @@ function handoverSheetDocHTML(opts){
   const fpx=handoverManualFont??(HANDOVER_FONT_PX+1);
   const pageHTML=reverse=>`<section class="handover-page ${reverse?'handover-reverse':'handover-front'}" data-side="${reverse?'reverse':'front'}">
     <div class="handover-content"><table><colgroup>
-      <col style="width:5.5%"><col style="width:6.5%"><col style="width:8%"><col style="width:8.5%">
-      ${reverse?'<col style="width:45%"><col style="width:16%"><col style="width:10.5%">':'<col style="width:58%"><col style="width:5.5%"><col style="width:8%">'}
+      <col style="width:5.5%"><col style="width:5.5%"><col style="width:7.2%"><col style="width:7.2%">
+      ${reverse?'<col style="width:53.6%"><col style="width:13.5%"><col style="width:7.5%">':'<col style="width:61.1%"><col style="width:5.5%"><col style="width:8%">'}
     </colgroup><thead>
       <tr class="hdate"><td colspan="7"><div class="hv-title-date"><h1>${reverse?'Surgical Details':'Care Handover'}</h1><span class="hv-print-date">${htmlSafe(fmtLabel(TODAY))}</span></div></td></tr>
-      <tr class="cols"><th>Ward</th><th>ID: Number</th><th>Surname</th><th>First Name</th>
-        ${reverse?'<th>Performed operation</th><th>Surgeon / firm</th><th>Surgery date</th>':'<th>Appliance + notes</th><th class="icon" title="Care discharge letter">DL</th><th class="icon" title="Schedule 5 permit">S5</th>'}
+      <tr class="cols"><th><span class="hv-fit-text">Ward</span></th><th><span class="hv-fit-text">IDNO</span></th><th><span class="hv-fit-text">Surname</span></th><th><span class="hv-fit-text">First Name</span></th>
+        ${reverse?'<th>Performed operation</th><th>Surgeon / firm</th><th><span class="hv-fit-text">Surgery date</span></th>':'<th>Appliance + notes</th><th class="icon" title="Care discharge letter">DL</th><th class="icon" title="Schedule 5 permit">S5</th>'}
       </tr></thead><tbody>${rows.map(row=>reverse?row.reverse:row.front).join('')}${blanks}</tbody></table>
     ${reverse?'':`<div class="hv-legend"><b class="hv-page-label">Care Handover · Sheet 1 of 1</b> &nbsp;|&nbsp;
       <b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date
@@ -23957,7 +23961,9 @@ function handoverSheetDocHTML(opts){
     .hv-firm-name{font-size:calc(var(--fs) * 1.2);font-weight:400;line-height:1.15;}
     .hv-consultant-name{font-weight:700;}
     .hv-consultant-pager{margin-top:calc(var(--fs) * 0.2);}
-    .hv-team-contacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:calc(var(--fs) * 0.2);}
+    .hv-fit-text{display:inline-block;white-space:nowrap;}
+    .hv-team-contacts{display:flex;justify-content:space-between;align-items:flex-end;gap:calc(var(--fs) * 0.45);}
+    .hv-team-contacts>.hv-team-contact{flex:0 0 auto;white-space:nowrap;}
     .hv-team-contact{font-size:var(--fs);font-weight:400;line-height:1.15;}
     .hv-team-contact b{font-weight:700;}
     .hv-team-number{font-weight:400;}
@@ -24008,6 +24014,47 @@ function handoverSheetDocHTML(opts){
       var root=document.documentElement, sheet=document.getElementById('sheet');
       var front=sheet.querySelector('.handover-front'), back=sheet.querySelector('.handover-reverse');
       var contents=[front.querySelector('.handover-content'),back.querySelector('.handover-content')];
+      // Give identifiers only the width this list needs, within compact limits.
+      // Both faces share the exact widths, leaving the balance for clinical text.
+      function columns(){
+        var width=front.querySelector('table').getBoundingClientRect().width;
+        if(!width)return;
+        var fs=${fpx}, widths=[5.5];
+        [['.hv-id-value',4.5,5.5],['.hv-surname-value',5.5,7.2],['.hv-firstname-value',5.5,7.2]].forEach(function(spec){
+          var natural=Math.max.apply(null,Array.from(front.querySelectorAll(spec[0])).map(function(el){return el.getBoundingClientRect().width;}));
+          widths.push(Math.max(spec[1],Math.min(spec[2],100*(natural+fs*0.6+1)/width)));
+        });
+        var used=widths.reduce(function(n,value){return n+value;},0);
+        [front,back].forEach(function(page,i){
+          var cols=page.querySelectorAll('col');
+          widths.concat(i?[100-used-13.5-7.5,13.5,7.5]:[100-used-5.5-8,5.5,8]).forEach(function(value,j){cols[j].style.width=value+'%';});
+        });
+      }
+      // Keep IDs and headings on one line. Names/date text may wrap at a
+      // readable size rather than becoming tiny when unusually long.
+      function labels(fs){
+        var spans=Array.from(sheet.querySelectorAll('.hv-fit-text'));
+        spans.forEach(function(el){el.style.fontSize='';el.style.whiteSpace='nowrap';el.style.display='inline-block';});
+        var sizes=spans.map(function(el){
+          var natural=el.getBoundingClientRect().width, width=el.parentElement.getBoundingClientRect().width-fs*0.6-1;
+          var ratio=natural>0&&width>0?Math.min(1,width/natural):1;
+          var wrap=(el.classList.contains('hv-name-value')||el.classList.contains('hv-date-value'))&&ratio<0.85;
+          return {el:el,size:fs*(wrap?0.85:ratio),wrap:wrap};
+        });
+        sizes.forEach(function(item){
+          item.el.style.fontSize=Math.max(0.1,Math.floor(item.size*100)/100)+'px';
+          if(item.wrap){item.el.style.whiteSpace='normal';item.el.style.display='block';}
+        });
+      }
+      function contactRatio(){
+        var fs=parseFloat(root.style.getPropertyValue('--fs'))||${fpx}, ratio=1;
+        back.querySelectorAll('.hv-team-contacts').forEach(function(group){
+          var width=group.getBoundingClientRect().width;
+          var needed=Array.from(group.children).reduce(function(n,el){return n+el.getBoundingClientRect().width;},0)+Math.max(0,group.children.length-1)*fs*0.45;
+          if(width>0)ratio=Math.max(ratio,needed/width);
+        });
+        return ratio;
+      }
       // Equalise both sides before fitting: matching patients,
       // writing rows and headers must have the same top and bottom edges.
       function align(){
@@ -24018,7 +24065,8 @@ function handoverSheetDocHTML(opts){
         // at the cell's bottom edge when another column makes the row taller.
         var fs=parseFloat(root.style.getPropertyValue('--fs'))||${fpx};
         var reserve=Array.from(back.querySelectorAll('td.cop')).map(function(cell){
-          return {row:cell.parentElement,frame:cell.querySelector('.hv-operation-cell'),text:cell.querySelector('.hv-operation-text'),height:cell.querySelector('.hv-contacts-bottom').getBoundingClientRect().height+fs*0.4};
+          var strip=cell.querySelector('.hv-contacts-bottom');
+          return {row:cell.parentElement,frame:cell.querySelector('.hv-operation-cell'),text:cell.querySelector('.hv-operation-text'),height:strip.childElementCount?strip.getBoundingClientRect().height+fs*0.4:0};
         });
         reserve.forEach(function(item){item.text.style.paddingBottom=item.height+'px';});
         reserve.forEach(function(item){item.natural=item.frame.getBoundingClientRect().height;});
@@ -24033,25 +24081,29 @@ function handoverSheetDocHTML(opts){
       function fit(){
         root.classList.add('hv-measuring');
         var fs=${fpx};
+        columns();
         var blanks=[Array.from(front.querySelectorAll('.wgblank')),Array.from(back.querySelectorAll('.wgblank'))];
         // Patients take priority over spare writing spaces. Fit the full list to
         // the largest possible type, even if a larger screen font was selected.
         blanks.forEach(function(rows){rows.forEach(function(row){row.remove();});});
         function height(){return Math.max(contents[0].getBoundingClientRect().height,contents[1].getBoundingClientRect().height);}
-        function size(value){fs=value;root.style.setProperty('--fs',fs+'px');align();return height();}
-        if(size(fs)>budgetH){
+        function overflow(){return Math.max(height()/budgetH,contactRatio());}
+        function size(value){fs=value;root.style.setProperty('--fs',fs+'px');labels(fs);align();return overflow();}
+        if(size(fs)>1){
           var low=0.5,high=fs;
-          if(size(low)<=budgetH){
+          if(size(low)<=1){
             for(var n=0;n<12;n++){
               var mid=(low+high)/2;
-              if(size(mid)<=budgetH)low=mid;else high=mid;
+              if(size(mid)<=1)low=mid;else high=mid;
             }
             size(Math.floor(low*100)/100);
           }
         }
         // Borders have a finite height even at tiny type. Scale both complete
         // contents equally as a final fallback; no patient or detail is cut off.
-        var scale=Math.min(1,budgetH/height());
+        var widen=contactRatio();
+        if(widen>1){contents.forEach(function(content){content.style.width=(100*widen)+'%';});labels(fs);align();}
+        var scale=Math.min(1,budgetH/height(),1/widen);
         if(scale===1){
           for(var i=0;i<blanks[0].length;i++){
             front.querySelector('tbody').appendChild(blanks[0][i]);back.querySelector('tbody').appendChild(blanks[1][i]);align();

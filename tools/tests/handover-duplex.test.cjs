@@ -45,6 +45,13 @@ function layout(t,out,fixedRows=false){
   Object.defineProperty(d,'readyState',{get:()=> 'complete'});
   w.HTMLElement.prototype.getBoundingClientRect=function(){
     const fs=parseFloat(d.documentElement.style.getPropertyValue('--fs'))||14;
+    const tableWidth=1080;
+    const cellWidth=cell=>tableWidth*parseFloat(cell.closest('table').querySelectorAll('col')[Array.from(cell.parentElement.children).indexOf(cell)].style.width)/100;
+    if(this.tagName==='TABLE')return {width:tableWidth};
+    if(this.tagName==='TD'||this.tagName==='TH')return {width:cellWidth(this)};
+    if(this.classList.contains('hv-fit-text'))return {width:this.textContent.length*(parseFloat(this.style.fontSize)||fs)*0.55};
+    if(this.classList.contains('hv-team-contact'))return {width:this.textContent.length*fs*0.55};
+    if(this.classList.contains('hv-team-contacts'))return {width:cellWidth(this.closest('td'))-fs*0.6-1};
     if(this.classList.contains('hv-contacts-bottom'))return {height:fs*1.15};
     if(this.classList.contains('hv-operation-cell')){
       const text=this.querySelector('.hv-operation-text');
@@ -68,7 +75,7 @@ test('printing always includes a reverse with the same identifiers, ward blocks 
   const f=fixture(t,[patient(),patient({id_card:'TEST-TWO',surname:'Other',inpatient_ward:'SW5'})],{includeReverse:false});
   const front=f.document.querySelector('.handover-front'),back=f.document.querySelector('.handover-reverse');
   assert.ok(front);assert.ok(back,'there is no opt-out from the reverse');
-  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','ID: Number','Surname','First Name','Performed operation','Surgeon / firm','Surgery date']);
+  assert.deepEqual([...back.querySelectorAll('th')].map(th=>th.textContent),['Ward','IDNO','Surname','First Name','Performed operation','Surgeon / firm','Surgery date']);
   assert.equal(front.querySelector('h1').textContent,'Care Handover');
   assert.equal(back.querySelector('h1').textContent,'Surgical Details');
   assert.doesNotMatch(back.textContent,/Reverse|Reversal/i);
@@ -96,7 +103,7 @@ test('the consultant pager prints under Surgeon / firm, with RS, HST and BST und
   const a=f.document.querySelector('.handover-front'),b=f.document.querySelector('.handover-reverse');
   const rows=b.querySelectorAll('tbody tr');
   assert.deepEqual([...rows[0].children[4].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS: Mr. A. Example — 1111','HST: Miss B. Sample — 2222','BST: Dr. C. Other — 3333']);
-  assert.deepEqual([...rows[1].children[4].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS: Mr. D. Person — 4444','HST: —','BST: Miss E. Sample — 5555']);
+  assert.deepEqual([...rows[1].children[4].querySelectorAll('.hv-team-contact')].map(e=>e.textContent),['RS: Mr. D. Person — 4444','BST: Miss E. Sample — 5555']);
   assert.equal(rows[0].children[4].querySelectorAll('.hv-team-contact').length,3);
   assert.equal(rows[0].children[5].querySelector('.hv-consultant-name').textContent,'Mr. A. Example');
   assert.equal(rows[0].children[5].querySelector('.hv-team-number').textContent,'79000001');
@@ -107,13 +114,54 @@ test('the consultant pager prints under Surgeon / firm, with RS, HST and BST und
   assert.equal(styles.getComputedStyle(rows[0].querySelector('.hv-consultant-name')).fontWeight,'700');
   for(const label of rows[0].querySelectorAll('.hv-team-contact b'))assert.equal(styles.getComputedStyle(label).fontWeight,'700');
   for(const number of rows[0].querySelectorAll('.hv-team-number'))assert.equal(styles.getComputedStyle(number).fontWeight,'400');
-  assert.match(rows[2].textContent,/Firm not matched/);
+  assert.equal(rows[2].querySelector('.hv-contacts-bottom').textContent,'');
+  assert.equal(rows[2].children[5].textContent,'Mr. U. Unlisted');
   assert.doesNotMatch(a.textContent,/2222|3333|4444|5555|Team contacts/);
   assert.equal(b.querySelector('.hv-legend'),null);
   assert.ok(a.querySelector('.hv-legend'));
   rotation.data.sections[0].rows[0][2]='New trainee 9999';
   assert.match(rows[0].textContent,/2222/,'saved HTML retains the contacts captured at the time');
   assert.doesNotMatch(rows[0].textContent,/9999/);
+});
+
+test('missing, ambiguous and empty directory contacts leave the printout blank without losing the firm or operation',t=>{
+  for(const data of [null,{sections:[]},{sections:[{name:'Surgery',rows:[['Mr. Alex Example','','','','']]}]},
+    {sections:[{name:'Surgery',rows:[['Mr. Alex Example','Senior 1111','','',''],['Mr. Andrew Example','Other 2222','','','']]}]}]){
+    const f=fixture(t,[patient({consultant:'Mr. A. Example'})],{rotation:data?{data}:null});
+    const row=f.document.querySelector('.handover-reverse tbody tr');
+    assert.equal(row.querySelector('.hv-contacts-bottom').innerHTML,'');
+    assert.equal(row.children[5].textContent,'Mr. A. Example');
+    assert.equal(row.querySelector('.hv-operation-text').textContent,'Recorded resection');
+    assert.doesNotMatch(row.textContent,/not matched|unavailable|Check firm|Consultant:|RS:|HST:|BST:/i);
+  }
+});
+
+test('compact identifier columns adapt to the list and doctor names with pagers fit one horizontal line',t=>{
+  const short=layout(t,fixture(t,[patient({id_card:'9X',surname:'Li',first_name:'Jo'})]).out);
+  const rotation={data:{sections:[{name:'Surgery',rows:[[
+    'Mr. Alex Example 79000001','Mr. Adrian Example-Longsurname 79000111','Miss Beatrice Other-Longsurname 79000222','Dr. Clara Sample-Longsurname 79000333',''
+  ]]}]}};
+  const f=fixture(t,[patient({id_card:'TEST99999Z',surname:'Example-Longname',first_name:'Alexandria-Elisabeth',consultant:'Mr. A. Example'})],{rotation});
+  const long=layout(t,f.out),front=long.pages[0],back=long.pages[1];
+  const a=[...front.querySelectorAll('col')].map(c=>parseFloat(c.style.width));
+  const b=[...back.querySelectorAll('col')].map(c=>parseFloat(c.style.width));
+  const small=[...short.pages[0].querySelectorAll('col')].map(c=>parseFloat(c.style.width));
+  assert.deepEqual(a.slice(0,4),b.slice(0,4));
+  for(const i of [1,2,3])assert.ok(a[i]>small[i],'short fields release space to the operation');
+  assert.ok(b[4]>53.5);assert.ok(b[5]<16);assert.ok(b[6]<10.5);
+  assert.ok(Math.abs(b.reduce((n,w)=>n+w,0)-100)<0.0001);
+  const fs=parseFloat(long.d.documentElement.style.getPropertyValue('--fs'));
+  assert.ok(fs<14,'the shared font responds to horizontal contact space, even for a short list');
+  for(const page of long.pages){
+    const id=page.querySelector('tbody .hv-id-value');
+    assert.equal(id.textContent,'TEST99999Z');
+    assert.equal(long.w.getComputedStyle(id).whiteSpace,'nowrap');
+    assert.ok(id.getBoundingClientRect().width<=id.parentElement.getBoundingClientRect().width-fs*0.6-1+.1);
+  }
+  const group=back.querySelector('.hv-team-contacts'),doctors=[...group.children];
+  assert.ok(doctors.reduce((n,e)=>n+e.getBoundingClientRect().width,0)+2*fs*.45<=group.getBoundingClientRect().width+.1);
+  for(const entry of doctors)assert.equal(long.w.getComputedStyle(entry).whiteSpace,'nowrap');
+  assert.equal(long.pages.length,2);
 });
 
 test('latest refashioning uses its own operation/date and an unknown date never inherits the original date',t=>{
