@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 October 2026 — Handover reverse pages include operation descriptions saved in the older Findings fields when the dedicated operation field is empty. Each description keeps its own recorded surgery date.'};
+const MANUAL_META={updated:'28 October 2026 — Handover Print / PDF creates a document that requests double-sided, short-edge printing by default in compatible PDF viewers. Matching front and reverse pages remain compulsory.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -521,17 +521,18 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','➕','<b>Discharged by mistake?</b> Press <span class="man-kbd">➕ Add postop discharge</span> at the top, search for the patient and pick them — their last admission is recorded as a postop discharge so they appear here. To undo one already on the list, press <span class="man-kbd">↩ Revert postop discharge</span> on its row: the admission reopens and the patient goes back on the handover.')}
     ${manNote('auto','⚙️','The handover is <b>archived automatically at 4&nbsp;pm every day</b>, and kept for reference. You can also press "Capture now".')}
   `},
-  {id:'print',title:'Print the handover',keywords:'print handover pdf ward sheet paper letter a4 double sided duplex flip reverse performed operation firm surgery date complications infection cre vre +ve positive isolation',html:`
+  {id:'print',title:'Print the handover',keywords:'print handover pdf ward sheet paper letter a4 double sided duplex default preference preset flip reverse performed operation firm surgery date complications infection cre vre +ve positive isolation',html:`
     ${manMap('handover')}
     ${manSteps([
       `On the Handover page press <b>Print / PDF</b>.`,
       `Every A4 landscape front has a <b>compulsory matching reverse</b>: Ward, ID number, Surname and First Name repeat in the same order, followed by <b>Performed operation, Firm and Surgery date</b>. The front retains Appliance + notes, DL and S5, with the ward-block shading and legend.`,
-      `In the printer dialog select <b>Print on both sides / Double-sided</b> and <b>Flip on short edge</b>, at <b>100% / Actual size</b>, with browser headers and footers off. The app includes every reverse automatically; the printer’s double-sided setting is controlled in this dialog.`,
+      `The app prepares a PDF with <b>Double-sided / Flip on short edge</b> requested as the default, at <b>Actual size</b>. Compatible PDF viewers apply this preference; if your viewer does not, select those settings in its printer dialog.`,
       `The reverse is hidden during normal app use and when viewing a saved handover, and appears only when printing or saving as PDF. Both sides use matching row heights and blank writing spaces; a long list continues as front/reverse pairs with matching sheet numbers.`
     ])}
     ${manNote('auto','⚙️','A patient who is <b>+ve with anything</b> (CRE, VRE, OXA 48 +ve …) prints with the marker <b>bold, red and underlined</b> and a red bar on the cell, so the infection shows on the ward copy — even on a black-and-white printer.')}
     ${manNote('auto','⚙️','Open <b>complications also print</b> with the appliance line, in bold, labelled "Complication:". The flange-due and rod-due notes are bolded too.')}
     ${manNote('auto','⚙️','The reverse uses the latest recorded operation and its own date, including text saved under that operation’s older <b>Findings</b> field when its dedicated operation field is empty; genuinely missing details say <b>Not recorded</b>. Patients still awaiting surgery or reversal are labelled <b>not yet performed</b>, with any date clearly marked <b>Planned</b>.')}
+    ${manNote('tip','🖨','The PDF preference is a <b>default, not a lock</b>; the viewer and printer must support double-sided printing. New archived sheets also have a Print / PDF button; if PDF preparation fails, retry or choose <b>Use printer dialog</b> and select double-sided manually.')}
   `}
 ]},
 
@@ -624,7 +625,7 @@ const MANUAL_SECTIONS=[
         ['📅','Missing outcome date','Saving patient or stoma details opens the death or reversal date entry when that outcome is already recorded without a date. The date is saved separately after entry.','Patient record › Outcome'],
         ['📝','Handover fields save on change','Ward, bed and notes save when you change a field and leave it. Rows remain editable on a computer and phone, without a row Edit / Save button.','Handover'],
         ['🏥','Handover archived at 4 pm','The ward sheet is saved automatically every day — now as lightweight data (the sheet as HTML, a few KB), not a picture — and kept for reference.','Handover › Archived'],
-        ['🖨','Handover reverse always included','Every printed front has a reverse with matching patient rows and ward shading, showing performed operation (including older Findings text), firm and that operation’s surgery date. The reverse appears only in print or PDF, with long lists in matched front/reverse pairs; select double-sided, flip on short edge in the printer dialog.','Handover › Print / PDF'],
+        ['🖨','Handover reverse and PDF default','Every printed front has a matching reverse with operation details, firm and surgery date; Print / PDF requests double-sided, short-edge printing as the document default in compatible viewers. Both sides remain compulsory, with older Findings text included and long lists in matched pairs; the default remains changeable and depends on the viewer and printer.','Handover › Print / PDF'],
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],

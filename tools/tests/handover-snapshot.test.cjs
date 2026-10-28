@@ -32,8 +32,8 @@ test('a saved handover is a self-contained HTML document for that day',()=>{
 
 test('saving does not auto-print, but printing does',()=>{
   const w=win();
-  assert.match(w.handoverSheetDocHTML({autoPrint:false}),/if\(false\)setTimeout\(function\(\)\{window\.focus\(\);window\.print\(\)/);
-  assert.match(w.handoverSheetDocHTML({autoPrint:true}),/if\(true\)setTimeout\(function\(\)\{window\.focus\(\);window\.print\(\)/);
+  assert.match(w.handoverSheetDocHTML({autoPrint:false}),/if\(false\)setTimeout\(function\(\)\{window\.handoverPdf\.print\(\)/);
+  assert.match(w.handoverSheetDocHTML({autoPrint:true}),/if\(true\)setTimeout\(function\(\)\{window\.handoverPdf\.print\(\)/);
 });
 
 test('an empty handover yields nothing to save or print',()=>{

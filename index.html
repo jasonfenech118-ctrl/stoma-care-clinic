@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-648"></script>
+<script src="assets/phone-route.js?v=2026.10.28-649"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-648"/>
-<script src="assets/cancellations.js?v=2026.10.28-648"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-649"/>
+<script src="assets/cancellations.js?v=2026.10.28-649"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-648"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-648"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-648"/>
+<script src="assets/leave-hours.js?v=2026.10.28-649"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-649"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-649"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-648"><script src="assets/surgical-rotation.js?v=2026.10.28-648"></script>
-<script src="assets/manual.js?v=2026.10.28-648"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-649"><script src="assets/surgical-rotation.js?v=2026.10.28-649"></script>
+<script src="assets/manual.js?v=2026.10.28-649"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-648';
+const APP_BUILD='2026.10.28-649';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23841,6 +23841,84 @@ function handoverSheetDocHTML(opts){
       ${reverse?'Surgical details · patient rows match the front.':`<b>DL</b> = care discharge letter &nbsp; <b>S5</b> = Schedule 5 permit &nbsp;|&nbsp; ✔ done &nbsp; ■ permit left in ward &nbsp; ☐ not done · signed permits show their Signed date`}
     </div>
   </section>`;
+  // Serialized into every saved sheet, so its PDF print button works without
+  // the main app being open. Patient data stays in this browser throughout.
+  function handoverDuplexPdfClient(){
+    const loading={};let busy=false;
+    function library(name,src,ready){
+      if(ready())return Promise.resolve();
+      if(loading[name])return loading[name];
+      loading[name]=new Promise((resolve,reject)=>{
+        const script=document.createElement('script');
+        const timer=setTimeout(()=>{script.remove();reject(Error('The print tools took too long to load.'));},15000);
+        script.src=src;
+        script.onload=()=>{clearTimeout(timer);ready()?resolve():reject(Error('The print tools could not load.'));};
+        script.onerror=()=>{clearTimeout(timer);script.remove();reject(Error('The print tools could not load. Check your connection.'));};
+        document.head.appendChild(script);
+      }).catch(e=>{delete loading[name];throw e;});
+      return loading[name];
+    }
+    async function build(){
+      if(document.documentElement.dataset.handoverReady!=='1')throw Error('The handover is still being prepared. Try again.');
+      const pages=[...document.querySelectorAll('#sheet > .handover-page')];
+      if(!pages.length||pages.length%2||pages.some((page,i)=>page.dataset.side!==(i%2?'reverse':'front')))
+        throw Error('The matching front and reverse pages could not be prepared.');
+      await Promise.all([
+        library('canvas','https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',()=>!!window.html2canvas),
+        library('pdf','https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',()=>!!window.jspdf?.jsPDF)
+      ]);
+      if(document.fonts?.ready)await document.fonts.ready;
+      const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'landscape',compress:true});
+      // Duplex viewer preferences were introduced in PDF 1.7. This setter is
+      // supplied by the pinned jsPDF 2.5.1 bundle used by the app.
+      pdf.__private__.setPdfVersion('1.7');
+      // This is a document default, honored by compatible PDF viewers/printers.
+      // It does not lock the user's printer controls.
+      pdf.viewerPreferences({Duplex:'DuplexFlipShortEdge',PrintScaling:'None',DisplayDocTitle:true});
+      pdf.setProperties({title:document.title,creator:'MDH Nursing Stoma Care'});
+      const margin=7,width=pdf.internal.pageSize.getWidth()-2*margin;
+      for(let i=0;i<pages.length;i++){
+        const canvas=await window.html2canvas(pages[i],{
+          backgroundColor:'#ffffff',scale:3,logging:false,useCORS:true,
+          windowWidth:Math.ceil(283*96/25.4),scrollX:0,scrollY:0,
+          onclone:clone=>clone.querySelectorAll('.handover-reverse').forEach(page=>{
+            page.style.setProperty('display','block','important');
+            page.style.setProperty('position','static','important');
+            page.style.setProperty('visibility','visible','important');
+          })
+        });
+        const height=canvas.width?canvas.height*width/canvas.width:0;
+        if(!height||height>pdf.internal.pageSize.getHeight()-2*margin+0.1)
+          throw Error('A handover page is too large to print safely. Reduce the handover font and try again.');
+        if(i)pdf.addPage('a4','landscape');
+        pdf.addImage(canvas.toDataURL('image/png'),'PNG',margin,margin,width,height,undefined,'FAST');
+        canvas.width=canvas.height=0;
+      }
+      // The JavaScript variant avoids jsPDF 2.5.1's duplicate /OpenAction
+      // dictionary entry while requesting the reader's normal print dialog.
+      pdf.autoPrint({variant:'javascript'});
+      return pdf.output('blob');
+    }
+    async function print(){
+      if(busy)return;busy=true;
+      const button=document.getElementById('hv-pdf-button'),status=document.getElementById('hv-pdf-status');
+      const basic=document.getElementById('hv-basic-print');
+      if(button)button.disabled=true;
+      if(basic)basic.hidden=true;
+      if(status)status.textContent='Preparing both sides with a double-sided print default…';
+      try{
+        const blob=await build();
+        const url=URL.createObjectURL(blob);
+        window.location.replace(url);
+      }catch(e){
+        if(status)status.textContent=String(e?.message||'The PDF could not be prepared.')+' You can retry or use the printer dialog and select double-sided manually.';
+        if(basic)basic.hidden=false;
+      }finally{
+        busy=false;if(button)button.disabled=false;
+      }
+    }
+    window.handoverPdf={build,print};
+  }
   // Every front is followed by its compulsory reverse. The screen and archived
   // document view hide reverses; the print stylesheet always includes them.
   return `<!DOCTYPE html><html><head><title>Inpatients Handover ${htmlSafe(TODAY)}</title><style>
@@ -23849,11 +23927,15 @@ function handoverSheetDocHTML(opts){
     :root{--fs:${fpx}px;}
     body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;}
     #sheet{width:100%;}
+    .hv-print-controls{font:14px Arial,Helvetica,sans-serif;padding:12px 16px;background:#eef4f8;border-bottom:1px solid #b8c9d6;}
+    .hv-print-controls button{font:700 14px Arial,Helvetica,sans-serif;padding:8px 14px;margin-right:8px;cursor:pointer;}
+    .hv-print-controls p{margin:8px 0 0;}
     .handover-page{width:283mm;padding:5mm 4mm;break-after:page;page-break-after:always;}
     .handover-page:last-child{break-after:auto;page-break-after:auto;}
     .handover-reverse{display:none;}
     .hv-measuring .handover-reverse{display:block;position:absolute;visibility:hidden;}
     @media print{
+      .hv-print-controls{display:none!important;}
       .handover-page{width:100%;}
       .handover-reverse{display:block;position:static;visibility:visible;}
     }
@@ -23889,8 +23971,14 @@ function handoverSheetDocHTML(opts){
     tbody tr.wgblank td{background:#fff;height:calc(var(--fs) * 2.6);}
     .hv-legend{margin-top:6px;font-size:calc(var(--fs) - 2px);color:#333;}
   </style></head><body>
+    <div class="hv-print-controls" data-html2canvas-ignore="true">
+      <button type="button" id="hv-pdf-button" onclick="handoverPdf.print()">Print / PDF</button>
+      <button type="button" id="hv-basic-print" onclick="window.print()" hidden>Use printer dialog</button>
+      <p id="hv-pdf-status" role="status">Both sides included · Double-sided, flip on short edge requested by default in compatible PDF viewers.</p>
+    </div>
     <div id="sheet">${pageHTML(false)}${pageHTML(true)}</div>
     <script>
+    (${handoverDuplexPdfClient.toString()})();
     (function(){
       var PXMM=96/25.4, budgetH=(210-2*7)*PXMM-6;
       var root=document.documentElement, sheet=document.getElementById('sheet');
@@ -23940,7 +24028,8 @@ function handoverSheetDocHTML(opts){
           page.querySelector('.hv-page-label').textContent=(i?'Reverse':'Front')+' · Sheet '+(n+1)+' of '+pairs.length;
         });});
         root.classList.remove('hv-measuring');
-        if(${autoPrint})setTimeout(function(){window.focus();window.print();},60);
+        root.dataset.handoverReady='1';
+        if(${autoPrint})setTimeout(function(){window.handoverPdf.print();},60);
       }
       if(document.readyState==='complete')fit();
       else window.addEventListener('load',fit);
