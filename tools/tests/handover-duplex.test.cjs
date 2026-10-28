@@ -45,7 +45,15 @@ function layout(t,out,fixedRows=false){
   Object.defineProperty(d,'readyState',{get:()=> 'complete'});
   w.HTMLElement.prototype.getBoundingClientRect=function(){
     const fs=parseFloat(d.documentElement.style.getPropertyValue('--fs'))||14;
-    if(this.tagName==='TR')return {height:Math.max(parseFloat(this.style.height)||0,(this.textContent.length>180?80:28)*(fixedRows?1:fs/14))};
+    if(this.classList.contains('hv-contacts-bottom'))return {height:fs*1.15};
+    if(this.classList.contains('hv-operation-cell')){
+      const text=this.querySelector('.hv-operation-text');
+      return {height:Math.max(parseFloat(this.style.height)||0,fs*1.25*(text.textContent.length>180?4:1)+(parseFloat(text.style.paddingBottom)||0))};
+    }
+    if(this.tagName==='TR'){
+      const frame=this.querySelector('.hv-operation-cell');
+      return {height:Math.max(parseFloat(this.style.height)||0,(this.textContent.length>180?80:28)*(fixedRows?1:fs/14),frame?frame.getBoundingClientRect().height+fs*.34+1:0)};
+    }
     if(this.classList.contains('handover-content')){
       const scale=Number(this.style.transform.match(/scale\(([^)]+)\)/)?.[1]||1);
       return {height:scale*(35*fs/14+[...this.querySelectorAll('tr')].reduce((n,tr)=>n+tr.getBoundingClientRect().height,0))};
