@@ -233,14 +233,16 @@
         ...(LEAVE_CODES.has(base) ? [base] : []),
         ...person.leave.filter(record => !root.LeaveHours?.read(record)).map(record => record.leave_type)
       ])];
-      const partialLeave = [...new Set([person.roster,...person.leave]
-        .filter(record => root.LeaveHours?.read(record)).map(record => root.LeaveHours.label(record)))];
+      const partialRecords=[person.roster,...person.leave].filter(record=>root.LeaveHours?.read(record));
+      const partialLeave = [...new Set((root.LeaveHours?.windows(partialRecords,null,date)||[])
+        .map(record=>root.LeaveHours.label(record)))];
+      const ownPartial=partialRecords.some(record=>(record.roster_date||record.start_date)===date);
 
       let plannedCode;
       let working;
       let source;
 
-      if (partialLeave.length && (absences.length || base === 'off' || tilOff.length)) {
+      if (partialLeave.length && (absences.length || (base === 'off' && ownPartial) || tilOff.length)) {
         plannedCode = 'check'; working = null; source = 'Conflicting duty or leave records';
       } else if (tilOff.length) {
         plannedCode = 'til_off';
