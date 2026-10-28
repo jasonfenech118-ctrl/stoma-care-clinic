@@ -68,6 +68,43 @@ test('latest refashioning uses its own operation/date and an unknown date never 
   assert.equal(rows[1].children[4].textContent,'Latest unknown-date operation');assert.equal(rows[1].children[6].textContent,'Not recorded');
 });
 
+test('legacy Findings print when the operation field is blank, keeping the recorded surgery date',t=>{
+  const finding='Example laparotomy and stoma formation after an earlier operation on 04/08/2026';
+  const f=fixture(t,[patient({procedure_performed:null,findings:finding,surgery_date:'2026-08-16'}),
+    patient({procedure_performed:'Current operation description',findings:'Earlier wording'}),
+    patient({procedure_performed:'   ',findings:'  Saved legacy operation  '})]);
+  const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
+  assert.equal(rows[0].children[4].textContent,finding);
+  assert.equal(rows[0].children[6].textContent,'2026-08-16','a date mentioned inside the text is not the surgery-date field');
+  assert.equal(rows[1].children[4].textContent,'Current operation description');
+  assert.equal(rows[2].children[4].textContent,'Saved legacy operation');
+});
+
+test('later and refashioned stomas use their own Findings and never inherit the original operation',t=>{
+  const f=fixture(t,[patient({findings:'Original operation',refashion_formed_date:'2026-10-20',refashion_findings:'Legacy refashioning description'}),
+    patient({findings:'Original operation',newstoma_formed_date:'2026-10-22',newstoma_findings:'Legacy later-stoma description'}),
+    patient({findings:'Original operation',extra_stomas:[{uid:'later',type:'End ileostomy',formed_date:'2026-10-23'}]})]);
+  const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
+  assert.equal(rows[0].children[4].textContent,'Legacy refashioning description');assert.equal(rows[0].children[6].textContent,'2026-10-20');
+  assert.equal(rows[1].children[4].textContent,'Legacy later-stoma description');assert.equal(rows[1].children[6].textContent,'2026-10-22');
+  assert.equal(rows[2].children[4].textContent,'Not recorded');assert.equal(rows[2].children[6].textContent,'2026-10-23');
+});
+
+test('operation-history entries can use Findings from their exact stoma without borrowing older text',t=>{
+  const f=fixture(t,[patient({findings:'Original operation',extra_stomas:[{uid:'later',type:'End ileostomy',formed_date:'2026-10-23',findings:'Saved later operation'}],
+    stoma_operation_history:[{kind:'new',new_uid:'later',date:'2026-10-23',operation:null,affected:[]}]}),
+    patient({findings:'Original operation',stoma_operation_history:[{kind:'reversal',date:'2026-10-24',operation:null,affected:[]}]})]);
+  const rows=f.document.querySelectorAll('.handover-reverse tbody tr');
+  assert.equal(rows[0].children[4].textContent,'Saved later operation');assert.equal(rows[0].children[6].textContent,'2026-10-23');
+  assert.equal(rows[1].children[4].textContent,'Reversal / closure');assert.equal(rows[1].children[6].textContent,'2026-10-24');
+});
+
+test('fistula operation text stored in Findings retains the fistula operation date',t=>{
+  const f=fixture(t,[{patient_kind:'fistula',findings:'Saved fistula operation',fistula_operation_date:'2026-10-21'}]);
+  const row=f.document.querySelector('.handover-reverse tbody tr');
+  assert.equal(row.children[4].textContent,'Saved fistula operation');assert.equal(row.children[6].textContent,'2026-10-21');
+});
+
 test('long lists paginate as front/reverse pairs with identical patient groups and no lost rows',t=>{
   const f=fixture(t,Array.from({length:60},(_,i)=>patient({id_card:'TEST-'+i,
     procedure_performed:i%4===0?'Long operation description. '.repeat(8):'Recorded operation'})));

@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 October 2026 — Handover printing always includes a matching reverse with performed operation, firm and surgery date. The reverse appears only in print, with patient rows aligned on both sides.'};
+const MANUAL_META={updated:'28 October 2026 — Handover reverse pages include operation descriptions saved in the older Findings fields when the dedicated operation field is empty. Each description keeps its own recorded surgery date.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -531,7 +531,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','A patient who is <b>+ve with anything</b> (CRE, VRE, OXA 48 +ve …) prints with the marker <b>bold, red and underlined</b> and a red bar on the cell, so the infection shows on the ward copy — even on a black-and-white printer.')}
     ${manNote('auto','⚙️','Open <b>complications also print</b> with the appliance line, in bold, labelled "Complication:". The flange-due and rod-due notes are bolded too.')}
-    ${manNote('auto','⚙️','The reverse uses the latest recorded operation and its own date; missing details say <b>Not recorded</b>. Patients still awaiting surgery or reversal are labelled <b>not yet performed</b>, with any date clearly marked <b>Planned</b>.')}
+    ${manNote('auto','⚙️','The reverse uses the latest recorded operation and its own date, including text saved under that operation’s older <b>Findings</b> field when its dedicated operation field is empty; genuinely missing details say <b>Not recorded</b>. Patients still awaiting surgery or reversal are labelled <b>not yet performed</b>, with any date clearly marked <b>Planned</b>.')}
   `}
 ]},
 
@@ -624,7 +624,7 @@ const MANUAL_SECTIONS=[
         ['📅','Missing outcome date','Saving patient or stoma details opens the death or reversal date entry when that outcome is already recorded without a date. The date is saved separately after entry.','Patient record › Outcome'],
         ['📝','Handover fields save on change','Ward, bed and notes save when you change a field and leave it. Rows remain editable on a computer and phone, without a row Edit / Save button.','Handover'],
         ['🏥','Handover archived at 4 pm','The ward sheet is saved automatically every day — now as lightweight data (the sheet as HTML, a few KB), not a picture — and kept for reference.','Handover › Archived'],
-        ['🖨','Handover reverse always included','Every printed front has a reverse with the same patient rows and ward shading, showing performed operation, firm and surgery date. The reverse appears only in print or PDF, with long lists in matched front/reverse pairs; select double-sided, flip on short edge in the printer dialog.','Handover › Print / PDF'],
+        ['🖨','Handover reverse always included','Every printed front has a reverse with matching patient rows and ward shading, showing performed operation (including older Findings text), firm and that operation’s surgery date. The reverse appears only in print or PDF, with long lists in matched front/reverse pairs; select double-sided, flip on short edge in the printer dialog.','Handover › Print / PDF'],
         ['📤','Post-op discharge date','Discharging from the handover writes today onto the operation’s discharge date on the patient form.','Handover'],
         ['↻','Refashioning supersedes the old stoma','Recording a refashioning closes the stoma it replaced ("Superseded") and makes the new one current.','Registry › Stomas'],
         ['🧷','Refashioned stoma needs an appliance','A refashioning has a new stoma ID. Select the appliance for that ID in handover; the old appliance stays with the old stoma history.','Registry / Handover'],

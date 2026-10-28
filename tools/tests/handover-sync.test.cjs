@@ -15,7 +15,7 @@ function source(name){
 const copy=value=>JSON.parse(JSON.stringify(value));
 function database(){
   const listeners=new Set();
-  const db={broadcasts:true,failReads:false,failWrites:false,listeners,
+  const db={broadcasts:true,failReads:false,failWrites:false,listeners,patientSelects:[],
     patients:[{id:'patient-1',first_name:'Example',surname:'Patient',is_inpatient:true,
       inpatient_ward:'SW1',inpatient_bed:'1',inpatient_notes:'Flange Deep, Drainable Bag',flange_due:'2026-10-02',
       _stomas:[{uid:'base',origin:'initial',type:'End colostomy',shortLabel:'Colo',formed:'2026-01-01'}]}],
@@ -32,7 +32,7 @@ function database(){
     from(table){
       const filters=[];let patch=null,single=false,limit=Infinity,selection='';
       const q={
-        select(cols){selection=cols;return q;},update(value){patch=value;return q;},
+        select(cols){selection=cols;if(table==='patients')db.patientSelects.push(cols);return q;},update(value){patch=value;return q;},
         eq(key,value){filters.push(row=>row[key]===value);return q;},
         is(key,value){filters.push(row=>(row[key]??null)===value);return q;},
         in(key,values){filters.push(row=>values.includes(row[key]));return q;},
@@ -100,11 +100,13 @@ const onePiece=[{uid:'base',short:'Colo',stoma_type:'End colostomy',appliances:[
 
 test('print-only surgical data follows the displayed row after handover refreshes',async()=>{
   const db=database(),a=session(db);
-  Object.assign(db.patients[0],{procedure_performed:'Example operation',consultant:'Example firm',surgery_date:'2026-09-29'});
+  Object.assign(db.patients[0],{procedure_performed:'Example operation',findings:'Legacy operation text',consultant:'Example firm',surgery_date:'2026-09-29'});
   await a.c.loadHandover();
   let row=a.dom.window.document.querySelector('#hv-table tbody tr');
   assert.equal(row._handoverPrintPatient.procedure_performed,'Example operation');
   assert.equal(row._handoverPrintPatient.consultant,'Example firm');
+  assert.equal(row._handoverPrintPatient.findings,'Legacy operation text');
+  for(const field of ['findings','refashion_findings','newstoma_findings'])assert.ok(db.patientSelects[0].split(',').includes(field),'handover must request '+field);
   assert.equal(a.dom.window.document.querySelector('.handover-reverse'),null);
   db.patients[0].procedure_performed='Updated example operation';await a.c.loadHandover();
   row=a.dom.window.document.querySelector('#hv-table tbody tr');

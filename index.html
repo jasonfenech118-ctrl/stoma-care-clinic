@@ -7,24 +7,24 @@
 <!-- Phone apps own separate, fixed manifests at their own entry addresses. -->
 <link rel="icon" type="image/png" sizes="192x192" href="assets/ql-192.png"/>
 <meta name="theme-color" content="#12304f"/>
-<script src="assets/phone-route.js?v=2026.10.28-647"></script>
+<script src="assets/phone-route.js?v=2026.10.28-648"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-647"/>
-<script src="assets/cancellations.js?v=2026.10.28-647"></script>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.10.28-648"/>
+<script src="assets/cancellations.js?v=2026.10.28-648"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
-<script src="assets/leave-hours.js?v=2026.10.28-647"></script>
-<script src="assets/daily-attendance.js?v=2026.10.28-647"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-647"/>
+<script src="assets/leave-hours.js?v=2026.10.28-648"></script>
+<script src="assets/daily-attendance.js?v=2026.10.28-648"></script>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.28-648"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
-<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-647"><script src="assets/surgical-rotation.js?v=2026.10.28-647"></script>
-<script src="assets/manual.js?v=2026.10.28-647"></script>
+<link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-648"><script src="assets/surgical-rotation.js?v=2026.10.28-648"></script>
+<script src="assets/manual.js?v=2026.10.28-648"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3918,7 +3918,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.28-647';
+const APP_BUILD='2026.10.28-648';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20889,7 +20889,7 @@ async function loadHandover(){
   if(!body)return;
   if(typeof renderDischargeUndoBanner==='function')renderDischargeUndoBanner();
   const version=++handoverLoadVersion;
-  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category,procedure_performed,consultant';
+  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category,procedure_performed,consultant,findings,refashion_findings,newstoma_findings';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -23720,15 +23720,21 @@ function handoverSheetDocHTML(opts){
       .sort((a,b)=>String(b.formed_date||'').localeCompare(String(a.formed_date||'')))[0];
     const events=typeof stomaOperationHistory==='function'?stomaOperationHistory(p):[];
     const event=events.filter(e=>!e.reverted_at&&(!e.date||String(e.date)<=TODAY)).slice(-1)[0];
+    // Older records keep the operation description in Findings/comments rather
+    // than procedure_performed/operation. Use only the same operation's text.
+    const recordedText=(...values)=>values.map(v=>String(v??'').trim()).find(Boolean)||'';
     let operation,date;
     if(event&&(!event.date||!latest?.formed_date||String(event.date)>=String(latest.formed_date))){
-      operation=event.operation||({refashion:'Refashioning',new:'New stoma formation',reversal:'Reversal / closure'}[event.kind])||'';
+      const sameStoma=event.new_uid?stomas.find(s=>String(s.uid)===String(event.new_uid)):null;
+      operation=recordedText(event.operation,sameStoma?.operation,sameStoma?.comments)
+        ||({refashion:'Refashioning',new:'New stoma formation',reversal:'Reversal / closure'}[event.kind])||'';
       date=event.date_unknown?null:event.date;
     }else if(latest){
-      operation=latest.operation||(['first','initial'].includes(latest.kind)?p.procedure_performed:'');
+      const first=['first','initial'].includes(latest.kind);
+      operation=recordedText(latest.operation,latest.comments,first?p.procedure_performed:'',first?p.findings:'');
       date=latest.formed_date;
     }else{
-      operation=p.procedure_performed;
+      operation=recordedText(p.procedure_performed,p.findings);
       date=p.fistula_operation_date||p.surgery_date;
     }
     return {operation:String(operation||'').trim()||'Not recorded',firm,date:date?fmtShortDate(date):'Not recorded'};
