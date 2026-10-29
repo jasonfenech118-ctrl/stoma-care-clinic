@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Patient contact and surgical details remain in two columns on all screens, with smaller responsive fonts. Surgery snapshot has been removed from the patient dashboard.'};
+const MANUAL_META={updated:'29 October 2026 — The patient header restores the locality flag and shows address, locality and telephone without headings. Birth dates appear inline as DOB DD/MM/YYYY.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
