@@ -44,6 +44,7 @@ function prefillRecordedLetter(){
       WZ.type=_mapStomaType(stoma.type);
       WZ.subtype=_mapSubtype(stoma.type);
       WZ.procedure=String(stoma.operation||'');
+      WZ.formationReason=String(stoma.findings||'');
       WZ.opdate=String(stoma.operationDate||'');
       _prefillAppliances((stoma.appliances||[]).join('|'),(stoma.accessories||[]).join('|'));
       // Preserve the known system even if a catalogue name cannot be matched.
@@ -95,11 +96,12 @@ function withRecordedStoma(index,action){
 function recordedReviewHTML(){
   if(recordLoadError)return '<p class="wz-record-missing">'+_esc(recordLoadError)+'</p>';
   var html='<p class="wz-cap">These details are filled from the saved patient record and handover.</p>';
-  recordedStomas.forEach(function(state){
-    var s=state.record;
+  recordedStomas.forEach(function(state,index){
+    var s=state.record,w=state.wizard;
     html+='<section class="wz-record-card"><h3>'+_esc(recordedStomaLabel(s))+'</h3>'+
-      '<p><strong>Operation:</strong> '+_esc(s.operation||'Not recorded')+
-      (s.operationDate?' · '+_esc(_fmtDate(s.operationDate)):'')+'</p>'+
+      '<div class="wz-field"><label for="record-operation-'+index+'">Operation performed / stoma formation</label><textarea id="record-operation-'+index+'" rows="2" placeholder="e.g. Hartmann’s procedure with end colostomy formation" oninput="recordSetOperation('+index+',\'procedure\',this.value)">'+_esc(w.procedure||'')+'</textarea></div>'+
+      '<div class="wz-field"><label for="record-reason-'+index+'">Reason for stoma formation / relevant operative findings</label><textarea id="record-reason-'+index+'" rows="2" placeholder="Documented indication or findings, if available" oninput="recordSetOperation('+index+',\'formationReason\',this.value)">'+_esc(w.formationReason||'')+'</textarea></div>'+
+      '<p class="wz-cap">Summarise the recorded operation and why the stoma was formed. Confirm the wording for this letter; changes here do not edit the patient’s surgical record.'+(s.operationDate?' Operation date: '+_esc(_fmtDate(s.operationDate)):'')+'</p>'+
       '<p class="'+(s.appliance?'':'wz-record-missing')+'"><strong>Appliance &amp; accessories:</strong> '+
       _esc(s.appliance||'No current appliance recorded — update the stoma record before discharge.')+'</p>';
     if(s.flangeDue)html+='<p><strong>Next flange change:</strong> '+_esc(_fmtDate(s.flangeDue))+'</p>';
@@ -113,6 +115,10 @@ function recordedReviewHTML(){
     _esc(dischargeRecord.unassignedComplications.map(recordedComplicationText).join('; '))+'</p>';
   if(dischargeRecord.unassignedRod)html+='<p><strong>Rod (stoma not specified):</strong> '+_esc(recordedRodText(dischargeRecord.unassignedRod))+'</p>';
   return html;
+}
+function recordSetOperation(index,field,value){
+  if(!recordedStomas[index]||['procedure','formationReason'].indexOf(field)<0)return;
+  recordedStomas[index].wizard[field]=String(value||'');
 }
 function recordedAssessmentHTML(){
   var state=recordedStomas[recordAssessmentIndex],s=state.record,w=state.wizard;
@@ -196,7 +202,7 @@ function applyRecordedLetter(){
       if(recordedStomas.length>1)body.push('<p class="record-stoma-title"><strong>'+_esc(label)+'</strong></p>');
       body.push('<p>'+fillBodyTemplate(tpl.opening,vars)+'</p>',
         '<p>'+fillBodyTemplate(discharge,vars)+'</p>');
-      if(s.findings)body.push('<p><strong>Operation findings:</strong> '+_esc(s.findings)+'</p>');
+      if(WZ.formationReason&&WZ.formationReason.trim()!==String(WZ.procedure||'').trim())body.push('<p><strong>Reason for stoma formation / operative findings:</strong> '+_esc(WZ.formationReason)+'</p>');
       if((s.complications||[]).length)body.push('<p><strong>Recorded complications:</strong> '+
         _esc(s.complications.map(recordedComplicationText).join('; '))+'</p>');
       body.push('<p>Patient discharged with <strong>'+_esc(s.appliance||'[current appliance not recorded]')+'</strong>.</p>');
