@@ -12,6 +12,10 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record .pd-contact-line{font-size:14px;line-height:1.5;color:#1a2e4a;overflow-wrap:anywhere;font-weight:600}
+    #page-patient-record .pd-contact-locality{display:flex;gap:7px;align-items:center}
+    @media(max-width:650px){#page-patient-record .pd-contact-line{font-size:12px}}
+
     #page-patient-record .psm-surg-snapshot{display:none!important}
     #page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;align-items:start!important}
     #page-patient-record .pd-identity-columns>*{min-width:0!important}
@@ -90,7 +94,7 @@
     let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
     const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
-    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+field('Address',p.address)+field('Locality',p.locality)+field('Tel number',p.phone_number)+(p.date_of_birth?field('Date of birth',fmtShortDate(p.date_of_birth)):'')+'</dl></div><div class="pd-identity-clinical"><dl>'+field('Consultant',p.consultant)+surgical+'</dl></div></div>'+audit;
+    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+field('Consultant',p.consultant)+surgical+'</dl></div></div>'+audit;
     if(identity)details.querySelector('.pd-identity-name').append(identity);
   }
   const identityObserver=new MutationObserver(()=>integratePatientIdentity());
