@@ -12,6 +12,11 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record .psm-surg-snapshot{display:none!important}
+    #page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;align-items:start!important}
+    #page-patient-record .pd-identity-columns>*{min-width:0!important}
+    #page-patient-record .pd-identity-columns .psm-name{font-size:clamp(14px,2vw,22px)!important;overflow-wrap:anywhere!important}
+
     #page-patient-record .pd-identity-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;width:100%}
     #page-patient-record .pd-identity-columns dl{display:grid;gap:12px;margin:14px 0 0}
     #page-patient-record .pd-identity-clinical{border-left:1px solid #d6dde5;padding-left:24px;min-width:0}
@@ -19,7 +24,7 @@
     #page-patient-record .pd-identity-field dt{font-size:11px;font-weight:800;text-transform:uppercase;color:#43566b;margin-bottom:3px}
     #page-patient-record .pd-identity-field dd{margin:0;font-size:14px;line-height:1.5;font-weight:600;color:#1a2e4a;overflow-wrap:anywhere;white-space:pre-wrap}
     #page-patient-record .pd-identity-surgery{display:grid;gap:12px;padding-top:12px;border-top:1px solid #e2e8f0}
-    @media(max-width:650px){#page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr);gap:18px}#page-patient-record .pd-identity-clinical{border-left:0;border-top:1px solid #d6dde5;padding:18px 0 0}}
+    @media(max-width:650px){#page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:12px!important}#page-patient-record .pd-identity-clinical{padding-left:12px!important}#page-patient-record .pd-identity-columns .psm-head-main{flex-wrap:wrap!important}#page-patient-record .pd-identity-columns .psm-name{font-size:clamp(14px,3.6vw,20px)!important}#page-patient-record .pd-identity-columns .psm-id{font-size:12px!important}#page-patient-record .pd-identity-field dd{font-size:12px!important}#page-patient-record .pd-identity-field dt{font-size:10px!important}#page-patient-record .pd-identity-columns dl{gap:9px!important}}
 
     #page-patient-record .pd-page .psm-head{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:16px!important;border:1px solid #d6dde5!important;border-radius:10px!important;padding:16px!important;background:#fff!important}
     #page-patient-record .psm-head>.pd-patient-details{width:100%!important;box-sizing:border-box;min-width:0}
@@ -74,6 +79,7 @@
     if(!page)return;
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
+    page.querySelectorAll('.psm-surg-snapshot').forEach(el=>el.remove());
     if(head&&details&&details.parentElement!==head)head.append(details);
     if(!head||!details||details.dataset.twoColumns)return;
     const p=typeof clrState!=='undefined'?clrState.patient:null;if(!p)return;
