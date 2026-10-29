@@ -12,6 +12,15 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #mb:has(#es-stepper){box-sizing:border-box!important;width:min(960px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;min-width:0!important;max-height:calc(100dvh - 24px)!important;overflow:auto!important;padding:clamp(14px,3vw,28px)!important}
+    #mb:has(#es-stepper) .es-summary,#mb:has(#es-stepper) .es-pane{min-width:0!important;max-width:100%!important;overflow-wrap:anywhere}
+    #es-stepper{display:flex!important;overflow-x:auto!important;max-width:100%!important;gap:8px!important}
+    #es-stepper .es-step{flex:0 0 auto!important;min-height:48px}
+    #mb:has(#es-stepper) .jenc-stoma-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))!important;min-width:0!important;gap:16px!important}
+    #mb:has(#es-stepper) .jenc-stoma-col{box-sizing:border-box!important;width:100%!important;min-width:0!important}
+    #mb:has(#es-stepper) .vsr-editor{width:100%!important;box-sizing:border-box!important}
+    #mb:has(#es-stepper) .vsr-toolbar>*{min-width:0!important}
+    @media(max-width:600px){#mb:has(#es-stepper) .mact{display:flex!important;flex-wrap:wrap!important;gap:12px!important}#mb:has(#es-stepper) .mact button{flex:1 1 100%!important;min-height:48px!important;margin:0!important}#mb:has(#es-stepper) .es-summary-details{grid-template-columns:minmax(90px,32%) minmax(0,1fr)!important}}
     #mb2.vsr-bible{box-sizing:border-box!important;width:min(560px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;padding:28px!important;max-height:calc(100dvh - 32px)!important;overflow-y:auto!important}
     #mb2.vsr-bible h2{margin:0 0 22px!important;padding:0 0 18px!important;line-height:1.3!important}
     #mb2.vsr-bible>p{margin:0 0 24px!important;line-height:1.65!important}
