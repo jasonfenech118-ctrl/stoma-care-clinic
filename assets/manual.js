@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Top patient details now use a compact responsive grid, with address spanning two columns. Grouped history retains alternating white and grey rows.'};
+const MANUAL_META={updated:'29 October 2026 — Patient details appear inside the top identity box under the patient name. The duplicate Back button within the patient page has been removed; use the app Back button.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
