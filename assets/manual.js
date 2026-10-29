@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — The Outcome section no longer repeats the reversal planning form. Use Plan surgery / reversal for planned dates; actual reversal and closure recording remain in Outcome.'};
+const MANUAL_META={updated:'29 October 2026 — Open episode is hidden while the patient already has an open inpatient episode. The action is available again when no episode is open.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
