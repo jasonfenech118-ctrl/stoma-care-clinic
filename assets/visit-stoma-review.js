@@ -12,6 +12,11 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record .pd-page .psm-head{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:16px!important;border:1px solid #d6dde5!important;border-radius:10px!important;padding:16px!important;background:#fff!important}
+    #page-patient-record .psm-head>.pd-patient-details{width:100%!important;box-sizing:border-box;min-width:0}
+    #page-patient-record .psm-head>.pd-patient-details .psm-sec-head{display:none!important}
+    #page-patient-record .psm-head>.pd-patient-details .psm-card{border:0!important;box-shadow:none!important;background:transparent!important;padding:0!important}
+
     /* Compact, responsive patient details at the top of the dashboard. */
     #page-patient-record .pd-page{padding-top:12px!important}
     #page-patient-record .pd-page .psm{gap:12px!important}
@@ -53,6 +58,21 @@
     @media(max-width:600px){#mb2.vsr-bible{padding:24px!important}.vsr-bible .mact{flex-direction:column!important}.vsr-bible .mact button{width:100%!important;flex:auto!important}.vsr-toolbar{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.vsr-toolbar label{grid-column:1/-1!important}.vsr-toolbar button{white-space:normal!important}.jenc-stoma-col{min-width:0!important}}
   `;
   document.head.appendChild(layoutStyle);
+
+  // Integrate demographics into the patient identity header after each page render.
+  function integratePatientIdentity(){
+    const page=document.querySelector('#page-patient-record .pd-page');
+    if(!page)return;
+    const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
+    page.querySelector('.psm-page-bar')?.remove();
+    if(head&&details&&details.parentElement!==head)head.append(details);
+  }
+  const identityObserver=new MutationObserver(()=>integratePatientIdentity());
+  function watchPatientIdentity(){
+    const page=document.getElementById('page-patient-record');
+    if(page){identityObserver.observe(page,{childList:true,subtree:true});integratePatientIdentity();}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watchPatientIdentity,{once:true});else watchPatientIdentity();
   const HEALTHY='Healthy skin',NOT_ASSESSED='Not assessed — flange in situ';
   const FALLBACK={colour:['Healthy pink','Dusky','Aubergine colour','Necrotic'],
     output:['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'],
