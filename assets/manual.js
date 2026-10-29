@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Follow-up clinical reviews now use free text with font size, undo, redo and lists. Complication words are automatically underlined in red, including newly saved catalogue terms.'};
+const MANUAL_META={updated:'29 October 2026 — Complication bible uses a full-width mobile text field with its label above. Follow-up reviews retain free text and automatic red underlining.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
