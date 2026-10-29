@@ -88,6 +88,19 @@
     if(!page)return;
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
+    // Planned reversal dates are managed only by the combined planning button.
+    const outcome=page.querySelector('#psm-outcomes');
+    if(outcome){
+      const input=outcome.querySelector('#cro-proprev');
+      const card=input?.closest('.psm-card');
+      if(card){
+        const heading=card.previousElementSibling;
+        if(heading?.classList.contains('psm-sec-head')&&heading.textContent.trim()==='Reversal planning')heading.remove();
+        card.remove();
+      }
+      const summary=outcome.closest('details.pd-section')?.querySelector(':scope > summary');
+      if(summary&&summary.textContent!=='Outcome')summary.textContent='Outcome';
+    }
     page.querySelectorAll('.psm-surg-snapshot,.psm-upcoming-surgery').forEach(el=>el.remove());
     const actions=page.querySelector('.pd-home-actions');
     if(actions&&!actions.dataset.combinedDates){
