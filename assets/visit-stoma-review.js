@@ -12,6 +12,9 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record details.pd-section[hidden]{display:none!important}
+    #page-patient-record details.pd-section:has(>#pd-communications)>summary{display:none!important}
+
     #page-patient-record .psm-upcoming-surgery{display:none!important}
     #page-patient-record .pd-planned-dates{font-size:14px;font-weight:700;color:#0d7377;line-height:1.6;padding-top:10px}
 
@@ -116,6 +119,19 @@
     }
     page.querySelectorAll('.psm-surg-snapshot,.psm-upcoming-surgery').forEach(el=>el.remove());
     const actions=page.querySelector('.pd-home-actions');
+    const correspondence=page.querySelector('#pd-communications');
+    const correspondenceGroup=correspondence?.closest('details.pd-section');
+    if(actions&&correspondenceGroup&&!page.querySelector('#pd-correspondence-button')){
+      const button=document.createElement('button');button.id='pd-correspondence-button';button.type='button';button.className='psm-btn';button.textContent='Patient correspondence';button.setAttribute('aria-controls','pd-communications');button.setAttribute('aria-expanded','false');
+      correspondenceGroup.hidden=true;
+      button.onclick=()=>{
+        const show=correspondenceGroup.hidden;
+        correspondenceGroup.hidden=!show;correspondenceGroup.open=show;button.setAttribute('aria-expanded',String(show));
+        if(show)correspondence.scrollIntoView({behavior:'smooth',block:'nearest'});
+      };
+      actions.append(button);actions.after(correspondenceGroup);
+    }
+
     if(actions){
       const hasOpenEpisode=typeof clrState!=='undefined'&&typeof openEpisodeIn==='function'&&!!openEpisodeIn(clrState.rows||[]);
       actions.querySelectorAll('button').forEach(button=>{
@@ -129,7 +145,7 @@
     if(actions&&!actions.dataset.combinedDates){
       actions.dataset.combinedDates='1';
       actions.querySelectorAll('button').forEach(btn=>{const action=btn.getAttribute('onclick')||'';if(action.includes('openSurgeryDateModal')||action.includes("patientDashboardOpen('outcomes')"))btn.remove();});
-      const plan=document.createElement('button');plan.type='button';plan.className='psm-btn';plan.textContent='Plan surgery / reversal';plan.onclick=()=>openCombinedPlanDate();actions.append(plan);
+      const plan=document.createElement('button');plan.type='button';plan.className='psm-btn';plan.textContent='Surgery dates';plan.onclick=()=>openCombinedPlanDate();actions.append(plan);
     }
     const currentPatient=typeof clrState!=='undefined'?clrState.patient:null;
     if(head&&currentPatient){
@@ -216,7 +232,7 @@
     const p=clrState.patient;if(!p)return;
     const box=document.getElementById('mb');box.className='mb';
     const reversal=typeof canPlanReversal==='function'&&canPlanReversal(p);
-    box.innerHTML='<h2>Plan surgery / reversal</h2><div class="fg"><label for="pd-plan-kind">Date type</label><select id="pd-plan-kind"><option value="surgery">Surgery</option>'+(reversal?'<option value="reversal">Planned reversal</option>':'')+'</select></div><div class="fg"><label for="pd-plan-date">Planned date</label><input type="date" id="pd-plan-date"></div><p>The saved date appears on the patient profile. Leave the date blank to clear the selected plan.</p><div id="pd-plan-error" role="status"></div><div class="mact"><button type="button" class="btn-cancel" id="pd-plan-close">Cancel</button><button type="button" class="btn-save" id="pd-plan-save">Save date</button></div>';
+    box.innerHTML='<h2>Surgery dates</h2><div class="fg"><label for="pd-plan-kind">Date type</label><select id="pd-plan-kind"><option value="surgery">Surgery</option>'+(reversal?'<option value="reversal">Planned reversal</option>':'')+'</select></div><div class="fg"><label for="pd-plan-date">Planned date</label><input type="date" id="pd-plan-date"></div><p>The saved date appears on the patient profile. Leave the date blank to clear the selected plan.</p><div id="pd-plan-error" role="status"></div><div class="mact"><button type="button" class="btn-cancel" id="pd-plan-close">Cancel</button><button type="button" class="btn-save" id="pd-plan-save">Save date</button></div>';
     const kind=document.getElementById('pd-plan-kind'),date=document.getElementById('pd-plan-date'),save=document.getElementById('pd-plan-save');
     const fill=()=>{date.value=(kind.value==='surgery'?p.upcoming_surgery_date:p.proposed_reversal_date)||'';};
     kind.onchange=fill;fill();document.getElementById('pd-plan-close').onclick=()=>closeModal();
