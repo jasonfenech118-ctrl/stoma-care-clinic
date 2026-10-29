@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — The top patient box has contact details on the left and consultant, performed surgery dates, stoma types and operations on the right. Multiple recorded stomas retain their own surgery details; the columns stack on narrow screens.'};
+const MANUAL_META={updated:'29 October 2026 — Patient contact and surgical details remain in two columns on all screens, with smaller responsive fonts. Surgery snapshot has been removed from the patient dashboard.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
