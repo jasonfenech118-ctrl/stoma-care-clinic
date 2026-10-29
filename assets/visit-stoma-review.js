@@ -88,6 +88,7 @@
     if(!page)return;
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
+    page.querySelectorAll('#pd-history .psm-next').forEach(card=>card.closest('.psm-card')?.remove());
     // Planned reversal dates are managed only by the combined planning button.
     const outcome=page.querySelector('#psm-outcomes');
     if(outcome){
@@ -132,7 +133,7 @@
       if(history&&stomas){
         overview.dataset.absorbed='1';
         const next=overview.querySelector('.psm-next')?.closest('.psm-card');
-        if(next)history.prepend(next);
+        if(next)next.remove();
         const remaining=document.createElement('div');remaining.className='pd-retained-patient-info';
         while(overview.firstChild)remaining.append(overview.firstChild);
         stomas.append(remaining);
