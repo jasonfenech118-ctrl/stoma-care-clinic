@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Patient details appear inside the top identity box under the patient name. The duplicate Back button within the patient page has been removed; use the app Back button.'};
+const MANUAL_META={updated:'29 October 2026 — The top patient box has contact details on the left and consultant, performed surgery dates, stoma types and operations on the right. Multiple recorded stomas retain their own surgery details; the columns stack on narrow screens.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
