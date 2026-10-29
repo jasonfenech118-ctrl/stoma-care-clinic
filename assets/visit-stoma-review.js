@@ -103,6 +103,16 @@
     }
     page.querySelectorAll('.psm-surg-snapshot,.psm-upcoming-surgery').forEach(el=>el.remove());
     const actions=page.querySelector('.pd-home-actions');
+    if(actions){
+      const hasOpenEpisode=typeof clrState!=='undefined'&&typeof openEpisodeIn==='function'&&!!openEpisodeIn(clrState.rows||[]);
+      actions.querySelectorAll('button').forEach(button=>{
+        const action=button.getAttribute('onclick')||'';
+        if(action.includes('openInpatientVisit()')||action.includes("patientDashboardOpen('history')")){
+          button.hidden=hasOpenEpisode;
+          button.style.display=hasOpenEpisode?'none':'';
+        }
+      });
+    }
     if(actions&&!actions.dataset.combinedDates){
       actions.dataset.combinedDates='1';
       actions.querySelectorAll('button').forEach(btn=>{const action=btn.getAttribute('onclick')||'';if(action.includes('openSurgeryDateModal')||action.includes("patientDashboardOpen('outcomes')"))btn.remove();});
