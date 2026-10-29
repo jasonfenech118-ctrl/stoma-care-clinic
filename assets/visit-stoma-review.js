@@ -86,6 +86,22 @@
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
     page.querySelectorAll('.psm-surg-snapshot').forEach(el=>el.remove());
+    const overview=page.querySelector('#psm-demographics');
+    if(overview&&!overview.dataset.absorbed){
+      const history=page.querySelector('#pd-history'),stomas=page.querySelector('#psm-stomas');
+      if(history&&stomas){
+        overview.dataset.absorbed='1';
+        const next=overview.querySelector('.psm-next')?.closest('.psm-card');
+        if(next)history.prepend(next);
+        const remaining=document.createElement('div');remaining.className='pd-retained-patient-info';
+        while(overview.firstChild)remaining.append(overview.firstChild);
+        stomas.append(remaining);
+        const group=overview.closest('details.pd-section');
+        // Retain the panel ID for existing callers, without another overview group.
+        overview.hidden=true;page.querySelector('.psm').append(overview);
+        if(group)group.remove();
+      }
+    }
     if(head&&details&&details.parentElement!==head)head.append(details);
     if(!head||!details||details.dataset.twoColumns)return;
     const p=typeof clrState!=='undefined'?clrState.patient:null;if(!p)return;
