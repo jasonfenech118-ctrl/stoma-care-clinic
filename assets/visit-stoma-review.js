@@ -9,6 +9,23 @@
    Rod management stays in handover; existing visit rod history is retained. */
 (function(){
   'use strict';
+
+  const layoutStyle=document.createElement('style');
+  layoutStyle.textContent=`
+    #mb2.vsr-bible{box-sizing:border-box!important;width:min(560px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;padding:28px!important;max-height:calc(100dvh - 32px)!important;overflow-y:auto!important}
+    #mb2.vsr-bible h2{margin:0 0 22px!important;padding:0 0 18px!important;line-height:1.3!important}
+    #mb2.vsr-bible>p{margin:0 0 24px!important;line-height:1.65!important}
+    #mb2.vsr-bible .fg{display:flex!important;flex-direction:column!important;gap:12px!important;margin:0 0 24px!important;width:100%!important}
+    #mb2.vsr-bible .fg label{display:block!important;margin:0!important;line-height:1.5!important}
+    #mb2.vsr-bible input{display:block!important;width:100%!important;min-width:0!important;min-height:52px!important;font-size:16px!important;padding:14px!important;box-sizing:border-box!important}
+    #mb2.vsr-bible .mact{display:flex!important;gap:14px!important;margin:24px 0 0!important;padding:0!important;background:transparent!important;flex-wrap:wrap!important}
+    #mb2.vsr-bible .mact button{min-height:48px!important;margin:0!important;flex:1!important;padding:12px 20px!important}
+    #mb2.vsr-bible #vsr-bible-message:empty{display:none!important}
+    .vsr-toolbar{gap:10px!important;margin:14px 0 18px!important}
+    .vsr-toolbar button{min-height:42px!important;padding:10px 12px!important}
+    @media(max-width:600px){#mb2.vsr-bible{padding:24px!important}.vsr-bible .mact{flex-direction:column!important}.vsr-bible .mact button{width:100%!important;flex:auto!important}.vsr-toolbar{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.vsr-toolbar label{grid-column:1/-1!important}.vsr-toolbar button{white-space:normal!important}.jenc-stoma-col{min-width:0!important}}
+  `;
+  document.head.appendChild(layoutStyle);
   const HEALTHY='Healthy skin',NOT_ASSESSED='Not assessed — flange in situ';
   const FALLBACK={colour:['Healthy pink','Dusky','Aubergine colour','Necrotic'],
     output:['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'],
@@ -210,7 +227,7 @@
     if(kind==='skin')skinChanged();
   }
   function openBible(){
-    const box=document.getElementById('mb2');box.className='mb';
+    const box=document.getElementById('mb2');box.className='mb vsr-bible';
     box.innerHTML='<h2>Complication bible</h2><p>Save a term for all stoma types. It will be underlined automatically when written in a clinical review.</p><div class="fg" style="margin:18px 0 12px"><label for="vsr-bible-term" style="display:block;margin-bottom:8px">Complication term</label><input id="vsr-bible-term" type="text" maxlength="150" placeholder="Write a complication term" style="display:block;width:100%;box-sizing:border-box;min-height:46px;padding:10px 12px;font-size:16px;border:1px solid #cbd5e1;border-radius:8px"></div><p id="vsr-bible-message" role="status"></p><div class="mact"><button type="button" class="btn-cancel" id="vsr-bible-close">Close</button><button type="button" class="btn-save" id="vsr-bible-save">Save term</button></div>';
     document.getElementById('vsr-bible-close').onclick=()=>closeMo2();
     const save=document.getElementById('vsr-bible-save'),input=document.getElementById('vsr-bible-term'),msg=document.getElementById('vsr-bible-message');
