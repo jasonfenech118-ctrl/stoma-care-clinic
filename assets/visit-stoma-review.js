@@ -12,6 +12,15 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record .pd-identity-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;width:100%}
+    #page-patient-record .pd-identity-columns dl{display:grid;gap:12px;margin:14px 0 0}
+    #page-patient-record .pd-identity-clinical{border-left:1px solid #d6dde5;padding-left:24px;min-width:0}
+    #page-patient-record .pd-identity-clinical dl{margin-top:0}
+    #page-patient-record .pd-identity-field dt{font-size:11px;font-weight:800;text-transform:uppercase;color:#43566b;margin-bottom:3px}
+    #page-patient-record .pd-identity-field dd{margin:0;font-size:14px;line-height:1.5;font-weight:600;color:#1a2e4a;overflow-wrap:anywhere;white-space:pre-wrap}
+    #page-patient-record .pd-identity-surgery{display:grid;gap:12px;padding-top:12px;border-top:1px solid #e2e8f0}
+    @media(max-width:650px){#page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr);gap:18px}#page-patient-record .pd-identity-clinical{border-left:0;border-top:1px solid #d6dde5;padding:18px 0 0}}
+
     #page-patient-record .pd-page .psm-head{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:16px!important;border:1px solid #d6dde5!important;border-radius:10px!important;padding:16px!important;background:#fff!important}
     #page-patient-record .psm-head>.pd-patient-details{width:100%!important;box-sizing:border-box;min-width:0}
     #page-patient-record .psm-head>.pd-patient-details .psm-sec-head{display:none!important}
@@ -66,6 +75,17 @@
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
     if(head&&details&&details.parentElement!==head)head.append(details);
+    if(!head||!details||details.dataset.twoColumns)return;
+    const p=typeof clrState!=='undefined'?clrState.patient:null;if(!p)return;
+    details.dataset.twoColumns='1';
+    const identity=head.querySelector('.psm-head-main');
+    const field=(label,value)=>'<div class="pd-identity-field"><dt>'+htmlSafe(label)+'</dt><dd>'+htmlSafe(String(value||'Not recorded'))+'</dd></div>';
+    const audit=details.querySelector('.psm-audit')?.outerHTML||'';
+    let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
+    const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
+    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
+    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+field('Address',p.address)+field('Locality',p.locality)+field('Tel number',p.phone_number)+(p.date_of_birth?field('Date of birth',fmtShortDate(p.date_of_birth)):'')+'</dl></div><div class="pd-identity-clinical"><dl>'+field('Consultant',p.consultant)+surgical+'</dl></div></div>'+audit;
+    if(identity)details.querySelector('.pd-identity-name').append(identity);
   }
   const identityObserver=new MutationObserver(()=>integratePatientIdentity());
   function watchPatientIdentity(){
