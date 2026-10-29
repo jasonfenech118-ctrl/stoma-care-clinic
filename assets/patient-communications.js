@@ -65,7 +65,7 @@
     if (state.patientId === patientId) config.onChange();
   }
   function actionsHTML() {
-    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('');
+    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`;
   }
   function detailHTML(record) {
     return `<div class="pc-detail">
@@ -107,13 +107,18 @@
     return groupHTML('reminders', 'pc-reminder-section', icon('clock') + ' Communication reminders', `<span class="psm-badge">${rows.length}</span>`, body, rows.length > 0);
   }
   function historyHTML() {
-    if (state.error) return `<div class="psm-card pc-error" role="alert"><strong>Could not load communication history.</strong><p>${esc(state.error)}</p><button type="button" class="psm-btn" onclick="PatientCommunications.retry()">${icon('refresh')} Retry</button></div>`;
-    return (state.actionError ? `<div class="pc-error" role="alert">${esc(state.actionError)}</div>` : '') + patientRemindersHTML() + Object.entries(kinds).map(([kind, meta]) => {
-      const rows = roots().filter(r => r.kind === kind).sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-      const openRows = rows.filter(r => r.status !== 'Completed'), done = rows.filter(r => r.status === 'Completed');
-      const body = `<div class="pc-contact-heading">Open issues (${openRows.length})</div>${openRows.length ? openRows.map(issueHTML).join('') : '<p class="pc-empty">No open issues.</p>'}${done.length ? `<details class="pc-resolved"><summary>Resolved issues (${done.length})</summary>${done.map(issueHTML).join('')}</details>` : ''}`;
-      return groupHTML(kind, 'pc-history', icon(meta.icon) + ' ' + meta.label, `<span class="psm-badge">${openRows.length} open · ${done.length} resolved</span>`, body, rows.length > 0);
-    }).join('');
+    if(state.error)return '<div class="pc-error" role="alert">Could not load correspondence. <button type="button" onclick="PatientCommunications.retry()">Retry</button></div>';
+    const rows=roots().sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')));
+    return (state.actionError?'<p role="alert">'+esc(state.actionError)+'</p>':'')+patientRemindersHTML()+
+      (rows.length?rows.map(issueHTML).join(''):'<p class="pc-empty">No correspondence recorded.</p>');
+  }
+  function openDoctors(){
+    open('community');
+    const form=global.document.getElementById('pc-form');if(!form||!editor)return;
+    const service=form.elements.namedItem('service');service.value='Doctors correspondence';service.readOnly=true;
+    const label=service.closest('label');if(label&&label.firstChild?.nodeType===3)label.firstChild.textContent='Correspondence category';
+    const heading=global.document.querySelector('#mb h2');if(heading)heading.textContent='Doctors correspondence';
+    editor.baseline=JSON.stringify(formValues());
   }
   function toggleIssue(id, open) { if (open) expanded.add(id); else expanded.delete(id); }
   function focus(id) {
@@ -196,6 +201,7 @@
   }
   function afterSaved(config) {
     config.onChange();
+    const panel=global.document.getElementById('pd-communications');if(panel)panel.innerHTML=actionsHTML()+historyHTML();
     if (config.onSaved) Promise.resolve(config.onSaved()).catch(() => {});
   }
   async function save() {
@@ -266,5 +272,5 @@
     const rows = (result.items || []).filter(r => !kind || r.kind === kind);
     return rows.length ? rows.map(r => `<div class="rem-row clinical-reminder-row pc-bell-reminder"><div class="clinical-reminder-copy"><div class="clinical-reminder-heading">${esc([r.patient?.first_name, r.patient?.surname].filter(Boolean).join(' ') || 'Patient')} · ${esc(r.patient?.id_card)}</div><div class="clinical-reminder-meta">${esc(kinds[r.kind].label)} · ${esc(r.followup_date < (result.today || localNow().communication_date) ? 'Overdue' : 'Due today')} · ${esc(date(r.followup_date))}</div><strong>${esc(r.subject)}</strong><div class="pc-notes">${esc(r.followup_action)}</div></div><div class="clinical-reminder-actions"><button type="button" class="ncb-btn" onclick="openCommunicationReminder('${esc(r.patient_id)}','${esc(r.id)}')">Open issue</button></div></div>`).join('') : '<div class="rem-empty">No due communication reminders.</div>';
   }
-  global.PatientCommunications = {load, retry, actionsHTML, historyHTML, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
+  global.PatientCommunications = {load, retry, actionsHTML, historyHTML, openDoctors, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
 })(window);
