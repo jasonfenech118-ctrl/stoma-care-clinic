@@ -12,6 +12,8 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    #page-patient-record .pd-identity-surgery{border-top:0!important;padding-top:0!important}
+
     #page-patient-record .pd-contact-line{font-size:14px;line-height:1.5;color:#1a2e4a;overflow-wrap:anywhere;font-weight:600}
     #page-patient-record .pd-contact-locality{display:flex;gap:7px;align-items:center}
     @media(max-width:650px){#page-patient-record .pd-contact-line{font-size:12px}}
@@ -93,8 +95,8 @@
     const audit=details.querySelector('.psm-audit')?.outerHTML||'';
     let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
-    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
-    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+field('Consultant',p.consultant)+surgical+'</dl></div></div>'+audit;
+    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
+    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+surgical+'</dl></div></div>'+audit;
     if(identity)details.querySelector('.pd-identity-name').append(identity);
   }
   const identityObserver=new MutationObserver(()=>integratePatientIdentity());
@@ -103,6 +105,43 @@
     if(page){identityObserver.observe(page,{childList:true,subtree:true});integratePatientIdentity();}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watchPatientIdentity,{once:true});else watchPatientIdentity();
+
+  // Consultant belongs to the stoma's operation. Additional stomas do not inherit
+  // a patient-level consultant unless they were formed in that same initial surgery.
+  const originalStomaList=window.patientStomaList;
+  window.patientStomaList=function(p){
+    const rows=originalStomaList(p);
+    const list=v=>{if(typeof v==='string'){try{v=JSON.parse(v);}catch(_){v=[];}}return Array.isArray(v)?v:[];};
+    return rows.map(st=>{
+      if(st.slot==='base')return {...st,consultant:p.consultant||null};
+      const [kind,uid]=String(st.slot||'').split(':');
+      const col={initial:'initial_stomas',refashion:'extra_refashionings',later:'extra_stomas'}[kind];
+      const raw=list(p[col]).find(x=>String(x.uid||'')===uid);
+      const consultant=raw&&Object.prototype.hasOwnProperty.call(raw,'consultant')?raw.consultant:(kind==='initial'?p.consultant:null);
+      return {...st,consultant:consultant||null};
+    });
+  };
+  const originalOpenStoma=window.openStomaModal;
+  window.openStomaModal=async function(patientId,slot){
+    const result=await originalOpenStoma(patientId,slot);
+    if(typeof stomaModalCtx==='undefined'||String(stomaModalCtx?.patientId)!==String(patientId)||stomaModalCtx?.slot!==slot)return result;
+    const anchor=document.getElementById('sm-operation');if(!anchor||document.getElementById('sm-consultant'))return result;
+    const st=stomaBySlot(stomaModalCtx.pat,slot),field=document.createElement('div');field.className='fg';
+    field.innerHTML='<label for="sm-consultant">Consultant for this stoma / operation</label><input id="sm-consultant" type="text" autocomplete="off">';
+    field.querySelector('input').value=st?.consultant||'';
+    anchor.closest('.fg')?.before(field);return result;
+  };
+  const originalReadStoma=window.readStomaModal;
+  window.readStomaModal=function(){const f=originalReadStoma();const input=document.getElementById('sm-consultant');if(input)f.consultant=input.value.trim()||null;return f;};
+  const originalStomaPayload=window.stomaPayloadFor;
+  window.stomaPayloadFor=function(p,slot,f){
+    const payload=originalStomaPayload(p,slot,f);
+    if(!payload||!Object.prototype.hasOwnProperty.call(f,'consultant'))return payload;
+    if(slot==='base'){payload.consultant=f.consultant;return payload;}
+    const [kind,uid]=slot.split(':'),col={initial:'initial_stomas',refashion:'extra_refashionings',later:'extra_stomas'}[kind];
+    if(col&&Array.isArray(payload[col]))payload[col]=payload[col].map(st=>String(st.uid||'')===uid?{...st,consultant:f.consultant}:st);
+    return payload;
+  };
   const HEALTHY='Healthy skin',NOT_ASSESSED='Not assessed — flange in situ';
   const FALLBACK={colour:['Healthy pink','Dusky','Aubergine colour','Necrotic'],
     output:['Nil','Flatus present','Bilious effluent','Liquid stools','Semi-formed stools','Blood','Hemoserous fluid'],
