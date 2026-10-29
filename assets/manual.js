@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Hourly vacation leave now has Leave starts from and Leave ends at fields, with duration calculated automatically and database support for saving. Complication bible keeps its full-width mobile text field.'};
+const MANUAL_META={updated:'29 October 2026 — Complication bible now has wider spacing, a full-width field and stacked phone buttons. Clinical review formatting controls wrap into two columns on phones.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
