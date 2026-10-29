@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Patient correspondence opens from a button beside Surgery dates. Surgery dates is the renamed combined surgery and reversal planning action.'};
+const MANUAL_META={updated:'29 October 2026 — Correspondence records appear in one list without separate patient and community groups. Doctors correspondence is available as a new action, with existing records retained.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
