@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Open episode is hidden while the patient already has an open inpatient episode. The action is available again when no episode is open.'};
+const MANUAL_META={updated:'29 October 2026 — The scheduling card has been removed from the patient dashboard history. Appointments & episodes now starts with grouping, sorting and saved records.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
