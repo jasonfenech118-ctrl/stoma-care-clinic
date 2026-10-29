@@ -68,6 +68,10 @@
   }
   async function mount(el,{appt,patient,resume}={}){
     host=el||null;if(!host)return;
+    // Patient complications are managed from the patient record, outside this review.
+    host.closest('#es-pane-2')?.querySelectorAll('details').forEach(section=>{
+      if(section.querySelector('summary')?.textContent.trim()==='Recorded patient complications')section.remove();
+    });
     if(!enabled()){host.innerHTML='';return;}
     // Returning from the appliance picker rebuilds the modal; keep what was typed.
     if(!(resume&&draft&&draft.apptId===String(appt?.id))){
