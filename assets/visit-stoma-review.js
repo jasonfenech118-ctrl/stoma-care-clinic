@@ -180,7 +180,7 @@
     const letter=page.querySelector('.psm-foot button[onclick*="openDischargeLetterFor"]');
     if(actions&&letter){const near=actions.querySelector('#pd-correspondence-button');if(near)near.after(letter);else actions.append(letter);}
     const edit=page.querySelector('.psm-foot button[onclick*="openPatientDatesModal"]');
-    if(details&&edit){edit.lastChild.textContent=' Edit details';details.append(edit);}
+    if(details&&edit){edit.lastChild.textContent=' Edit details';(head?.querySelector('.psm-identity-row')||details).append(edit);}
     const historyGroup=page.querySelector('#pd-history')?.closest('details.pd-section');
     if(historyGroup){const sync=()=>page.classList.toggle('pd-history-focused',historyGroup.open);if(!historyGroup.dataset.compactHeader){historyGroup.dataset.compactHeader='1';historyGroup.addEventListener('toggle',sync);}sync();}
     if(!head||!details||details.dataset.twoColumns)return;
@@ -194,7 +194,7 @@
     const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
     details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+surgical+'</dl></div></div>'+audit;
     if(identity)details.querySelector('.pd-identity-name').append(identity);
-    if(edit)details.append(edit);
+    if(edit)(head.querySelector('.psm-identity-row')||details).append(edit);
   }
   const identityObserver=new MutationObserver(()=>integratePatientIdentity());
   function watchPatientIdentity(){
