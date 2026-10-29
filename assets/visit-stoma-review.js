@@ -84,7 +84,7 @@
     @media(max-width:600px){#mb2.vsr-bible{padding:24px!important}.vsr-bible .mact{flex-direction:column!important}.vsr-bible .mact button{width:100%!important;flex:auto!important}.vsr-toolbar{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.vsr-toolbar label{grid-column:1/-1!important}.vsr-toolbar button{white-space:normal!important}.jenc-stoma-col{min-width:0!important}}
   `;
   layoutStyle.textContent+=`
-    .pd-history-focused .pd-identity-contact>dl,.pd-history-focused .pd-identity-clinical,.pd-history-focused .pd-patient-details>.psm-audit,.pd-history-focused .pd-patient-details>button,.pd-history-focused .psm-head-copy>.psm-sub,.pd-history-focused .psm-head-copy>.psm-status,.pd-history-focused .pd-planned-dates{display:none!important}
+    .pd-history-focused .doc-status-card,.pd-history-focused .pd-identity-contact>dl,.pd-history-focused .pd-identity-clinical,.pd-history-focused .pd-patient-details>.psm-audit,.pd-history-focused .pd-patient-details>button,.pd-history-focused .psm-head-copy>.psm-sub,.pd-history-focused .psm-head-copy>.psm-status,.pd-history-focused .pd-planned-dates{display:none!important}
     .pd-history-focused .pd-identity-columns{grid-template-columns:minmax(0,1fr)!important}
     .pd-history-focused .psm-head{padding-top:12px!important;padding-bottom:12px!important}
   `;
