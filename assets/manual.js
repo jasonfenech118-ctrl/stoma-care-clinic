@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Care lists and encounter groups use arrow dropdowns that open by default. Episode numbers and the generic Inpatient visit label are hidden in the history chart.'};
+const MANUAL_META={updated:'29 October 2026 — Patient correspondence, Discharge letter and Surgery dates share the same filled teal button style with white labels.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
