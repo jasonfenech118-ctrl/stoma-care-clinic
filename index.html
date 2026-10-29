@@ -18,24 +18,24 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.10.29-680"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.10.29-681"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.10.19-607">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.10.29-680"></script>
+<script src="assets/manual.js?v=2026.10.29-681"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
-<script defer src="assets/patient-communications.js?v=2026.10.29-680"></script>
+<script defer src="assets/patient-communications.js?v=2026.10.29-681"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
-<script defer src="assets/jason-encounters.js?v=2026.10.29-680"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.10.29-680"></script>
+<script defer src="assets/jason-encounters.js?v=2026.10.29-681"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.10.29-681"></script>
 <style>
 #page-patient-record #pd-history .psm-card:has(.psm-next){display:none!important}
 
@@ -2450,6 +2450,13 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 .pd-care-event strong{font-size:12px;}
 .pd-care-link{margin:0 0 6px;}.pd-care-link .clr-mini{white-space:normal;text-align:left;}
 #page-care-episode{width:100%;min-height:calc(100vh - 180px)}.care-episode-page{width:100%;max-width:none;box-sizing:border-box;display:grid;gap:18px}.care-episode-page .psm-head{align-items:center}.care-episode-page .psm-head h2{margin:0 0 8px}.pd-admission-group>summary{cursor:pointer;font-weight:700;color:var(--teal);padding:8px 0}.psm-identity-row>.psm-btn{margin-left:8px;min-height:36px;flex:0 0 auto}
+
+.pd-history-table.pd-pathway-table th:nth-child(1){width:clamp(74px,9vw,110px)}
+.pd-history-table.pd-pathway-table th:nth-child(2){width:auto}
+.pd-history-table.pd-pathway-table th:nth-child(3){width:clamp(82px,9vw,112px)}
+.pd-history-table.pd-pathway-table th:nth-child(1),.pd-history-table.pd-pathway-table td:nth-child(1){padding-right:8px}
+.pd-history-table.pd-pathway-table th:nth-child(2),.pd-history-table.pd-pathway-table td:nth-child(2){padding-left:8px}
+.pd-history-table.pd-pathway-table th:last-child,.pd-history-table.pd-pathway-table td:last-child{text-align:right}
 </style>
 <style id="followup-design-review">
 #page-handover.hv-manual #hv-table,
@@ -3931,7 +3938,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.10.29-680';
+const APP_BUILD='2026.10.29-681';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18873,12 +18880,14 @@ function patientDashboardHistoryHTML(){
   const numbers=new Map(ordered.map((ep,i)=>[String(ep.id),i+1]));
   const encounterRow=(e,ep)=>({key:'encounter:'+e.id,date:dateOf(e),stamp:e.created_at||'',text:[wb(ep)?wb(ep)+':':'',e.nursing_report||'Clinical encounter'].filter(Boolean).join('\n'),action:`<button type="button" class="clr-mini" onclick="openEncounter('${jsSafe(String(p.id))}','${jsSafe(String(e.id))}')">Open note</button>`,uids:careRecordUids(p,model,'encounter:'+e.id,e,dateOf(e))});
   episodes.forEach(ep=>{
-    const children=sorted(encounters.filter(e=>String(e.episode_id)===String(ep.id)).map(e=>encounterRow(e,ep)));
-    const own=careRecordUids(p,model,'episode:'+ep.id,{...ep,stoma_appliances:parseEpisodeApplianceRows(ep)},dateOf(ep));
-    const uids=[...new Set([...own,...children.flatMap(e=>e.uids)])];
-    const row=add('episode:'+ep.id,ep,'Inpatient',[wb(ep)?wb(ep)+':':'',[ep.notes,ep.title].find(text=>text&&!/^inpatient visit$/i.test(String(text).trim()))||'',ep.discharge_date?'Discharged '+fmtShortDate(ep.discharge_date):''].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="openCareEpisode('${jsSafe(String(ep.id))}')">Open episode</button>`,uids);
-    row.children=children;row.number=numbers.get(String(ep.id));row.sortDate=children.reduce((date,e)=>e.date>date?e.date:date,row.date);
-    children.filter(e=>!e.uids.length).forEach(e=>rows.push({...e,kind:row.kind+' · unlinked encounter'}));
+    const saved=encounters.filter(e=>String(e.episode_id)===String(ep.id));
+    if(saved.length){
+      saved.forEach(e=>{const row=encounterRow(e,ep);if(!row.uids.length)row.uids=careRecordUids(p,model,'episode:'+ep.id,{},'',false);rows.push({...row,kind:'Inpatient'});});
+    }else{
+      const findings=[ep.notes,ep.title].find(text=>text&&!/^inpatient visit$/i.test(String(text).trim()))||'No encounter findings recorded.';
+      add('episode:'+ep.id,ep,'Inpatient',[wb(ep)?wb(ep)+':':'',findings].filter(Boolean).join('\n'),'',
+        careRecordUids(p,model,'episode:'+ep.id,{...ep,stoma_appliances:parseEpisodeApplianceRows(ep)},dateOf(ep)));
+    }
   });
   encounters.filter(e=>!episodes.some(ep=>String(ep.id)===String(e.episode_id))).forEach(e=>rows.push({...encounterRow(e,null),kind:'Inpatient'}));
   (window.PatientCommunications?.historyRows?.()||[]).forEach(r=>add('correspondence:'+r.id,r,'Correspondence',[r.service,r.subject,r.notes].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="PatientCommunications.open('${jsSafe(r.kind)}','${jsSafe(String(r.id))}')">Open correspondence</button>`));
@@ -18887,11 +18896,7 @@ function patientDashboardHistoryHTML(){
   if(unknown.rows.length)groups.push(unknown);
   groups.forEach(g=>{g.latest=g.rows.reduce((date,r)=>String(r.sortDate||r.date)>date?String(r.sortDate||r.date):date,'');g.latest=g.stomas.reduce((date,s)=>String(s.formed_date||'')>date?String(s.formed_date):date,g.latest);});
   groups.sort((a,b)=>b.latest.localeCompare(a.latest)||b.key.localeCompare(a.key));
-  const renderRow=(row,g)=>{
-    const child=(row.children||[]).filter(e=>e.uids.some(uid=>model.root(uid)===g.key));
-    const children=child.length?`<details class="pd-inpatient-encounters" open><summary>Encounters (${child.length})</summary>${child.map(e=>`<div class="pd-inpatient-encounter"><strong>${esc(e.date?fmtShortDate(e.date):'Date not recorded')}</strong>${careLinkButton(e.key,e.uids,model)}<div class="pd-record-text">${esc(e.text)}</div>${e.action}</div>`).join('')}</details>`:'';
-    return `<tr><td>${esc(row.kind)}</td><td>${row.children?'<details class="pd-admission-group" open><summary>Inpatient admission</summary>':''}${careLinkButton(row.key,row.uids,model)}<div class="pd-record-text">${esc(row.text)}</div>${row.action}${children}${row.children?'</details>':''}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
-  };
+  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${esc(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
     const latest=g.stomas[g.stomas.length-1];
