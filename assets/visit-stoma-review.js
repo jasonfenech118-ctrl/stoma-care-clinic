@@ -211,7 +211,7 @@
   }
   function openBible(){
     const box=document.getElementById('mb2');box.className='mb';
-    box.innerHTML='<h2>Complication bible</h2><p>Save a term for all stoma types. It will be underlined automatically when written in a clinical review.</p><label for="vsr-bible-term">Complication term</label><input id="vsr-bible-term" type="text" maxlength="150" placeholder="Write a complication term"><p id="vsr-bible-message" role="status"></p><div class="mact"><button type="button" class="btn-cancel" id="vsr-bible-close">Close</button><button type="button" class="btn-save" id="vsr-bible-save">Save term</button></div>';
+    box.innerHTML='<h2>Complication bible</h2><p>Save a term for all stoma types. It will be underlined automatically when written in a clinical review.</p><div class="fg" style="margin:18px 0 12px"><label for="vsr-bible-term" style="display:block;margin-bottom:8px">Complication term</label><input id="vsr-bible-term" type="text" maxlength="150" placeholder="Write a complication term" style="display:block;width:100%;box-sizing:border-box;min-height:46px;padding:10px 12px;font-size:16px;border:1px solid #cbd5e1;border-radius:8px"></div><p id="vsr-bible-message" role="status"></p><div class="mact"><button type="button" class="btn-cancel" id="vsr-bible-close">Close</button><button type="button" class="btn-save" id="vsr-bible-save">Save term</button></div>';
     document.getElementById('vsr-bible-close').onclick=()=>closeMo2();
     const save=document.getElementById('vsr-bible-save'),input=document.getElementById('vsr-bible-term'),msg=document.getElementById('vsr-bible-message');
     save.onclick=async()=>{
