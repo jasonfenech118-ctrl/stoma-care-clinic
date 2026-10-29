@@ -1,8 +1,7 @@
-/* The stoma assessment in the Complete visit → Clinical review step (every nurse). One
-   column per stoma, named by its type (End Colostomy …): colour / appearance,
-   function / output, peristomal skin (Healthy skin, or the findings — each also
-   recorded as a complication of that stoma), and free clinical notes.
-   Colour, output and skin lists take "+ Add other…".
+/* Free-text clinical review in Complete visit, one editor per stoma.
+   Font size, undo/redo and plain-text lists are retained with each review.
+   Complication catalogue terms are underlined as mentions, never diagnoses.
+   Legacy colour/output/skin/rod assessments remain readable.
    Saved on the appointment (stoma_assessment) as signed versions V1, V2 … —
    {schema:2,current:[rows],versions:[{version,saved_at,author_name,author_email,
    stomas}]}; older visits hold a plain array. It can be edited only on the day
@@ -57,13 +56,14 @@
     // Stomas recorded on the visit before stay, even if the stoma list changed since.
     prior.forEach(x=>{if(x?.uid&&!present.some(s=>s.uid===x.uid))present.push({uid:x.uid,type:x.type});});
     let comps=[];try{comps=typeof parseComplications==='function'?parseComplications(p):[];}catch(_){}
+    if(!present.length)present.push({uid:"unassigned",type:"Clinical review"});
     return present.map(s=>{
       const was=prior.find(x=>x.uid===s.uid)||{};
       // An open skin complication on this stoma pre-fills the skin finding.
       const openSkin=[...new Set(comps.filter(c=>c.status!=='resolved'&&isSkinProblem(c.text)&&(c.stoma_uid===s.uid||(!c.stoma_uid&&!c.stoma&&present.length===1))).map(c=>skinName(c.text)))];
-      const skin=was.skin?copy(was.skin):{status:openSkin.length?'Not healthy':'',problems:openSkin};
+      const skin=was.skin?copy(was.skin):{status:'',problems:[]};
       return {uid:s.uid,type:s.typeLabel||s.type||was.type||'Stoma',colour:was.colour||'',output:list(was.output),skin,
-        ...rodHistory(was),notes:was.notes||''};
+        ...rodHistory(was),notes:was.notes||'',notes_font_size:Number(was.notes_font_size)||14};
     });
   }
   async function mount(el,{appt,patient,resume}={}){
@@ -72,17 +72,20 @@
     // Returning from the appliance picker rebuilds the modal; keep what was typed.
     if(!(resume&&draft&&draft.apptId===String(appt?.id))){
       const vs=versionsOf(appt);
+      histories.clear();
       draft={apptId:String(appt?.id||''),patientId:String(patient?.id||''),stomas:seed(appt,patient),versions:copy(vs),
         locked:!editableToday(appt),day:recordedDay(appt),compare:vs.length?copy(list(vs[vs.length-1].stomas)):null,signer:''};
     }
-    if(!host.dataset.vsrBound){host.dataset.vsrBound='1';host.addEventListener('change',change);host.addEventListener('input',input);host.addEventListener('click',click);}
+    if(!host.dataset.vsrBound){host.dataset.vsrBound='1';host.addEventListener('change',change);host.addEventListener('input',input);host.addEventListener('click',click);host.addEventListener('scroll',e=>{if(e.target.dataset?.vsr==='notes'){const s=find(e.target);if(s)repaint(e.target,s);}},true);host.addEventListener('keydown',e=>{if(e.target.dataset?.vsr==='notes'&&(e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();command(e.key.toLowerCase()==='y'||e.shiftKey?'redo':'undo',find(e.target),e.target);}});}
+    draft.stomas.forEach(history);
     render();
     const mine=draft,loads=[];
+    if(typeof loadComplicationTypes==='function')loads.push(Promise.resolve(loadComplicationTypes()).catch(()=>false));
     if(JE()?.loadOptions)loads.push(Promise.resolve(JE().loadOptions()).catch(()=>false));
     // The automatic signature: the signed-in nurse's name.
     if(typeof getCurrentUserForAudit==='function')loads.push(Promise.resolve(getCurrentUserForAudit()).then(u=>{mine.signer=(typeof attDisplayName==='function'?attDisplayName(u):'')||u?.email||'';}).catch(()=>{}));
     await Promise.all(loads);
-    if(draft===mine&&host?.isConnected!==false)render();
+    if(draft===mine&&host?.isConnected!==false){if(host.contains(document.activeElement)&&document.activeElement?.dataset?.vsr==='notes')refreshHighlights();else render();}
   }
   function field(label,inner){return '<div class="jenc-field"><label>'+esc(label)+'</label>'+inner+'</div>';}
   const addBtn=(f,ref)=>'<button type="button" class="jenc-add-opt" data-vsr-add="'+f+'"'+ref+'>＋ Add other…</button>';
@@ -98,19 +101,47 @@
       opts.map(v=>'<label><input type="checkbox" data-vsr="'+kind+'"'+ref+' value="'+esc(v)+'"'+(values.includes(v)?' checked':'')+'>'+esc(v)+'</label>').join('')+addBtn(kind,ref)+'</div></details>';
   }
   const skinValues=k=>k?.status==='Healthy'?[HEALTHY]:k?.status==='Not assessed'?[NOT_ASSESSED]:list(k?.problems);
+  function terms(){
+    const names=typeof complicationTypesList!=='undefined'?complicationTypesList:[];
+    return [...new Set(names.concat(['Prolapse','Retraction','Stenosis','Mucocutaneous separation','Parastomal hernia','High output','Bleeding','Granuloma','Dermatitis','Excoriation','Necrosis','Fungal infection']))].filter(Boolean).sort((a,b)=>b.length-a.length);
+  }
+  function highlighted(text){
+    const choices=terms().map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    if(!choices.length)return esc(text);
+    const re=new RegExp('(?<![\\p{L}\\p{N}_])('+choices.join('|')+')(?![\\p{L}\\p{N}_])','giu');
+    let out='',last=0;
+    for(const m of String(text).matchAll(re)){out+=esc(String(text).slice(last,m.index))+'<span class="vsr-term">'+esc(m[0])+'</span>';last=m.index+m[0].length;}
+    return out+esc(String(text).slice(last));
+  }
   function columnHTML(s,all){
-    const ref=' data-uid="'+esc(s.uid)+'"',old=draft.compare?draft.compare.find(x=>x.uid===s.uid)||{}:null;
-    const colourChanged=old&&(old.colour||'')!==(s.colour||'');
-    const colour='<select data-vsr="colour"'+ref+(colourChanged?' class="jenc-changed"':'')+' aria-label="Colour / appearance"><option value="">— not recorded —</option>'+
-      [...new Set(options('colour').concat(s.colour?[s.colour]:[]))].map(c=>'<option value="'+esc(c)+'"'+(c===s.colour?' selected':'')+'>'+esc(c)+'</option>').join('')+
-      '<option value="__add__">＋ Add other…</option></select>'+(colourChanged?'<div class="jenc-previous">Previously: '+esc(old.colour||'not recorded')+'</div>':'');
-    const output=menu('output',list(s.output),options('output'),ref,'— not recorded —',old?list(old.output):null);
-    // A fistula patient's fistula: output and the skin around it, no colour.
-    const fistula=s.uid==='fistula'||String(s.type||'').trim().toLowerCase()==='fistula';
-    const skin='<div class="jenc-fields jenc-skin">'+field(fistula?'Skin around the fistula':'Peristomal skin',menu('skin',skinValues(s.skin),options('skin').concat(NOT_ASSESSED),ref,'— not recorded —',old?skinValues(old.skin):null))+'</div>';
-    const notes=field(nameOf(s,all)+' — clinical notes','<textarea data-vsr="notes"'+ref+' rows="3" placeholder="Write your observations, care provided or patient concerns…">'+esc(s.notes||'')+'</textarea>'+
-      '<div class="jenc-previous vsr-note-diff" data-uid="'+esc(s.uid)+'">'+noteDiff(s)+'</div>');
-    return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4><div class="jenc-fields">'+(fistula?'':field('Colour / appearance',colour))+field(fistula?'Output':'Function / output',output)+'</div>'+skin+notes+'</div>';
+    const ref=' data-uid="'+esc(s.uid)+'"';
+    return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4>'+
+      '<div class="vsr-toolbar" role="toolbar" aria-label="Clinical review formatting">'+
+      '<label>Font size <select data-vsr="font"'+ref+' aria-label="Font size">'+[12,14,16,18,20,24].map(n=>'<option'+(n===s.notes_font_size?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
+      ['undo','redo','bullets','numbered','complications'].map(k=>'<button type="button" data-vsr-command="'+k+'"'+ref+'>'+({undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complications'}[k])+'</button>').join('')+'</div>'+
+      '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+highlighted(s.notes||'')+'\n</div>'+
+      '<textarea data-vsr="notes"'+ref+' aria-label="'+esc(nameOf(s,all))+' clinical review" rows="8" spellcheck="false" placeholder="Write the clinical review, observations and care provided…">'+esc(s.notes||'')+'</textarea></div>'+
+      '<div class="jenc-previous vsr-note-diff"'+ref+'>'+noteDiff(s)+'</div></div>';
+  }
+  function repaint(el,s){
+    const overlay=el.previousElementSibling;
+    if(overlay){overlay.style.width=el.clientWidth?el.clientWidth+'px':'100%';overlay.innerHTML=highlighted(s.notes||'')+'\n';overlay.scrollTop=el.scrollTop;overlay.scrollLeft=el.scrollLeft;}
+  }
+  const histories=new Map();
+  function history(s){const key=draft.apptId+':'+s.uid;if(!histories.has(key))histories.set(key,{items:[s.notes||''],at:0});return histories.get(key);}
+  function remember(s){const h=history(s);if(h.items[h.at]===s.notes)return;h.items=h.items.slice(0,h.at+1);h.items.push(s.notes);h.at++;}
+  function command(k,s,el){
+    const h=history(s);
+    if(k==='undo'||k==='redo'){h.at=Math.max(0,Math.min(h.items.length-1,h.at+(k==='undo'?-1:1)));s.notes=h.items[h.at];el.value=s.notes;}
+    else {
+      const start=el.value.lastIndexOf('\n',el.selectionStart-1)+1;
+      let end=el.value.indexOf('\n',el.selectionEnd);if(end<0)end=el.value.length;
+      const lines=el.value.slice(start,end).split('\n');
+      const marked=lines.every(x=>k==='bullets'?/^• /.test(x):/^\d+\. /.test(x));
+      const next=lines.map((x,i)=>marked?x.replace(k==='bullets'?/^• /:/^\d+\. /,''):(k==='bullets'?'• ':String(i+1)+'. ')+x.replace(/^(?:• |\d+\. )/,'')).join('\n');
+      el.value=el.value.slice(0,start)+next+el.value.slice(end);s.notes=el.value;remember(s);el.setSelectionRange(start,start+next.length);
+    }
+    repaint(el,s);const diff=el.closest('.jenc-stoma-col').querySelector('.vsr-note-diff');if(diff)diff.innerHTML=noteDiff(s);el.focus();
   }
   function noteDiff(s){
     const old=draft?.compare?draft.compare.find(x=>x.uid===s.uid):null;if(!old)return '';
@@ -132,10 +163,11 @@
       if(s.rod_asked!==false&&rodCapable(s.type)&&(s.rod?.status&&s.rod.status!=='Not recorded'||o&&o.rod?.status&&o.rod.status!=='Not recorded'))
         out+=line('Rod',esc(rodText(s.rod)),o&&rodText(o.rod)!==rodText(s.rod));
       const a=String(o?.notes||''),b=String(s.notes||'');
-      out+=line('Clinical notes',o&&a!==b&&JE()?.diffHTML?JE().diffHTML(a,b,true):esc(b||'—'));
+      out+=line('Clinical notes',o&&a!==b&&JE()?.diffHTML?JE().diffHTML(a,b,true):'<span style="white-space:pre-wrap;font-size:'+(Number(s.notes_font_size)||14)+'px">'+highlighted(b||'—')+'</span>');
       return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(s.name||nameOf(s,all))+'</h4>'+out+'</div>';
     }).join('')+'</div>';
   }
+  window.addEventListener('resize',()=>refreshHighlights());
   function render(){
     if(!host||!draft)return;
     const all=draft.stomas;
@@ -149,6 +181,7 @@
       ?'<div class="jenc-stoma-grid vsr-grid" style="--jenc-cols:'+Math.min(all.length,3)+'">'+all.map(s=>columnHTML(s,all)).join('')+'</div>'
       :'<div class="report-note">No stoma is recorded for this patient. Add it in the patient record to assess it here.</div>')+
       (all.length?'<div class="jenc-signature">Signature will be recorded automatically'+(draft.signer?': '+esc(draft.signer):'')+'</div>':'');
+    refreshHighlights();
   }
   function find(el){return draft?.stomas.find(s=>s.uid===el.dataset.uid);}
   // "Healthy skin" stands alone; ticking any finding clears it.
@@ -162,6 +195,7 @@
   function skinChanged(){if(typeof window.onVisitSkinChange==='function')window.onVisitSkinChange();}
   function change(e){
     const el=e.target,kind=el.dataset?.vsr;
+    if(kind==='font'){const s=find(el);if(s){s.notes_font_size=Number(el.value);el.closest('.jenc-stoma-col').querySelector('.vsr-editor').style.setProperty('--vsr-font',s.notes_font_size+'px');}return;}
     const s=kind&&find(el);if(!s)return;
     if(kind==='colour'){if(el.value==='__add__'){addOther('colour',s);return;}s.colour=el.value;}
     else if(kind==='output'){const v=list(s.output).filter(x=>x!==el.value);if(el.checked)v.push(el.value);setOutput(s,v,el.value,el.checked);}
@@ -172,6 +206,8 @@
     if(kind==='skin')skinChanged();
   }
   function click(e){
+    const control=e.target.closest?.('[data-vsr-command]');
+    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openAddComplicationTypeDialog('vsr-dictionary','','Clinical review');return;}const el=control.closest('.jenc-stoma-col').querySelector('textarea');command(k,s,el);return;}
     const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);
   }
   // "+ Add other…": the new wording joins the list for good and is chosen here.
@@ -188,13 +224,13 @@
     if(name&&fieldName==='skin')skinChanged();
   }
   function input(e){
-    const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;s.notes=el.value;
+    const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;history(s);s.notes=el.value;remember(s);repaint(el,s);
     const d=[...host.querySelectorAll('.vsr-note-diff')].find(x=>x.dataset.uid===s.uid);if(d)d.innerHTML=noteDiff(s);
   }
   function payloadFor(apptId){
     if(!enabled()||!draft||draft.locked||draft.apptId!==String(apptId))return null;
     return draft.stomas.map(s=>({uid:s.uid,type:s.type,name:nameOf(s,draft.stomas),colour:s.colour,output:list(s.output),skin:copy(s.skin||{status:'',problems:[]}),
-      ...rodHistory(s),notes:String(s.notes||'')}));
+      ...rodHistory(s),notes:String(s.notes||''),notes_font_size:s.notes_font_size||14}));
   }
   function summaryLines(rows){
     return list(rows).map(s=>{
@@ -213,7 +249,7 @@
   // The skin findings ticked at this visit, each tied to its stoma — they are
   // recorded as complications; stomas with Healthy skin resolve their open ones.
   function skinFor(apptId){
-    const rows=payloadFor(apptId)||[];
+    const rows=[];
     return {problems:rows.flatMap(r=>r.skin?.status==='Not healthy'?list(r.skin.problems).map(text=>({uid:r.uid,text})):[]),
       healthy:rows.filter(r=>r.skin?.status==='Healthy').map(r=>r.uid),single:rows.length===1?rows[0].uid:''};
   }
@@ -222,7 +258,8 @@
   function storedFor(apptId,rows,author){
     if(!draft||draft.locked||draft.apptId!==String(apptId)||!rows)return null;
     const vs=copy(draft.versions||[]),last=vs[vs.length-1];
-    if(last&&JSON.stringify(list(last.stomas))===JSON.stringify(rows))return null;
+    const comparable=items=>list(items).map(s=>({...s,notes_font_size:Number(s.notes_font_size)||14}));
+    if(last&&JSON.stringify(comparable(last.stomas))===JSON.stringify(comparable(rows)))return null;
     vs.push({version:(Number(last?.version)||0)+1,saved_at:new Date().toISOString(),author_name:String(author?.name||''),author_email:String(author?.email||''),stomas:copy(rows)});
     return {schema:2,current:copy(rows),versions:vs};
   }
@@ -240,7 +277,8 @@
     if(error){error.hidden=true;error.textContent='';}
     return true;
   }
-  function clear(){draft=null;}
-  window.VisitStomaReview={validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  function clear(){draft=null;histories.clear();}
+  function refreshHighlights(){host?.querySelectorAll('textarea[data-vsr="notes"]').forEach(el=>{const s=find(el);if(s)repaint(el,s);});}
+  window.VisitStomaReview={highlighted,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();

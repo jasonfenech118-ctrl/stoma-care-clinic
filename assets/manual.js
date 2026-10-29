@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — The patient identifier heading on both handover print pages is ID: No. Compact columns and the two-page layout remain automatic.'};
+const MANUAL_META={updated:'29 October 2026 — Follow-up clinical reviews now use free text with font size, undo, redo and lists. Complication words are automatically underlined in red, including newly saved catalogue terms.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -298,14 +298,14 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','For a new missed appointment, the follow-up due month is selected from clinic availability. <b>Three did-not-turn-ups in a row pause</b> follow-up instead. Recording an older miss does not replace follow-up after a later saved outcome. Deceased and reversed follow-up statuses stay closed.')}
   `},
-  {id:'complete',title:'Complete a visit (Seen)',keywords:'complete visit seen stepper attendance complications appliances accessories stick paste filler paste follow up review nurse owner stoma assessment colour function output clinical notes rod handover',html:`
+  {id:'complete',title:'Complete a visit (Seen)',keywords:'free text font size undo redo bullets numbered list underline complete visit seen stepper attendance complications appliances accessories stick paste filler paste follow up review nurse owner stoma assessment colour function output clinical notes rod handover',html:`
     ${manMap('appointments')}
     ${manWhen('The patient attended and you are writing the visit up.')}
     ${manFlow(['Attendance','→','Clinical','→','Appliances','→','Follow-up','→','Review'])}
     ${manSteps([
       `Choose <b>Seen</b> on the appointment. The visit opens as a step-by-step form.`,
       `<b>Attendance</b> — confirm date, time and outcome, and set the <b>Nurse owner</b> (shown as a gold badge).`,
-      `<b>Clinical</b> — record complications if any. For <b>every nurse</b>, a <b>Stoma assessment</b> comes first: one column per stoma, named by type (e.g. <b>End Colostomy</b>, <b>Loop Ileostomy</b>), each with colour / appearance, function / output, <b>Peristomal skin</b> (Healthy skin, or findings such as Irritation, Excoriation, Ulcerated — a finding is saved as a complication of that stoma and sets “A complication is identified”), <b>＋ Add other…</b> on colour, function/output and skin, and its own <b>clinical notes</b>. It shows on the Review step and in the patient’s visit history. In the Seen visit these assessment fields are <b>optional</b> — unlike the inpatient stoma assessment you can complete the visit with colour, function / output or peristomal skin left blank (a recorded unhealthy skin finding still counts as a complication).`,
+      `<b>Clinical</b> — write a free-text review for each stoma; there are no colour, output or skin selection lists. Use <b>Font size</b>, <b>Undo</b>, <b>Redo</b>, <b>Bullets</b> or <b>Numbered list</b>. <b>Complications</b> saves a new term to the clinic catalogue for future automatic red underlining. Underlining marks wording, including negated mentions; it does not diagnose or add a patient complication. Earlier structured assessments remain readable; patient complication outcomes can still be updated separately.`,
       `<b>Visit reviews.</b> In the patient record’s <b>Appointments</b> tab (and in follow-up history) a visit with a stoma assessment has <b>📝 Open review</b>. It shows the assessment per stoma with its versions (<b>V1, V2 …</b>), each <b>signed automatically</b> with the nurse’s name and time; <b>Show changes</b> marks what changed from the previous version in <b>red</b> (removed items struck through). <b>Edit review</b> saves the next version — and is available <b>only on the day the review was recorded</b>; after that it is locked (🔒). While editing, changed values and added notes show in red.`,
       `<b>Appliances &amp; accessories</b> — the appliance picker <b>opens by itself</b> on this step (for every user). When the stoma already has an appliance on record, the first choice is <b>Keep same appliance</b> (it shows what is on record): press it when nothing changed and the visit records it as continued unchanged. Otherwise pick <b>One-piece</b>, <b>Two-piece</b> or <b>Dressing only</b> and set the new appliance and accessories. <b>Stick Paste</b> is available in the accessories list alongside <b>Filler Paste</b>. For a first appliance there is nothing to keep, so only the three systems are offered. If you step back out of the picker it does not reopen by itself — use the button.`,
       `<b>Follow-up</b> — choose the next follow-up owner and due month.`,
@@ -611,6 +611,7 @@ const MANUAL_SECTIONS=[
 ]},
 
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
+  {id:'review-underlining',title:'Complication terms in clinical reviews',keywords:'red underline complications free text automatic',html:`<p>Recognised complication words are underlined in red as you type and when saved reviews are opened. New terms saved with the Complications button join the shared catalogue; matching is case-insensitive and matches complete words or phrases. This marks mentions only, including negated wording, and never creates a patient complication automatically.</p>`},
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only Jason can see the App Access Audit button and retrieve its records.</p>`},
   {id:'helper-context',title:'Help for the current page',keywords:'automatic paperclip helper context guidance',html:`<p>The paperclip appears automatically with its help bubble closed. Click it to search for a Help topic or browse the manual.</p>`},
   {id:'analysis-completeness',title:'Complete and incomplete records',keywords:'data analysis complete incomplete surgery operation findings stoma history',html:`<p>Completeness checks use saved surgery dates, stoma types and operation details from the patient’s stoma history as well as the original patient fields.</p><p>Closed or refashioned stomas still count as recorded history; any genuinely missing required fields remain listed.</p>`},
