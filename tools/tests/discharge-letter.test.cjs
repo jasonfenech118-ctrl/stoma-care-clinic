@@ -26,11 +26,11 @@ function context(){
   const c=vm.createContext({TODAY:'2026-10-01',APP_BUILD:app.match(/const APP_BUILD='([^']+)'/)[1],Date,Map,Set,URL,crypto:require('node:crypto').webcrypto,
     SUPABASE_PAGE_SIZE:2,APPLIANCE_CATALOGUE:catalogue,
     fmtShortDate:s=>s,fixText:s=>String(s||''),initialStomaCode:s=>'STO-'+s,stomaShortType:s=>s,stomaQuadrant:()=>'',
-    _normType:s=>String(s||'').toLowerCase(),recCode:s=>s.id||'',alert:()=>{}});
+    _normType:s=>String(s||'').toLowerCase(),recCode:s=>s.id||'',alert:()=>{},registerDischargeLetterWindow:()=>{}});
   for(const name of ['parseNameList','parseStomas','parseInitialStomas','parseRefashionings','stomaOperationHistory',
     'patientStomaList','stomaTimeline','stomasPresentOn','applianceStomaUid','parseEpisodeApplianceRows',
     'stomaApplianceHistory','parseComplications','humanList','composeApplianceSentence','dischargeLetterRodData','dischargeLetterRecord',
-    'fetchAllRows','openDischargeLetterFor'])vm.runInContext(source(name),c);
+    'fetchAllRows','createPatientDischargeLetter'])vm.runInContext(source(name),c);
   return c;
 }
 const patient=extra=>({id:'p1',first_name:'Alex',surname:'Example',id_card:'0000000M',sex:'Male',
@@ -249,14 +249,14 @@ test('opening a letter fetches fresh records and carries all history through tab
     [{uid:i===7?'colo':'base',appliances:[i===7?'Lentell closed pouch 70mm':'Historical pouch']}]),id:'a'+i}));
   let opened=0;c.window={open:url=>{assert.equal(url,'about:blank');opened++;return target;}};
   c.location={href:'https://clinic.test/index.html'};fakeReads(c,patient(),episodes,appointments);
-  await c.openDischargeLetterFor('p1');assert.equal(opened,1);assert.equal(saved.size,1);
+  await c.createPatientDischargeLetter('p1');assert.equal(opened,1);assert.equal(saved.size,1);
   assert.doesNotMatch(target.location.href,/Alex|Example|0000000M|appliance/);
   const data=JSON.parse(Array.from(saved.values())[0]);assert.match(data.stomas[1].appliance,/Lentell/);
 });
 test('failed history reads close the reserved tab and report failure without exporting a partial letter',async()=>{
   const c=context(),alerts=[],target={document:{},close(){this.closed=true;},sessionStorage:{setItem:()=>assert.fail('Unexpected snapshot')}};
   c.window={open:()=>target};c.alert=s=>alerts.push(s);c.location={href:'https://clinic.test/index.html'};
-  fakeReads(c,patient(),[],[],'clinical_records');await c.openDischargeLetterFor('p1');
+  fakeReads(c,patient(),[],[],'clinical_records');await c.createPatientDischargeLetter('p1');
   assert.equal(target.closed,true);assert.match(alerts[0],/Could not load the current appliances/);
 });
 

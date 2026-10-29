@@ -344,7 +344,8 @@
     <span class="title" id="ribbonTitle" onclick="openWizard()" title="Click to reopen the fill-in / edit questions">Stoma Discharge Letter</span>
     <span class="hint">Choose the stoma type when prompted, then pick one-piece/two-piece and the appliance inside the letter. Fill the fields, then Save or Print.</span>
     <span class="actions">
-      <button class="btn green" onclick="saveToSharePoint()">Save</button>
+      <button class="btn green" id="archive-letter-save" onclick="saveLetterToPatientRecord()" hidden>Save to patient record</button><span id="archive-letter-status" role="status"></span>
+      <button class="btn green" onclick="saveToSharePoint()">Download Word</button>
       <button class="btn" onclick="sendToEmail()">Send to Email</button>
       <button class="btn" onclick="window.print()">Print</button>
       <button class="btn yellow" onclick="openWizard()" title="Step-by-step questions that fill in the letter">Fill in / Edit Letter</button>
@@ -2997,6 +2998,24 @@
   if(prefillRecordedLetter())openWizard();
   else if(prefillFromQuery()){ wzStep=_firstUnansweredStep(); renderWizard(); document.getElementById('wizard').classList.add('open'); }
   else openWizard();
+</script>
+<script>
+let savingLetterToRecord=false;
+async function saveLetterToPatientRecord(){
+  if(savingLetterToRecord)return;
+  const button=document.getElementById('archive-letter-save'),status=document.getElementById('archive-letter-status');
+  const token=new URLSearchParams(location.search).get('record');
+  if(!token||!window.opener||window.opener.closed){status.textContent='Reopen this letter from the patient record to save it.';return;}
+  savingLetterToRecord=true;button.disabled=true;status.textContent='Saving…';
+  try{
+    if(typeof window.opener.savePatientDischargeLetter!=='function')throw Error('Refresh Stoma Roster and reopen the letter.');
+    await window.opener.savePatientDischargeLetter(token,window,{html:buildLetterHTML(),text:buildLetterText(),filename:buildFilename(),date:_v('#letterDate')||_v('.fld-date'),author:_v('.fld-name'),patientIdNo:_v('.fld-id')});
+    status.textContent='Saved to patient record';
+  }catch(e){status.textContent='Not saved: '+(e.message||'Please try again.');}
+  finally{savingLetterToRecord=false;button.disabled=false;}
+}
+if(new URLSearchParams(location.search).get('record'))document.getElementById('archive-letter-save').hidden=false;
+
 </script>
 </body>
 </html>
