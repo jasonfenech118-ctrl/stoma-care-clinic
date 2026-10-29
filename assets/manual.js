@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — The patient header restores the locality flag and shows address, locality and telephone without headings. Birth dates appear inline as DOB DD/MM/YYYY.'};
+const MANUAL_META={updated:'29 October 2026 — Each stoma shows its own consultant with the surgery details, without a dividing line. Assign or correct the consultant in Edit stoma; additional operations are not given a guessed consultant.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
