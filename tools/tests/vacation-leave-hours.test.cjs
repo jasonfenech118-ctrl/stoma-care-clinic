@@ -122,6 +122,17 @@ test('the shift form saves hours and time, reopens with the saved duration, and 
   reopened.c.document.getElementById('s-leave-unit').value='days';await reopened.c.saveShift(nurse,day);
   assert.equal(reopened.writes[0].body.status,'annual_leave');assert.equal(reopened.writes[0].body.leave_hours,null);assert.equal(reopened.writes[0].body.leave_start_time,null);
 });
+test('start and end times calculate duration, save and reopen including midnight',async t=>{
+  const f=app(t);chooseHours(f);
+  assert.equal(f.c.document.getElementById('s-leave-to').value,'12:15');
+  f.c.document.getElementById('s-leave-to').value='13:00';f.c.LeaveHours.preview('s','end');
+  assert.equal(f.c.document.getElementById('s-leave-hours').value,'3.25');
+  await f.c.saveShift(nurse,day);assert.equal(f.writes[0].body.leave_hours,3.25);
+  const reopened=app(t,f.writes[0].body);assert.equal(reopened.c.document.getElementById('s-leave-to').value,'13:00');
+  chooseHours(f,'2','22:00');assert.equal(f.c.document.getElementById('s-leave-to').value,'00:00');
+  f.c.document.getElementById('s-leave-to').value='21:00';f.c.LeaveHours.preview('s','end');
+  assert.throws(()=>f.c.LeaveHours.readForm('s','annual_leave'),/valid start and end/);
+});
 test('invalid input or a failed save retains the form and does not report success',async t=>{
   const f=app(t);chooseHours(f,'0.1');await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);assert.equal(f.saved,false);
   chooseHours(f,'2','23:00');await f.c.saveShift(nurse,day);assert.equal(f.writes.length,0);

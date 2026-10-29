@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Complication bible uses a full-width mobile text field with its label above. Follow-up reviews retain free text and automatic red underlining.'};
+const MANUAL_META={updated:'29 October 2026 — Hourly vacation leave now has Leave starts from and Leave ends at fields, with duration calculated automatically and database support for saving. Complication bible keeps its full-width mobile text field.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -565,7 +565,7 @@ const MANUAL_SECTIONS=[
       <li>${manBtn('🗓 Monthly Roster','#efe7fb','#5b3aa8')} — the staff rota for the month.</li>
       <li>${manBtn('🔄 Change of Duty','#fbe6d8','#a4610f')} — record a swap of duty between staff.</li>
     </ul>
-    ${manNote('tip','🌴','Select the nurse’s date on the Monthly Roster and choose <b>Annual Leave</b>. Choose <b>Full day</b> or <b>Number of hours</b>. For hours, enter the duration (e.g. <b>2</b> or <b>2.5</b>) and the start time, then save. Hours use quarter-hour steps and must finish by midnight on the same date. The roster shows <b>L</b> with the hours; reopen the cell to change them. Choosing Day duty clears the leave booking.')}
+    ${manNote('tip','🌴','Select the nurse’s date on the Monthly Roster and choose <b>Annual Leave</b>. Choose <b>Full day</b> or <b>Number of hours</b>. For hours, enter the duration (e.g. <b>2</b> or <b>2.5</b>) and the start time, or enter <b>Leave starts from</b> and <b>Leave ends at</b>; the duration and finish time stay in sync, then save. Hours use quarter-hour steps and must finish by midnight on the same date. The roster shows <b>L</b> with the hours; reopen the cell to change them. Choosing Day duty clears the leave booking.')}
     ${manNote('tip','🗓️','Each nurse has a default rotation that fills the roster automatically; clicking a day cell records an exception over it. <b>Tracey Galea</b> is on <b>Shift A — 2 days on, 1 day off — from 8 October 2026</b>. To bring a nurse in on an off day, use <b>⏰ Add OT Nurse</b> (enter the name, date and the start/finish time) — the overtime shows as <b>OT</b> on that day and in the Overtime list.')}
     ${manNote('auto','⚙️','A nurse on overtime gets a booking column on that day in the <b>Daily Clinic</b>, the <b>postop follow-up booking</b> and the <b>siting</b> picker alike. A core nurse is always <b>one column</b>, even if their OT was also entered on the Overtime list under a slightly different spelling (e.g. “Tracy” / “Tracey” with the same surname). A <b>cancelled</b> OT entry stays in the OT audit but no longer adds a column; any patient already booked under it stays in that nurse’s own column (so the slot is still shown as taken).')}
   `},

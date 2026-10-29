@@ -23,8 +23,9 @@ var LeaveHours=(function(){
       <div class="fg"><label for="${prefix}-leave-unit">Book vacation leave as</label><select id="${prefix}-leave-unit" onchange="LeaveHours.toggle('${prefix}','annual_leave')"><option value="days"${leave?'':' selected'}>Full day</option><option value="hours"${leave?' selected':''}>Number of hours</option></select></div>
       <div id="${prefix}-leave-time"${leave?'':' hidden'}>
         <div class="fg"><label for="${prefix}-leave-hours">Number of hours *</label><input id="${prefix}-leave-hours" type="number" min="0.25" max="24" step="0.25" value="${leave?.hours||''}" placeholder="e.g. 2 or 2.5" oninput="LeaveHours.preview('${prefix}')"/></div>
-        <div class="fg"><label for="${prefix}-leave-from">Leave starts at *</label><input id="${prefix}-leave-from" type="time" step="60" value="${esc(leave?.from||'')}" oninput="LeaveHours.preview('${prefix}')"/></div>
-        <p id="${prefix}-leave-preview" class="ap-hint" role="status">Enter hours and a start time. The rest of the day remains on duty.</p>
+        <div class="fg"><label for="${prefix}-leave-from">Leave starts from *</label><input id="${prefix}-leave-from" type="time" step="60" value="${esc(leave?.from||'')}" oninput="LeaveHours.preview('${prefix}')"/></div>
+        <div class="fg"><label for="${prefix}-leave-to">Leave ends at *</label><input id="${prefix}-leave-to" type="time" step="60" value="${esc(leave?time(leave.end%1440):'')}" oninput="LeaveHours.preview('${prefix}','end')"/></div>
+        <p id="${prefix}-leave-preview" class="ap-hint" role="status">Enter the leave start and end times, or the hours and start time. The rest of the day remains on duty.</p>
       </div>
     </div>`;
   }
@@ -33,12 +34,21 @@ var LeaveHours=(function(){
     const raw=document.getElementById(prefix+'-leave-hours')?.value;
     const record={leave_hours:raw,leave_start_time:document.getElementById(prefix+'-leave-from')?.value};
     const leave=read(record);
-    if(!raw||!leave)throw Error('Enter vacation leave in quarter-hour steps (for example 2 or 2.5 hours), with a start time and finish no later than midnight.');
+    const end=minutes(document.getElementById(prefix+'-leave-to')?.value);
+    if(!raw||!leave||end===null||(end===0?1440:end)!==leave.end)throw Error('Enter vacation leave in quarter-hour steps (for example 2 or 2.5 hours), with valid start and end times, finishing no later than midnight.');
     return {leave_hours:leave.hours,leave_start_time:leave.from};
   }
-  function preview(prefix){
+  function preview(prefix,changed){
+    const hours=document.getElementById(prefix+'-leave-hours'),from=document.getElementById(prefix+'-leave-from'),to=document.getElementById(prefix+'-leave-to');
+    const start=minutes(from?.value),finish=minutes(to?.value);
+    if(changed==='end'){
+      if(hours)hours.value=start!==null&&finish!==null&&(finish===0?1440:finish)>start?((finish===0?1440:finish)-start)/60:'';
+    }else if(to){
+      const saved=read({leave_hours:hours?.value,leave_start_time:from?.value});
+      to.value=saved?time(saved.end%1440):'';
+    }
     const note=document.getElementById(prefix+'-leave-preview');if(!note)return;
-    try{const record=readForm(prefix,'annual_leave');note.textContent=record?label(record)+' · On duty outside these hours.':'Enter hours and a start time.';}
+    try{const record=readForm(prefix,'annual_leave');note.textContent=record?label(record)+' · On duty outside these hours.':'Enter the leave start and end times, or the hours and start time.';}
     catch(_){note.textContent='Enter hours in quarter-hour steps and a start time; leave must finish on the same day.';}
   }
   function toggle(prefix,code){
@@ -46,7 +56,7 @@ var LeaveHours=(function(){
     box.hidden=code!=='annual_leave';
     const hours=!box.hidden&&document.getElementById(prefix+'-leave-unit')?.value==='hours';
     const timeBox=document.getElementById(prefix+'-leave-time');if(timeBox)timeBox.hidden=!hours;
-    for(const suffix of ['leave-hours','leave-from']){const input=document.getElementById(prefix+'-'+suffix);if(input){input.disabled=!hours;input.required=hours;}}
+    for(const suffix of ['leave-hours','leave-from','leave-to']){const input=document.getElementById(prefix+'-'+suffix);if(input){input.disabled=!hours;input.required=hours;}}
     preview(prefix);
   }
   function slotCount(record,slots){return slots.filter(slot=>!blocked(record,slot)).length;}
