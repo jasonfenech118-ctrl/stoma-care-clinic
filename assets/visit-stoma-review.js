@@ -118,7 +118,7 @@
     return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4>'+
       '<div class="vsr-toolbar" role="toolbar" aria-label="Clinical review formatting">'+
       '<label>Font size <select data-vsr="font"'+ref+' aria-label="Font size">'+[12,14,16,18,20,24].map(n=>'<option'+(n===s.notes_font_size?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
-      ['undo','redo','bullets','numbered','complications'].map(k=>'<button type="button" data-vsr-command="'+k+'"'+ref+'>'+({undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complications'}[k])+'</button>').join('')+'</div>'+
+      ['undo','redo','bullets','numbered','complications'].map(k=>'<button type="button" data-vsr-command="'+k+'"'+ref+'>'+({undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complication bible'}[k])+'</button>').join('')+'</div>'+
       '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+highlighted(s.notes||'')+'\n</div>'+
       '<textarea data-vsr="notes"'+ref+' aria-label="'+esc(nameOf(s,all))+' clinical review" rows="8" spellcheck="false" placeholder="Write the clinical review, observations and care provided…">'+esc(s.notes||'')+'</textarea></div>'+
       '<div class="jenc-previous vsr-note-diff"'+ref+'>'+noteDiff(s)+'</div></div>';
@@ -205,9 +205,25 @@
     if(kind==='output'||kind==='skin')reopen(kind,s);
     if(kind==='skin')skinChanged();
   }
+  function openBible(){
+    const box=document.getElementById('mb2');box.className='mb';
+    box.innerHTML='<h2>Complication bible</h2><p>Save a term for all stoma types. It will be underlined automatically when written in a clinical review.</p><label for="vsr-bible-term">Complication term</label><input id="vsr-bible-term" type="text" maxlength="150" placeholder="Write a complication term"><p id="vsr-bible-message" role="status"></p><div class="mact"><button type="button" class="btn-cancel" id="vsr-bible-close">Close</button><button type="button" class="btn-save" id="vsr-bible-save">Save term</button></div>';
+    document.getElementById('vsr-bible-close').onclick=()=>closeMo2();
+    const save=document.getElementById('vsr-bible-save'),input=document.getElementById('vsr-bible-term'),msg=document.getElementById('vsr-bible-message');
+    save.onclick=async()=>{
+      const name=input.value.trim();if(!name){msg.textContent='Write a term first.';return;}
+      if(terms().some(t=>lower(t)===lower(name))){msg.textContent='This term is already recognised for all stomas.';return;}
+      save.disabled=true;
+      try{const result=await insertComplicationType(name,'all');if(result.error)throw result.error;await loadComplicationTypes();refreshHighlights();input.value='';msg.textContent='Saved for all stoma types.';}
+      catch(e){msg.textContent='Could not save: '+(e.message||e);}
+      finally{save.disabled=false;}
+    };
+    input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();if(!save.disabled)save.click();}};
+    openMo2();input.focus();
+  }
   function click(e){
     const control=e.target.closest?.('[data-vsr-command]');
-    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openAddComplicationTypeDialog('vsr-dictionary','','Clinical review');return;}const el=control.closest('.jenc-stoma-col').querySelector('textarea');command(k,s,el);return;}
+    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openBible();return;}const el=control.closest('.jenc-stoma-col').querySelector('textarea');command(k,s,el);return;}
     const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);
   }
   // "+ Add other…": the new wording joins the list for good and is chosen here.
