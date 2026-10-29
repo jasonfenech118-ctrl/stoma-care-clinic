@@ -88,6 +88,13 @@
     if(!page)return;
     const head=page.querySelector('.psm-head'),details=page.querySelector('.pd-patient-details');
     page.querySelector('.psm-page-bar')?.remove();
+    // Remove only the dashboard summary, retaining saved clinical records.
+    const complicationCard=page.querySelector('#psm-cmp-card');
+    if(complicationCard){
+      const heading=complicationCard.previousElementSibling;
+      if(heading?.classList.contains('psm-sec-head'))heading.remove();
+      complicationCard.remove();
+    }
     page.querySelectorAll('#pd-history .psm-next').forEach(card=>card.closest('.psm-card')?.remove());
     // Planned reversal dates are managed only by the combined planning button.
     const outcome=page.querySelector('#psm-outcomes');
