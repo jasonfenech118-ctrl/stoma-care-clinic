@@ -110,11 +110,11 @@
         card.remove();
       }
       const summary=outcome.closest('details.pd-section')?.querySelector(':scope > summary');
-      if(summary&&summary.textContent!=='Follow-up status')summary.textContent='Follow-up status';
+      if(summary&&summary.textContent!=='Outcome')summary.textContent='Outcome';
       outcome.querySelectorAll('h3').forEach(heading=>{
         const text=heading.textContent.trim();
-        if(text==='Outcome')heading.textContent='Follow-up status';
-        if(text==='Change the outcome')heading.textContent='Change follow-up status';
+        if(text==='Follow-up status')heading.textContent='Outcome';
+        if(text==='Change follow-up status')heading.textContent='Change the outcome';
       });
     }
     page.querySelectorAll('.psm-surg-snapshot,.psm-upcoming-surgery').forEach(el=>el.remove());
