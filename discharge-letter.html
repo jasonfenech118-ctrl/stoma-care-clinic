@@ -484,7 +484,7 @@
 
 <!-- Client-side PDF generation for the Send to Email button -->
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="assets/discharge-record.js?v=2026.10.29-684"></script>
+<script src="assets/discharge-record.js?v=2026.10.29-685"></script>
 <script>
   // ============================================================
   //  Stoma Discharge Letter — wizard-led appliance workflow
@@ -1615,15 +1615,15 @@
   ----------------------------------------------------------------- */
   var DEFAULT_BODY_TEMPLATES = {
     colostomy: {
-      opening:   "{who} underwent surgery and {a} {type} was formed on {date}. {pron} is under the care of {consultant}.",
+      opening:   "{who} underwent {procedure}{formation} on {date}. {pron} is under the care of {consultant}.",
       discharge: "On discharge the stoma is {retracted}{colour} and {function}, and the peristomal skin is {skin}.{mucoSep} During hospitalisation {who} was informed about appliance management.{teaching} However, {who} still needs assistance with stoma care until {heShe} is fully able to integrate stoma care into {hisHer} home environment."
     },
     ileostomy: {
-      opening:   "{who} underwent surgery and {a} {type} was formed on {date}. {pron} is under the care of {consultant}.",
+      opening:   "{who} underwent {procedure}{formation} on {date}. {pron} is under the care of {consultant}.",
       discharge: "On discharge the stoma is {retracted}{colour} and {function}, and the peristomal skin is {skin}.{mucoSep} During hospitalisation {who} was informed about appliance management.{teaching} However, {who} still needs assistance with stoma care until {heShe} is fully able to integrate stoma care into {hisHer} home environment."
     },
     urostomy: {
-      opening:   "{who} underwent surgery and {a} {type} was formed on {date}. {pron} is under the care of {consultant}.",
+      opening:   "{who} underwent {procedure}{formation} on {date}. {pron} is under the care of {consultant}.",
       discharge: "On discharge the stoma is {retracted}{colour} and {function}, and the peristomal skin is {skin}.{mucoSep} During hospitalisation {who} was informed about appliance management.{teaching} However, {who} still needs assistance with stoma care until {heShe} is fully able to integrate stoma care into {hisHer} home environment."
     }
   };
@@ -1635,7 +1635,7 @@
         var saved = JSON.parse(raw), out = clone(DEFAULT_BODY_TEMPLATES);
         ['colostomy','ileostomy','urostomy'].forEach(function(t){
           if(saved[t]){
-            if(typeof saved[t].opening === 'string')   out[t].opening = saved[t].opening;
+            if(typeof saved[t].opening === 'string') out[t].opening = saved[t].opening === "{who} underwent surgery and {a} {type} was formed on {date}. {pron} is under the care of {consultant}." ? DEFAULT_BODY_TEMPLATES[t].opening : saved[t].opening;
             if(typeof saved[t].discharge === 'string') out[t].discharge = saved[t].discharge;
           }
         });
@@ -1648,7 +1648,12 @@
     try{ localStorage.setItem('stomaLetterBodyTemplatesV6', JSON.stringify(BODY_TEMPLATES)); }catch(e){}
   }
   function bodyTemplateFor(type){
-    return BODY_TEMPLATES[type] || DEFAULT_BODY_TEMPLATES[type] || DEFAULT_BODY_TEMPLATES.colostomy;
+    var template = BODY_TEMPLATES[type] || DEFAULT_BODY_TEMPLATES[type] || DEFAULT_BODY_TEMPLATES.colostomy;
+    if(template.opening.indexOf('{procedure}')>=0)return template;
+    // Keep custom prose, but ensure the operation summary is actually printed.
+    var opening=template.opening==="{who} underwent surgery and {a} {type} was formed on {date}. {pron} is under the care of {consultant}."?"{who} underwent {procedure}{formation} on {date}. {pron} is under the care of {consultant}.":
+      '{who} underwent {procedure}{formation} on {date}. '+template.opening;
+    return Object.assign({},template,{opening:opening});
   }
   // Fill {placeholders} in a body template. Values are escaped; {procedure} is bolded.
   function fillBodyTemplate(tpl, vars){

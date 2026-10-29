@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — The discharge letter uses one operation summary combining the procedure and documented indication, such as Hartmann’s procedure for diverticulitis. There is no separate reason-for-stoma field or paragraph.'};
+const MANUAL_META={updated:'29 October 2026 — The letter’s opening sentence now prints the operation summary and indication. Older generic browser templates are upgraded so they no longer omit the procedure.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
