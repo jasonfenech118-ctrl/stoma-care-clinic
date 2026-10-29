@@ -83,6 +83,11 @@
     .vsr-toolbar button{min-height:42px!important;padding:10px 12px!important}
     @media(max-width:600px){#mb2.vsr-bible{padding:24px!important}.vsr-bible .mact{flex-direction:column!important}.vsr-bible .mact button{width:100%!important;flex:auto!important}.vsr-toolbar{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.vsr-toolbar label{grid-column:1/-1!important}.vsr-toolbar button{white-space:normal!important}.jenc-stoma-col{min-width:0!important}}
   `;
+  layoutStyle.textContent+=`
+    .pd-history-focused .pd-identity-contact>dl,.pd-history-focused .pd-identity-clinical,.pd-history-focused .pd-patient-details>.psm-audit,.pd-history-focused .pd-patient-details>button,.pd-history-focused .psm-head-copy>.psm-sub,.pd-history-focused .psm-head-copy>.psm-status,.pd-history-focused .pd-planned-dates{display:none!important}
+    .pd-history-focused .pd-identity-columns{grid-template-columns:minmax(0,1fr)!important}
+    .pd-history-focused .psm-head{padding-top:12px!important;padding-bottom:12px!important}
+  `;
   document.head.appendChild(layoutStyle);
 
   // Integrate demographics into the patient identity header after each page render.
@@ -172,6 +177,12 @@
       }
     }
     if(head&&details&&details.parentElement!==head)head.append(details);
+    const letter=page.querySelector('.psm-foot button[onclick*="openDischargeLetterFor"]');
+    if(actions&&letter){const near=actions.querySelector('#pd-correspondence-button');if(near)near.after(letter);else actions.append(letter);}
+    const edit=page.querySelector('.psm-foot button[onclick*="openPatientDatesModal"]');
+    if(details&&edit){edit.lastChild.textContent=' Edit details';details.append(edit);}
+    const historyGroup=page.querySelector('#pd-history')?.closest('details.pd-section');
+    if(historyGroup){const sync=()=>page.classList.toggle('pd-history-focused',historyGroup.open);if(!historyGroup.dataset.compactHeader){historyGroup.dataset.compactHeader='1';historyGroup.addEventListener('toggle',sync);}sync();}
     if(!head||!details||details.dataset.twoColumns)return;
     const p=typeof clrState!=='undefined'?clrState.patient:null;if(!p)return;
     details.dataset.twoColumns='1';
@@ -183,6 +194,7 @@
     const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
     details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+surgical+'</dl></div></div>'+audit;
     if(identity)details.querySelector('.pd-identity-name').append(identity);
+    if(edit)details.append(edit);
   }
   const identityObserver=new MutationObserver(()=>integratePatientIdentity());
   function watchPatientIdentity(){
