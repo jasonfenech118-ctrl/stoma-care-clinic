@@ -165,7 +165,7 @@
       ${parentId || correction ? `<p class="pc-issue-context"><strong>Issue:</strong> ${esc(issue.subject)}</p>` : ''}
       <form id="pc-form" class="clr-form pc-form" onsubmit="PatientCommunications.save();return false;">
         <div class="row2"><label>Date<input type="date" name="communication_date" value="${esc(values.communication_date)}" required></label><label>Time (Malta)<input type="time" name="communication_time" value="${esc(values.communication_time.slice(0, 5))}"></label></div>
-        <div class="row2"><label>Contact method<select name="method">${optionHTML(methods, values.method)}</select></label><label>Direction<select name="direction">${optionHTML(['Outgoing', 'Incoming'], values.direction)}</select></label></div>
+        <div class="row2"><label>Contact method<select name="method">${optionHTML(methods, values.method)}</select></label><input type="hidden" name="direction" value="${esc(values.direction)}"></div>
         <div class="row2"><label>${meta.contact}<input name="contact_name" value="${esc(values.contact_name)}" maxlength="200" required></label>${meta.service ? `<label>Community service / organisation<input name="service" value="${esc(values.service)}" placeholder="e.g. Community nursing, GP, care home" maxlength="200" required></label>` : '<input type="hidden" name="service" value="">'}</div>
         <label>Subject<input name="subject" value="${esc(values.subject)}" maxlength="200" required></label>
         <label>Communication / advice / outcome<textarea name="notes" rows="4" maxlength="20000" required>${esc(values.notes)}</textarea></label>
