@@ -12,6 +12,24 @@
 
   const layoutStyle=document.createElement('style');
   layoutStyle.textContent=`
+    /* Compact, responsive patient details at the top of the dashboard. */
+    #page-patient-record .pd-page{padding-top:12px!important}
+    #page-patient-record .pd-page .psm{gap:12px!important}
+    #page-patient-record .pd-page .psm-head{padding:12px 0!important}
+    #page-patient-record .pd-page .psm-head-copy{gap:5px!important}
+    #page-patient-record .pd-patient-details .psm-sec-head{margin:0 0 6px!important}
+    #page-patient-record .pd-patient-details .psm-card{padding:12px 14px!important;margin:0!important}
+    #page-patient-record .pd-patient-details .psm-dgrid-flow{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:10px 16px!important;align-items:start!important}
+    #page-patient-record .pd-patient-details .psm-ditem{grid-column:auto!important;min-width:0!important;gap:3px!important}
+    #page-patient-record .pd-patient-details .psm-ditem.wide:not(.psm-loc-item){grid-column:span 2!important;order:2}
+    #page-patient-record .pd-patient-details .psm-ditem dd{margin:0!important;font-size:14px!important;line-height:1.45!important;overflow-wrap:anywhere}
+    #page-patient-record .pd-patient-details .psm-loc-item{background:transparent!important;border:0!important;padding:0!important;border-radius:0!important}
+    #page-patient-record .pd-patient-details .psm-loc-item .psm-loc-name{font-size:14px!important}
+    #page-patient-record .pd-patient-details .psm-loc-val{gap:6px!important}
+    #page-patient-record .pd-patient-details .psm-audit{margin-top:8px!important;padding-top:6px!important;font-size:11px!important}
+    @media(max-width:1000px){#page-patient-record .pd-patient-details .psm-dgrid-flow{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+    @media(max-width:600px){#page-patient-record .pd-patient-details .psm-dgrid-flow{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px 12px!important}#page-patient-record .pd-page .psm-head-main{gap:10px!important}}
+
     #mb:has(#es-stepper){box-sizing:border-box!important;width:min(960px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;min-width:0!important;max-height:calc(100dvh - 24px)!important;overflow:auto!important;padding:clamp(14px,3vw,28px)!important}
     #mb:has(#es-stepper) .es-summary,#mb:has(#es-stepper) .es-pane{min-width:0!important;max-width:100%!important;overflow-wrap:anywhere}
     #es-stepper{display:flex!important;overflow-x:auto!important;max-width:100%!important;gap:8px!important}
