@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'29 October 2026 — Patient profiles now use a full-page dashboard with details at the top and grouped appointments and episodes. The table has alternating white and grey rows, with sorting by date and grouping by type or month.'};
+const MANUAL_META={updated:'29 October 2026 — Top patient details now use a compact responsive grid, with address spanning two columns. Grouped history retains alternating white and grey rows.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
