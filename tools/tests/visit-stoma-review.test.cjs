@@ -143,6 +143,36 @@ test('reviewHTML can hide the colour / function / peristomal-skin observation li
   assert.match(trimmed,/Reviewed, settled\./);
 });
 
+test('formatNotes renders bold / italic / underline / colour markers as safe HTML',t=>{
+  const {w}=setup(t);
+  const f=w.VisitStomaReview.formatNotes;
+  assert.match(f('see **this** now'),/<strong>this<\/strong>/);
+  assert.match(f('mild *swelling* noted'),/<em>swelling<\/em>/);
+  assert.match(f('ref __important__ here'),/<u>important<\/u>/);
+  assert.match(f('{red}urgent{/red}'),/<span style="color:#dc2626">urgent<\/span>/);
+  // HTML in the notes stays escaped — no injection.
+  assert.match(f('<script>x</script>'),/&lt;script&gt;/);
+  assert.doesNotMatch(f('<script>x</script>'),/<script>/);
+});
+
+test('the clinical-review toolbar offers Bold, Italic, Underline and a colour picker',async t=>{
+  const {w,host,mount}=setup(t);await mount();
+  const tb=host.querySelector('.vsr-toolbar');
+  assert.ok(tb.querySelector('[data-vsr-command="bold"]'));
+  assert.ok(tb.querySelector('[data-vsr-command="italic"]'));
+  assert.ok(tb.querySelector('[data-vsr-command="underline"]'));
+  assert.ok(tb.querySelector('select[data-vsr="textcolour"]'));
+});
+
+test('a Bold button wraps the selected notes text in ** markers (plain-text storage)',async t=>{
+  const {w,host,mount}=setup(t);await mount();
+  const ta=host.querySelector('textarea[data-vsr="notes"]');
+  ta.value='settled today';ta.dispatchEvent(new w.Event('input',{bubbles:true}));
+  ta.setSelectionRange(0,7);                       // select "settled"
+  host.querySelector('[data-vsr-command="bold"]').click();
+  assert.equal(ta.value,'**settled** today');
+});
+
 test('the Seen (Complete visit) form has no Support / referrals section — referrals live in encounters',async t=>{
   const {w,host,mount}=setup(t);await mount();
   assert.doesNotMatch(host.textContent,/referral/i);assert.equal(host.querySelector('[data-vsr-ref-add],[data-vsr^="ref-"]'),null);

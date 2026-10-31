@@ -371,12 +371,29 @@
     for(const m of String(text).matchAll(re)){out+=esc(String(text).slice(last,m.index))+'<span class="vsr-term">'+esc(m[0])+'</span>';last=m.index+m[0].length;}
     return out+esc(String(text).slice(last));
   }
+  // The light markup the formatting buttons insert, kept as plain text in the
+  // record (so diffs and signatures are unaffected) and rendered to HTML only in
+  // the read-only "what was written" view. A fixed colour set — no arbitrary CSS.
+  const NOTE_COLOURS={red:'#dc2626',orange:'#d97706',green:'#16a34a',blue:'#2563eb',purple:'#7c3aed'};
+  function formatNotes(text){
+    let html=highlighted(text);                 // escapes, keeps markers, underlines bible terms
+    html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span>');
+    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<strong>$1</strong>');
+    html=html.replace(/__([\s\S]+?)__/g,'<u>$1</u>');
+    html=html.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
+    return html;
+  }
   function columnHTML(s,all){
     const ref=' data-uid="'+esc(s.uid)+'"';
     return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4>'+
       '<div class="vsr-toolbar" role="toolbar" aria-label="Clinical review formatting">'+
       '<label>Font size <select data-vsr="font"'+ref+' aria-label="Font size">'+[12,14,16,18,20,24].map(n=>'<option'+(n===s.notes_font_size?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
-      ['undo','redo','bullets','numbered','complications'].map(k=>'<button type="button" data-vsr-command="'+k+'"'+ref+'>'+({undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complication bible'}[k])+'</button>').join('')+'</div>'+
+      ['bold','italic','underline','undo','redo','bullets','numbered','complications'].map(k=>{
+        const L={bold:'<b>B</b>',italic:'<i>I</i>',underline:'<u>U</u>',undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complication bible'};
+        const T={bold:'Bold',italic:'Italic',underline:'Underline'};
+        return '<button type="button" data-vsr-command="'+k+'"'+(T[k]?' title="'+T[k]+'" aria-label="'+T[k]+'"':'')+ref+'>'+L[k]+'</button>';
+      }).join('')+
+      '<label>Colour <select data-vsr="textcolour"'+ref+' aria-label="Text colour"><option value="">— colour —</option>'+Object.keys(NOTE_COLOURS).map(c=>'<option value="'+c+'">'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join('')+'</select></label>'+'</div>'+
       '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+highlighted(s.notes||'')+'\n</div>'+
       '<textarea data-vsr="notes"'+ref+' aria-label="'+esc(nameOf(s,all))+' clinical review" rows="8" spellcheck="false" placeholder="Write the clinical review, observations and care provided…">'+esc(s.notes||'')+'</textarea></div>'+
       '<div class="jenc-previous vsr-note-diff"'+ref+'>'+noteDiff(s)+'</div></div>';
@@ -388,9 +405,17 @@
   const histories=new Map();
   function history(s){const key=draft.apptId+':'+s.uid;if(!histories.has(key))histories.set(key,{items:[s.notes||''],at:0});return histories.get(key);}
   function remember(s){const h=history(s);if(h.items[h.at]===s.notes)return;h.items=h.items.slice(0,h.at+1);h.items.push(s.notes);h.at++;}
+  // Wrap the current selection (or the caret) with before/after markers.
+  function wrapSelection(el,s,before,after){
+    const a=el.selectionStart,b=el.selectionEnd,sel=el.value.slice(a,b)||'text';
+    el.value=el.value.slice(0,a)+before+sel+after+el.value.slice(b);
+    s.notes=el.value;remember(s);
+    const pos=a+before.length;el.setSelectionRange(pos,pos+sel.length);
+  }
   function command(k,s,el){
     const h=history(s);
     if(k==='undo'||k==='redo'){h.at=Math.max(0,Math.min(h.items.length-1,h.at+(k==='undo'?-1:1)));s.notes=h.items[h.at];el.value=s.notes;}
+    else if(k==='bold'||k==='italic'||k==='underline'){const mk={bold:'**',italic:'*',underline:'__'}[k];wrapSelection(el,s,mk,mk);}
     else {
       const start=el.value.lastIndexOf('\n',el.selectionStart-1)+1;
       let end=el.value.indexOf('\n',el.selectionEnd);if(end<0)end=el.value.length;
@@ -428,7 +453,7 @@
       if(s.rod_asked!==false&&rodCapable(s.type)&&(s.rod?.status&&s.rod.status!=='Not recorded'||o&&o.rod?.status&&o.rod.status!=='Not recorded'))
         out+=line('Rod',esc(rodText(s.rod)),o&&rodText(o.rod)!==rodText(s.rod));
       const a=String(o?.notes||''),b=String(s.notes||'');
-      out+=line('Clinical notes',o&&a!==b&&JE()?.diffHTML?JE().diffHTML(a,b,true):'<span style="white-space:pre-wrap;font-size:'+(Number(s.notes_font_size)||14)+'px">'+highlighted(b||'—')+'</span>');
+      out+=line('Clinical notes',o&&a!==b&&JE()?.diffHTML?JE().diffHTML(a,b,true):'<span style="white-space:pre-wrap;font-size:'+(Number(s.notes_font_size)||14)+'px">'+formatNotes(b||'—')+'</span>');
       return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(s.name||nameOf(s,all))+'</h4>'+out+'</div>';
     }).join('')+'</div>';
   }
@@ -461,6 +486,14 @@
   function change(e){
     const el=e.target,kind=el.dataset?.vsr;
     if(kind==='font'){const s=find(el);if(s){s.notes_font_size=Number(el.value);el.closest('.jenc-stoma-col').querySelector('.vsr-editor').style.setProperty('--vsr-font',s.notes_font_size+'px');}return;}
+    if(kind==='textcolour'){
+      const val=el.value;el.value='';           // reset the picker after each use
+      const s=find(el),ta=el.closest('.jenc-stoma-col')?.querySelector('textarea[data-vsr="notes"]');
+      if(!val||!s||!ta)return;
+      wrapSelection(ta,s,'{'+val+'}','{/'+val+'}');repaint(ta,s);
+      const diff=ta.closest('.jenc-stoma-col').querySelector('.vsr-note-diff');if(diff)diff.innerHTML=noteDiff(s);
+      ta.focus();return;
+    }
     const s=kind&&find(el);if(!s)return;
     if(kind==='colour'){if(el.value==='__add__'){addOther('colour',s);return;}s.colour=el.value;}
     else if(kind==='output'){const v=list(s.output).filter(x=>x!==el.value);if(el.checked)v.push(el.value);setOutput(s,v,el.value,el.checked);}
@@ -560,6 +593,6 @@
   }
   function clear(){draft=null;histories.clear();}
   function refreshHighlights(){host?.querySelectorAll('textarea[data-vsr="notes"]').forEach(el=>{const s=find(el);if(s)repaint(el,s);});}
-  window.VisitStomaReview={highlighted,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  window.VisitStomaReview={highlighted,formatNotes,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();
