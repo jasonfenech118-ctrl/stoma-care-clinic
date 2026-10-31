@@ -409,15 +409,22 @@
   function stamp(x){try{return new Date(x).toLocaleString('en-GB',{timeZone:'Europe/Malta',dateStyle:'medium',timeStyle:'short'});}catch(_){return String(x||'');}}
   // Read-only review: one column per stoma. With the previous version, what
   // changed is red and what was removed is struck through.
-  function reviewHTML(rows,prev){
+  function reviewHTML(rows,prev,opts){
     const all=list(rows);
+    // A follow-up clinic visit records everything in the clinical notes, so the
+    // "what was written" view can skip the colour / function / peristomal-skin
+    // observation lines (opts.hideObservations) and show only notes (+ rod).
+    const hideObs=!!(opts&&opts.hideObservations);
     if(!all.length)return '<div class="report-note">No stoma assessment was recorded at this visit.</div>';
     return '<div class="jenc-stoma-grid vsr-grid" style="--jenc-cols:'+Math.min(all.length,3)+'">'+all.map(s=>{
       const o=prev?list(prev).find(x=>x.uid===s.uid)||{}:null;
       const line=(label,html,changed)=>'<div class="vsr-line"><span class="vsr-label">'+esc(label)+'</span><span class="vsr-val'+(changed?' jenc-change':'')+'">'+(html||'—')+'</span></div>';
-      let out=line('Colour / appearance',esc(s.colour||'Not recorded'),o&&(o.colour||'')!==(s.colour||''));
-      out+=line('Function / output',listText(list(s.output),o?list(o.output):null)||'Not recorded');
-      out+=line('Peristomal skin',listText(skinValues(s.skin),o?skinValues(o.skin):null)||'Not recorded');
+      let out='';
+      if(!hideObs){
+        out+=line('Colour / appearance',esc(s.colour||'Not recorded'),o&&(o.colour||'')!==(s.colour||''));
+        out+=line('Function / output',listText(list(s.output),o?list(o.output):null)||'Not recorded');
+        out+=line('Peristomal skin',listText(skinValues(s.skin),o?skinValues(o.skin):null)||'Not recorded');
+      }
       if(s.rod_asked!==false&&rodCapable(s.type)&&(s.rod?.status&&s.rod.status!=='Not recorded'||o&&o.rod?.status&&o.rod.status!=='Not recorded'))
         out+=line('Rod',esc(rodText(s.rod)),o&&rodText(o.rod)!==rodText(s.rod));
       const a=String(o?.notes||''),b=String(s.notes||'');

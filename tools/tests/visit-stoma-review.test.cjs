@@ -127,6 +127,22 @@ test('visit reviews are signed versions: editing on the day makes V2 with change
   assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24',stoma_assessment:old}),false);assert.equal(w.VisitStomaReview.editableToday({appt_date:'2026-10-24'}),true);
 });
 
+test('reviewHTML can hide the colour / function / peristomal-skin observation lines (follow-up "what was written")',t=>{
+  const {w}=setup(t);
+  const rows=[{uid:'a',type:'End colostomy',name:'End Colostomy',colour:'Healthy pink',
+    output:['Flatus present'],skin:{status:'Healthy',problems:[]},notes:'Reviewed, settled.'}];
+  const full=w.VisitStomaReview.reviewHTML(rows,null);
+  assert.match(full,/Colour \/ appearance/);
+  assert.match(full,/Function \/ output/);
+  assert.match(full,/Peristomal skin/);
+  const trimmed=w.VisitStomaReview.reviewHTML(rows,null,{hideObservations:true});
+  assert.doesNotMatch(trimmed,/Colour \/ appearance/);
+  assert.doesNotMatch(trimmed,/Function \/ output/);
+  assert.doesNotMatch(trimmed,/Peristomal skin/);
+  assert.match(trimmed,/Clinical notes/);         // the clinical notes stay
+  assert.match(trimmed,/Reviewed, settled\./);
+});
+
 test('the Seen (Complete visit) form has no Support / referrals section — referrals live in encounters',async t=>{
   const {w,host,mount}=setup(t);await mount();
   assert.doesNotMatch(host.textContent,/referral/i);assert.equal(host.querySelector('[data-vsr-ref-add],[data-vsr^="ref-"]'),null);
