@@ -177,6 +177,7 @@
     border:1px solid var(--fill-border);
     border-radius:5px;
     padding:8px 10px;
+    white-space:pre-wrap;          /* keep the spaces the nurse types (extra / trailing) */
   }
   [contenteditable="true"]:focus{outline:none;background:#fff;border-color:var(--focus);box-shadow:0 0 0 2px rgba(47,111,176,.15)}
   ul.plan-list[contenteditable="true"]{padding-left:30px}
@@ -466,7 +467,7 @@
       <div class="regards">Regards,</div>
       <div class="sig-gap"></div>
       <div>
-        <input class="fld fld-name" aria-label="Nurse name" readonly placeholder="Loading signed-in nurse…" value="">
+        <input class="fld fld-name" aria-label="Nurse name" placeholder="Loading signed-in nurse…" value="">
       </div>
       <div class="clinic">Stoma Team</div>
       <div class="clinic">Stoma Care Clinic</div>
@@ -1985,12 +1986,17 @@
     async function syncLoggedInSignature(){
     var field=document.querySelector('.fld-name');
     if(!field)return;
+    // Fill the signature from the signed-in nurse when the roster tab is reachable.
+    // Only ever SET a name — never wipe what is there (the roster tab may be closed,
+    // refreshed, or this may re-run on focus), and the nurse can type it if needed.
     try{
       var host=window.parent!==window?window.parent:window.opener;
-      field.value=host&&!host.closed&&typeof host.getDischargeSigner==='function'
-        ?await host.getDischargeSigner():'';
-    }catch(e){field.value='';}
-    field.placeholder=field.value?'':'Open this letter from the signed-in roster';
+      if(host&&!host.closed&&typeof host.getDischargeSigner==='function'){
+        var name=await host.getDischargeSigner();
+        if(name)field.value=name;
+      }
+    }catch(e){}
+    field.placeholder=field.value?'':'Type the signing nurse’s name';
   }
   syncLoggedInSignature();
   window.addEventListener('focus',syncLoggedInSignature);
@@ -2501,9 +2507,9 @@
       + '.lh-tel{font-size:14pt;font-weight:bold;line-height:1.2;}'
       + 'p{margin:0 0 10px;}'
       + '.patient{font-weight:bold;text-align:center;}'
-      + '.body-txt{text-align:justify;margin-bottom:17pt;}'
+      + '.body-txt{text-align:justify;margin-bottom:17pt;white-space:pre-wrap;}'
       + '.plan-h{font-weight:bold;text-decoration:underline;margin-bottom:17pt;}'
-      + 'ul{margin:0 0 17pt;padding-left:24px;}li{margin:0 0 5px;break-inside:avoid;}'
+      + 'ul{margin:0 0 17pt;padding-left:24px;}li{margin:0 0 5px;break-inside:avoid;white-space:pre-wrap;}'
       + 'p{break-inside:avoid;}.record-stoma-title{margin-top:18px;break-after:avoid;}'
       + '.record-plan-title{list-style:none;margin:16px 0 7px;break-after:avoid;}'
       + ".footer{font-family:'Arial Narrow',sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;margin-top:26px;padding-top:6px;}"

@@ -1,31 +1,25 @@
 -- =============================================================================
 -- Tighten the clinic-table RLS policies — clears Supabase's "RLS Policy Always
--- True" warnings without changing what the app can do.
+-- True" warnings, and keeps every nurse's access working.
 -- =============================================================================
--- WHY
---   sql/fix-nurse-access-all-tables.sql gave every clinic table one FOR ALL policy
---   with USING (true) / WITH CHECK (true). Supabase's linter warns that an
---   always-true policy on INSERT/UPDATE/DELETE effectively bypasses row-level
---   security. (It intentionally ignores always-true SELECT policies — public read
---   is a normal pattern.)
+-- This is self-contained: it grants access AND sets the policies, so you can run
+-- just this one (you do not have to run fix-nurse-access-all-tables.sql first).
 --
--- WHAT THIS DOES, per clinic table:
+-- Per clinic table:
 --   • SELECT (read) stays open to everyone — the app is gated by login and no
---     screen should go blank. The linter excludes read policies, so this is fine.
+--     screen goes blank. The linter ignores always-true read policies.
 --   • INSERT / UPDATE / DELETE are limited to a SIGNED-IN user, checking
---     (select auth.uid()) is not null instead of a bare true. Every nurse signs in
---     before the app reads or writes, so saving keeps working — but the anon key
---     on its own can no longer write.
---   audit_log keeps its own Jason-only restriction and is left untouched.
+--     (select auth.uid()) is not null instead of a bare true — which is what
+--     clears the warnings. Every nurse signs in before saving, so saving works.
+--   audit_log keeps its own Jason-only restriction and is NOT touched here.
 --
--- No patient data is read, changed or deleted — only the policies.
+-- No patient data is read, changed or deleted — only grants and policies.
 --
--- HOW TO RUN
---   Supabase Dashboard -> SQL Editor -> New query (empty) -> paste all -> Run.
---   Safe to re-run.
+-- HOW TO RUN (important): open a NEW query, CLEAR the editor completely
+--   (Ctrl/Cmd+A then Delete), paste ALL of this, then Run. Safe to re-run.
 -- =============================================================================
 
-do $$
+do $do$
 declare
   t text;
   tables text[] := array[
@@ -41,33 +35,19 @@ begin
   foreach t in array tables loop
     if to_regclass('public.'||t) is null then continue; end if;
     execute format('alter table public.%I enable row level security', t);
-    -- Remove the old always-true policy and any earlier run of this one.
+    -- Table-level grants (RLS still decides the rows): read for all, write for signed-in.
+    execute format('grant select on public.%I to anon, authenticated', t);
+    execute format('grant insert, update, delete on public.%I to authenticated', t);
+    -- Replace the old always-true policy and any earlier run of this one.
     execute format('drop policy if exists %I on public.%I', t||'_all_access', t);
     execute format('drop policy if exists %I on public.%I', t||'_read',   t);
     execute format('drop policy if exists %I on public.%I', t||'_insert', t);
     execute format('drop policy if exists %I on public.%I', t||'_update', t);
     execute format('drop policy if exists %I on public.%I', t||'_delete', t);
-    -- Read stays open (login-gated app); the linter excludes SELECT USING (true).
     execute format('create policy %I on public.%I for select to anon, authenticated using (true)', t||'_read', t);
-    -- Writes require a signed-in user — not an always-true expression.
     execute format('create policy %I on public.%I for insert to authenticated with check ((select auth.uid()) is not null)', t||'_insert', t);
     execute format('create policy %I on public.%I for update to authenticated using ((select auth.uid()) is not null) with check ((select auth.uid()) is not null)', t||'_update', t);
     execute format('create policy %I on public.%I for delete to authenticated using ((select auth.uid()) is not null)', t||'_delete', t);
   end loop;
-end $$;
-
--- Verify: no remaining always-true write policy on these tables (expect 0 rows).
-select tablename, policyname, cmd
-from pg_policies
-where schemaname = 'public'
-  and cmd <> 'SELECT'
-  and (qual = 'true' or with_check = 'true')
-  and tablename = any(array[
-    'appointments','assessment_options','bank_staff','bank_staff_assignments',
-    'clinic_app_access','clinic_dated_reminders','clinic_pending_tasks',
-    'clinical_records','complication_types','daily_attendance','encounters',
-    'firms','handover_snapshots','leave_records','localities',
-    'operations_no_stoma','patient_communications','patient_discharge_letters',
-    'patients','public_holidays','roster','siting_images','siting_sessions',
-    'staff','surgical_rotation_current'])
-order by tablename;
+end
+$do$;
