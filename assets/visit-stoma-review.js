@@ -375,14 +375,18 @@
   // record (so diffs and signatures are unaffected) and rendered to HTML only in
   // the read-only "what was written" view. A fixed colour set — no arbitrary CSS.
   const NOTE_COLOURS={red:'#dc2626',orange:'#d97706',green:'#16a34a',blue:'#2563eb',purple:'#7c3aed'};
-  function formatNotes(text){
-    let html=highlighted(text);                 // escapes, keeps markers, underlines bible terms
+  // Turn the markers into HTML. Used on already-escaped text (formatNotes) and on
+  // already-HTML diff output (renderMarkersInHtml), so colours / bold / italic /
+  // underline show wherever a review is shown — including the "show changes" diff.
+  function applyMarkers(html){
     html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span>');
     html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<strong>$1</strong>');
     html=html.replace(/__([\s\S]+?)__/g,'<u>$1</u>');
     html=html.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
     return html;
   }
+  function formatNotes(text){return applyMarkers(highlighted(text));}   // escapes, then renders markers
+  function renderMarkersInHtml(html){return applyMarkers(String(html||''));}   // diff output is already escaped
   // ── Rich-text editor ↔ marker storage ──────────────────────────────────
   // The editor is a real contenteditable surface, so bold / italic / underline
   // show as formatted text (no ** or __ visible) with a normal caret and the
@@ -405,7 +409,8 @@
   }
   const COLOUR_RGB=Object.keys(NOTE_COLOURS).map(k=>({k,rgb:colourRgb(NOTE_COLOURS[k])}));
   function colourKeyOf(node){
-    const c=(node.style&&node.style.color)||'';const rgb=colourRgb(c);if(!rgb)return '';
+    // Read the colour from a style (foreColor with CSS) or a legacy <font color> attribute.
+    const c=(node.style&&node.style.color)||(node.getAttribute&&node.getAttribute('color'))||'';const rgb=colourRgb(c);if(!rgb)return '';
     const hit=COLOUR_RGB.find(x=>x.rgb&&x.rgb[0]===rgb[0]&&x.rgb[1]===rgb[1]&&x.rgb[2]===rgb[2]);return hit?hit.k:'';
   }
   // Walk the editor DOM back to marker text: every text node is kept verbatim,
@@ -471,7 +476,7 @@
   function noteDiff(s){
     const old=draft?.compare?draft.compare.find(x=>x.uid===s.uid):null;if(!old)return '';
     const a=String(old.notes||''),b=String(s.notes||'');if(a===b)return '';
-    return 'Changes: '+(JE()?.diffHTML?JE().diffHTML(a,b,true):'<span class="jenc-change">'+esc(b)+'</span>');
+    return 'Changes: '+(JE()?.diffHTML?renderMarkersInHtml(JE().diffHTML(a,b,true)):'<span class="jenc-change">'+esc(b)+'</span>');
   }
   function stamp(x){try{return new Date(x).toLocaleString('en-GB',{timeZone:'Europe/Malta',dateStyle:'medium',timeStyle:'short'});}catch(_){return String(x||'');}}
   // Read-only review: one column per stoma. With the previous version, what
@@ -495,7 +500,7 @@
       if(s.rod_asked!==false&&rodCapable(s.type)&&(s.rod?.status&&s.rod.status!=='Not recorded'||o&&o.rod?.status&&o.rod.status!=='Not recorded'))
         out+=line('Rod',esc(rodText(s.rod)),o&&rodText(o.rod)!==rodText(s.rod));
       const a=String(o?.notes||''),b=String(s.notes||'');
-      out+=line('Clinical notes',o&&a!==b&&JE()?.diffHTML?JE().diffHTML(a,b,true):'<span style="white-space:pre-wrap;font-size:'+(Number(s.notes_font_size)||14)+'px">'+formatNotes(b||'—')+'</span>');
+      out+=line('Clinical notes','<span style="white-space:pre-wrap;font-size:'+(Number(s.notes_font_size)||14)+'px">'+(o&&a!==b&&JE()?.diffHTML?renderMarkersInHtml(JE().diffHTML(a,b,true)):formatNotes(b||'—'))+'</span>');
       return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(s.name||nameOf(s,all))+'</h4>'+out+'</div>';
     }).join('')+'</div>';
   }

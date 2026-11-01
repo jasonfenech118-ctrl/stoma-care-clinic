@@ -20,6 +20,16 @@ test('notes convert between markers and editor HTML without losing wording or sh
   const multi='line one\nline two';const back=api.htmlToMarkers((()=>{const x=w.document.createElement('div');x.innerHTML=api.markersToHtml(multi);return x;})());
   assert.equal(back,multi);
 });
+test('a saved review renders colour/format markers even when showing changes from a previous version',async t=>{
+  const {w,api}=await setup(t);
+  w.JasonEncounters={diffHTML:(a,b)=>String(b).replace(/&/g,'&amp;').replace(/</g,'&lt;')};   // minimal diff (escapes text, keeps markers)
+  const rows=[{uid:'a',type:'End colostomy',notes:'keep {red}red bit{/red} and **bold**',notes_font_size:14}];
+  const prev=[{uid:'a',type:'End colostomy',notes:'keep {red}red bit{/red}',notes_font_size:14}];
+  const out=api.reviewHTML(rows,prev,{hideObservations:true});
+  assert.match(out,/color:#dc2626">red bit<\/span>/);   // colour renders in the diff view
+  assert.match(out,/<strong>bold<\/strong>/);
+  assert.doesNotMatch(out,/\{red\}|\*\*bold\*\*/);        // no raw markers left
+});
 test('the Bold button runs the rich-text bold command on the editor (no ** inserted)',async t=>{
   const {w,host,el}=await setup(t);
   el.textContent='healthy skin';el.dispatchEvent(new w.Event('input',{bubbles:true}));
