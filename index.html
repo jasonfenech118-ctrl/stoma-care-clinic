@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-693"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-694"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-693"></script>
+<script src="assets/manual.js?v=2026.11.01-694"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2475,6 +2475,13 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 .pd-care-event td{background:#ede9fe!important;color:#4c1d95;border-top:2px solid #c4b5fd;}
 .pd-care-event strong{font-size:12px;}
 .pd-care-link{margin:0 0 6px;}.pd-care-link .clr-mini{white-space:normal;text-align:left;}
+.pd-search{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 14px;}
+.pd-search-q{flex:1 1 220px;min-width:0;padding:8px 11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;font-size:13px;}
+.pd-search-q:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal);}
+.pd-search-type{padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;font-size:13px;background:#fff;}
+.pd-search-count{font-size:12.5px;color:#56708a;font-weight:700;}
+mark.pd-hit{background:#fde68a;color:inherit;padding:0 1px;border-radius:3px;}
+tr.pd-row-hit td{background:#fffbeb;}
 #page-care-episode{width:100%;min-height:calc(100vh - 180px)}.care-episode-page{width:100%;max-width:none;box-sizing:border-box;display:grid;gap:18px}.care-episode-page .psm-head{align-items:center}.care-episode-page .psm-head h2{margin:0 0 8px}.pd-admission-group>summary{cursor:pointer;font-weight:700;color:var(--teal);padding:8px 0}.psm-identity-row>.psm-btn{margin-left:8px;min-height:36px;flex:0 0 auto}
 
 .pd-history-table.pd-pathway-table th:nth-child(1){width:clamp(74px,9vw,110px)}
@@ -3966,7 +3973,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-693';
+const APP_BUILD='2026.11.01-694';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18976,6 +18983,65 @@ function patientDashboardHistoryHTML(){
 
 function refreshPatientDashboardHistory(){
   const el=document.getElementById('pd-history-body');if(el)el.innerHTML=patientDashboardHistoryHTML();
+  // Re-apply any active search so a background refresh does not drop the filter.
+  if(typeof filterPatientProfile==='function')filterPatientProfile();
+}
+/* ── Search inside the patient profile ────────────────────────────────────
+   One box over the whole care history — encounters, follow-up appointments and
+   correspondence are all rows in the same table, so a nurse can type (e.g. part
+   of an email, a finding) and the matching entries are highlighted and floated
+   up while everything else is hidden. A type dropdown narrows it to one kind. */
+function pdHighlight(el,q){
+  if(!el||!q)return 0;
+  let hits=0;const ql=q.toLowerCase();
+  const walk=node=>{
+    Array.from(node.childNodes).forEach(child=>{
+      if(child.nodeType===3){
+        const text=child.nodeValue,lower=text.toLowerCase();
+        if(!lower.includes(ql))return;
+        const frag=document.createDocumentFragment();let i=0,idx;
+        while((idx=lower.indexOf(ql,i))>=0){
+          if(idx>i)frag.appendChild(document.createTextNode(text.slice(i,idx)));
+          const mark=document.createElement('mark');mark.className='pd-hit';mark.textContent=text.slice(idx,idx+q.length);
+          frag.appendChild(mark);hits++;i=idx+q.length;
+        }
+        if(i<text.length)frag.appendChild(document.createTextNode(text.slice(i)));
+        child.replaceWith(frag);
+      }else if(child.nodeType===1&&child.tagName!=='MARK'){walk(child);}
+    });
+  };
+  walk(el);return hits;
+}
+function pdClearHighlights(root){
+  if(!root)return;
+  root.querySelectorAll('mark.pd-hit').forEach(m=>m.replaceWith(document.createTextNode(m.textContent)));
+  root.querySelectorAll('td').forEach(td=>td.normalize());   // re-join split text so repeat searches still match
+}
+function filterPatientProfile(){
+  const body=document.getElementById('pd-history-body');if(!body)return;
+  const q=(document.getElementById('pd-search-q')?.value||'').trim();
+  const type=document.getElementById('pd-search-type')?.value||'';
+  const count=document.getElementById('pd-search-count');
+  pdClearHighlights(body);
+  const active=!!q||!!type;
+  let matches=0;
+  body.querySelectorAll('.pd-history-table tbody tr').forEach(tr=>{
+    tr.classList.remove('pd-row-hit');
+    const kind=(tr.querySelector('td')?.textContent||'').trim();
+    const typeOk=!type||kind===type;
+    let hit=typeOk;
+    if(q&&typeOk){const info=tr.querySelector('td:nth-child(2)')||tr;hit=pdHighlight(info,q)>0;}
+    tr.hidden=active&&!hit;
+    if(active&&hit){matches++;tr.classList.add('pd-row-hit');}
+  });
+  // Open each care-list that still has a match; hide the ones that have none so
+  // the matches sit at the top of the history.
+  body.querySelectorAll('details.pd-care-list').forEach(d=>{
+    const visible=Array.from(d.querySelectorAll('.pd-history-table tbody tr')).some(tr=>!tr.hidden);
+    d.hidden=active&&!visible;if(active&&visible)d.open=true;
+  });
+  if(count)count.textContent=active?(matches?matches+' match'+(matches===1?'':'es'):'No matches'):'';
+  if(active)document.getElementById('pd-history')?.closest('details.pd-section')?.setAttribute('open','');
 }
 function patientDashboardSection(panel,label,open){
   if(!panel)return null;
@@ -19005,7 +19071,16 @@ function arrangePatientDashboard(){
   const home=patientDashboardSection(overview,'Patient overview',false);
   patientDashboardSection(document.getElementById('psm-stomas'),'Stomas & surgery',false);
   patientDashboardSection(document.getElementById('psm-outcomes'),'Outcome',false);
-  const history=document.createElement('section');history.id='pd-history';history.innerHTML='<div id="pd-history-body"></div>';
+  const history=document.createElement('section');history.id='pd-history';history.innerHTML=`<div class="pd-search" role="search">
+      <input type="search" id="pd-search-q" class="pd-search-q" placeholder="Search encounters, appointments &amp; correspondence…" aria-label="Search this patient's records" oninput="filterPatientProfile()">
+      <select id="pd-search-type" class="pd-search-type" aria-label="Limit the search to one record type" onchange="filterPatientProfile()">
+        <option value="">All types</option>
+        <option value="Follow-up appointment">Appointments</option>
+        <option value="Inpatient">Encounters</option>
+        <option value="Correspondence">Correspondence</option>
+      </select>
+      <span class="pd-search-count" id="pd-search-count" aria-live="polite"></span>
+    </div><div id="pd-history-body"></div>`;
   root.querySelector('.psm-foot').before(history);patientDashboardSection(history,'Appointments & episodes',false);refreshPatientDashboardHistory();
   // Preserve original panels and their IDs for existing save/refresh paths.
   document.getElementById('psm-appts').hidden=true;
