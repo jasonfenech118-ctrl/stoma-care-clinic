@@ -7,4 +7,27 @@ test('admission page uses full-page content, open encounter groups and escaped r
 test('closed admissions show saved encounters and no add-encounter action',()=>{const c=context();c.isEncounterUser=()=>true;const out=c.careEpisodePageHTML({id:'p'},{detail:'SW1 - 12',is_current:false,discharge_date:'2026-10-05'},[]);assert.match(out,/No encounters recorded/);assert.doesNotMatch(out,/Add \/ update encounter/);});
 test('opening an admission activates its own page and fetches only that patient and episode',async()=>{const c=context(),pages=[],filters=[];function el(id){return{id,className:'page',innerHTML:'',classList:{active:id==='page-patient-record',add(){this.active=true;},remove(){this.active=false;}}};}const origin=el('page-patient-record');pages.push(origin);c.clrState={patientId:'p'};c.window={scrollY:42,scrollTo:()=>{}};c.closeModal=()=>{};c.document={getElementById:id=>pages.find(p=>p.id===id),createElement:()=>el(''),querySelector:selector=>selector.includes('.active')?pages.find(p=>p.classList.active):{append:p=>pages.push(p)},querySelectorAll:()=>pages.filter(p=>p.classList.active)};c.fetchPatientById=async()=>({data:{id:'p'}});const q={select(){return q;},eq(k,v){filters.push([k,v]);return q;},order(){return q;},single:async()=>({data:{id:'ep',kind:'episode',detail:'SW1 - 12'}})};c.SB={from:()=>q};c.fetchAllRows=async build=>{build();return{rows:[{id:'a',episode_id:'ep',encounter_date:'2026-10-02',nursing_report:'Latest'},{id:'wrong',episode_id:'different',nursing_report:'Wrong admission'},{id:'b',episode_id:'ep',encounter_date:'2026-10-01',nursing_report:'Earlier'}]};};await c.openCareEpisode('ep');const page=pages.find(p=>p.id==='page-care-episode');assert(page.classList.active);assert(!origin.classList.active);assert.match(page.innerHTML,/Encounters \(2\)/);assert.doesNotMatch(page.innerHTML,/Wrong admission/);assert(page.innerHTML.indexOf('Latest')<page.innerHTML.indexOf('Earlier'));assert(filters.some(([k,v])=>k==='patient_id'&&v==='p'));assert(filters.some(([k,v])=>k==='episode_id'&&v==='ep'));let returned;c.openPatientRecord=async id=>{returned=id;};await c.backCareEpisode();assert.equal(returned,'p');assert(!page.classList.active);});
 test('care chart titles show stoma type and direct encounter findings without episode buttons or stoma codes',()=>{const c=context(),stoma={uid:'base',number:1,code:'STO-SHOULD-NOT-SHOW',type:'End colostomy',present:true};c.clrState={patient:{id:'p'},rows:[{id:'ep',kind:'episode',record_date:'2026-10-01',detail:'SW1 - 12',title:'Inpatient visit'}],encounters:[{id:'n',episode_id:'ep',encounter_date:'2026-10-02',nursing_report:'Reviewed'}],appts:[]};c.stomaCareModel=()=>({groups:new Map([['base',{key:'base',stomas:[stoma],rows:[]}]]),byUid:new Map([['base',stoma]]),root:uid=>uid});c.careRecordUids=()=>['base'];c.parseEpisodeApplianceRows=()=>[];c.window={};const out=c.patientDashboardHistoryHTML();assert.match(out,/<summary>Stoma 1 · End colostomy<\/summary>/);assert.doesNotMatch(out,/<details class="pd-admission-group"/);assert.match(out,/Reviewed/);assert.doesNotMatch(out,/Open episode|Inpatient admission|openCareEpisode/);assert.doesNotMatch(out,/STO-SHOULD-NOT-SHOW|Inpatient visit|openClinicalRecordForm/);});
+test('inline history renders bold/italic/underline markers (not raw ** or __) via VisitStomaReview',()=>{
+  const c=context(),stoma={uid:'base',number:1,type:'Transverse colostomy',present:true};
+  c.clrState={patient:{id:'p'},rows:[{id:'ep',kind:'episode',record_date:'2026-10-01',detail:'SW1 - 10'}],
+    encounters:[{id:'n',episode_id:'ep',encounter_date:'2026-10-02',nursing_report:'**Plan** to continue; __watch__ the skin'}],appts:[]};
+  c.stomaCareModel=()=>({groups:new Map([['base',{key:'base',stomas:[stoma],rows:[]}]]),byUid:new Map([['base',stoma]]),root:uid=>uid});
+  c.careRecordUids=()=>['base'];c.parseEpisodeApplianceRows=()=>[];
+  // Stub the real renderer: markers become HTML, so the raw ** / __ disappear.
+  const VSR={formatNotes:t=>String(t).replace(/\*\*([\s\S]+?)\*\*/g,'<strong>$1</strong>').replace(/__([\s\S]+?)__/g,'<u>$1</u>')};
+  c.window={VisitStomaReview:VSR};c.VisitStomaReview=VSR;   // browser globals: window.X === X
+  const out=c.patientDashboardHistoryHTML();
+  assert.match(out,/<strong>Plan<\/strong>/);
+  assert.match(out,/<u>watch<\/u>/);
+  assert.doesNotMatch(out,/\*\*Plan\*\*|__watch__/);   // no raw markers left
+});
+test('inline history falls back to escaped text when the formatter is unavailable',()=>{
+  const c=context(),stoma={uid:'base',number:1,type:'Transverse colostomy',present:true};
+  c.clrState={patient:{id:'p'},rows:[],encounters:[],appts:[{id:'a',appt_date:'2026-10-05',status:'attended'}]};
+  c.stomaCareModel=()=>({groups:new Map(),byUid:new Map(),root:uid=>uid});
+  c.careRecordUids=()=>[];c.parseEpisodeApplianceRows=()=>[];c.statusLabel=()=>'Attended';c.apptReviewInlineText=()=>'<unsafe> **kept raw**';c.window={};
+  const out=c.patientDashboardHistoryHTML();
+  assert.doesNotMatch(out,/<unsafe>/);               // still escaped — no XSS without the formatter
+  assert.match(out,/\*\*kept raw\*\*/);               // markers left as text when no formatter present
+});
 test('all inline scripts parse',()=>{for(const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi))if(!/\bsrc\s*=/.test(m[1])&&m[2].trim())new Function(m[2]);});

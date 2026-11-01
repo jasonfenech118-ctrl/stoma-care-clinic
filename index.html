@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-695"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-697"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-695"></script>
+<script src="assets/manual.js?v=2026.11.01-697"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3973,7 +3973,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-696';
+const APP_BUILD='2026.11.01-697';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18934,6 +18934,10 @@ function apptReviewInlineText(a){
 }
 function patientDashboardHistoryHTML(){
   const p=clrState.patient,model=stomaCareModel(p),rows=[],esc=htmlSafe;
+  // Render the inline record text the same way as the saved "what was written"
+  // view: **bold**, *italic*, __underline__, {colour} and the red complication
+  // underlines, instead of showing the raw ** / __ markers as plain text.
+  const fmtText=t=>{try{return (window.VisitStomaReview&&VisitStomaReview.formatNotes)?VisitStomaReview.formatNotes(String(t==null?'':t)):esc(String(t==null?'':t));}catch(e){return esc(String(t==null?'':t));}};
   const dateOf=r=>String(r.record_date||r.encounter_date||r.appt_date||r.communication_date||r.created_at||'').slice(0,10);
   const sorted=rs=>rs.slice().sort((a,b)=>String(b.sortDate||b.date||'').localeCompare(String(a.sortDate||a.date||''))||String(b.time||'').localeCompare(String(a.time||''))||String(b.stamp||'').localeCompare(String(a.stamp||'')));
   const wb=ep=>episodeWardBed({detail:String(ep?.detail||'').split(' · ')[0]})||'';
@@ -18964,7 +18968,7 @@ function patientDashboardHistoryHTML(){
   if(unknown.rows.length)groups.push(unknown);
   groups.forEach(g=>{g.latest=g.rows.reduce((date,r)=>String(r.sortDate||r.date)>date?String(r.sortDate||r.date):date,'');g.latest=g.stomas.reduce((date,s)=>String(s.formed_date||'')>date?String(s.formed_date):date,g.latest);});
   groups.sort((a,b)=>b.latest.localeCompare(a.latest)||b.key.localeCompare(a.key));
-  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${esc(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
+  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
     const latest=g.stomas[g.stomas.length-1];
