@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-700"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-701"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-700"></script>
+<script src="assets/manual.js?v=2026.11.01-701"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3973,7 +3973,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-700';
+const APP_BUILD='2026.11.01-701';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6913,7 +6913,10 @@ async function openOutcomeFollowupModal(apptId,status,options={}){
     }
     // Jason's per-stoma assessment sits first in Clinical review (filled after opening).
     const stomaReviewHost=(window.VisitStomaReview&&VisitStomaReview.enabled())?'<div id="es-stoma-review" style="margin-bottom:14px;"></div>':'';
-    const clinicalPane=`${stomaReviewHost}<input type="radio" name="of-cmp-review" value="existing-reviewed" checked hidden><details><summary>Recorded patient complications</summary>${complicationListHTML(complicationsNow||[],{removable:false})}<button type="button" class="ncb-btn" onclick="openComplicationsManager('${jsSafe(String(p.id))}','Appointment')">Update patient complication outcomes</button></details>${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
+    // Complications are no longer a separate section in the Seen flow — they are
+    // written in the clinical review free text (and auto-underlined). The patient
+    // complication timeline is still managed from Handover / the patient record.
+    const clinicalPane=`${stomaReviewHost}${applianceReviewSectionHTML(appt,p,appt.appliance_review||'',hasApplianceHistory)}<div id="of-review-error" class="registry-lookup-note error" hidden style="margin-top:8px;"></div>`;
     mb.innerHTML=`<h2>${requestedStatus==='attended'?'Complete visit':'Edit appointment'}</h2>
       ${summary}
       <div class="es-info">This appointment can be amended. Keeping its existing due month is allowed and is not treated as a duplicate.</div>
@@ -7193,30 +7196,6 @@ async function esFollowupNext(){
   if(!esState)return;
   if(!esOutcomeAttended()){esGoStep(4);return;}
   if(window.VisitStomaReview?.validate&&!VisitStomaReview.validate(esState.apptId))return;
-  // Unhealthy peristomal skin is a complication: it cannot be "none identified".
-  const skinIssues=window.VisitStomaReview?VisitStomaReview.skinFor(esState.apptId).problems:[];
-  if(skinIssues.length&&document.querySelector('input[name="of-cmp-review"]:checked')?.value==='none'){
-    const err=document.getElementById('of-review-error');
-    if(err){err.hidden=false;err.textContent='The peristomal skin is not healthy ('+[...new Set(skinIssues.map(x=>x.text))].join(', ')+') — choose “A complication is identified”.';}
-    return;
-  }
-  if(skinIssues.length)onVisitSkinChange();
-  const cmp=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  const isNewCase=document.getElementById('mb')?.dataset?.followupType==='new_case';
-  const isDntu=document.getElementById('mb')?.dataset?.dntuEditMode==='1';
-  if(!isNewCase&&!isDntu&&!cmp){
-    const err=document.getElementById('of-review-error');
-    if(err){err.hidden=false;err.textContent='Before moving on, confirm how complications were reviewed.';}
-    return;
-  }
-  // A complication ticked but not yet added would be lost on the next step, so
-  // record it now.
-  if(cmp==='new-added'&&!isNewCase&&!isDntu&&esState.patientId){
-    if(document.querySelectorAll('.of-cmp-multi:checked').length){
-      try{if(!await onApptAddComplicationsMulti(esState.patientId))return;}
-      catch(e){alert('Could not save the selected complications: '+(e.message||e));return;}
-    }
-  }
   esGoStep(3);   // Appliances & accessories — the picker opens from there
 }
 /* The Appliances step (3): a summary of what will be recorded and a button to
@@ -7295,19 +7274,6 @@ function esRenderReview(){
   // A review line: a soft label with its value in bold, so the eye reads the data
   // and not the labels. An empty label makes the whole line the bold value.
   const boldVal=(label,value)=>({html:`<div style="font-size:13px;color:#64707e;line-height:1.7;margin:1px 0;">${label?htmlSafe(label)+' ':''}<strong style="color:#111827;font-weight:750;">${htmlSafe(value==null||value===''?'—':value)}</strong></div>`});
-  const cmpValue=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
-  // Use the current record, not rendered chips or resolved history, alongside
-  // findings selected for this visit.
-  const cmpNames=[...new Set([
-    ...((esState&&esState.complications)?esState.complications.filter(c=>c.status!=='resolved').map(c=>String(c.text||c.title||'').trim()):[]),
-    ...[...document.querySelectorAll('.of-cmp-multi:checked')].map(b=>String(b.value||'').trim()),
-    ...(window.VisitStomaReview&&esState?VisitStomaReview.skinFor(esState.apptId).problems.map(x=>x.text):[])
-  ].filter(Boolean))];
-  const cmpLines=cmpValue==='none'
-    ? [boldVal('','No complications identified')]
-    : (cmpNames.length
-        ? cmpNames.map(t=>({html:`<div style="font-size:13px;color:#374151;line-height:1.7;margin:1px 0;">• <strong style="color:#991b1b;font-weight:750;">${htmlSafe(t)}</strong></div>`}))
-        : ['A complication is identified — tap to record which']);
   // Appliance & accessories: show what was recorded, never "Not answered". The
   // accessory step of the picker already makes an explicit answer compulsory
   // (None must be ticked if none were used), so there is always a value here.
@@ -7377,7 +7343,7 @@ function esRenderReview(){
   pane.innerHTML=`<div class="edit-seen-section">Review — check, then save</div>
     <div class="dntu-note" style="margin:0 0 10px;">Tap any section to change it.</div>
     ${card(1,'Attendance',[dtLine,ownerBadge,boldVal('Outcome',selText('of-status'))],TONE_ATT)}
-    ${stomaReviewCard}${card(2,'Complications',cmpLines,TONE_CMP)}
+    ${stomaReviewCard}
     ${card(3,'Appliance & accessories',appLines,TONE_APP)}
     ${card(4,'Follow-up',[boldVal('',nextTxt),dueLine,boldVal('Status',selText('of-followup-status'))],TONE_FU)}`;
 }
@@ -8121,10 +8087,10 @@ async function saveOutcomeFollowup(apptId,patientId){
   const complicationReview=document.querySelector('input[name="of-cmp-review"]:checked')?.value||'';
   const applianceReview=document.querySelector('input[name="of-app-review"]:checked')?.value||'';
   if(status==='attended'&&!isNewCase&&!isDntuEditMode){
-    if(!complicationReview||!applianceReview){
+    if(!applianceReview){
       const err=document.getElementById('of-review-error');
-      if(err){err.hidden=false;err.textContent='Before completing the visit, confirm how complications were reviewed and how appliances were reviewed.';}
-      if(typeof esState!=='undefined'&&esState){esState.step=2;esGoStep(2);}
+      if(err){err.hidden=false;err.textContent='Before completing the visit, confirm how appliances were reviewed.';}
+      if(typeof esState!=='undefined'&&esState){esState.step=3;esGoStep(3);}
       return;
     }
   }

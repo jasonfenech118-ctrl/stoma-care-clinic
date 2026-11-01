@@ -48,18 +48,15 @@ test('editing a saved visit preserves its historical rod data without offering r
   }
 });
 
-test('Complete visit advances and saves without a rod date, keeps complication checks and leaves patient rod fields alone',async t=>{
+test('Complete visit advances to Appliances without a complications gate and saves without a rod date, leaving patient rod fields alone',async t=>{
   const row={uid:'b',type:'Loop ileostomy',colour:'Healthy pink',output:['Nil'],skin:{status:'Healthy',problems:[]},rod:{status:'In place',due:'',removed:''},rod_asked:true,notes:'Saved.'};
   const {w,host,mount}=setup(t,{stomas:[{uid:'b',typeLabel:'Loop ileostomy'}],patient:{rod_stoma_uid:'b',rod_removal_date:'2026-10-27'}});
   await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:[row]});
-  w.document.body.insertAdjacentHTML('beforeend','<div id="mb"><input type="radio" name="of-cmp-review" value="none"><div id="of-review-error" hidden></div></div>');
+  w.document.body.insertAdjacentHTML('beforeend','<div id="mb"><div id="of-review-error" hidden></div></div>');
   const steps=[],appointments=[],patients=[];
   w.esState={apptId:'ap1',patientId:'p1'};w.esOutcomeAttended=()=>true;w.esGoStep=n=>steps.push(n);
   w.eval(fn('esFollowupNext'));
-  await w.esFollowupNext();assert.deepEqual(steps,[],'complication review is still required');
-  assert.match(w.document.getElementById('of-review-error').textContent,/confirm how complications were reviewed/);
-  w.document.querySelector('[name="of-cmp-review"]').checked=true;
-  await w.esFollowupNext();assert.deepEqual(steps,[3],'the old rod with no date does not block the Appliances step');
+  await w.esFollowupNext();assert.deepEqual(steps,[3],'advances straight to Appliances — no complication confirmation, and the old rod with no date does not block it');
   const notes=host.querySelector('[data-vsr="notes"]');notes.textContent='Reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
   w.getCurrentUserForAudit=async()=>({name:'Nurse',email:'nurse@gov.mt'});w.attDisplayName=u=>u.name;
   w.updateAppointmentTolerant=async(_id,patch)=>{appointments.push(JSON.parse(JSON.stringify(patch)));return {error:null,dropped:[]};};

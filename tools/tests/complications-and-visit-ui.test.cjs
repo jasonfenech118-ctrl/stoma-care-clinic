@@ -140,22 +140,22 @@ test('appliances and accessories are alphabetical and Deodorant is retired',()=>
   assert.doesNotMatch(html,/ACCESSORIES\.map\(n=>applianceChkHTML/);
 });
 
-test('visit Review excludes resolved history and stale chips but keeps open and newly selected findings',()=>{
+test('the Seen visit Review no longer shows a Complications section',()=>{
   const pane={innerHTML:''};
   const context=vm.createContext({
     document:{
       getElementById:id=>id==='es-pane-5'?pane:null,
-      querySelector:selector=>selector.includes('of-cmp-review')?{value:'new-added'}:null,
-      querySelectorAll:selector=>selector==='.of-cmp-multi:checked'?[{value:'New finding'}]:[{textContent:'Stale resolved chip'}]
+      querySelector:()=>null,
+      querySelectorAll:()=>[]
     },
-    esState:{apptId:'a',complications:[{text:'Old resolved complication',status:'resolved'},{text:'Current concern',status:'open'}]},
+    esState:{apptId:'a',complications:[{text:'Current concern',status:'open'}]},
     esResume:null,window:{},htmlSafe:String,attDMY:String
   });
   vm.runInContext(sourceBetween('function esRenderReview(){','function esOnOutcomeChange(){'),context);
   context.esRenderReview();
-  assert.match(pane.innerHTML,/Current concern/);
-  assert.match(pane.innerHTML,/New finding/);
-  assert.doesNotMatch(pane.innerHTML,/Old resolved complication|Stale resolved chip/);
+  // Complications are written in the clinical review free text now — no separate card.
+  assert.doesNotMatch(pane.innerHTML,/Complications/);
+  assert.doesNotMatch(pane.innerHTML,/Current concern|A complication is identified/);
 });
 
 test('changing a complication outcome refreshes the matching visit review only',()=>{
@@ -192,16 +192,16 @@ test('failed hernia save retains its selection and reports the underlying error'
   assert.equal(err.hidden,false);
 });
 
-test('Clinical review stays put when a selected complication cannot save',async()=>{
+test('Clinical review advances straight to Appliances (no complications gate)',async()=>{
   const steps=[];
   const context=vm.createContext({
     esState:{patientId:'p1',apptId:'a1'},window:{},
-    document:{getElementById:()=>null,querySelector:()=>({value:'new-added'}),querySelectorAll:()=>[{value:'Parastomal hernia'}]},
-    esOutcomeAttended:()=>true,onApptAddComplicationsMulti:async()=>false,esGoStep:n=>steps.push(n)
+    document:{getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[]},
+    esOutcomeAttended:()=>true,esGoStep:n=>steps.push(n)
   });
   vm.runInContext(sourceBetween('async function esFollowupNext(){','/* The Appliances step'),context);
   await context.esFollowupNext();
-  assert.deepEqual(steps,[]);
+  assert.deepEqual(steps,[3]);   // moves to Appliances with no complication confirmation
 });
 
 test('adding parastomal hernia preserves granulomas already saved on the patient',async()=>{
