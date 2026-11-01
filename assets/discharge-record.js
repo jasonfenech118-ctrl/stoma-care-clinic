@@ -22,6 +22,15 @@ function recordedComplicationText(c){
   if(c.trend&&c.trend!=='noted')text+=' ('+c.trend+')';
   return text;
 }
+// The discharge letter names the operation but NOT the diagnosis / indication — a
+// patient may not know or may not wish to know their diagnosis, and the letter
+// must not disclose it. Strip a "for / due to / secondary to <condition>" clause
+// while keeping the procedure and any "with … formation". The nurse can still edit.
+function stripIndication(text){
+  var t=String(text||'');
+  t=t.replace(/\s+(?:for|due to|secondary to|because of|owing to)\s+[^.,;]*?(?=\s+with\b|,|;|\.|$)/ig,'');
+  return t.replace(/\s{2,}/g,' ').replace(/\s+([.,;])/g,'$1').trim();
+}
 function recordedRodText(rod){
   if(!rod)return '';
   if(rod.removedDate)return 'Rod removed on '+_fmtDate(rod.removedDate)+'.';
@@ -43,7 +52,7 @@ function prefillRecordedLetter(){
       ['title','fname','sname','id','consultant'].forEach(function(key){WZ[key]=master[key];});
       WZ.type=_mapStomaType(stoma.type);
       WZ.subtype=_mapSubtype(stoma.type);
-      WZ.procedure=String(stoma.operation||'');
+      WZ.procedure=stripIndication(stoma.operation);
       WZ.opdate=String(stoma.operationDate||'');
       _prefillAppliances((stoma.appliances||[]).join('|'),(stoma.accessories||[]).join('|'));
       // Preserve the known system even if a catalogue name cannot be matched.
@@ -98,9 +107,9 @@ function recordedReviewHTML(){
   recordedStomas.forEach(function(state,index){
     var s=state.record,w=state.wizard;
     html+='<section class="wz-record-card"><h3>'+_esc(recordedStomaLabel(s))+'</h3>'+
-      '<div class="wz-field"><label for="record-operation-'+index+'">Operation summary</label><textarea id="record-operation-'+index+'" rows="3" placeholder="e.g. Hartmann’s procedure for diverticulitis with end colostomy formation" oninput="recordSetOperation('+index+',\'procedure\',this.value)">'+_esc(w.procedure||'')+'</textarea></div>'+
-      (s.findings?'<p class="wz-cap"><strong>Recorded operative findings:</strong> '+_esc(s.findings)+'</p>':'')+
-      '<p class="wz-cap">Write the procedure and documented indication together in one sentence.'+(s.operationDate?' Operation date: '+_esc(_fmtDate(s.operationDate)):'')+'</p>'+
+      '<div class="wz-field"><label for="record-operation-'+index+'">Operation summary</label><textarea id="record-operation-'+index+'" rows="3" placeholder="e.g. Hartmann’s procedure with end colostomy formation" oninput="recordSetOperation('+index+',\'procedure\',this.value)">'+_esc(w.procedure||'')+'</textarea></div>'+
+      (s.findings?'<p class="wz-cap"><strong>Recorded operative findings (not printed):</strong> '+_esc(s.findings)+'</p>':'')+
+      '<p class="wz-cap">Write the <strong>procedure only</strong> — do <strong>not</strong> include the diagnosis / indication (e.g. “for rectal tumour”); the patient may not wish to know it, and the letter must not disclose it.'+(s.operationDate?' Operation date: '+_esc(_fmtDate(s.operationDate)):'')+'</p>'+
       '<p class="'+(s.appliance?'':'wz-record-missing')+'"><strong>Appliance &amp; accessories:</strong> '+
       _esc(s.appliance||'No current appliance recorded — update the stoma record before discharge.')+'</p>';
     if(s.flangeDue)html+='<p><strong>Next flange change:</strong> '+_esc(_fmtDate(s.flangeDue))+'</p>';
@@ -201,16 +210,13 @@ function applyRecordedLetter(){
       if(recordedStomas.length>1)body.push('<p class="record-stoma-title"><strong>'+_esc(label)+'</strong></p>');
       body.push('<p>'+fillBodyTemplate(tpl.opening,vars)+'</p>',
         '<p>'+fillBodyTemplate(discharge,vars)+'</p>');
-      
-      if((s.complications||[]).length)body.push('<p><strong>Recorded complications:</strong> '+
-        _esc(s.complications.map(recordedComplicationText).join('; '))+'</p>');
+      // Complications are NOT printed on the discharge letter (kept on the record).
       body.push('<p>Patient discharged with <strong>'+_esc(s.appliance||'[current appliance not recorded]')+'</strong>.</p>');
       if(recordedRodText(s.rod))body.push('<p>'+_esc(recordedRodText(s.rod))+'</p>');
       plans.push({heading:label,bullets:recordedStomaPlan(state)});
     });
   });
-  if((dischargeRecord.unassignedComplications||[]).length)body.push('<p><strong>Other recorded complications (stoma not specified):</strong> '+
-    _esc(dischargeRecord.unassignedComplications.map(recordedComplicationText).join('; '))+'</p>');
+  // Unassigned complications are also kept off the letter (shown in the review only).
   if(dischargeRecord.unassignedRod)body.push('<p><strong>Rod (stoma not specified):</strong> '+_esc(recordedRodText(dischargeRecord.unassignedRod))+'</p>');
   if(WZ.teaching==='yes')body.push('<p>A teaching session has been carried out with '+_esc(_teachingWithPhrase())+'.</p>');
   else if(WZ.teaching==='no')body.push('<p>No teaching session was carried out.</p>');

@@ -131,9 +131,8 @@ test('complications use their latest note, exclude resolved entries, and keep un
   ]}),s=c.dischargeLetterRecord(p,[],[]);
   assert.equal(s.stomas[0].complications[0].note,'Latest');
   assert.equal(s.stomas[1].complications.length,0);assert.equal(s.unassignedComplications.length,1);
-  const {d}=page(s);assert.match(textOf(d,'.body'),/Retraction — Latest \(unchanged\)/);
-  assert.doesNotMatch(textOf(d,'.body'),/Resolved granuloma/);
-  assert.equal(textOf(d,'.body').split('General recorded problem').length-1,1);
+  // Complications are kept on the snapshot/record but are NOT printed on the letter.
+  const {d}=page(s);assert.doesNotMatch(textOf(d,'.body'),/Retraction|Resolved granuloma|General recorded problem/);
 });
 test('the recorded-patient wizard has only review, per-stoma assessment and teaching',()=>{
   const {w,d}=page(snapshot());
@@ -171,8 +170,7 @@ test('assessment tabs keep independent observations and Finish retains all recor
   assert.equal(d.querySelectorAll('.body .record-stoma-title').length,3);
   assert.equal(d.querySelectorAll('#planList .record-plan-title').length,3);
   assert.match(textOf(d,'.body'),/pink\/red|healthy colostomy colour/);
-  assert.match(textOf(d,'.body'),/Mucocutaneous separation.*From 2 to 4 o'clock/);
-  assert.match(textOf(d,'.body'),/Recorded treatment continued/);
+  assert.doesNotMatch(textOf(d,'.body'),/Mucocutaneous separation|Recorded treatment continued/);   // complications not printed on the letter
   assert.match(textOf(d,'.body'),/Dansac|Lentell|Urostomy bag/);
   assert.equal(textOf(d,'.body').split('teaching session has been carried out').length-1,1);
   w.openWizard();w.wzNext();assert.equal(d.querySelector('#record-colour').value,'pink/red');
@@ -189,7 +187,7 @@ test('a recorded complication does not invent treatment, healthy skin, or a stom
     {text:'Mucocutaneous separation',stoma:'1',note:'Small area'},
     {text:'Retraction',stoma:'1'}
   ]}),[episode([row('base','2026-10-01',['Dansac 8080 drainable pouch'])])],[]);
-  const {d,w}=page(s);assert.match(textOf(d,'.body'),/Mucocutaneous separation|Retraction/);
+  const {d,w}=page(s);assert.doesNotMatch(textOf(d,'.body'),/Mucocutaneous separation|Retraction/);   // complications not printed
   assert.doesNotMatch(textOf(d,'#planList'),/powder|Orabase|Stoma belt/);
   assert.equal(d.querySelector('#record-skin').value,'');
 });
@@ -206,18 +204,19 @@ test('unknown urostomy stents are not treated as absent and the confirmed answer
   w.wzNext();w.recordSelectStoma(2);w.recordSetAssessment('stents','yes');w.applyWizard();
   assert.match(textOf(d,'#planList'),/while the stents are in situ/);
 });
-test('multiple stomas and complications survive Word HTML, DOCX and email-text export, with escaped recorded text',async()=>{
+test('multiple stomas survive Word HTML, DOCX and email-text export, and complications are never printed',async()=>{
   const s=snapshot();s.stomas[1].complications.push({text:'<img src=x onerror=alert(1)>',note:'Saved text & details'});
   const {w,d}=page(s);assert.equal(d.querySelector('.body img'),null);
   for(const exportText of [w.buildLetterHTML(),w.buildLetterText()]){
     for(const label of ['Loop ileostomy','End colostomy','Urostomy','RIF','LIF','RLQ','Lentell','Dansac','Urostomy bag'])assert.ok(exportText.includes(label),label);
-    assert.match(exportText,/Mucocutaneous separation/);
+    assert.doesNotMatch(exportText,/Mucocutaneous separation/);   // complications are not printed, so no injected text reaches the export
   }
   const blob=w.buildLetterDocx();
   const bytes=await new Promise((resolve,reject)=>{const r=new w.FileReader();r.onload=()=>resolve(Buffer.from(r.result));r.onerror=reject;r.readAsArrayBuffer(blob);});
   const xml=bytes.toString('utf8');
-  for(const label of ['Loop ileostomy','End colostomy','Urostomy','RIF','LIF','RLQ','Lentell','Dansac','Urostomy bag','Mucocutaneous separation'])assert.ok(xml.includes(label),label);
-  assert.ok(xml.includes('<w:keepNext/>'));assert.match(w.buildLetterHTML(),/&lt;img src=x onerror=alert\(1\)&gt;/);
+  for(const label of ['Loop ileostomy','End colostomy','Urostomy','RIF','LIF','RLQ','Lentell','Dansac','Urostomy bag'])assert.ok(xml.includes(label),label);
+  assert.ok(!xml.includes('Mucocutaneous separation'));
+  assert.ok(xml.includes('<w:keepNext/>'));
 });
 test('standalone/legacy query letters retain their manual wizard and Clear removes recorded mode',()=>{
   const blank=page(null,'');assert.ok(blank.w.stepsForWizard().includes('type'));
