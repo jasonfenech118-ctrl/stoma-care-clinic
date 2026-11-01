@@ -158,6 +158,24 @@ test('the Seen visit Review no longer shows a Complications section',()=>{
   assert.doesNotMatch(pane.innerHTML,/Current concern|A complication is identified/);
 });
 
+test('the Review stoma-assessment card renders colour/format markers, not raw {red}',()=>{
+  const pane={innerHTML:''};
+  const VSR={
+    currentRows:()=>[{uid:'u',type:'Urostomy',notes:'a {red}b{/red} **c**'}],
+    summaryLines:()=>[{name:'Urostomy',text:'notes: a {red}b{/red} **c**'}],
+    formatNotes:t=>String(t).replace(/\{red\}([\s\S]*?)\{\/red\}/g,'<span style="color:#dc2626">$1</span>').replace(/\*\*([\s\S]+?)\*\*/g,'<strong>$1</strong>')
+  };
+  const context=vm.createContext({
+    document:{getElementById:id=>id==='es-pane-5'?pane:null,querySelector:()=>null,querySelectorAll:()=>[]},
+    esState:{apptId:'a'},esResume:null,window:{VisitStomaReview:VSR},VisitStomaReview:VSR,htmlSafe:s=>String(s).replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';'),attDMY:String
+  });
+  vm.runInContext(sourceBetween('function esRenderReview(){','function esOnOutcomeChange(){'),context);
+  context.esRenderReview();
+  assert.match(pane.innerHTML,/color:#dc2626">b<\/span>/);   // {red}b{/red} rendered
+  assert.match(pane.innerHTML,/<strong>c<\/strong>/);        // **c** rendered
+  assert.doesNotMatch(pane.innerHTML,/\{red\}|\{\/red\}|\*\*c\*\*/);  // no raw markers
+});
+
 test('changing a complication outcome refreshes the matching visit review only',()=>{
   let renders=0;
   const context=vm.createContext({
