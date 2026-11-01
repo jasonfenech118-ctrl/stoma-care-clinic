@@ -390,10 +390,15 @@
   // Marker glyphs are emitted as HTML entities so a later rule cannot re-match them.
   function overlayFormat(text){
     let html=highlighted(text);
+    // Bold and italic are faked with a text-shadow / skew (classes below) rather
+    // than font-weight / font-style, because a real bold or italic glyph is WIDER
+    // than the plain glyph the transparent textarea measures the caret against —
+    // that width difference is what made the cursor drift off the text. Underline
+    // and colour never change width, so they use the real tags.
     html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span class="vsr-mk">&#123;'+c+'&#125;</span><span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span><span class="vsr-mk">&#123;/'+c+'&#125;</span>');
-    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<span class="vsr-mk">&#42;&#42;</span><strong>$1</strong><span class="vsr-mk">&#42;&#42;</span>');
+    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<span class="vsr-mk">&#42;&#42;</span><span class="vsr-ov-b">$1</span><span class="vsr-mk">&#42;&#42;</span>');
     html=html.replace(/__([\s\S]+?)__/g,'<span class="vsr-mk">&#95;&#95;</span><u>$1</u><span class="vsr-mk">&#95;&#95;</span>');
-    html=html.replace(/\*([^*\n]+?)\*/g,'<span class="vsr-mk">&#42;</span><em>$1</em><span class="vsr-mk">&#42;</span>');
+    html=html.replace(/\*([^*\n]+?)\*/g,'<span class="vsr-mk">&#42;</span><span class="vsr-ov-i">$1</span><span class="vsr-mk">&#42;</span>');
     return html;
   }
   function columnHTML(s,all){

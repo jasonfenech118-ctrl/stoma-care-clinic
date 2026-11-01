@@ -9,7 +9,8 @@ test('draft survives appliance navigation and legacy assessments remain readable
 test('the live editor overlay renders bold, italic, underline and colour, keeping aligned markers',async t=>{
   const {api}=await setup(t);
   const html=api.overlayFormat('wound *tender* and **swollen** __marked__ {red}note{/red}');
-  assert.match(html,/<em>tender<\/em>/);assert.match(html,/<strong>swollen<\/strong>/);assert.match(html,/<u>marked<\/u>/);assert.match(html,/color:#dc2626">note</);
+  // Bold/italic use width-preserving classes (not <strong>/<em>) so the caret stays put.
+  assert.match(html,/<span class="vsr-ov-i">tender<\/span>/);assert.match(html,/<span class="vsr-ov-b">swollen<\/span>/);assert.match(html,/<u>marked<\/u>/);assert.match(html,/color:#dc2626">note</);
   assert.match(html,/vsr-mk/);   // markers are kept (shown faint) so the caret stays aligned
   // The visible text (tags stripped, entities decoded) equals the raw text exactly.
   const visible=html.replace(/<[^>]+>/g,'').replace(/&#42;/g,'*').replace(/&#95;/g,'_').replace(/&#123;/g,'{').replace(/&#125;/g,'}');
@@ -22,7 +23,7 @@ test('the Bold/Italic/Underline buttons wrap the selection and the overlay shows
   host.querySelector('[data-vsr-command=bold]').click();
   assert.equal(el.value,'**healthy** skin');                  // markers inserted around the selection
   const overlay=el.previousElementSibling;                    // the .vsr-overlay backdrop
-  assert.match(overlay.innerHTML,/<strong>healthy<\/strong>/); // and it renders as bold immediately
+  assert.match(overlay.innerHTML,/<span class="vsr-ov-b">healthy<\/span>/); // renders as bold immediately
   el.setSelectionRange(2,9);host.querySelector('[data-vsr-command=underline]').click();
   assert.match(el.value,/__healthy__/);
 });
