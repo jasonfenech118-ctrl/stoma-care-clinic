@@ -79,7 +79,7 @@ test('on the handover a fistula row is marked FISTULA and is simply discharged �
   assert.equal(tr.querySelector('td[data-label="Surname"] .fistula-tag').textContent,'FISTULA');
   assert.equal(tr.querySelector('td[data-label="Surname"] strong').textContent,'Borg');
   const actions=[...tr.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')].map(b=>b.textContent.trim());
-  assert.deepEqual(actions,['Discharge patient','📄 Discharge letters']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg','fistula'\)/);
+  assert.deepEqual(actions,['🏷️ Discharge patient','📄 Discharge letters']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg','fistula'\)/);
   // Appliance, notes, complications and the encounter work exactly as for anyone.
   assert.match(tr.querySelector('button.hv-appl').getAttribute('onclick'),/openHandoverAppliance\('f1'\)/);
   assert.ok(tr.querySelector('.hv-enc-btn'));assert.ok(tr.querySelector('.hv-cmp-btn'));

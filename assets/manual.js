@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'31 October 2026 — In the appliance picker the appliance, flange and bag are now one choice each per stoma (accessories stay multiple). The clinical review also gained Bold / Italic / Underline / Colour buttons.'};
+const MANUAL_META={updated:'1 November 2026 — The patient profile now shows the same full-colour avatar as the registry, and the Handover action buttons use distinct solid colours (teal Discharge patient, navy Profile, purple Discharge letters).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
