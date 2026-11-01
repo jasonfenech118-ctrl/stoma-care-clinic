@@ -9,10 +9,16 @@ const root=path.join(__dirname,'../..');
 const app=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const letter=fs.readFileSync(path.join(root,'discharge-letter.html'),'utf8');
 const appBuild=app.match(/const APP_BUILD='([^']+)'/)[1];
+// openDischargeLetterFor now lives in assets/discharge-archive.js, so look there
+// too when a name is not in index.html.
+const archiveSrc=fs.readFileSync(path.join(root,'assets/discharge-archive.js'),'utf8');
 function source(name){
-  const match=app.match(new RegExp('(?:async )?function '+name+'\\('));
-  assert.ok(match,name+' not found');
-  return app.slice(match.index,app.indexOf('\n}',match.index)+2);
+  const re=new RegExp('(?:async )?function '+name+'\\(');
+  for(const src of [app,archiveSrc]){
+    const match=src.match(re);
+    if(match)return src.slice(match.index,src.indexOf('\n}',match.index)+2);
+  }
+  assert.ok(false,name+' not found');
 }
 function letterSession(params={}){
   const q=new URLSearchParams({fn:'Example',sn:'Patient',id:'FAKE',type:'Loop ileostomy',
@@ -50,8 +56,11 @@ function appSession(overrides={}){
     applianceStomaUid:row=>row.stoma_uid,
     SB:{from(){const q={select(){return q;},eq(){return q;},order(){return q;},limit(){return q;},
       then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}};return q;}},
+    crypto:require('node:crypto').webcrypto,URL,APP_BUILD:appBuild,registerDischargeLetterWindow(){},
     ...overrides});
-  ['dischargeLetterRodData','dischargeLetterRecord','openDischargeLetterFor','rodChipHTML','markRodRemoved','undoRodRemoved','saveRodDueInline']
+  // "Open a letter in a tab" is now createPatientDischargeLetter (openDischargeLetterFor
+  // opens the saved-letters archive page instead, since build 682).
+  ['dischargeLetterRodData','dischargeLetterRecord','createPatientDischargeLetter','rodChipHTML','markRodRemoved','undoRodRemoved','saveRodDueInline']
     .forEach(name=>vm.runInContext(source(name),c));
   return {c,dom,writes,opened,alerts,snapshots,get reminders(){return reminders;},get refreshes(){return refreshes;}};
 }
@@ -116,7 +125,7 @@ test('invalid dates cannot be printed and no removal date is invented',()=>{
 test('opening a letter reads the latest removal instead of an old patient card',async()=>{
   let reads=0;
   const s=appSession({fetchPatientById:async()=>{reads++;return {data:{...patient,rod_removed_date:'2026-10-01'},error:null};}});
-  await s.c.openDischargeLetterFor(patient.id);
+  await s.c.createPatientDischargeLetter(patient.id);
   assert.equal(reads,1);assert.equal(s.opened.length,1);
   const q=new URL(s.opened[0].location.href).searchParams;
   assert.ok(q.get('record'));assert.equal(q.get('v'),appBuild);
@@ -126,7 +135,7 @@ test('opening a letter reads the latest removal instead of an old patient card',
 
 test('a failed latest-record read prevents a letter containing stale rod details',async()=>{
   const s=appSession({fetchPatientById:async()=>({data:null,error:{message:'Offline'}})});
-  await s.c.openDischargeLetterFor(patient.id);
+  await s.c.createPatientDischargeLetter(patient.id);
   assert.equal(s.opened.length,1);assert.equal(s.opened[0].closed,true);
   assert.equal(s.snapshots.length,0);assert.equal(s.alerts.length,1);
 });

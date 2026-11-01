@@ -79,7 +79,7 @@ test('on the handover a fistula row is marked FISTULA and is simply discharged �
   assert.equal(tr.querySelector('td[data-label="Surname"] .fistula-tag').textContent,'FISTULA');
   assert.equal(tr.querySelector('td[data-label="Surname"] strong').textContent,'Borg');
   const actions=[...tr.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')].map(b=>b.textContent.trim());
-  assert.deepEqual(actions,['Discharge patient']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg','fistula'\)/);
+  assert.deepEqual(actions,['Discharge patient','📄 Discharge letters']);assert.match(tr.querySelector('.hv-actions-cell button').getAttribute('onclick'),/dischargeFistulaFromHandover\('f1','Maria Borg','fistula'\)/);
   // Appliance, notes, complications and the encounter work exactly as for anyone.
   assert.match(tr.querySelector('button.hv-appl').getAttribute('onclick'),/openHandoverAppliance\('f1'\)/);
   assert.ok(tr.querySelector('.hv-enc-btn'));assert.ok(tr.querySelector('.hv-cmp-btn'));
@@ -88,7 +88,7 @@ test('on the handover a fistula row is marked FISTULA and is simply discharged �
   // A stoma patient now has one "Discharge patient" button that opens the
   // unified modal (postop, old case, Gozo and overseas all live inside it).
   const stomaBtns=[...stoma.querySelectorAll('.hv-actions-cell button:not(.hv-mob-only)')];
-  assert.deepEqual(stomaBtns.map(b=>b.textContent.trim()),['🏷️ Discharge patient']);
+  assert.deepEqual(stomaBtns.map(b=>b.textContent.trim()),['🏷️ Discharge patient','📄 Discharge letters']);
   assert.match(stomaBtns[0].getAttribute('onclick'),/openDischargeModal\('s1','Joe Vella'\)/);
 });
 

@@ -41,13 +41,13 @@ test('both actions sit beside the inpatient action with history below, including
   const start = html.indexOf('function renderEpisodesPanel(');
   w.eval(html.slice(start, html.indexOf('\n}', start) + 2));
   w.renderEpisodesPanel();
-  assert.deepEqual([...w.document.querySelectorAll('.pc-actions button')].map(b => b.textContent.trim()), ['Open inpatient visit', 'Community correspondence', 'Patient communication']);
-  assert.equal(w.document.querySelectorAll('.pc-history').length, 2);
+  assert.deepEqual([...w.document.querySelectorAll('.pc-actions button')].map(b => b.textContent.trim()), ['Open inpatient visit', 'Community correspondence', 'Patient communication', 'Doctors correspondence']);
+  assert.match(w.document.getElementById('psm-episodes').textContent, /No correspondence recorded/);
   w.clrState.rows = [{id: 'episode', kind: 'episode'}];
   w.renderEpisodesPanel();
-  assert.equal(w.document.querySelectorAll('.pc-actions button').length, 2);
+  assert.equal(w.document.querySelectorAll('.pc-actions button').length, 3);
   assert.match(w.document.querySelector('.clr-head-open').textContent, /Inpatient visit open/);
-  w.clrState.available = false;w.renderEpisodesPanel();assert.equal(w.document.querySelectorAll('.pc-actions button').length, 2);
+  w.clrState.available = false;w.renderEpisodesPanel();assert.equal(w.document.querySelectorAll('.pc-actions button').length, 3);
 });
 test('patient communication prefills the patient and saves without a ward or episode', async t => {
   const {w, f, api, config} = setup(t);await api.load(PAT, config);api.open('patient');
@@ -90,7 +90,7 @@ test('history is separated, escapes notes and contact data, retains previous wor
 });
 test('read failures are visible and disable add actions instead of showing an empty history', async t => {
   const {api, f, config} = setup(t);f.readError = {message:'Permission denied'};await api.load(PAT, config);
-  assert.match(api.historyHTML(), /Could not load communication history/);assert.match(api.historyHTML(), /Permission denied/);assert.equal((api.actionsHTML().match(/ disabled/g)||[]).length, 2);
+  assert.match(api.historyHTML(), /Could not load correspondence/);assert.equal((api.actionsHTML().match(/ disabled/g)||[]).length, 3);
 });
 test('a late patient history response cannot replace the next patient history', async t => {
   const {api, config} = setup(t);let finish;
@@ -109,6 +109,7 @@ test('communication broadcasts wait for an open form and update only the history
   const {w,f} = setup(t);let loads=0,opened=0,reminderRefreshes=0;
   w.refreshReminders=async()=>reminderRefreshes++;
   w.currentTabName=()=> 'patient-record';w.clrState={patient:{id:PAT}};w.loadPatientCommunications=async()=>loads++;w.renderEpisodesPanel=()=>f.renders++;w.openPatientRecord=()=>opened++;
+  w.eval('var patientRecordLoading=false;');
   const start=html.indexOf('const CLINIC_REALTIME_TABLES=');const end=html.indexOf('async function loadHolidays(',start);w.eval(html.slice(start,end));
   w.document.getElementById('mo').classList.add('open');w.queueClinicRealtime('patient_communications');w.flushClinicRealtime();assert.equal(loads,0);assert.equal(reminderRefreshes,0);
   w.document.getElementById('mo').classList.remove('open');w.flushClinicRealtime();await Promise.resolve();assert.equal(loads,1);assert.equal(f.renders,1);assert.equal(opened,0);assert.equal(reminderRefreshes,1);
@@ -123,8 +124,8 @@ test('contacts group under one open issue and completed issues retain their sepa
   assert.equal(el.querySelectorAll('.pc-issue').length,2);assert.equal(el.querySelectorAll('.pc-record').length,3);
   assert.equal(el.querySelector('#pc-issue-'+ISSUE).querySelectorAll('.pc-record').length,2);
   assert.match(el.querySelector('#pc-issue-'+ISSUE+' > summary').textContent,/2 contacts/);
-  assert.equal(el.querySelectorAll('.pc-reminder-link').length,1);assert.equal(el.querySelectorAll('.pc-resolved .pc-issue').length,1);
-  assert.match(el.textContent,/Reply received/);assert.match(el.textContent,/Open issues/);
+  assert.equal(el.querySelectorAll('.pc-reminder-link').length,1);assert.equal(el.querySelectorAll('.pc-issue-done').length,1);
+  assert.match(el.textContent,/Reply received/);assert.match(el.textContent,/Resolved/);
 });
 test('adding a contact retains the issue id, checks its version and refreshes the current reminder',async t=>{
   const root=issue({version:3}),{w,f,api,config}=setup(t,[root]);await api.load(PAT,config);api.open('community',null,ISSUE);
@@ -142,16 +143,16 @@ test('reminders require action and date; resolving clears them and reopening kee
   fill(w,{followup_action:root.followup_action});api.cancel();w.confirm=()=>true;
   f.savedResult={...root,status:'Completed',reminder_enabled:false,version:2,resolved_at:'2026-10-09T14:00:00Z'};
   await api.setResolved(ISSUE,true);assert.equal(f.calls[0].args.p_payload.status,'Completed');assert.equal(f.calls[0].args.p_payload.reminder_enabled,false);
-  const el=w.document.createElement('div');el.innerHTML=api.historyHTML();assert.equal(el.querySelectorAll('.pc-reminder-link').length,0);assert.equal(el.querySelectorAll('.pc-resolved .pc-issue').length,1);assert.match(el.textContent,/Advice recorded/);
+  const el=w.document.createElement('div');el.innerHTML=api.historyHTML();assert.equal(el.querySelectorAll('.pc-reminder-link').length,0);assert.equal(el.querySelectorAll('.pc-issue-done').length,1);assert.match(el.textContent,/Advice recorded/);
   f.savedResult={...root,status:'Recorded',reminder_enabled:false,version:3,resolved_at:null};await api.setResolved(ISSUE,false);
-  assert.equal(f.calls[1].args.p_payload.reminder_enabled,false);assert.match(api.historyHTML(),/1 open · 0 resolved/);
+  assert.equal(f.calls[1].args.p_payload.reminder_enabled,false);assert.doesNotMatch(api.historyHTML(),/pc-issue-done/);
 });
 test('correcting a historical contact cannot change current issue status or reminder',async t=>{
   const root=issue({status:'Completed',reminder_enabled:false,version:4}),child=issue({id:CONTACT,parent_id:ISSUE,subject:'Earlier contact'});
   const {w,f,api,config}=setup(t,[root,child]);await api.load(PAT,config);api.open('community',CONTACT);
   assert.equal(w.document.querySelector('[name="status"]').disabled,true);assert.equal(w.document.querySelector('[name="reminder_enabled"]').disabled,true);
   fill(w,{notes:'Corrected historical wording.'});f.savedResult={...child,version:2,notes:'Corrected historical wording.',issue:root};await api.save();
-  assert.equal(f.calls[0].args.p_payload.parent_id,ISSUE);assert.equal(f.calls[0].args.p_payload.parent_version,undefined);assert.match(api.historyHTML(),/0 open · 1 resolved/);assert.match(api.historyHTML(),/Corrected historical wording/);
+  assert.equal(f.calls[0].args.p_payload.parent_id,ISSUE);assert.equal(f.calls[0].args.p_payload.parent_version,undefined);assert.match(api.historyHTML(),/pc-issue-done/);assert.match(api.historyHTML(),/Corrected historical wording/);
 });
 test('bell reminders include only due open issue roots and keep both categories distinguishable',async t=>{
   const {api,config}=setup(t),root=issue({followup_date:'2026-10-09',patient:{first_name:'Alex',surname:'Sample',id_card:'DEMO-001'}});

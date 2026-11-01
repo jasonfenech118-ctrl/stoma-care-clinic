@@ -14,9 +14,10 @@ function build(){
     htmlSafe:s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),
     fmtShortDate:d=>d?('D:'+d):'',
     fmtLabel:d=>'L:'+d,
-    psmAge:dob=>dob?57:null,
+    psmPatientAge:dob=>dob?57:null,
     patientOutcome:p=>[p.deceased_date?'Deceased on D:'+p.deceased_date:'Deceased','cr-out-deceased'],
     stomaTimeline:p=>p.__stomas||[],
+    patientIsDeceased:p=>!!(p&&(p.deceased_date||p.followup_status==='deceased')),
   };
   const fn=new Function(...Object.keys(sandbox),block+';return deceasedArchiveHTML;');
   return fn(...Object.values(sandbox));

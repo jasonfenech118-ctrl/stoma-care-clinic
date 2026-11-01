@@ -15,7 +15,7 @@ const fn=name=>{const i=html.indexOf('function '+name+'(');assert.ok(i>=0,name);
 const auditBlock=html.slice(html.indexOf('const AUDIT_STAMP_COLS=new Set'),html.indexOf('\n}',html.indexOf('function auditPatientWrite('))+2);
 
 function ctx(extra={}){
-  const c=vm.createContext({console,Date,Set,Map,Number,String,Math,Array,Object,JSON,htmlSafe:esc,...extra});
+  const c=vm.createContext({console,Date,Set,Map,Number,String,Math,Array,Object,JSON,htmlSafe:esc,notifyRegistryUpdated:()=>{},...extra});
   return c;
 }
 

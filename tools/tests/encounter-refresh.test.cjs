@@ -26,7 +26,7 @@ function setup(t){
  w.loadHandover=async()=>{refreshes++;};w.refreshReminders=async()=>{reminders++;};w.confirm=()=>{confirms++;return true;};w.clrState={patient:null};w.TAB_LABELS={};
  w.SB.realtime={setAuth:async()=>{}};
  w.SB.channel=()=>{const ch={on(_type,_filter,fn){broadcast=fn;return ch;},subscribe(fn){fn('SUBSCRIBED');return ch;}};return ch;};w.SB.removeChannel=()=>{};
- w.eval('let plLoaded=true;');w.eval(source('currentTabName'));w.eval(source('switchTab'));
+ w.eval('let plLoaded=true;var patientRecordLoading=false;');w.eval(source('currentTabName'));w.eval(source('switchTab'));
  const begin=html.indexOf('const CLINIC_REALTIME_TABLES='),end=html.indexOf('async function loadHolidays(',begin);w.eval(html.slice(begin,end));
  w.eval(moduleSource);
  return {w,timers,intervals,async drain(){const callbacks=[...timers.values()];timers.clear();for(const fn of callbacks)await fn();},
