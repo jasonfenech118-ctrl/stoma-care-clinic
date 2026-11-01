@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 November 2026 — A follow-up visit’s clinical review now reads inline in the patient history, the “What was written” view has a Print button, the profile avatar matches the registry, and the Handover action buttons use distinct solid colours.'};
+const MANUAL_META={updated:'1 November 2026 — The Schedule 5 permit gains a “Collected from pharmacy” step with its own date, and every Schedule 5 step is logged to the patient’s encounters so it shows in the profile. Run sql/add-schedule-five-collected-date.sql once in Supabase.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -410,7 +410,7 @@ const MANUAL_SECTIONS=[
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
       <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
       <li><b>Flange due</b> chip — colours by urgency; overdue turns red.</li>
-      <li><b>Schedule V permit</b> — “Left in ward” records today's date and starts green. The handover colour changes every calendar day through yellow and orange, red on day six and dark red from day seven. The saved Left in ward date controls the colour and days waiting. “Signed” or “Collected” clears the waiting warning.</li>
+      <li><b>Schedule V permit</b> — the button cycles <b>Not done → Left in ward → Signed → Collected → black box</b>. “Left in ward” records today's date and starts green; the handover colour then changes every calendar day through yellow and orange, red on day six and dark red from day seven (from the saved Left in ward date). “Signed” and the new “<b>Collected</b>” (the patient collected the controlled-drugs items from pharmacy) each stamp their own date and clear the waiting warning; the final black box means it was dealt with in a previous admission and carries no dates. Each step is also <b>recorded in the patient's encounters</b> — on the open admission if there is one, otherwise on its own — so Left in ward / Signed / Collected show in the patient profile history.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
       <li><b>🔩 Rod due</b> chip — once you record a rod, a <b>Rod due</b> chip shows on the row, colour-coded by how soon it is due (like the flange chip). Tap it to edit the date or record removal. It disappears when the rod is out.</li>
       <li><b>⚠️ Complications / ROD</b> button — one button opens the full complication timeline and, where a rod applies, the rod's removal date. The label reads <b>Complications/ROD</b> only while a rod is relevant and not yet recorded; it reads just <b>Complications</b> for an <b>end ileostomy, end colostomy or urostomy</b> (which never have a rod) and once a rod has already been recorded, so you are not asked about it again on a later admission with the same stoma.</li>
@@ -664,6 +664,7 @@ const MANUAL_SECTIONS=[
         ['⚠️','Infection alert','A note with CRE / VRE / "+ve" turns the whole appliance cell red.','Handover'],
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
+        ['📋','Schedule 5 steps logged to encounters','Each Schedule 5 step on the handover (Left in ward, Signed, Collected from pharmacy, each with its date) is written to the patient’s encounters — attached to the open admission when there is one, otherwise as its own note — so the controlled-drugs permit history is kept in the record and shows in the patient profile.','Handover'],
         ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
         ['✍️','Discharge letter signature','The letter automatically uses the signed-in nurse’s profile name, including print, Word and email copies.','Discharge letter'],
         ['🩺','Surgical Rotation specialty exclusions','Gozo, Orthopaedic / Orthopedic Surgery, HDU / ITU / Interventional Radiology, ENT / Maxillofacial Surgery, Neurosurgery, Plastic and Burns, Urology Surgery, Cardiothoracic Surgery and Vascular Surgery are excluded from the current list, consultant dropdown and every Excel import automatically.','Surgical Rotation'],

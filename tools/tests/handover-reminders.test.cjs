@@ -140,6 +140,7 @@ test('Schedule V starts green immediately on save and reloads the colour from st
   const end=html.indexOf('function handoverDocState(',start);
   vm.runInContext(html.slice(start,end),c);
   for(const name of ['handoverDocState','handoverDocNext','docDateUpdates','fmtDayMon','handoverDocDatesLine','handoverDocBtnInner','refreshDocDateLine','cycleHandoverDoc'])vm.runInContext(source(name),c);
+  c.logScheduleFiveEncounter=async()=>{};   // auto-log is covered by its own test
   const button={dataset:{value:'',leftDate:'2026-01-01',signedDate:''}},line={innerHTML:''};
   const saved=patient({schedule_five_permit:'',schedule_five_left_date:'2026-01-01'});
   c.document={getElementById:id=>id.startsWith('hsd-')?line:button};
@@ -163,15 +164,16 @@ test('Schedule V starts green immediately on save and reloads the colour from st
   assert.equal(button.className,'hs-btn hs-schedule-waiting hs-schedule-day-7');
   assert.equal(button.dataset.leftDate,'2026-09-23');
   assert.match(line.innerHTML,/Overdue.*7 days waiting/);
-  for(const [status,cls] of [['signed','hs-done'],['collected','hs-black']]){
+  for(const [status,cls] of [['signed','hs-done'],['collected','hs-collected'],['archived','hs-black']]){
     const task=c.cycleHandoverDoc(saved.id,'schedule_five_permit');
     assert.equal(button.dataset.value,status);
     assert.equal(button.className,'hs-btn '+cls);
     assert.doesNotMatch(line.innerHTML,/waiting|Overdue/);
     completeSave();await task;
   }
-  assert.equal(saved.schedule_five_left_date,null);
-  assert.equal(refreshes,3);
+  assert.equal(saved.schedule_five_left_date,null);   // cleared only at the black "archived" state
+  assert.equal(saved.schedule_five_collected_date,null);
+  assert.equal(refreshes,4);
 });
 
 test('flange alerts use the editable handover date and only current two-piece stomas',()=>{
