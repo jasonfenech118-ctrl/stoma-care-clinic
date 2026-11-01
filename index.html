@@ -13,29 +13,29 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
-<link rel="stylesheet" href="assets/cancellations.css?v=2026.11.01-689"/>
+<link rel="stylesheet" href="assets/cancellations.css?v=2026.11.01-690"/>
 <script src="assets/cancellations.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-689"/>
-<link rel="stylesheet" href="assets/account.css?v=2026.11.01-689">
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-690"/>
+<link rel="stylesheet" href="assets/account.css?v=2026.11.01-690">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-689"></script>
+<script src="assets/manual.js?v=2026.11.01-690"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
-<script defer src="assets/patient-communications.js?v=2026.11.01-689"></script>
+<script defer src="assets/patient-communications.js?v=2026.11.01-690"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
 <script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
-<script defer src="assets/jason-encounters.js?v=2026.11.01-689"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.11.01-689"></script>
+<script defer src="assets/jason-encounters.js?v=2026.11.01-690"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.11.01-690"></script>
 <style>
 #page-patient-record #pd-history .psm-card:has(.psm-next){display:none!important}
 
@@ -2546,7 +2546,7 @@ tr.hv-fistula.hv-bagging>td:first-child{box-shadow:inset 5px 0 0 #0284c7;}
 </style>
 <link rel="stylesheet" href="assets/clinic-visuals.css?v=2026.10.09-479" media="screen">
 <link rel="stylesheet" href="assets/visit-review-editor.css?v=2026.10.29-661"/>
-<script defer src="assets/discharge-archive.js?v=2026.11.01-689"></script>
+<script defer src="assets/discharge-archive.js?v=2026.11.01-690"></script>
 </head>
 <body>
 
@@ -3952,7 +3952,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-689';
+const APP_BUILD='2026.11.01-690';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18888,13 +18888,28 @@ async function backCareEpisode(){
   if(ctx?.patientId){await openPatientRecord(ctx.patientId);window.scrollTo(0,ctx.scroll||0);}
 }
 
+// The clinical review written at a follow-up visit, as plain text, so it reads
+// inline in the history table (like an inpatient encounter's findings) instead
+// of being hidden behind a button. The signed, formatted version still opens
+// from "See what was written".
+function apptReviewInlineText(a){
+  const parts=[];
+  try{if(window.VisitStomaReview&&VisitStomaReview.rowsOf)VisitStomaReview.rowsOf(a&&a.stoma_assessment).forEach(r=>{const n=String(r.notes||'').trim();if(n)parts.push(n);});}catch(e){}
+  const cmp=a&&a.complication_review?String(a.complication_review).replaceAll('-',' ').trim():'';
+  if(cmp)parts.push('Complications: '+cmp);
+  return parts.join('\n');
+}
 function patientDashboardHistoryHTML(){
   const p=clrState.patient,model=stomaCareModel(p),rows=[],esc=htmlSafe;
   const dateOf=r=>String(r.record_date||r.encounter_date||r.appt_date||r.communication_date||r.created_at||'').slice(0,10);
   const sorted=rs=>rs.slice().sort((a,b)=>String(b.sortDate||b.date||'').localeCompare(String(a.sortDate||a.date||''))||String(b.time||'').localeCompare(String(a.time||''))||String(b.stamp||'').localeCompare(String(a.stamp||'')));
   const wb=ep=>episodeWardBed({detail:String(ep?.detail||'').split(' · ')[0]})||'';
   const add=(key,record,kind,text,action,uids=null)=>{const date=dateOf(record);const row={key,kind,date,stamp:record.created_at||'',time:record.appt_slot||record.communication_time||'',text,action,uids:uids||careRecordUids(p,model,key,record,date)};rows.push(row);return row;};
-  (clrState.appts||[]).forEach(a=>add('appointment:'+a.id,a,'Follow-up appointment',[statusLabel(a.status,a),a.followup_action?String(a.followup_action).replaceAll('-',' '):''].filter(Boolean).join(' · '),`<button type="button" class="clr-mini" onclick="openApptNotes('${jsSafe(String(a.id))}')">See what was written</button>`));
+  (clrState.appts||[]).forEach(a=>{
+    const meta=[statusLabel(a.status,a),a.followup_action?String(a.followup_action).replaceAll('-',' '):''].filter(Boolean).join(' · ');
+    const review=apptReviewInlineText(a);
+    add('appointment:'+a.id,a,'Follow-up appointment',[meta,review].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="openApptNotes('${jsSafe(String(a.id))}')">See what was written</button>`);
+  });
   const encounters=clrState.encounters||[],episodes=(clrState.rows||[]).filter(r=>r.kind==='episode');
   const ordered=episodes.slice().sort((a,b)=>dateOf(a).localeCompare(dateOf(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
   const numbers=new Map(ordered.map((ep,i)=>[String(ep.id),i+1]));
@@ -27345,8 +27360,35 @@ async function openApptNotes(apptId){
     :`<div class="report-note" style="margin-top:10px;">Nothing was written at this visit${appt.status==='attended'?' yet.':` — this appointment is ${stateWord}.`}</div>`;
   mb.innerHTML=`<h2>📝 What was written at this visit</h2>
     <div class="msub">${htmlSafe(nm)} · ID ${htmlSafe(pat.id_card||'—')} · ${htmlSafe(when)}</div>
-    ${body}
-    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+    <div id="visit-notes-print">${body}</div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button><button class="btn-save" onclick="printVisitReview('${jsSafe(nm)} · ID ${jsSafe(pat.id_card||'—')} · ${jsSafe(when)}')">🖨 Print</button></div>`;
+}
+/* Print one visit's review (an appointment, or an inpatient note shown in the
+   same card) on its own sheet — the content currently in the modal, without the
+   action buttons. */
+function printVisitReview(subtitle){
+  const host=document.getElementById('visit-notes-print')||document.getElementById('mb');
+  if(!host){alert('Nothing to print.');return;}
+  const clone=host.cloneNode(true);
+  clone.querySelectorAll('.mact,button').forEach(el=>el.remove());
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to print.');return;}
+  w.document.write(`<html><head><title>Visit review</title><style>
+    body{font-family:Arial,sans-serif;color:#17282d;margin:18px;font-size:13px;line-height:1.55;}
+    h2{font-size:18px;color:#1a2e4a;margin:0 0 4px;}
+    .print-sub{color:#56708a;font-size:12px;margin:0 0 16px;}
+    .pl-event{border:1px solid #cbd5e1;border-radius:8px;padding:12px 14px;}
+    .pl-event-top,.pl-event-by{font-size:12px;color:#475569;margin-bottom:6px;}
+    .pl-sec{margin:10px 0;padding:9px 11px;border:1px solid #e2e8f0;border-radius:7px;}
+    .pl-sec-h{font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#334155;margin-bottom:5px;}
+    .pl-sec-b,.vsr-val,.pd-record-text{white-space:pre-wrap;overflow-wrap:anywhere;}
+    .vsr-line{margin:3px 0;} .vsr-label{font-weight:700;margin-right:6px;color:#475569;}
+    .jenc-stoma-title{font-size:14px;color:#1a2e4a;margin:4px 0;}
+    .pl-tag{display:inline-block;border:1px solid #cbd5e1;border-radius:999px;padding:2px 9px;margin:2px 5px 2px 0;font-size:12px;}
+    .report-note{color:#475569;}
+    @page{size:A4 portrait;margin:14mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  </style></head><body><h2>Visit review</h2><div class="print-sub">${htmlSafe(subtitle||'')}</div>${clone.innerHTML}</body></html>`);
+  w.document.close();setTimeout(()=>{w.focus();w.print();},350);
 }
 function plDueLabel(patient){
   const month=Number(patient&&patient.followup_due_month);
