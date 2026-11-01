@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 November 2026 — The discharge letter no longer prints the diagnosis/indication or the complications (patient confidentiality); the clinical-review box is a proper rich-text editor (Bold / Italic / Underline / Colour, no ** symbols, normal cursor); a Seen visit shows a fixed “Seen / Attended” outcome; and the separate Complications section/card is removed from the Seen visit — write complications in the review text instead. Run sql/add-schedule-five-collected-date.sql once in Supabase.'};
+const MANUAL_META={updated:'1 November 2026 — Saved discharge letters are now stored compressed to use far less Supabase space; the discharge letter no longer prints the diagnosis/indication or the complications (patient confidentiality); the clinical-review box is a proper rich-text editor (Bold / Italic / Underline / Colour, no ** symbols, normal cursor); a Seen visit shows a fixed “Seen / Attended” outcome; and the separate Complications section/card is removed from the Seen visit — write complications in the review text instead. Run sql/add-schedule-five-collected-date.sql once in Supabase.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

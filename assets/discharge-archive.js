@@ -1,6 +1,31 @@
 
 const dischargeLetterWindows=new Map();
 let dischargeArchiveContext=null,dischargeArchiveRequest=0;
+// Saved letters are bulky (a full styled HTML document each), so they are stored
+// gzip-compressed — roughly 6–8× smaller in Supabase. A "GZ:" prefix marks a
+// compressed row; older plain-HTML rows are read back unchanged. If the browser
+// has no CompressionStream the letter is stored as-is (still works, just larger).
+async function dischargeCompress(html){
+  try{
+    if(typeof CompressionStream==='undefined')return String(html||'');
+    const cs=new CompressionStream('gzip'),w=cs.writable.getWriter();
+    w.write(new TextEncoder().encode(String(html||'')));w.close();
+    const u8=new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    let bin='';for(let i=0;i<u8.length;i+=0x8000)bin+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));
+    return 'GZ:'+btoa(bin);
+  }catch(e){return String(html||'');}
+}
+async function dischargeDecompress(stored){
+  const s=String(stored||'');
+  if(s.slice(0,3)!=='GZ:')return s;
+  try{
+    const bin=atob(s.slice(3)),u8=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+    const ds=new DecompressionStream('gzip'),w=ds.writable.getWriter();
+    w.write(u8);w.close();
+    return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
+  }catch(e){return s;}
+}
 function registerDischargeLetterWindow(token,patientId,target,snapshot){
   dischargeLetterWindows.set(token,{patientId:String(patientId),target,snapshot,last:null,pending:null});
 }
@@ -33,7 +58,7 @@ async function viewSavedDischargeLetter(letterId){
     const {data,error}=await SB.from('patient_discharge_letters').select('id,patient_id,letter_html,letter_date').eq('patient_id',ctx.patientId).eq('id',letterId).single();
     if(request!==dischargeArchiveRequest)return;if(error||!data)throw Error(error?.message||'Letter unavailable.');
     host.innerHTML='<h3>Saved discharge letter</h3><p class="report-note">Saved copy · read only</p><button class="psm-btn" type="button" onclick="printSavedDischargeLetter()">Print / save PDF</button>';
-    const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';frame.srcdoc=data.letter_html;host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
+    const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';frame.srcdoc=await dischargeDecompress(data.letter_html);host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){if(request===dischargeArchiveRequest)host.textContent='Could not open this saved letter. '+e.message;}
 }
 function printSavedDischargeLetter(){document.getElementById('saved-discharge-letter-frame')?.contentWindow?.print();}
@@ -52,10 +77,13 @@ async function savePatientDischargeLetter(token,source,payload){
     const {data:auth,error:authError}=await SB.auth.getUser();if(authError||!auth?.user)throw Error('Sign in to Stoma Roster again, then reopen the letter.');
     if(!session.pending||session.pending.fingerprint!==fingerprint)session.pending={id:crypto.randomUUID(),fingerprint};
     const id=session.pending.id;
-    const row={id,patient_id:session.patientId,created_by:auth.user.id,created_by_name:String(payload.author||auth.user.email||''),letter_date:String(payload.date||''),filename:String(payload.filename||'Discharge_letter'),letter_html:payload.html,letter_text:payload.text,stoma_uids:session.snapshot.stomas.map(s=>s.uid).filter(Boolean)};
+    // Store the letter compressed; letter_text is never read back, so it is kept
+    // empty to save further space (the plain-text copy is rebuilt live when emailing).
+    const letterHtml=await dischargeCompress(payload.html);
+    const row={id,patient_id:session.patientId,created_by:auth.user.id,created_by_name:String(payload.author||auth.user.email||''),letter_date:String(payload.date||''),filename:String(payload.filename||'Discharge_letter'),letter_html:letterHtml,letter_text:'',stoma_uids:session.snapshot.stomas.map(s=>s.uid).filter(Boolean)};
     const {error}=await SB.from('patient_discharge_letters').insert(row);
     if(error&&error.code!=='23505')throw Error(error.message);
-    if(error){const check=await SB.from('patient_discharge_letters').select('id,letter_html').eq('id',id).eq('patient_id',session.patientId).single();if(check.error||check.data?.letter_html!==payload.html)throw Error('Could not verify the saved letter. Try saving again.');}
+    if(error){const check=await SB.from('patient_discharge_letters').select('id,letter_html').eq('id',id).eq('patient_id',session.patientId).single();if(check.error||check.data?.letter_html!==letterHtml)throw Error('Could not verify the saved letter. Try saving again.');}
     session.last={id,fingerprint};session.pending=null;
     if(dischargeArchiveContext?.patientId===session.patientId&&document.getElementById('page-discharge-letters')?.classList.contains('active'))openDischargeLetterFor(session.patientId);
     return id;
