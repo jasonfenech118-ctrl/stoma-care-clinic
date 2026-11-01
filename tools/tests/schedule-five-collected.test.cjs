@@ -24,13 +24,18 @@ test('the Schedule 5 button cycles Left in ward → Signed → Collected → bla
   assert.equal(v,'');   // wraps back to Not done
 });
 
-test('each step stamps its own date; the black "archived" state clears all three',()=>{
+test('each step stamps its own date once; "Not done" clears all three, archived keeps them',()=>{
   const c=ctx();vm.runInContext(fn('docDateUpdates'),c);
-  const upd=v=>JSON.parse(JSON.stringify(c.docDateUpdates('schedule_five_permit',v)));   // normalise across realms
+  const upd=(v,cur)=>JSON.parse(JSON.stringify(c.docDateUpdates('schedule_five_permit',v,cur)));   // normalise across realms
   assert.deepEqual(upd('in_ward'),{schedule_five_left_date:'2026-11-01'});
   assert.deepEqual(upd('signed'),{schedule_five_signed_date:'2026-11-01'});
   assert.deepEqual(upd('collected'),{schedule_five_collected_date:'2026-11-01'});
-  assert.deepEqual(upd('archived'),{schedule_five_left_date:null,schedule_five_signed_date:null,schedule_five_collected_date:null});
+  // A date already recorded is left alone — cycling the button never resets it.
+  assert.deepEqual(upd('in_ward',{schedule_five_left_date:'2026-10-01'}),{});
+  assert.deepEqual(upd('signed',{schedule_five_signed_date:'2026-10-02'}),{});
+  // The black "archived" state keeps every date; only "Not done" clears the lot.
+  assert.deepEqual(upd('archived',{schedule_five_left_date:'2026-10-01',schedule_five_collected_date:'2026-10-03'}),{});
+  assert.deepEqual(upd(''),{schedule_five_left_date:null,schedule_five_signed_date:null,schedule_five_collected_date:null});
 });
 
 function logCtx(opts={}){

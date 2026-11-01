@@ -141,8 +141,8 @@ test('Schedule V starts green immediately on save and reloads the colour from st
   vm.runInContext(html.slice(start,end),c);
   for(const name of ['handoverDocState','handoverDocNext','docDateUpdates','fmtDayMon','handoverDocDatesLine','handoverDocBtnInner','refreshDocDateLine','cycleHandoverDoc'])vm.runInContext(source(name),c);
   c.logScheduleFiveEncounter=async()=>{};   // auto-log is covered by its own test
-  const button={dataset:{value:'',leftDate:'2026-01-01',signedDate:''}},line={innerHTML:''};
-  const saved=patient({schedule_five_permit:'',schedule_five_left_date:'2026-01-01'});
+  const button={dataset:{value:'',leftDate:'',signedDate:''}},line={innerHTML:''};
+  const saved=patient({schedule_five_permit:'',schedule_five_left_date:null});
   c.document={getElementById:id=>id.startsWith('hsd-')?line:button};
   c.SB={from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:saved,error:null})})};
   let completeSave,refreshes=0;
@@ -171,8 +171,8 @@ test('Schedule V starts green immediately on save and reloads the colour from st
     assert.doesNotMatch(line.innerHTML,/waiting|Overdue/);
     completeSave();await task;
   }
-  assert.equal(saved.schedule_five_left_date,null);   // cleared only at the black "archived" state
-  assert.equal(saved.schedule_five_collected_date,null);
+  assert.equal(saved.schedule_five_left_date,'2026-09-23');   // dates survive the black "archived" state
+  assert.equal(saved.schedule_five_collected_date,'2026-09-30');   // stamped at the collected step, kept
   assert.equal(refreshes,4);
 });
 

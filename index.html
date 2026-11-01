@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-691"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-692"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-691"></script>
+<script src="assets/manual.js?v=2026.11.01-692"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3956,7 +3956,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-691';
+const APP_BUILD='2026.11.01-692';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -10419,7 +10419,7 @@ async function getReversalDueReminders(){
 }
 /* These are shared clinical alerts, derived from saved patient and episode data.
    No task is allocated and no reminder-completion flag is written. */
-const HANDOVER_REMINDER_COLS='id,first_name,surname,id_card,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,flange_due,schedule_five_permit,schedule_five_left_date,stoma_operation_history,stoma_superseded_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,patient_kind,fistula_operation_date,fistula_category';
+const HANDOVER_REMINDER_COLS='id,first_name,surname,id_card,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,flange_due,schedule_five_permit,schedule_five_left_date,schedule_five_signed_date,schedule_five_collected_date,stoma_operation_history,stoma_superseded_date,surgery_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,patient_kind,fistula_operation_date,fistula_category';
 function handoverReminderDate(value){
   const key=String(value||'').trim();
   if(!/^\d{4}-\d{2}-\d{2}$/.test(key))return '';
@@ -10544,28 +10544,39 @@ async function openScheduleFiveReminder(patientId){
   const status=p.schedule_five_permit||'';
   const patientName=[p.first_name,p.surname].filter(Boolean).join(' ')||'Patient';
   mb.className='mb';
+  const dv=v=>htmlSafe(String(v||'').slice(0,10));
   mb.innerHTML=`<h2>📋 Schedule 5 permit</h2>
     <div class="patient-modal-identity">${patientNameAvatarHTML(p,patientName,p.id_card?`<span>${htmlSafe(p.id_card)}</span>`:'','md')}</div>
-    <p>Left in ward: ${htmlSafe(p.schedule_five_left_date?fmtShortDate(p.schedule_five_left_date):'Date not recorded')}</p>
     <div class="fg"><label for="rem-schedule-five-status">Recorded permit status</label>
       <select id="rem-schedule-five-status" data-original="${htmlSafe(status)}">${HANDOVER_DOCS.schedule_five_permit.states.map(s=>`<option value="${htmlSafe(s.v)}"${s.v===status?' selected':''}>${htmlSafe(s.v==='archived'?'Archived (previous admission)':(s.label||'—'))}</option>`).join('')}</select></div>
+    <div class="edit-seen-grid">
+      <div class="fg"><label for="rem-s5-left">Left in ward date</label><input type="date" id="rem-s5-left" max="${TODAY}" value="${dv(p.schedule_five_left_date)}"/></div>
+      <div class="fg"><label for="rem-s5-signed">Signed date</label><input type="date" id="rem-s5-signed" max="${TODAY}" value="${dv(p.schedule_five_signed_date)}"/></div>
+      <div class="fg"><label for="rem-s5-collected">Collected (pharmacy) date</label><input type="date" id="rem-s5-collected" max="${TODAY}" value="${dv(p.schedule_five_collected_date)}"/></div>
+    </div>
+    <div class="ap-hint" style="margin:6px 0 0;">Set each date to the day that step actually happened. Cycling the handover button never changes a date once it is set, so these stay accurate.</div>
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveScheduleFiveReminder('${jsSafe(patientId)}',this)">Save status</button></div>`;
+      <button class="btn-save" onclick="saveScheduleFiveReminder('${jsSafe(patientId)}',this)">Save</button></div>`;
   openMo();
 }
 async function saveScheduleFiveReminder(patientId,button){
   const input=document.getElementById('rem-schedule-five-status');
   if(!input||button?.disabled)return;
   const value=input.value;
-  if(value===input.dataset.original){closeModal();return;}
+  const left=document.getElementById('rem-s5-left')?.value||null;
+  const signed=document.getElementById('rem-s5-signed')?.value||null;
+  const collected=document.getElementById('rem-s5-collected')?.value||null;
+  const statusChanged=value!==input.dataset.original;
   if(button)button.disabled=true;
+  // Save the status with the dates the nurse set explicitly — not an auto-stamp —
+  // so the real Left in ward / Signed / Collected days are recorded.
   const{error,dropped}=await updatePatientTolerant(patientId,{
-    schedule_five_permit:value||null,...docDateUpdates('schedule_five_permit',value)});
+    schedule_five_permit:value||null,schedule_five_left_date:left,schedule_five_signed_date:signed,schedule_five_collected_date:collected});
   if(error||dropped?.includes('schedule_five_permit')){
     if(button)button.disabled=false;
     alert('Could not save the permit status. Please try again.');return;
   }
-  logScheduleFiveEncounter(patientId,value);
+  if(statusChanged)logScheduleFiveEncounter(patientId,value);
   closeModal();
   await refreshReminders();
   if(currentTabName()==='handover')await loadHandover();
@@ -20951,19 +20962,20 @@ function handoverDocNext(kind,value){
    was left. Setting either back to "Not done" clears its date(s). Needs
    sql/add-handover-status-dates.sql; until it is run these columns are simply
    dropped from the save and no date shows. */
-function docDateUpdates(kind,newValue){
-  /* The black "Collected" state means the document was already dealt with in a
-     previous admission, so it carries NO dates — its dates are cleared, the same
-     as "Not done". Only the two active states stamp a date. */
-  if(kind==='discharge_letter') return {discharge_letter_done_date:newValue==='done'?TODAY:null};
+function docDateUpdates(kind,newValue,current={}){
+  if(kind==='discharge_letter') return {discharge_letter_done_date:newValue==='done'?(current.discharge_letter_done_date||TODAY):null};
   if(kind==='schedule_five_permit'){
-    // Each active state stamps its own date and keeps the earlier ones, so the
-    // permit carries when it was left, signed and collected. The black
-    // "archived" state (and Not done) clear all three.
-    if(newValue==='in_ward')  return {schedule_five_left_date:TODAY};
-    if(newValue==='signed')   return {schedule_five_signed_date:TODAY};
-    if(newValue==='collected')return {schedule_five_collected_date:TODAY};
-    return {schedule_five_left_date:null,schedule_five_signed_date:null,schedule_five_collected_date:null};
+    // A step's date is stamped (today) only the FIRST time it is reached and is
+    // then left alone — cycling the button never overwrites a real date or mixes
+    // them up. Earlier steps' dates are kept, and the black "archived" state keeps
+    // every date too, so the permit always says when it was left, signed and
+    // collected. Only "Not done" clears the lot.
+    if(newValue==='') return {schedule_five_left_date:null,schedule_five_signed_date:null,schedule_five_collected_date:null};
+    const out={};
+    if(newValue==='in_ward'  && !current.schedule_five_left_date)     out.schedule_five_left_date=TODAY;
+    if(newValue==='signed'   && !current.schedule_five_signed_date)   out.schedule_five_signed_date=TODAY;
+    if(newValue==='collected'&& !current.schedule_five_collected_date)out.schedule_five_collected_date=TODAY;
+    return out;
   }
   return {};
 }
@@ -21033,7 +21045,7 @@ function handoverDocButtonHTML(patient,kind){
   const cls=waiting?.colourClass||st.cls;
   return `<div class="hs-wrap">
     <button type="button" class="hs-btn ${cls}" id="hs-${kind}-${patientId}" data-value="${htmlSafe(st.v)}"
-      ${waiting?`data-schedule-pid="${htmlSafe(patientId)}" data-left-date="${htmlSafe(waiting.left)}" data-signed-date="${htmlSafe(patient.schedule_five_signed_date||'')}"`:''}
+      ${waiting?`data-schedule-pid="${htmlSafe(patientId)}" data-left-date="${htmlSafe(waiting.left)}" data-signed-date="${htmlSafe(patient.schedule_five_signed_date||'')}" data-collected-date="${htmlSafe(patient.schedule_five_collected_date||'')}"`:''}
       title="${htmlSafe(doc.label)} — click to change" onclick="cycleHandoverDoc('${patientId}','${kind}')">
       ${handoverDocBtnInner(doc,st)}</button>
     <div class="hs-date-line" id="hsd-${kind}-${patientId}">${handoverDocDatesLine(kind,patient)}</div>
@@ -21041,7 +21053,7 @@ function handoverDocButtonHTML(patient,kind){
 }
 function refreshScheduleFiveWardDates(){
   document.querySelectorAll('[data-schedule-pid]').forEach(btn=>{
-    const p={schedule_five_permit:btn.dataset.value,schedule_five_left_date:btn.dataset.leftDate,schedule_five_signed_date:btn.dataset.signedDate};
+    const p={schedule_five_permit:btn.dataset.value,schedule_five_left_date:btn.dataset.leftDate,schedule_five_signed_date:btn.dataset.signedDate,schedule_five_collected_date:btn.dataset.collectedDate};
     const st=handoverDocState('schedule_five_permit',p.schedule_five_permit);
     btn.className=`hs-btn ${scheduleFiveWaitingMeta(p).colourClass||st.cls}`;
     const line=document.getElementById(`hsd-schedule_five_permit-${btn.dataset.schedulePid}`);
@@ -21067,6 +21079,7 @@ async function refreshDocDateLine(patientId,kind){
       if(kind==='schedule_five_permit'){
         btn.dataset.leftDate=handoverReminderDate(data.schedule_five_left_date);
         btn.dataset.signedDate=data.schedule_five_signed_date||'';
+        btn.dataset.collectedDate=data.schedule_five_collected_date||'';
       }
       btn.className=`hs-btn ${waiting?.colourClass||st.cls}`;
       btn.innerHTML=handoverDocBtnInner(HANDOVER_DOCS[kind],st);
@@ -21078,14 +21091,18 @@ async function cycleHandoverDoc(patientId,kind){
   if(!btn)return;
   const next=handoverDocNext(kind,btn.dataset.value);
   const st=handoverDocState(kind,next);
-  const dates=docDateUpdates(kind,st.v);
-  const p={schedule_five_left_date:btn.dataset.leftDate,schedule_five_signed_date:btn.dataset.signedDate,...dates,[kind]:st.v};
+  // Keep the dates already on the button so a step's date is stamped once and
+  // never reset by cycling. Only moving to "Not done" clears them.
+  const current={schedule_five_left_date:btn.dataset.leftDate||'',schedule_five_signed_date:btn.dataset.signedDate||'',schedule_five_collected_date:btn.dataset.collectedDate||'',discharge_letter_done_date:btn.dataset.doneDate||''};
+  const dates=docDateUpdates(kind,st.v,current);
+  const p={...current,...dates,[kind]:st.v};
   const waiting=kind==='schedule_five_permit'?scheduleFiveWaitingMeta(p):null;
   // Move on screen first — a ward tap should never wait on the network.
   btn.dataset.value=st.v;
-  if(waiting){
-    btn.dataset.leftDate=waiting.left;
+  if(kind==='schedule_five_permit'){
+    btn.dataset.leftDate=p.schedule_five_left_date||'';
     btn.dataset.signedDate=p.schedule_five_signed_date||'';
+    btn.dataset.collectedDate=p.schedule_five_collected_date||'';
   }
   btn.className=`hs-btn ${waiting?.colourClass||st.cls}`;
   btn.innerHTML=handoverDocBtnInner(HANDOVER_DOCS[kind],st);
