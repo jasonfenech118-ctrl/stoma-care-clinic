@@ -383,6 +383,19 @@
     html=html.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
     return html;
   }
+  // The live editor's backdrop. Same rendering as the saved view, but the marker
+  // characters are KEPT (shown faintly as .vsr-mk) so the text aligns with the
+  // transparent textarea on top — the nurse sees the text actually turn bold /
+  // italic / underlined / coloured as they format, not raw ** or __ symbols.
+  // Marker glyphs are emitted as HTML entities so a later rule cannot re-match them.
+  function overlayFormat(text){
+    let html=highlighted(text);
+    html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span class="vsr-mk">&#123;'+c+'&#125;</span><span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span><span class="vsr-mk">&#123;/'+c+'&#125;</span>');
+    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<span class="vsr-mk">&#42;&#42;</span><strong>$1</strong><span class="vsr-mk">&#42;&#42;</span>');
+    html=html.replace(/__([\s\S]+?)__/g,'<span class="vsr-mk">&#95;&#95;</span><u>$1</u><span class="vsr-mk">&#95;&#95;</span>');
+    html=html.replace(/\*([^*\n]+?)\*/g,'<span class="vsr-mk">&#42;</span><em>$1</em><span class="vsr-mk">&#42;</span>');
+    return html;
+  }
   function columnHTML(s,all){
     const ref=' data-uid="'+esc(s.uid)+'"';
     return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4>'+
@@ -394,13 +407,13 @@
         return '<button type="button" data-vsr-command="'+k+'"'+(T[k]?' title="'+T[k]+'" aria-label="'+T[k]+'"':'')+ref+'>'+L[k]+'</button>';
       }).join('')+
       '<label>Colour <select data-vsr="textcolour"'+ref+' aria-label="Text colour"><option value="">— colour —</option>'+Object.keys(NOTE_COLOURS).map(c=>'<option value="'+c+'">'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join('')+'</select></label>'+'</div>'+
-      '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+highlighted(s.notes||'')+'\n</div>'+
+      '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+overlayFormat(s.notes||'')+'\n</div>'+
       '<textarea data-vsr="notes"'+ref+' aria-label="'+esc(nameOf(s,all))+' clinical review" rows="8" spellcheck="false" placeholder="Write the clinical review, observations and care provided…">'+esc(s.notes||'')+'</textarea></div>'+
       '<div class="jenc-previous vsr-note-diff"'+ref+'>'+noteDiff(s)+'</div></div>';
   }
   function repaint(el,s){
     const overlay=el.previousElementSibling;
-    if(overlay){overlay.style.width=el.clientWidth?el.clientWidth+'px':'100%';overlay.innerHTML=highlighted(s.notes||'')+'\n';overlay.scrollTop=el.scrollTop;overlay.scrollLeft=el.scrollLeft;}
+    if(overlay){overlay.style.width=el.clientWidth?el.clientWidth+'px':'100%';overlay.innerHTML=overlayFormat(s.notes||'')+'\n';overlay.scrollTop=el.scrollTop;overlay.scrollLeft=el.scrollLeft;}
   }
   const histories=new Map();
   function history(s){const key=draft.apptId+':'+s.uid;if(!histories.has(key))histories.set(key,{items:[s.notes||''],at:0});return histories.get(key);}
@@ -593,6 +606,6 @@
   }
   function clear(){draft=null;histories.clear();}
   function refreshHighlights(){host?.querySelectorAll('textarea[data-vsr="notes"]').forEach(el=>{const s=find(el);if(s)repaint(el,s);});}
-  window.VisitStomaReview={highlighted,formatNotes,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  window.VisitStomaReview={highlighted,formatNotes,overlayFormat,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();
