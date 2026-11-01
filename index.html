@@ -3973,7 +3973,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-695';
+const APP_BUILD='2026.11.01-696';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18982,7 +18982,9 @@ function patientDashboardHistoryHTML(){
 }
 
 function refreshPatientDashboardHistory(){
-  const el=document.getElementById('pd-history-body');if(el)el.innerHTML=patientDashboardHistoryHTML();
+  const el=document.getElementById('pd-history-body');if(!el)return;
+  try{el.innerHTML=patientDashboardHistoryHTML();}
+  catch(e){console.error('patientDashboardHistoryHTML failed',e);el.innerHTML='<p class="report-note" style="color:#b91c1c;">The care history could not be built because of an error: '+htmlSafe(e&&e.message?e.message:String(e))+'</p>';}
   // Re-apply any active search so a background refresh does not drop the filter.
   if(typeof filterPatientProfile==='function')filterPatientProfile();
 }
@@ -19018,6 +19020,7 @@ function pdClearHighlights(root){
   root.querySelectorAll('td').forEach(td=>td.normalize());   // re-join split text so repeat searches still match
 }
 function filterPatientProfile(){
+  try{
   const body=document.getElementById('pd-history-body');if(!body)return;
   const q=(document.getElementById('pd-search-q')?.value||'').trim();
   const type=document.getElementById('pd-search-type')?.value||'';
@@ -19042,6 +19045,7 @@ function filterPatientProfile(){
   });
   if(count)count.textContent=active?(matches?matches+' match'+(matches===1?'':'es'):'No matches'):'';
   if(active)document.getElementById('pd-history')?.closest('details.pd-section')?.setAttribute('open','');
+  }catch(e){console.error('filterPatientProfile failed',e);}
 }
 function patientDashboardSection(panel,label,open){
   if(!panel)return null;
@@ -19533,7 +19537,8 @@ function episodeEncountersHTML(ep){
    top, each opening that exact version read-only. Nothing shows for a single
    version — there is only V1 to see. */
 function encounterVersionsControl(pid,e){
-  const JE=window.JasonEncounters;if(!JE)return '';
+  try{
+  const JE=window.JasonEncounters;if(!JE||typeof JE.versions!=='function')return '';
   const vs=JE.versions(e);if(!vs||vs.length<2)return '';
   const eid=jsSafe(e.id);
   const rows=vs.slice().reverse().map(v=>{
@@ -19542,6 +19547,7 @@ function encounterVersionsControl(pid,e){
     return `<button type="button" class="clr-enc-vbtn" onclick="openEncounter('${pid}','${eid}',${Number(v.version)||1})"><span class="clr-enc-v">V${v.version||1}</span><span class="clr-enc-vmeta">${htmlSafe(when)}${by?' · '+htmlSafe(by):''}</span></button>`;
   }).join('');
   return `<details class="clr-enc-vers"><summary>All versions <span class="clr-count">${vs.length}</span></summary><div class="clr-enc-vlist">${rows}</div></details>`;
+  }catch(e){console.error('encounterVersionsControl failed',e);return '';}
 }
 function episodeCategoryHTML(meta,open){
   const recs=clrState.rows.filter(r=>r.kind===meta.kind);
@@ -20694,6 +20700,7 @@ async function renderPatientRecord(patientId,opts,sequence){
     if(made.error)console.error('openPatientRecord: could not reconcile the open episode',made.error);
     if(made.data)await loadClinicalRecords(patientId);
   }
+  try{
   const stomaCount=(typeof patientStomaList==='function'?patientStomaList(pat).length:0);
   const episodeCount=clrState.available?clrState.rows.filter(r=>r.kind==='episode').length:0;
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
@@ -20817,6 +20824,12 @@ async function renderPatientRecord(patientId,opts,sequence){
   arrangePatientDashboard();
   if(selectedPanel!=='demographics')patientDashboardOpen(selectedPanel);
   if(typeof UpdateRegister!=='undefined')UpdateRegister.renderFlowControls(patientId);
+  }catch(err){
+    // A single malformed record must never leave a clinician staring at a blank
+    // page: show the back bar and the actual error so it can be reported and fixed.
+    console.error('renderPatientRecord: could not build the record for',patientId,err);
+    host.innerHTML='<div class="psm-page">'+backBar+'<div class="report-note" style="color:#b91c1c;padding:16px;line-height:1.6;">This patient record could not be displayed because of an error while building the page.<br>Please send this exact message to IT:<br><strong>'+htmlSafe(err&&err.message?err.message:String(err))+'</strong></div></div>';
+  }
 }
 
 /* ---- delete patient with confirmation ---- */
