@@ -246,7 +246,7 @@
     if(origin==='page-care-episode'&&typeof openCareEpisode==='function'&&careEpisodeView?.episodeId)await openCareEpisode(careEpisodeView.episodeId);
     else if(origin==='page-patient-record'&&typeof openPatientRecord==='function')await openPatientRecord(pid);
     else{document.getElementById('page-handover')?.classList.add('active');await loadHandover();}window.scrollTo(0,pos);}
-  async function open(pid,recordId=null){
+  async function open(pid,recordId=null,versionNumber=null){
     if(!enabled())return;const {data,error:authError}=await SB.auth.getUser();if(authError||!signedIn(data?.user))return;
     if(ctx&&!canLeave())return;
     const token=++request,returnScroll=window.scrollY,returnPage=ctx?.returnPage||document.querySelector('.main > .page.active')?.id||'page-handover';ctx=null;
@@ -273,7 +273,13 @@
       if(!ep)throw new Error('There are no saved encounters or open inpatient episodes. Open an inpatient visit from the patient record first.');
       ctx={patient:p,episode:ep,episodes,rows,who:{email:data.user.email,name:signedName({email:data.user.email})},returnScroll,returnPage,mode:'form',historyFilter:String(ep.id),compare:true,openSections:new Set()};
       const todays=openEpisode&&rows.find(r=>String(r.episode_id)===String(openEpisode.id)&&String(r.encounter_date||'').slice(0,10)===TODAY);
-      if(recordId&&rows.some(r=>String(r.id)===String(recordId)))selectRecord(recordId);
+      if(recordId&&rows.some(r=>String(r.id)===String(recordId))){
+        // A version number may be passed to open a specific saved version (the
+        // patient profile lists them newest-first); otherwise the latest opens.
+        let idx=null;
+        if(versionNumber!=null){const vs=versions(rows.find(r=>String(r.id)===String(recordId)));const i=vs.findIndex(v=>String(v.version)===String(versionNumber));if(i>=0)idx=i;}
+        selectRecord(recordId,idx);
+      }
       else if(todays){
         // Saved encounters open for reading. Starting a revision is a separate,
         // deliberate action; simply reopening the handover button changes nothing.

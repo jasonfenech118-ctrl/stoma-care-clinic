@@ -17,6 +17,7 @@ test('each episode lists its own encounters newest first, coded and versioned, o
     {id:'e1',episode_id:'ep-old',encounter_date:'2026-09-02',created_at:'2026-09-02T09:00:00Z',created_by_name:'Jason Fenech',assessment:v(1)},
     {id:'e2',episode_id:'ep-new',encounter_date:'2026-10-05',created_at:'2026-10-05T09:00:00Z',created_by_name:'Jason Fenech',assessment:v(2)},
     {id:'e3',episode_id:'ep-new',encounter_date:'2026-10-06',created_at:'2026-10-06T09:00:00Z',created_by_name:'Jason Fenech',assessment:v(1)}]};
+  w.eval(source('encounterVersionsControl'));
   w.eval(source('episodeEncountersHTML'));
   const el=w.document.createElement('div');el.innerHTML=w.episodeEncountersHTML({id:'ep-new'});
   assert.match(el.querySelector('.clr-enc-head').textContent,/Encounters\s*2/);
@@ -24,6 +25,14 @@ test('each episode lists its own encounters newest first, coded and versioned, o
   assert.deepEqual(rows.map(r=>r.querySelector('.clr-code').textContent),['ENC-404261M-061026','ENC-404261M-051026']);
   assert.deepEqual(rows.map(r=>r.querySelector('.clr-enc-v').textContent),['V1','V2']);
   assert.equal(rows[1].getAttribute('onclick'),"openEncounter('pat-1','e2')");
+  // The 2-version encounter (e2) gains a versions dropdown; the single-version
+  // one (e3) does not. The dropdown lists newest (V2) first, opening that version.
+  const items=[...el.querySelectorAll('.clr-enc-item')];
+  assert.equal(items[0].querySelector('.clr-enc-vers'),null);          // e3 — one version
+  const vbtns=[...items[1].querySelectorAll('.clr-enc-vbtn')];          // e2 — two versions
+  assert.deepEqual(vbtns.map(b=>b.querySelector('.clr-enc-v').textContent),['V2','V1']);
+  assert.equal(vbtns[0].getAttribute('onclick'),"openEncounter('pat-1','e2',2)");
+  assert.equal(vbtns[1].getAttribute('onclick'),"openEncounter('pat-1','e2',1)");
   assert.equal(w.episodeEncountersHTML({id:'ep-none'}),'');
   el.innerHTML=w.episodeEncountersHTML({id:'ep-old'});assert.equal(el.querySelectorAll('.clr-enc-row').length,1);
 });

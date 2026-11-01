@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-692"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-693"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-692"></script>
+<script src="assets/manual.js?v=2026.11.01-693"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1217,6 +1217,16 @@ body.qli-standalone #ql-install-btn{display:none;}
 .clr-enc-v{font-size:10.5px;font-weight:800;background:#0d7377;color:#fff;border-radius:5px;padding:1px 6px;}
 .clr-enc-meta{color:#5a6b7b;}
 .clr-enc-open{margin-left:auto;font-weight:700;color:#0d7377;}
+.clr-enc-item{display:grid;gap:4px;}
+.clr-enc-vers{margin:0 0 2px 2px;font-size:11.5px;}
+.clr-enc-vers>summary{cursor:pointer;color:#0d7377;font-weight:700;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:2px 2px;}
+.clr-enc-vers>summary::-webkit-details-marker{display:none;}
+.clr-enc-vers>summary::before{content:'▸';font-size:10px;}
+.clr-enc-vers[open]>summary::before{content:'▾';}
+.clr-enc-vlist{display:grid;gap:4px;margin:4px 0 2px;}
+.clr-enc-vbtn{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid #d6e9e8;background:#fff;border-radius:6px;padding:5px 8px;font:inherit;font-size:11.5px;color:#1a2e4a;cursor:pointer;}
+.clr-enc-vbtn:hover{border-color:#0d7377;background:#f0f9f8;}
+.clr-enc-vmeta{color:#5a6b7b;}
 .clr-rec:last-child{border-bottom:0;}
 .clr-rec-copy{display:grid;gap:2px;min-width:0;}
 .clr-rec-title{font-size:13px;font-weight:700;color:var(--navy);}
@@ -3956,7 +3966,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-692';
+const APP_BUILD='2026.11.01-693';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18885,7 +18895,7 @@ function careEpisodePageHTML(p,ep,encounters){
   const ward=episodeWardBed({detail:String(ep.detail||'').split(' · ')[0]})||'Ward not recorded';
   const notes=[ep.notes,ep.title].find(value=>value&&!/^inpatient visit$/i.test(String(value).trim()))||'';
   const date=ep.record_date?fmtShortDate(ep.record_date):'Date not recorded';
-  return `<div class="care-episode-page"><button type="button" class="psm-back" onclick="backCareEpisode()">‹ Back to patient record</button>
+  return `<div class="care-episode-page"><div class="pd-home-actions" style="justify-content:space-between;"><button type="button" class="psm-back" onclick="backCareEpisode()">‹ Back to patient record</button><button type="button" class="psm-btn" onclick="printCareEpisode()">🖨 Print admission</button></div>
     <header class="psm-head"><div class="psm-head-main"><div class="psm-avatar-wrap">${patientHeaderAvatarHTML(p)}</div><div><h2>${htmlSafe(name)}</h2><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong></div></div></header>
     <h2>Inpatient admission</h2>
     <details class="pd-section" open><summary>Inpatient · ${htmlSafe(ward)} · ${htmlSafe(date)}</summary><section>
@@ -18929,7 +18939,7 @@ function patientDashboardHistoryHTML(){
   const encounters=clrState.encounters||[],episodes=(clrState.rows||[]).filter(r=>r.kind==='episode');
   const ordered=episodes.slice().sort((a,b)=>dateOf(a).localeCompare(dateOf(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
   const numbers=new Map(ordered.map((ep,i)=>[String(ep.id),i+1]));
-  const encounterRow=(e,ep)=>({key:'encounter:'+e.id,date:dateOf(e),stamp:e.created_at||'',text:[wb(ep)?wb(ep)+':':'',e.nursing_report||'Clinical encounter'].filter(Boolean).join('\n'),action:`<button type="button" class="clr-mini" onclick="openEncounter('${jsSafe(String(p.id))}','${jsSafe(String(e.id))}')">Open note</button>`,uids:careRecordUids(p,model,'encounter:'+e.id,e,dateOf(e))});
+  const encounterRow=(e,ep)=>({key:'encounter:'+e.id,date:dateOf(e),stamp:e.created_at||'',text:[wb(ep)?wb(ep)+':':'',e.nursing_report||'Clinical encounter'].filter(Boolean).join('\n'),action:`<button type="button" class="clr-mini" onclick="openEncounter('${jsSafe(String(p.id))}','${jsSafe(String(e.id))}')">Open note</button>${encounterVersionsControl(jsSafe(String(p.id)),e)}`,uids:careRecordUids(p,model,'encounter:'+e.id,e,dateOf(e))});
   episodes.forEach(ep=>{
     const saved=encounters.filter(e=>String(e.episode_id)===String(ep.id));
     if(saved.length){
@@ -18989,7 +18999,7 @@ function arrangePatientDashboard(){
   const nav=root.querySelector('.psm-tabs');if(nav)nav.hidden=true;
   const actions=document.createElement('div');actions.className='pd-home-actions';actions.setAttribute('aria-label','Patient home actions');
   const current=openEpisodeIn(clrState.rows||[]);
-  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}`;
+  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="printPatientProfile()">🖨 Print profile</button>`;
   root.querySelector('.pd-patient-details')?.after(actions);
   const doc=root.querySelector('.doc-status-card'); // Existing record-completeness information is retained below the details.
   const home=patientDashboardSection(overview,'Patient overview',false);
@@ -19441,8 +19451,22 @@ function episodeEncountersHTML(ep){
   const pid=jsSafe(clrState.patient?.id||ep.patient_id);
   return `<div class="clr-enc"><div class="clr-enc-head">📝 Encounters <span class="clr-count">${mine.length}</span></div>${mine.map(e=>{
     const v=JE.versions(e).slice(-1)[0];
-    return `<button type="button" class="clr-enc-row" onclick="openEncounter('${pid}','${jsSafe(e.id)}')"><span class="clr-code">${htmlSafe(JE.code(e,clrState.patient,all))}</span><span class="clr-enc-v">V${v?.version||1}</span><span class="clr-enc-meta">${htmlSafe(fmtShortDate(String(e.encounter_date||e.created_at||'').slice(0,10)))}${e.created_by_name?' · '+htmlSafe(e.created_by_name):''}</span><span class="clr-enc-open">Open ›</span></button>`;
+    return `<div class="clr-enc-item"><button type="button" class="clr-enc-row" onclick="openEncounter('${pid}','${jsSafe(e.id)}')"><span class="clr-code">${htmlSafe(JE.code(e,clrState.patient,all))}</span><span class="clr-enc-v">V${v?.version||1}</span><span class="clr-enc-meta">${htmlSafe(fmtShortDate(String(e.encounter_date||e.created_at||'').slice(0,10)))}${e.created_by_name?' · '+htmlSafe(e.created_by_name):''}</span><span class="clr-enc-open">Open ›</span></button>${encounterVersionsControl(pid,e)}</div>`;
   }).join('')}</div>`;
+}
+/* A dropdown listing every saved version of one encounter, newest (e.g. V4) on
+   top, each opening that exact version read-only. Nothing shows for a single
+   version — there is only V1 to see. */
+function encounterVersionsControl(pid,e){
+  const JE=window.JasonEncounters;if(!JE)return '';
+  const vs=JE.versions(e);if(!vs||vs.length<2)return '';
+  const eid=jsSafe(e.id);
+  const rows=vs.slice().reverse().map(v=>{
+    const when=fmtShortDate(String(v.saved_at||e.created_at||'').slice(0,10));
+    const by=v.author_name||v.author_email||'';
+    return `<button type="button" class="clr-enc-vbtn" onclick="openEncounter('${pid}','${eid}',${Number(v.version)||1})"><span class="clr-enc-v">V${v.version||1}</span><span class="clr-enc-vmeta">${htmlSafe(when)}${by?' · '+htmlSafe(by):''}</span></button>`;
+  }).join('');
+  return `<details class="clr-enc-vers"><summary>All versions <span class="clr-count">${vs.length}</span></summary><div class="clr-enc-vlist">${rows}</div></details>`;
 }
 function episodeCategoryHTML(meta,open){
   const recs=clrState.rows.filter(r=>r.kind===meta.kind);
@@ -27441,6 +27465,57 @@ function printVisitReview(subtitle){
     @page{size:A4 portrait;margin:14mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   </style></head><body><h2>Visit review</h2><div class="print-sub">${htmlSafe(subtitle||'')}</div>${clone.innerHTML}</body></html>`);
   w.document.close();setTimeout(()=>{w.focus();w.print();},350);
+}
+/* Shared print styles for the profile / admission sheets — the same look as a
+   visit review, plus the dashboard's collapsible sections and history tables. */
+const PROFILE_PRINT_CSS=`
+  body{font-family:Arial,sans-serif;color:#17282d;margin:18px;font-size:13px;line-height:1.55;}
+  h1{font-size:20px;color:#1a2e4a;margin:0 0 2px;} h2{font-size:16px;color:#1a2e4a;margin:16px 0 6px;} h3{font-size:14px;color:#1a2e4a;margin:10px 0 4px;}
+  .print-sub{color:#56708a;font-size:12px;margin:0 0 14px;}
+  details{margin:8px 0;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;}
+  summary{font-weight:800;color:#1a2e4a;font-size:13.5px;margin:-2px 0 6px;list-style:none;}
+  summary::-webkit-details-marker{display:none;}
+  table{border-collapse:collapse;width:100%;margin:6px 0;font-size:12px;}
+  th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;vertical-align:top;}
+  th{background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#334155;}
+  .pd-record-text,.vsr-val{white-space:pre-wrap;overflow-wrap:anywhere;}
+  dl,.psm-ditem{margin:4px 0;} dt{font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.3px;} dd{margin:0 0 6px;}
+  .psm-ov-cols,.psm-details,.psm-dl{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;}
+  .cr-out,.status-badge,.psm-chip-sited,.psm-chip-abroad,.clr-badge{display:inline-block;border:1px solid #cbd5e1;border-radius:999px;padding:1px 9px;margin:2px 5px 2px 0;font-size:11px;}
+  .pl-tag,.appl-pill{display:inline-block;border:1px solid #cbd5e1;border-radius:999px;padding:2px 9px;margin:2px 5px 2px 0;font-size:12px;}
+  .report-note{color:#475569;} .na{color:#94a3b8;font-style:italic;}
+  @page{size:A4 portrait;margin:14mm;}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}`;
+function openPrintDocument(title,subtitle,bodyHTML){
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to print.');return;}
+  w.document.write(`<html><head><title>${htmlSafe(title||'Print')}</title><style>${PROFILE_PRINT_CSS}</style></head><body><h1>${htmlSafe(title||'')}</h1><div class="print-sub">${htmlSafe(subtitle||'')}</div>${bodyHTML}</body></html>`);
+  w.document.close();setTimeout(()=>{w.focus();w.print();},350);
+}
+// Strip the interactive chrome from a cloned sheet so it prints as a document:
+// open every section, reveal hidden panels, drop buttons and form controls.
+function prepPrintClone(node){
+  const clone=node.cloneNode(true);
+  clone.querySelectorAll('details').forEach(d=>d.open=true);
+  clone.querySelectorAll('[hidden]').forEach(el=>el.removeAttribute('hidden'));
+  clone.querySelectorAll('button,input,select,textarea,.jenc-no-print,.psm-tabs,.psm-page-bar,.pd-home-actions,.clr-rec-actions,.clr-enc-open,.pd-table-scroll>.clr-mini').forEach(el=>el.remove());
+  return clone;
+}
+/* Print the whole patient profile — every section of the dashboard (overview,
+   stomas, outcome, appointments & episodes, correspondence) on one sheet. */
+function printPatientProfile(){
+  const root=document.querySelector('#page-patient-record .psm');
+  if(!root){alert('Open a patient profile first.');return;}
+  const p=clrState.patient||{};
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  openPrintDocument('Patient profile — '+nm,`ID ${p.id_card||'—'} · printed ${fmtShortDate(TODAY)}`,prepPrintClone(root).innerHTML);
+}
+/* Print one inpatient admission (the episode) with its encounters. */
+function printCareEpisode(){
+  const root=document.querySelector('#page-care-episode .care-episode-page');
+  if(!root){alert('Open an inpatient admission first.');return;}
+  const p=clrState.patient||{};
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  openPrintDocument('Inpatient admission — '+nm,`ID ${p.id_card||'—'} · printed ${fmtShortDate(TODAY)}`,prepPrintClone(root).innerHTML);
 }
 function plDueLabel(patient){
   const month=Number(patient&&patient.followup_due_month);
