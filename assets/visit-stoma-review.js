@@ -67,7 +67,7 @@
     #es-stepper .es-step{flex:0 0 auto!important;min-height:48px}
     #mb:has(#es-stepper) .jenc-stoma-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))!important;min-width:0!important;gap:16px!important}
     #mb:has(#es-stepper) .jenc-stoma-col{box-sizing:border-box!important;width:100%!important;min-width:0!important}
-    #mb:has(#es-stepper) .vsr-editor{width:100%!important;box-sizing:border-box!important}
+    #mb:has(#es-stepper) .vsr-rich{width:100%!important;box-sizing:border-box!important}
     #mb:has(#es-stepper) .vsr-toolbar>*{min-width:0!important}
     @media(max-width:600px){#mb:has(#es-stepper) .mact{display:flex!important;flex-wrap:wrap!important;gap:12px!important}#mb:has(#es-stepper) .mact button{flex:1 1 100%!important;min-height:48px!important;margin:0!important}#mb:has(#es-stepper) .es-summary-details{grid-template-columns:minmax(90px,32%) minmax(0,1fr)!important}}
     #mb2.vsr-bible{box-sizing:border-box!important;width:min(560px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;padding:28px!important;max-height:calc(100dvh - 32px)!important;overflow-y:auto!important}
@@ -334,7 +334,7 @@
       draft={apptId:String(appt?.id||''),patientId:String(patient?.id||''),stomas:seed(appt,patient),versions:copy(vs),
         locked:!editableToday(appt),day:recordedDay(appt),compare:vs.length?copy(list(vs[vs.length-1].stomas)):null,signer:''};
     }
-    if(!host.dataset.vsrBound){host.dataset.vsrBound='1';host.addEventListener('change',change);host.addEventListener('input',input);host.addEventListener('click',click);host.addEventListener('scroll',e=>{if(e.target.dataset?.vsr==='notes'){const s=find(e.target);if(s)repaint(e.target,s);}},true);host.addEventListener('keydown',e=>{if(e.target.dataset?.vsr==='notes'&&(e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();command(e.key.toLowerCase()==='y'||e.shiftKey?'redo':'undo',find(e.target),e.target);}});}
+    if(!host.dataset.vsrBound){host.dataset.vsrBound='1';host.addEventListener('change',change);host.addEventListener('input',input);host.addEventListener('click',click);host.addEventListener('keydown',e=>{if(e.target.dataset?.vsr==='notes'&&(e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();command(e.key.toLowerCase()==='y'||e.shiftKey?'redo':'undo',find(e.target),e.target);}});}
     draft.stomas.forEach(history);
     render();
     const mine=draft,loads=[];
@@ -383,23 +383,49 @@
     html=html.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
     return html;
   }
-  // The live editor's backdrop. Same rendering as the saved view, but the marker
-  // characters are KEPT (shown faintly as .vsr-mk) so the text aligns with the
-  // transparent textarea on top — the nurse sees the text actually turn bold /
-  // italic / underlined / coloured as they format, not raw ** or __ symbols.
-  // Marker glyphs are emitted as HTML entities so a later rule cannot re-match them.
-  function overlayFormat(text){
-    let html=highlighted(text);
-    // Bold and italic are faked with a text-shadow / skew (classes below) rather
-    // than font-weight / font-style, because a real bold or italic glyph is WIDER
-    // than the plain glyph the transparent textarea measures the caret against —
-    // that width difference is what made the cursor drift off the text. Underline
-    // and colour never change width, so they use the real tags.
-    html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span class="vsr-mk">&#123;'+c+'&#125;</span><span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span><span class="vsr-mk">&#123;/'+c+'&#125;</span>');
-    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<span class="vsr-mk">&#42;&#42;</span><span class="vsr-ov-b">$1</span><span class="vsr-mk">&#42;&#42;</span>');
-    html=html.replace(/__([\s\S]+?)__/g,'<span class="vsr-mk">&#95;&#95;</span><u>$1</u><span class="vsr-mk">&#95;&#95;</span>');
-    html=html.replace(/\*([^*\n]+?)\*/g,'<span class="vsr-mk">&#42;</span><span class="vsr-ov-i">$1</span><span class="vsr-mk">&#42;</span>');
-    return html;
+  // ── Rich-text editor ↔ marker storage ──────────────────────────────────
+  // The editor is a real contenteditable surface, so bold / italic / underline
+  // show as formatted text (no ** or __ visible) with a normal caret and the
+  // toolbar buttons light up. Notes are still STORED as lightweight markers
+  // (**bold**, *italic*, __underline__, {red}…{/red}) so the saved view, diffs,
+  // versions and the profile history keep working unchanged — we convert on the
+  // way into the editor and back out of it.
+  function markersToHtml(text){
+    let html=esc(String(text||''));
+    html=html.replace(/\{(red|orange|green|blue|purple)\}([\s\S]*?)\{\/\1\}/g,(m,c,inner)=>'<span style="color:'+NOTE_COLOURS[c]+'">'+inner+'</span>');
+    html=html.replace(/\*\*([\s\S]+?)\*\*/g,'<b>$1</b>');
+    html=html.replace(/__([\s\S]+?)__/g,'<u>$1</u>');
+    html=html.replace(/\*([^*\n]+?)\*/g,'<i>$1</i>');
+    return html.replace(/\n/g,'<br>');
+  }
+  function colourRgb(c){
+    c=String(c||'').trim();let m=c.match(/^#([0-9a-fA-F]{6})$/);
+    if(m){const n=parseInt(m[1],16);return [(n>>16)&255,(n>>8)&255,n&255];}
+    m=c.match(/rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/);return m?[+m[1],+m[2],+m[3]]:null;
+  }
+  const COLOUR_RGB=Object.keys(NOTE_COLOURS).map(k=>({k,rgb:colourRgb(NOTE_COLOURS[k])}));
+  function colourKeyOf(node){
+    const c=(node.style&&node.style.color)||'';const rgb=colourRgb(c);if(!rgb)return '';
+    const hit=COLOUR_RGB.find(x=>x.rgb&&x.rgb[0]===rgb[0]&&x.rgb[1]===rgb[1]&&x.rgb[2]===rgb[2]);return hit?hit.k:'';
+  }
+  // Walk the editor DOM back to marker text: every text node is kept verbatim,
+  // known formatting tags become markers, unknown tags pass through their text —
+  // so wording can never be lost in the round-trip.
+  function htmlToMarkers(root){
+    const walk=node=>{let s='';node.childNodes.forEach(ch=>{
+      if(ch.nodeType===3){s+=ch.nodeValue.replace(/ /g,' ');return;}
+      if(ch.nodeType!==1)return;
+      const tag=ch.nodeName.toLowerCase();
+      if(tag==='br'){s+='\n';return;}
+      const inner=walk(ch);
+      if(tag==='b'||tag==='strong')s+=inner?'**'+inner+'**':'';
+      else if(tag==='i'||tag==='em')s+=inner?'*'+inner+'*':'';
+      else if(tag==='u')s+=inner?'__'+inner+'__':'';
+      else if(tag==='span'||tag==='font'){const col=colourKeyOf(ch);s+=col?'{'+col+'}'+inner+'{/'+col+'}':inner;}
+      else if(tag==='div'||tag==='p'||tag==='li'){if(s&&!s.endsWith('\n'))s+='\n';s+=inner;}
+      else s+=inner;
+    });return s;};
+    return walk(root).replace(/\n$/,'');
   }
   function columnHTML(s,all){
     const ref=' data-uid="'+esc(s.uid)+'"';
@@ -412,37 +438,35 @@
         return '<button type="button" data-vsr-command="'+k+'"'+(T[k]?' title="'+T[k]+'" aria-label="'+T[k]+'"':'')+ref+'>'+L[k]+'</button>';
       }).join('')+
       '<label>Colour <select data-vsr="textcolour"'+ref+' aria-label="Text colour"><option value="">— colour —</option>'+Object.keys(NOTE_COLOURS).map(c=>'<option value="'+c+'">'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join('')+'</select></label>'+'</div>'+
-      '<label>Clinical review — free text</label><div class="vsr-editor" style="--vsr-font:'+s.notes_font_size+'px"><div class="vsr-overlay" aria-hidden="true">'+overlayFormat(s.notes||'')+'\n</div>'+
-      '<textarea data-vsr="notes"'+ref+' aria-label="'+esc(nameOf(s,all))+' clinical review" rows="8" spellcheck="false" placeholder="Write the clinical review, observations and care provided…">'+esc(s.notes||'')+'</textarea></div>'+
+      '<label>Clinical review — free text</label>'+
+      '<div class="vsr-rich" contenteditable="true" data-vsr="notes"'+ref+' role="textbox" aria-multiline="true" aria-label="'+esc(nameOf(s,all))+' clinical review" spellcheck="true" data-placeholder="Write the clinical review, observations and care provided…" style="--vsr-font:'+s.notes_font_size+'px">'+markersToHtml(s.notes||'')+'</div>'+
       '<div class="jenc-previous vsr-note-diff"'+ref+'>'+noteDiff(s)+'</div></div>';
   }
-  function repaint(el,s){
-    const overlay=el.previousElementSibling;
-    if(overlay){overlay.style.width=el.clientWidth?el.clientWidth+'px':'100%';overlay.innerHTML=overlayFormat(s.notes||'')+'\n';overlay.scrollTop=el.scrollTop;overlay.scrollLeft=el.scrollLeft;}
-  }
+  function editorFor(ref){return ref.closest('.jenc-stoma-col')?.querySelector('.vsr-rich[data-vsr="notes"]');}
+  function syncDiff(s){const d=[...host.querySelectorAll('.vsr-note-diff')].find(x=>x.dataset.uid===s.uid);if(d)d.innerHTML=noteDiff(s);}
+  function placeCaretEnd(el){try{const r=document.createRange();r.selectNodeContents(el);r.collapse(false);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);}catch(_){}}
   const histories=new Map();
   function history(s){const key=draft.apptId+':'+s.uid;if(!histories.has(key))histories.set(key,{items:[s.notes||''],at:0});return histories.get(key);}
   function remember(s){const h=history(s);if(h.items[h.at]===s.notes)return;h.items=h.items.slice(0,h.at+1);h.items.push(s.notes);h.at++;}
-  // Wrap the current selection (or the caret) with before/after markers.
-  function wrapSelection(el,s,before,after){
-    const a=el.selectionStart,b=el.selectionEnd,sel=el.value.slice(a,b)||'text';
-    el.value=el.value.slice(0,a)+before+sel+after+el.value.slice(b);
-    s.notes=el.value;remember(s);
-    const pos=a+before.length;el.setSelectionRange(pos,pos+sel.length);
-  }
   function command(k,s,el){
-    const h=history(s);
-    if(k==='undo'||k==='redo'){h.at=Math.max(0,Math.min(h.items.length-1,h.at+(k==='undo'?-1:1)));s.notes=h.items[h.at];el.value=s.notes;}
-    else if(k==='bold'||k==='italic'||k==='underline'){const mk={bold:'**',italic:'*',underline:'__'}[k];wrapSelection(el,s,mk,mk);}
-    else {
-      const start=el.value.lastIndexOf('\n',el.selectionStart-1)+1;
-      let end=el.value.indexOf('\n',el.selectionEnd);if(end<0)end=el.value.length;
-      const lines=el.value.slice(start,end).split('\n');
-      const marked=lines.every(x=>k==='bullets'?/^• /.test(x):/^\d+\. /.test(x));
-      const next=lines.map((x,i)=>marked?x.replace(k==='bullets'?/^• /:/^\d+\. /,''):(k==='bullets'?'• ':String(i+1)+'. ')+x.replace(/^(?:• |\d+\. )/,'')).join('\n');
-      el.value=el.value.slice(0,start)+next+el.value.slice(end);s.notes=el.value;remember(s);el.setSelectionRange(start,start+next.length);
+    if(!el)return;el.focus();
+    if(k==='undo'||k==='redo'){
+      const h=history(s);h.at=Math.max(0,Math.min(h.items.length-1,h.at+(k==='undo'?-1:1)));
+      s.notes=h.items[h.at];el.innerHTML=markersToHtml(s.notes);placeCaretEnd(el);
+    }else{
+      // Real editing commands on the contenteditable — bold/italic/underline
+      // toggle the selection; lists wrap the current line(s).
+      const cmd={bold:'bold',italic:'italic',underline:'underline',bullets:'insertUnorderedList',numbered:'insertOrderedList'}[k];
+      if(cmd){try{document.execCommand('styleWithCSS',false,true);}catch(_){}try{document.execCommand(cmd);}catch(_){}}
+      s.notes=htmlToMarkers(el);remember(s);
     }
-    repaint(el,s);const diff=el.closest('.jenc-stoma-col').querySelector('.vsr-note-diff');if(diff)diff.innerHTML=noteDiff(s);el.focus();
+    syncDiff(s);updateToolbarState(el);
+  }
+  // Light up Bold / Italic / Underline while the caret sits in formatted text.
+  function updateToolbarState(el){
+    if(!el)return;const col=el.closest('.jenc-stoma-col');if(!col)return;
+    const on=cmd=>{try{return document.queryCommandState(cmd);}catch(_){return false;}};
+    ['bold','italic','underline'].forEach(cmd=>{const b=col.querySelector('[data-vsr-command="'+cmd+'"]');if(b)b.classList.toggle('is-active',on(cmd));});
   }
   function noteDiff(s){
     const old=draft?.compare?draft.compare.find(x=>x.uid===s.uid):null;if(!old)return '';
@@ -476,6 +500,8 @@
     }).join('')+'</div>';
   }
   window.addEventListener('resize',()=>refreshHighlights());
+  // Keep the Bold/Italic/Underline buttons in step with where the caret is.
+  document.addEventListener('selectionchange',()=>{const a=document.activeElement;if(a&&a.classList&&a.classList.contains('vsr-rich'))updateToolbarState(a);});
   function render(){
     if(!host||!draft)return;
     const all=draft.stomas;
@@ -503,14 +529,15 @@
   function skinChanged(){if(typeof window.onVisitSkinChange==='function')window.onVisitSkinChange();}
   function change(e){
     const el=e.target,kind=el.dataset?.vsr;
-    if(kind==='font'){const s=find(el);if(s){s.notes_font_size=Number(el.value);el.closest('.jenc-stoma-col').querySelector('.vsr-editor').style.setProperty('--vsr-font',s.notes_font_size+'px');}return;}
+    if(kind==='font'){const s=find(el);if(s){s.notes_font_size=Number(el.value);el.closest('.jenc-stoma-col').querySelector('.vsr-rich')?.style.setProperty('--vsr-font',s.notes_font_size+'px');}return;}
     if(kind==='textcolour'){
       const val=el.value;el.value='';           // reset the picker after each use
-      const s=find(el),ta=el.closest('.jenc-stoma-col')?.querySelector('textarea[data-vsr="notes"]');
-      if(!val||!s||!ta)return;
-      wrapSelection(ta,s,'{'+val+'}','{/'+val+'}');repaint(ta,s);
-      const diff=ta.closest('.jenc-stoma-col').querySelector('.vsr-note-diff');if(diff)diff.innerHTML=noteDiff(s);
-      ta.focus();return;
+      const s=find(el),ed=editorFor(el);
+      if(!val||!s||!ed)return;
+      ed.focus();
+      try{document.execCommand('styleWithCSS',false,true);}catch(_){}
+      try{document.execCommand('foreColor',false,NOTE_COLOURS[val]);}catch(_){}
+      s.notes=htmlToMarkers(ed);remember(s);syncDiff(s);return;
     }
     const s=kind&&find(el);if(!s)return;
     if(kind==='colour'){if(el.value==='__add__'){addOther('colour',s);return;}s.colour=el.value;}
@@ -539,7 +566,7 @@
   }
   function click(e){
     const control=e.target.closest?.('[data-vsr-command]');
-    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openBible();return;}const el=control.closest('.jenc-stoma-col').querySelector('textarea');command(k,s,el);return;}
+    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openBible();return;}command(k,s,editorFor(control));return;}
     const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);
   }
   // "+ Add other…": the new wording joins the list for good and is chosen here.
@@ -556,8 +583,8 @@
     if(name&&fieldName==='skin')skinChanged();
   }
   function input(e){
-    const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;history(s);s.notes=el.value;remember(s);repaint(el,s);
-    const d=[...host.querySelectorAll('.vsr-note-diff')].find(x=>x.dataset.uid===s.uid);if(d)d.innerHTML=noteDiff(s);
+    const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;
+    history(s);s.notes=htmlToMarkers(el);remember(s);syncDiff(s);
   }
   function payloadFor(apptId){
     if(!enabled()||!draft||draft.locked||draft.apptId!==String(apptId))return null;
@@ -610,7 +637,9 @@
     return true;
   }
   function clear(){draft=null;histories.clear();}
-  function refreshHighlights(){host?.querySelectorAll('textarea[data-vsr="notes"]').forEach(el=>{const s=find(el);if(s)repaint(el,s);});}
-  window.VisitStomaReview={highlighted,formatNotes,overlayFormat,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
+  // The contenteditable renders formatting itself; complication terms are
+  // red-underlined in the saved view. Nothing to repaint live.
+  function refreshHighlights(){}
+  window.VisitStomaReview={highlighted,formatNotes,markersToHtml,htmlToMarkers,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();

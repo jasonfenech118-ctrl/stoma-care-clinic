@@ -67,7 +67,7 @@ test('visit review: editing on the day saves V2 signed by the nurse; no change s
   await w.saveVisitReviewEdit();assert.equal(saves.length,0);assert.match(mb().querySelector('#vr-msg').textContent,/no changes/);
   // The visit review is free-text now (no colour / output / skin selects), so a
   // change is made by editing the clinical notes.
-  const ta=mb().querySelector('[data-vsr="notes"][data-uid="a"]');ta.value='Reviewed — now dusky.';ta.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const ta=mb().querySelector('[data-vsr="notes"][data-uid="a"]');ta.textContent='Reviewed — now dusky.';ta.dispatchEvent(new w.Event('input',{bubbles:true}));
   await w.saveVisitReviewEdit();
   assert.equal(saves.length,1);const st=saves[0].stoma_assessment;assert.equal(st.versions.length,2);
   assert.deepEqual({v:st.versions[1].version,by:st.versions[1].author_name,notes:st.current[0].notes},{v:2,by:'Lorraine Marie Stivala',notes:'Reviewed — now dusky.'});

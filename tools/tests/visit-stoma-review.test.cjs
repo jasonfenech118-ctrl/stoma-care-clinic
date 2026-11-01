@@ -37,7 +37,7 @@ test('editing a saved visit preserves its historical rod data without offering r
       await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:legacy?[row]:saved});
       assert.equal(host.querySelector('[data-vsr^="rod"]'),null);
       assert.equal(w.VisitStomaReview.storedFor('ap1',w.VisitStomaReview.payloadFor('ap1'),{name:'Nurse'}),null,'removing the control creates no spurious revision');
-      const notes=host.querySelector('[data-vsr="notes"]');notes.value='Reviewed today.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
+      const notes=host.querySelector('[data-vsr="notes"]');notes.textContent='Reviewed today.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
       const next=JSON.parse(JSON.stringify(w.VisitStomaReview.storedFor('ap1',w.VisitStomaReview.payloadFor('ap1'),{name:'Nurse'})));
       assert.deepEqual(next.current[0].rod,row.rod);
       assert.deepEqual(next.versions[0].stomas[0],row);
@@ -60,7 +60,7 @@ test('Complete visit advances and saves without a rod date, keeps complication c
   assert.match(w.document.getElementById('of-review-error').textContent,/confirm how complications were reviewed/);
   w.document.querySelector('[name="of-cmp-review"]').checked=true;
   await w.esFollowupNext();assert.deepEqual(steps,[3],'the old rod with no date does not block the Appliances step');
-  const notes=host.querySelector('[data-vsr="notes"]');notes.value='Reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const notes=host.querySelector('[data-vsr="notes"]');notes.textContent='Reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
   w.getCurrentUserForAudit=async()=>({name:'Nurse',email:'nurse@gov.mt'});w.attDisplayName=u=>u.name;
   w.updateAppointmentTolerant=async(_id,patch)=>{appointments.push(JSON.parse(JSON.stringify(patch)));return {error:null,dropped:[]};};
   w.updatePatientTolerant=async(_id,patch)=>{patients.push(JSON.parse(JSON.stringify(patch)));return {error:null,dropped:[]};};
@@ -77,7 +77,7 @@ test('saving an edited visit review preserves a historical rod without a removal
   const appt={id:'ap1',patient_id:'p1',appt_date:'2026-10-25',stoma_assessment:[row]};
   const {w,host,mount}=setup(t,{stomas:[{uid:'b',typeLabel:'Loop ileostomy'}]});await mount(appt);
   w.document.body.insertAdjacentHTML('beforeend','<div id="vr-msg"></div><button id="vr-save">Save as V2</button>');
-  const notes=host.querySelector('[data-vsr="notes"]');notes.value='Reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const notes=host.querySelector('[data-vsr="notes"]');notes.textContent='Reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
   w.eval('var visitReviewState=null;var clrState={appts:[]};');w.visitReviewState={apptId:'ap1',appt};
   const saves=[];let patientWrites=0,rendered=false;
   w.getCurrentUserForAudit=async()=>({name:'Nurse',email:'nurse@gov.mt'});w.attDisplayName=u=>u.name;
@@ -109,7 +109,7 @@ test('visit reviews are signed versions: editing on the day makes V2 with change
   const {w,host,mount}=setup(t);w.getCurrentUserForAudit=async()=>({email:'jason.fenech@gov.mt'});w.attDisplayName=()=> 'Jason Fenech';
   await mount({id:'ap1',appt_date:'2026-10-25',stoma_assessment:stored});const q=s=>host.querySelector(s);
   assert.match(host.textContent,/Editing V2 · changes in red/);assert.match(host.textContent,/Signature will be recorded automatically: Jason Fenech/);
-  const notes=q('[data-vsr="notes"][data-uid="a"]');notes.value='Settled. Skin reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const notes=q('[data-vsr="notes"][data-uid="a"]');notes.textContent='Settled. Skin reviewed.';notes.dispatchEvent(new w.Event('input',{bubbles:true}));
   assert.match(q('.vsr-note-diff[data-uid="a"] .jenc-change').textContent,/Skin/);
   const rows=w.VisitStomaReview.payloadFor('ap1');const next=JSON.parse(JSON.stringify(w.VisitStomaReview.storedFor('ap1',rows,{name:'Jason Fenech',email:'jason.fenech@gov.mt'})));
   assert.equal(next.versions.length,2);assert.equal(next.versions[0].author_name,'Jacqueline Sammut');assert.equal(next.versions[1].author_name,'Jason Fenech');assert.equal(next.versions[1].version,2);
@@ -164,13 +164,13 @@ test('the clinical-review toolbar offers Bold, Italic, Underline and a colour pi
   assert.ok(tb.querySelector('select[data-vsr="textcolour"]'));
 });
 
-test('a Bold button wraps the selected notes text in ** markers (plain-text storage)',async t=>{
+test('the Bold button runs the bold rich-text command on the contenteditable editor',async t=>{
   const {w,host,mount}=setup(t);await mount();
-  const ta=host.querySelector('textarea[data-vsr="notes"]');
-  ta.value='settled today';ta.dispatchEvent(new w.Event('input',{bubbles:true}));
-  ta.setSelectionRange(0,7);                       // select "settled"
+  const ed=host.querySelector('.vsr-rich[data-vsr="notes"]');
+  ed.textContent='settled today';ed.dispatchEvent(new w.Event('input',{bubbles:true}));
+  const calls=[];w.document.execCommand=(name)=>{calls.push(name);return true;};
   host.querySelector('[data-vsr-command="bold"]').click();
-  assert.equal(ta.value,'**settled** today');
+  assert.ok(calls.includes('bold'));   // real formatting via contenteditable; notes still stored as markers
 });
 
 test('the Seen (Complete visit) form has no Support / referrals section — referrals live in encounters',async t=>{
