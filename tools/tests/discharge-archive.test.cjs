@@ -43,29 +43,21 @@ test('a saved letter is gzip-compressed and round-trips; old plain letters still
   assert.equal(await c.dischargeDecompress(stored),html);                                   // round-trips exactly
   assert.equal(await c.dischargeDecompress('<html>plain old letter</html>'),'<html>plain old letter</html>');  // legacy rows unchanged
 });
-test('a saved letter can be amended in place and the edit is written back compressed to the same row',async()=>{
-  const c=vm.createContext({console,CompressionStream,DecompressionStream,Response,TextEncoder,TextDecoder,Uint8Array,btoa,atob,String,Array,Promise,JSON,Object,alert:()=>{}});
-  vm.runInContext(source,c);
-  const region={attrs:{},style:{},setAttribute(k,v){this.attrs[k]=v;},removeAttribute(k){delete this.attrs[k];},focus(){}};
-  const docEl={outerHTML:'<html><body><div class="WordSection1">Amended wording</div></body></html>'};
-  const frame={contentDocument:{doctype:{},documentElement:docEl,querySelector:sel=>sel==='.WordSection1'?region:null,body:region}};
-  const note={textContent:''},actions={innerHTML:''};
-  c.document={getElementById:id=>id==='saved-discharge-letter-frame'?frame:id==='saved-discharge-note'?note:id==='saved-discharge-actions'?actions:null};
-  vm.runInContext("dischargeArchiveContext={patientId:'patient-1'};dischargeArchiveEditId='letter-42';",c);
-  const updates=[],filters=[];
-  const q={update(row){this._row=row;return this;},eq(k,v){filters.push([k,v]);if(k==='patient_id')updates.push(this._row);return this;}};
-  c.SB={from:()=>q};
-  c.viewSavedDischargeLetter=()=>{};   // skip the reload; we only assert the write
-  // Enter edit mode, then save.
-  c.editSavedDischargeLetter();
-  assert.equal(region.attrs.contenteditable,'true');
-  await c.saveEditedDischargeLetter();
-  assert.equal(region.attrs.contenteditable,undefined,'editing is turned off after saving');
-  assert.equal(updates.length,1);
-  assert.ok(String(updates[0].letter_html).startsWith('GZ:'),'the amended html is stored compressed');
+test('editing a saved letter re-aims autosave at that row, so the first change updates it (no new copy)',async()=>{
+  const c=context(),win={},writes=[],updates=[],filters=[];
+  c.document={getElementById:()=>null};
+  const q={insert:async row=>{writes.push(row);return{};},
+    update(row){this._row=row;return this;},eq(k,v){filters.push([k,v]);if(k==='patient_id')updates.push(this._row);return this;}};
+  c.SB={auth:{getUser:async()=>({data:{user:{id:'staff',email:'s@x'}}})},from:()=>q};
+  // Register the window pre-aimed at an existing saved letter id.
+  c.registerDischargeLetterWindow('token','patient-1',win,snapshot,'letter-42');
+  const id=await c.autosaveDischargeLetter('token',win,{...payload,html:'<html>Edited in the full editor</html>'});
+  assert.equal(id,'letter-42','autosave keeps the same row id');
+  assert.equal(writes.length,0,'no new row inserted');
+  assert.equal(updates.length,1,'the existing row is updated');
+  assert.equal(updates[0].letter_html,'<html>Edited in the full editor</html>');
   assert(filters.some(([k,v])=>k==='id'&&v==='letter-42'));
   assert(filters.some(([k,v])=>k==='patient_id'&&v==='patient-1'));
-  assert.equal(await c.dischargeDecompress(updates[0].letter_html),'<!DOCTYPE html><html><body><div class="WordSection1">Amended wording</div></body></html>');
 });
 test('the saved row stores the compressed html and drops the unused letter_text',async()=>{
   const c=vm.createContext({console,crypto:{randomUUID:()=>'letter-x'},CompressionStream,DecompressionStream,Response,TextEncoder,TextDecoder,Uint8Array,btoa,atob,String,Array,Promise,JSON,Object});

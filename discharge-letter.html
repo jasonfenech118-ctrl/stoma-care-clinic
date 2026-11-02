@@ -3012,9 +3012,33 @@
     if(t) t.addEventListener('change', updatePatientPrint);
   })();
   autosizePatientFlds();
-  /* The form is always shown. When the record filled the early pages in, the
-     wizard simply opens on the first question it could not answer. */
-  if(prefillRecordedLetter())openWizard();
+  /* Re-opening a SAVED letter to edit it with the full toolbar: load its wording
+     into the editable body/plan/fields and leave the wizard closed. Otherwise the
+     form is built from the record and the wizard opens on the first open question. */
+  function loadSavedLetterIntoForm(){
+    try{
+      var token=new URLSearchParams(location.search).get('record');
+      var html=token?sessionStorage.getItem('stoma-discharge-saved:'+token):'';
+      if(!html)return;
+      var doc=new DOMParser().parseFromString(html,'text/html');
+      var bodyTxt=doc.querySelector('.body-txt');
+      var body=document.querySelector('.body');
+      if(bodyTxt&&body)body.innerHTML=bodyTxt.innerHTML;
+      var planHead=doc.querySelector('.plan-h');
+      var planUl=planHead?planHead.nextElementSibling:doc.querySelector('ul');
+      var plan=document.getElementById('planList');
+      if(planUl&&planUl.tagName==='UL'&&plan)plan.innerHTML=planUl.innerHTML;
+      var dateP=doc.querySelector('p.gap'),dateInput=document.getElementById('letterDate');
+      if(dateP&&dateInput)dateInput.value=dateP.textContent.trim();
+      var sal=bodyTxt?bodyTxt.previousElementSibling:null,salInput=document.querySelector('.fld-salutation');
+      if(sal&&sal.classList&&sal.classList.contains('gap')&&salInput)salInput.value=sal.textContent.trim();
+      var signHead=doc.querySelector('.sign-off'),signP=signHead?signHead.nextElementSibling:null,nameInput=document.querySelector('.fld-name');
+      if(signP&&nameInput){var nm=(signP.innerHTML.split(/<br\s*\/?>/i)[0]||'').replace(/<[^>]+>/g,'').trim();if(nm)nameInput.value=nm;}
+      autosizePatientFlds();
+    }catch(e){}
+  }
+  var _editingSaved=new URLSearchParams(location.search).get('editLetter');
+  if(prefillRecordedLetter()){ if(_editingSaved)loadSavedLetterIntoForm(); else openWizard(); }
   else if(prefillFromQuery()){ wzStep=_firstUnansweredStep(); renderWizard(); document.getElementById('wizard').classList.add('open'); }
   else openWizard();
 </script>
