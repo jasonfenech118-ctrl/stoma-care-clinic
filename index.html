@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-716"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-717"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-716"></script>
+<script src="assets/manual.js?v=2026.11.01-717"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1648,6 +1648,8 @@ table.np tr.np-abroad-row td.np-id{border-left:3px solid #c084fc;}
 .pd-qf.qf-deceased.active{background:#1a1a1a;border-color:#1a1a1a;}
 .pd-qf.qf-gozo.active{background:#1e3a8a;border-color:#1e3a8a;}
 .pd-qf.qf-overseas.active{background:#a16207;border-color:#a16207;}
+.pd-qf.qf-incomplete{border-color:#f59e0b;color:#b45309;}
+.pd-qf.qf-incomplete.active{background:#b45309;border-color:#b45309;color:white;}
 .pd-dash{color:var(--muted);}
 .pd-arch-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#e5e7eb;color:#4b5563;font-size:9.5px;font-weight:800;vertical-align:middle;}
 .pd-text{display:inline-block;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
@@ -3148,6 +3150,7 @@ tr.pd-row-hit td{background:#fffbeb;}
         <button class="pd-qf qf-deceased" data-qf="deceased" onclick="setPatientQuickFilter('deceased')">Deceased</button>
         <button class="pd-qf qf-gozo" data-qf="discharged_gozo" onclick="setPatientQuickFilter('discharged_gozo')">Discharged to Gozo</button>
         <button class="pd-qf qf-overseas" data-qf="relocated_overseas" onclick="setPatientQuickFilter('relocated_overseas')">Relocated Overseas</button>
+        <button class="pd-qf qf-incomplete" data-qf="incomplete" onclick="setPatientIncompleteFilter()" title="Show patients with an incomplete profile, across every status">⚠ Incomplete profile</button>
       </div>
       <div class="pd-toolbar">
         <input type="text" id="pd-search" placeholder="Search by name, surname, ID card or phone…" oninput="renderPatientDirectory()"/>
@@ -3985,7 +3988,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-716';
+const APP_BUILD='2026.11.01-717';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14306,7 +14309,7 @@ function renderPatientDirectorySummary(owner='all'){
     el.appendChild(b);
   }
 }
-let pdPage=0,pdLastKey='';
+let pdPage=0,pdLastKey='',pdIncompleteOnly=false;
 const PD_PAGE_SIZE=100;
 // Clamp a page index and return that slice of rows.
 function pageSlice(rows,page,size){
@@ -14385,7 +14388,7 @@ function renderPatientDirectory(){
   const owner=document.getElementById('pd-owner')?.value||'all';
   const status=document.getElementById('pd-status')?.value||'all';
   const docs=document.getElementById('pd-documentation')?.value||'all';
-  const pdKey=q+'|'+owner+'|'+status+'|'+docs;
+  const pdKey=q+'|'+owner+'|'+status+'|'+docs+'|'+(pdIncompleteOnly?'inc':'');
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
   // The number tiles follow the owner filter (recomputed only when it changes).
   if(pdSummaryOwner!==owner){pdSummaryOwner=owner;renderPatientDirectorySummary(owner);}
@@ -14394,6 +14397,9 @@ function renderPatientDirectory(){
     // Archived patients are kept out of the registry unless they are being shown
     // on purpose, so an accidental clutter never reappears in the active list.
     if(!pdShowArchived&&p.archived)return false;
+    // The incomplete-profile filter cuts across every status: keep only patients
+    // missing a required field, and let the status filter below pass (it is 'all').
+    if(pdIncompleteOnly&&!patientIsIncomplete(p))return false;
     // Deceased records carry no documentation status (closed case), so a specific
     // "Patient records" filter never lists them — only "All patient records" does.
     if(docs!=='all'&&window.DocumentationStatus&&(patientIsDeceased(p)||DocumentationStatus.classify(p.documentation_dates).status!==docs))return false;
@@ -14481,15 +14487,26 @@ function highlightPatientQuickFilter(value){
   document.querySelectorAll('.pd-qf').forEach(b=>b.classList.toggle('active',b.dataset.qf===value));
 }
 function setPatientQuickFilter(value){
+  pdIncompleteOnly=false;
   const sel=document.getElementById('pd-status');
   if(sel)sel.value=value;
   highlightPatientQuickFilter(value);
   renderPatientDirectory();
 }
 function onPatientStatusSelect(){
+  pdIncompleteOnly=false;
   const value=document.getElementById('pd-status')?.value||'all';
   // Only the pill values light a pill; other statuses clear them.
   highlightPatientQuickFilter(['all','active','reversed','deceased','discharged_gozo','relocated_overseas'].includes(value)?value:'');
+  renderPatientDirectory();
+}
+// A cross-cutting filter: show every patient with an incomplete profile (any
+// missing required field), regardless of outcome status (active, reversed,
+// deceased, Gozo, overseas). Spans all statuses, so it clears the status pick.
+function setPatientIncompleteFilter(){
+  pdIncompleteOnly=true;
+  const sel=document.getElementById('pd-status');if(sel)sel.value='all';
+  highlightPatientQuickFilter('incomplete');
   renderPatientDirectory();
 }
 /* ── PATIENT DETAILS FORM ─────────────────────────────────────────────────

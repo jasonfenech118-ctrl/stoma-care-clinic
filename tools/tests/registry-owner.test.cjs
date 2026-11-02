@@ -19,7 +19,7 @@ function setup(t){
     function htmlSafe(x){return String(x??'');} function jsSafe(x){return String(x??'');} function fmtShortDate(x){return x||'';}
     function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
     function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}`);
-  w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="";const PD_PAGE_SIZE=100;'+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
+  w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="",pdIncompleteOnly=false;const PD_PAGE_SIZE=100;'+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
   w.eval(`var patientDirectoryRows=[
     {id:'1',surname:'A',owner:'Jason',status:'active',types:['End colostomy']},
     {id:'2',surname:'B',owner:'Jason',status:'active',types:['Loop ileostomy','Urostomy (ileal conduit)']},
@@ -47,4 +47,12 @@ test('an owner shows only their live caseload, and every top number follows it',
   const k=tiles(w);assert.deepEqual(k,{'Total Patients':3,Active:2,'Paused / awaiting':1,Colostomies:2,Ileostomies:1,Urostomies:1});
   w.document.getElementById('pd-status').value='reversed';w.renderPatientDirectory();assert.deepEqual(ids(w),['3'],'a closed status can still be chosen on purpose');
   sel.value='all';w.document.getElementById('pd-status').value='all';w.renderPatientDirectory();assert.equal(tiles(w)['Total Patients'],7);
+});
+
+test('the Incomplete profile filter shows incomplete patients across every status',t=>{
+  const w=setup(t);
+  // Mark a reversed (3) and a deceased (4) patient incomplete; the actives are complete.
+  w.eval("patientIsIncomplete=function(p){return p.id==='3'||p.id==='4';};pdIncompleteOnly=true;");
+  w.renderPatientDirectory();
+  assert.deepEqual(ids(w).sort(),['3','4'],'incomplete reversed and deceased both show, complete actives hidden');
 });
