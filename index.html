@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-709"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-710"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-709"></script>
+<script src="assets/manual.js?v=2026.11.01-710"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3973,7 +3973,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-709';
+const APP_BUILD='2026.11.01-710';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18931,7 +18931,7 @@ function patientDashboardHistoryHTML(){
   (clrState.appts||[]).forEach(a=>{
     const meta=[statusLabel(a.status,a),a.followup_action?String(a.followup_action).replaceAll('-',' '):''].filter(Boolean).join(' · ');
     const review=apptReviewInlineText(a);
-    add('appointment:'+a.id,a,'Follow-up appointment',[meta,review].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="openApptNotes('${jsSafe(String(a.id))}')">See what was written</button>`);
+    add('appointment:'+a.id,a,'Follow-up appointment',[meta,review].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="openApptNotes('${jsSafe(String(a.id))}')">See what was written</button>${visitReviewVersionsControl(a)}`);
   });
   const encounters=clrState.encounters||[],episodes=(clrState.rows||[]).filter(r=>r.kind==='episode');
   const ordered=episodes.slice().sort((a,b)=>dateOf(a).localeCompare(dateOf(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
@@ -19075,7 +19075,11 @@ function arrangePatientDashboard(){
       </select>
       <span class="pd-search-count" id="pd-search-count" aria-live="polite"></span>
     </div><div id="pd-history-body"></div>`;
-  root.querySelector('.psm-foot').before(history);patientDashboardSection(history,'Appointments & episodes',false);refreshPatientDashboardHistory();
+  root.querySelector('.psm-foot').before(history);
+  const histSection=patientDashboardSection(history,'Appointments & episodes',false);
+  // Order under the patient overview: Appointments & episodes, then Stomas, then Outcome.
+  if(home&&histSection)home.after(histSection);
+  refreshPatientDashboardHistory();
   // Preserve original panels and their IDs for existing save/refresh paths.
   document.getElementById('psm-appts').hidden=true;
   const episodes=document.getElementById('psm-episodes');episodes.hidden=true;
@@ -19538,6 +19542,22 @@ function encounterVersionsControl(pid,e){
   }).join('');
   return `<details class="clr-enc-vers"><summary>All versions <span class="clr-count">${vs.length}</span></summary><div class="clr-enc-vlist">${rows}</div></details>`;
   }catch(e){console.error('encounterVersionsControl failed',e);return '';}
+}
+// The same "All versions" dropdown for a seen follow-up visit's review: when the
+// review has been edited more than once, list every signed version newest-first,
+// each opening that exact version read-only (with its changes from the one before).
+function visitReviewVersionsControl(a){
+  try{
+    const VR=window.VisitStomaReview;if(!VR||typeof VR.versionsOf!=='function')return '';
+    const vs=VR.versionsOf(a);if(!vs||vs.length<2)return '';
+    const aid=jsSafe(String(a.id));
+    const rows=vs.map((v,i)=>({v,i})).reverse().map(({v,i})=>{
+      const when=fmtShortDate(String(v.saved_at||a.appt_date||'').slice(0,10));
+      const by=v.author_name||v.author_email||'';
+      return `<button type="button" class="clr-enc-vbtn" onclick="openVisitReview('${aid}',{version:${i}})"><span class="clr-enc-v">V${v.version||i+1}</span><span class="clr-enc-vmeta">${htmlSafe(when)}${by?' · '+htmlSafe(by):''}</span></button>`;
+    }).join('');
+    return `<details class="clr-enc-vers"><summary>All versions <span class="clr-count">${vs.length}</span></summary><div class="clr-enc-vlist">${rows}</div></details>`;
+  }catch(e){console.error('visitReviewVersionsControl failed',e);return '';}
 }
 function episodeCategoryHTML(meta,open){
   const recs=clrState.rows.filter(r=>r.kind===meta.kind);
@@ -27409,7 +27429,7 @@ async function openVisitReview(apptId,opts={}){
   const{data:appt,error}=await SB.from('appointments').select('*').eq('id',apptId).maybeSingle();
   if(error||!appt){alert('Could not open this visit review.');return;}
   let pat={};try{const r=await fetchPatientById(appt.patient_id);if(r&&r.data)pat=r.data;}catch(e){}
-  visitReviewState={apptId:String(apptId),appt,patient:pat,version:null,compare:true};
+  visitReviewState={apptId:String(apptId),appt,patient:pat,version:(opts.version!=null?opts.version:null),compare:true};
   renderVisitReview(!!opts.edit);
 }
 function setVisitReviewVersion(i){if(visitReviewState){visitReviewState.version=i;renderVisitReview(false);}}

@@ -44,6 +44,41 @@ test('multiple versions list newest first and open that exact version',()=>{
   assert.match(out,/openEncounter\('p1','e9',1\)/);
 });
 
+test('a seen visit with one review version shows no versions dropdown',()=>{
+  const c=ctx({window:{VisitStomaReview:{versionsOf:()=>[{version:1,saved_at:'2026-10-01',author_name:'Nurse A',stomas:[]}]}}});
+  vm.runInContext(fn('visitReviewVersionsControl'),c);
+  assert.equal(c.visitReviewVersionsControl({id:'a1',appt_date:'2026-10-01'}),'');
+});
+
+test('a seen visit review with several versions lists newest first and opens that exact version',()=>{
+  const vs=[{version:1,saved_at:'2026-10-01',author_name:'Nurse A',stomas:[]},
+            {version:2,saved_at:'2026-10-03',author_name:'Nurse B',stomas:[]},
+            {version:3,saved_at:'2026-10-05',author_name:'Nurse C',stomas:[]}];
+  const c=ctx({window:{VisitStomaReview:{versionsOf:()=>vs}}});
+  vm.runInContext(fn('visitReviewVersionsControl'),c);
+  const out=c.visitReviewVersionsControl({id:'a9',appt_date:'2026-10-01'});
+  assert.match(out,/All versions/);
+  assert.match(out,/class="clr-count">3</);
+  assert.ok(out.indexOf('V3')<out.indexOf('V2'));
+  assert.ok(out.indexOf('V2')<out.indexOf('V1'));
+  // each button opens its own version index (0-based) for the right appointment
+  assert.match(out,/openVisitReview\('a9',\{version:2\}\)/);
+  assert.match(out,/openVisitReview\('a9',\{version:1\}\)/);
+  assert.match(out,/openVisitReview\('a9',\{version:0\}\)/);
+});
+
+test('openVisitReview honours a passed version index instead of defaulting to the latest',()=>{
+  const open=fn('openVisitReview');
+  assert.match(open,/opts\.version!=null\?opts\.version:null/);
+});
+
+test('the patient dashboard orders Appointments & episodes above Stomas and Outcome',()=>{
+  // The history section is moved directly under the patient overview, so it sits
+  // above Stomas & surgery and Outcome.
+  assert.match(html,/const histSection=patientDashboardSection\(history,'Appointments & episodes',false\);/);
+  assert.match(html,/if\(home&&histSection\)home\.after\(histSection\);/);
+});
+
 test('JasonEncounters.open accepts a version number and resolves it to an index',()=>{
   // The open() handler maps a passed version number to the version index it
   // then selects, so the profile can open V2 directly rather than the latest.
