@@ -33,7 +33,7 @@ function setup(t,options={}){
   for(const name of ['renderPrimaryTabs','renderSubTabs','renderMobileNav','renderNavBack','patientHeaderAvatarHTML',
     'fistulaTagHTML','extraStatusChipsHTML','docStatusCardHTML','surgerySnapshotHTML','deceasedMinimiseCardHTML',
     'patientSignatureHTML','complicationsSummaryHTML','stomaOutcomesPanelHTML','localityFlagHTML',
-    'arrangePatientDashboard','patientDashboardOpen'])c[name]=()=>'';
+    'patientDpaItemHTML','arrangePatientDashboard','patientDashboardOpen'])c[name]=()=>'';
   c.SB={from(table){let cols='*',body=null;const query={
     select:value=>{cols=value;return query;},eq:()=>query,order:()=>query,
     update:value=>{body=value;return query;},

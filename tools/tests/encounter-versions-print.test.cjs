@@ -72,6 +72,18 @@ test('openVisitReview honours a passed version index instead of defaulting to th
   assert.match(open,/opts\.version!=null\?opts\.version:null/);
 });
 
+test('the DPA field renders Yes / No / Not available and marks the stored choice',()=>{
+  const c=ctx();
+  vm.runInContext(fn('patientDpaItemHTML'),c);
+  const none=c.patientDpaItemHTML({id:'p1'});
+  assert.match(none,/DPA \(Data Protection Act\)/);
+  assert.match(none,/setPatientDPA\('p1',this.value\)/);
+  assert.match(none,/<option value="" selected>— not set —/);
+  assert.match(c.patientDpaItemHTML({id:'p1',dpa_status:'yes'}),/<option value="yes" selected>Yes/);
+  assert.match(c.patientDpaItemHTML({id:'p1',dpa_status:'no'}),/<option value="no" selected>No/);
+  assert.match(c.patientDpaItemHTML({id:'p1',dpa_status:'na'}),/<option value="na" selected>Not available/);
+});
+
 test('the patient dashboard orders Appointments & episodes above Stomas and Outcome',()=>{
   // The history section is moved directly under the patient overview, so it sits
   // above Stomas & surgery and Outcome.

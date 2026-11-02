@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-711"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-712"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-711"></script>
+<script src="assets/manual.js?v=2026.11.01-712"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1052,6 +1052,7 @@ body.qli-standalone #ql-install-btn{display:none;}
 .psm-ditem dt{font-size:11.5px;font-weight:900;text-transform:uppercase;letter-spacing:.3px;color:#43566b;}
 .psm-ditem dd{font-size:14.5px;color:var(--navy);font-weight:700;word-break:break-word;}
 .psm-ditem dd.na{color:var(--muted);font-weight:500;font-style:italic;}
+.pd-dpa-select{font:inherit;font-size:14px;font-weight:700;color:var(--navy);padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:#fff;max-width:100%;}
 /* The patient's locality, shown prominently in the details box (removed from the
    header): a full-width green row with the council flag (or a 📍 when no flag is
    available yet) and the town name large and bold. */
@@ -3973,7 +3974,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-711';
+const APP_BUILD='2026.11.01-712';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19059,6 +19060,27 @@ function openPatientResourcePlaceholder(title,desc){
   openMo();
 }
 function openPatientEducation(){openPatientResourcePlaceholder('📚 Education','Patient education materials will be shown here. Upload the documents and say how they should appear, and this section will list them for the patient to open, download or print.');}
+function openPatientTreatment(){openPatientResourcePlaceholder('💊 Treatment','The treatment details and documents will be set up here. Provide what should be recorded or shown, and this section will carry it out.');}
+// The DPA (Data Protection Act) field shown at the foot of Patient details — a
+// Yes / No / Not available choice saved straight to the patient record.
+function patientDpaItemHTML(pat){
+  const pid=jsSafe(String(pat&&pat.id!=null?pat.id:''));
+  const dpa=String(pat&&pat.dpa_status||'');
+  const opt=(v,l)=>`<option value="${v}"${dpa===v?' selected':''}>${l}</option>`;
+  return `<div class="psm-ditem wide pd-dpa-item"><dt>DPA (Data Protection Act)</dt>
+    <dd><select class="pd-dpa-select" aria-label="Data Protection Act status" onchange="setPatientDPA('${pid}',this.value)">${opt('','— not set —')}${opt('yes','Yes')}${opt('no','No')}${opt('na','Not available')}</select></dd></div>`;
+}
+async function setPatientDPA(patientId,value){
+  const allowed=['','yes','no','na'];if(!allowed.includes(value))return;
+  const onPatient=clrState.patient&&String(clrState.patient.id)===String(patientId);
+  const prev=onPatient?clrState.patient.dpa_status:undefined;
+  if(onPatient)clrState.patient.dpa_status=value;
+  const {error,dropped}=await updatePatientTolerant(patientId,{dpa_status:value});
+  if(error||(dropped||[]).includes('dpa_status')){
+    if(onPatient)clrState.patient.dpa_status=prev;
+    alert(error?('Could not save the DPA status: '+(error.message||error)):'The database does not have the DPA column yet. Run sql/add-dpa-status.sql once in Supabase, then try again.');
+  }
+}
 function openPatientLiterature(){openPatientResourcePlaceholder('📄 Informative literature','Informative literature (leaflets and information sheets) will be shown here. Add the documents and the layout you want, and they will be listed here to open, download or print.');}
 function openPatientScheduleFive(){openPatientResourcePlaceholder('📋 Schedule 5','The Schedule 5 documents and workflow will be set up here. Provide the form(s) and describe what needs to happen — what to fill in, sign and collect — and this section will carry it out.');}
 // Book a pre-operative siting session for the patient now open, pre-filling the
@@ -19081,7 +19103,7 @@ function arrangePatientDashboard(){
   const nav=root.querySelector('.psm-tabs');if(nav)nav.hidden=true;
   const actions=document.createElement('div');actions.className='pd-home-actions';actions.setAttribute('aria-label','Patient home actions');
   const current=openEpisodeIn(clrState.rows||[]);
-  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="printPatientProfile()">🖨 Print profile</button><button type="button" class="psm-btn" onclick="openPatientEducation()">📚 Education</button><button type="button" class="psm-btn" onclick="openPatientLiterature()">📄 Informative literature</button><button type="button" class="psm-btn" onclick="openPatientScheduleFive()">📋 Schedule 5</button><button type="button" class="psm-btn" onclick="openPatientSiting()">📍 Siting</button>`;
+  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="printPatientProfile()">🖨 Print profile</button><button type="button" class="psm-btn" onclick="openPatientEducation()">📚 Education</button><button type="button" class="psm-btn" onclick="openPatientLiterature()">📄 Informative literature</button><button type="button" class="psm-btn" onclick="openPatientScheduleFive()">📋 Schedule 5</button><button type="button" class="psm-btn" onclick="openPatientTreatment()">💊 Treatment</button><button type="button" class="psm-btn" onclick="openPatientSiting()">📍 Siting</button>`;
   root.querySelector('.pd-patient-details')?.after(actions);
   const doc=root.querySelector('.doc-status-card'); // Existing record-completeness information is retained below the details.
   const home=patientDashboardSection(overview,'Patient overview',false);
@@ -20820,6 +20842,7 @@ async function renderPatientRecord(patientId,opts,sequence){
           <div class="psm-ditem psm-loc-item wide"><dt>Locality</dt>${pat.locality?`<dd class="psm-loc-val">${localityFlagHTML(pat.locality,'small',false)||'<span class="psm-loc-pin">📍</span>'}<span class="psm-loc-name">${htmlSafe(pat.locality)}</span></dd>`:'<dd class="na">Not recorded</dd>'}</div>
           ${!patientIsDeceased(pat)||pat.address?dItem('Address',pat.address,true):''}
           ${dItem('Firm',pat.consultant)}
+          ${patientDpaItemHTML(pat)}
         </dl>${lastSeen?`<div class="psm-audit">${psmIc('clock')} Last seen ${htmlSafe(fmtShortDate(lastSeen.appt_date))}${staffName(lastSeen)!=='—'?' by '+staffName(lastSeen):''}</div>`:''}${patientSignatureHTML(pat)}</div>
       </div>
 
