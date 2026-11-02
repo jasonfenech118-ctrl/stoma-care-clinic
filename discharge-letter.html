@@ -46,6 +46,15 @@
   .toolbar .title .stoma-type{color:#ff4d4d}
   .toolbar .hint{font-size:14px;opacity:.82;flex:1 1 220px}
   .toolbar .actions{display:flex;gap:8px;flex-wrap:wrap}
+  /* Autosave status pill: white bold text so it reads on the dark toolbar, with a
+     bold circular-arrow icon that spins while saving and turns bright green once saved. */
+  #archive-letter-status{display:inline-flex;align-items:center;gap:7px;margin-right:10px;color:#fff;font-weight:800;font-size:13.5px;line-height:1;}
+  #archive-letter-status[hidden]{display:none;}
+  #archive-letter-status .als-icon{display:inline-flex;width:18px;height:18px;flex:0 0 auto;}
+  #archive-letter-status .als-icon svg{width:18px;height:18px;display:block;}
+  #archive-letter-status .als-text{white-space:nowrap;}
+  .als-spin{animation:als-spin .8s linear infinite;transform-origin:50% 50%;}
+  @keyframes als-spin{to{transform:rotate(360deg);}}
   .btn{
     font-family:var(--sans);font-size:13px;font-weight:700;
     border:1px solid rgba(255,255,255,.5);
@@ -3052,23 +3061,33 @@
   if(!token){return;}                       // standalone letter → nothing to autosave to
   if(status)status.hidden=false;
   var timer=null,saving=false,retry=false,lastSavedFp='';
-  function setStatus(txt,color){ if(!status)return; status.textContent=txt; status.style.cssText='font-size:12px;margin-right:8px;color:'+(color||'#6b7280'); }
+  var STATUS_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 4 21 9 16 9"/></svg>';
+  function esc(s){ return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+  // state: 'saving' (spinning), 'saved' (bright green), 'warn' (amber), 'info' (white)
+  function setStatus(txt,state){
+    if(!status)return;
+    if(!txt){ status.innerHTML=''; status.hidden=true; return; }
+    status.hidden=false;
+    var col = state==='saved'?'#16e06a' : state==='warn'?'#fcd34d' : '#ffffff';
+    status.innerHTML='<span class="als-icon'+(state==='saving'?' als-spin':'')+'" style="color:'+col+'">'+STATUS_ICON
+      +'</span><span class="als-text">'+esc(txt)+'</span>';
+  }
   function letterReady(){ try{ return !!(buildLetterText()&&buildLetterText().trim()); }catch(e){ return false; } }
   function payload(){ return {html:buildLetterHTML(),text:buildLetterText(),filename:buildFilename(),
     date:_v('#letterDate')||_v('.fld-date'),author:_v('.fld-name'),patientIdNo:_v('.fld-id')}; }
   async function saveNow(){
     if(saving){ retry=true; return; }
-    if(!window.opener||window.opener.closed){ setStatus('Reopen from the patient record to save','#b45309'); return; }
-    if(typeof window.opener.autosaveDischargeLetter!=='function'){ setStatus('Refresh Stoma Roster to enable autosave','#b45309'); return; }
+    if(!window.opener||window.opener.closed){ setStatus('Reopen from the patient record to save','warn'); return; }
+    if(typeof window.opener.autosaveDischargeLetter!=='function'){ setStatus('Refresh Stoma Roster to enable autosave','warn'); return; }
     if(!letterReady()){ setStatus('',''); return; }
     var p,fp;
     try{ p=payload(); fp=JSON.stringify(p); }catch(e){ return; }
-    if(fp===lastSavedFp){ setStatus('All changes saved','#15803d'); return; }
-    saving=true; setStatus('Saving…','#6b7280');
+    if(fp===lastSavedFp){ setStatus('All changes saved','saved'); return; }
+    saving=true; setStatus('Saving…','saving');
     try{
       await window.opener.autosaveDischargeLetter(token,window,p);
-      lastSavedFp=fp; setStatus('All changes saved','#15803d');
-    }catch(e){ setStatus('Not saved: '+(e.message||'will retry'),'#b45309'); retry=true; }
+      lastSavedFp=fp; setStatus('All changes saved','saved');
+    }catch(e){ setStatus('Not saved: '+(e.message||'will retry'),'warn'); retry=true; }
     finally{ saving=false; if(retry){ retry=false; schedule(400); } }
   }
   function schedule(ms){ clearTimeout(timer); timer=setTimeout(saveNow, ms==null?1200:ms); }
@@ -3081,7 +3100,7 @@
     try{ new MutationObserver(onChange).observe(el,{childList:true,subtree:true,characterData:true}); }catch(e){}
   });
   window.autosaveDischargeNow=saveNow;      // Download / Email / Print can force a save first
-  setStatus('Changes save automatically','#2563eb');
+  setStatus('Changes save automatically','info');
   schedule(1600);                           // save once shortly after the letter is first built
 })();
 </script>
