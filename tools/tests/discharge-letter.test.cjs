@@ -172,6 +172,8 @@ test('assessment tabs keep independent observations and Finish retains all recor
   assert.match(textOf(d,'.body'),/pink\/red|healthy colostomy colour/);
   assert.doesNotMatch(textOf(d,'.body'),/Mucocutaneous separation|Recorded treatment continued/);   // complications not printed on the letter
   assert.match(textOf(d,'.body'),/Dansac|Lentell|Urostomy bag/);
+  assert.match(textOf(d,'.body'),/discharged with a one-piece Dansac/);                 // one-piece named
+  assert.match(textOf(d,'.body'),/discharged with a two-piece Flange 45mm with Urostomy bag/); // two-piece named
   assert.equal(textOf(d,'.body').split('teaching session has been carried out').length-1,1);
   w.openWizard();w.wzNext();assert.equal(d.querySelector('#record-colour').value,'pink/red');
 });

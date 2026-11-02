@@ -225,7 +225,10 @@ function applyRecordedLetter(){
       body.push('<p>'+fillBodyTemplate(tpl.opening,vars)+'</p>',
         '<p>'+fillBodyTemplate(discharge,vars)+'</p>');
       // Complications are NOT printed on the discharge letter (kept on the record).
-      body.push('<p>Patient discharged with <strong>'+_esc(s.appliance||'[current appliance not recorded]')+'</strong>.</p>');
+      // Name the system (one-piece / two-piece) before the appliance, e.g.
+      // "discharged with a one-piece Lentell 201148 (80mm) and protective wipes".
+      var sysWord=s.appliance?(s.system==='one'?'a one-piece ':s.system==='two'?'a two-piece ':''):'';
+      body.push('<p>Patient discharged with <strong>'+sysWord+_esc(s.appliance||'[current appliance not recorded]')+'</strong>.</p>');
       if(recordedRodText(s.rod))body.push('<p>'+_esc(recordedRodText(s.rod))+'</p>');
       plans.push({heading:label,bullets:recordedStomaPlan(state)});
     });

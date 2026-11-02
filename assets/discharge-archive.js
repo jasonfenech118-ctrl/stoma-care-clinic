@@ -1,6 +1,6 @@
 
 const dischargeLetterWindows=new Map();
-let dischargeArchiveContext=null,dischargeArchiveRequest=0;
+let dischargeArchiveContext=null,dischargeArchiveRequest=0,dischargeArchiveEditId=null;
 // Saved letters are bulky (a full styled HTML document each), so they are stored
 // gzip-compressed — roughly 6–8× smaller in Supabase. A "GZ:" prefix marks a
 // compressed row; older plain-HTML rows are read back unchanged. If the browser
@@ -57,11 +57,47 @@ async function viewSavedDischargeLetter(letterId){
   try{
     const {data,error}=await SB.from('patient_discharge_letters').select('id,patient_id,letter_html,letter_date').eq('patient_id',ctx.patientId).eq('id',letterId).single();
     if(request!==dischargeArchiveRequest)return;if(error||!data)throw Error(error?.message||'Letter unavailable.');
-    host.innerHTML='<h3>Saved discharge letter</h3><p class="report-note">Saved copy · read only</p><button class="psm-btn" type="button" onclick="printSavedDischargeLetter()">Print / save PDF</button>';
+    dischargeArchiveEditId=String(data.id);
+    host.innerHTML='<h3>Saved discharge letter</h3><p class="report-note" id="saved-discharge-note">Saved copy · read only</p>'
+      +'<div id="saved-discharge-actions"><button class="psm-btn" type="button" onclick="printSavedDischargeLetter()">Print / save PDF</button> '
+      +'<button class="psm-btn" type="button" onclick="editSavedDischargeLetter()">✏️ Edit letter</button></div>';
     const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';frame.srcdoc=await dischargeDecompress(data.letter_html);host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){if(request===dischargeArchiveRequest)host.textContent='Could not open this saved letter. '+e.message;}
 }
 function printSavedDischargeLetter(){document.getElementById('saved-discharge-letter-frame')?.contentWindow?.print();}
+// The editable region of a saved letter: the letter body, never the <head> styles.
+function _dischargeEditRegion(){
+  const doc=document.getElementById('saved-discharge-letter-frame')?.contentDocument;
+  return doc?(doc.querySelector('.WordSection1')||doc.body):null;
+}
+// Amend a saved letter in place: make its text editable, then save the edit back
+// to the same row (compressed). Keeps everything in the read-only sandbox — only
+// the parent toggles contenteditable, so no script runs inside the letter frame.
+function editSavedDischargeLetter(){
+  const region=_dischargeEditRegion();if(!region)return;
+  region.setAttribute('contenteditable','true');region.style.outline='2px dashed #2563eb';region.focus();
+  const note=document.getElementById('saved-discharge-note');
+  if(note)note.textContent='Editing — amend the wording, then Save changes (Ctrl/Cmd+B, I, U to format).';
+  const actions=document.getElementById('saved-discharge-actions');
+  if(actions)actions.innerHTML='<button class="psm-btn psm-btn-primary" type="button" onclick="saveEditedDischargeLetter()">Save changes</button> '
+    +'<button class="psm-btn" type="button" onclick="cancelEditSavedDischargeLetter()">Cancel</button>';
+}
+function cancelEditSavedDischargeLetter(){if(dischargeArchiveEditId)viewSavedDischargeLetter(dischargeArchiveEditId);}
+async function saveEditedDischargeLetter(){
+  const ctx=dischargeArchiveContext;if(!ctx||!dischargeArchiveEditId)return;
+  const region=_dischargeEditRegion(),frame=document.getElementById('saved-discharge-letter-frame');
+  if(!region||!frame?.contentDocument)return;
+  region.removeAttribute('contenteditable');region.style.outline='';
+  const doc=frame.contentDocument;
+  const html=(doc.doctype?'<!DOCTYPE html>':'')+doc.documentElement.outerHTML;
+  if(html.length>1000000){alert('The amended letter is too large to save.');return editSavedDischargeLetter();}
+  const note=document.getElementById('saved-discharge-note');if(note)note.textContent='Saving…';
+  try{
+    const {error}=await SB.from('patient_discharge_letters').update({letter_html:await dischargeCompress(html)}).eq('id',dischargeArchiveEditId).eq('patient_id',ctx.patientId);
+    if(error)throw Error(error.message);
+    viewSavedDischargeLetter(dischargeArchiveEditId);   // reload the saved, read-only copy
+  }catch(e){if(note)note.textContent='Could not save the changes: '+e.message;editSavedDischargeLetter();}
+}
 async function backDischargeLetters(){++dischargeArchiveRequest;const id=dischargeArchiveContext?.patientId;document.getElementById('page-discharge-letters')?.classList.remove('active');if(id)await openPatientRecord(id);}
 async function savePatientDischargeLetter(token,source,payload){
   const session=dischargeLetterWindows.get(token);
