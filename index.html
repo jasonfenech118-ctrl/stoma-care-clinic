@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-714"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-716"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-714"></script>
+<script src="assets/manual.js?v=2026.11.01-716"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1103,6 +1103,9 @@ body.qli-standalone #ql-install-btn{display:none;}
 .sex-female .psm-avatar{background:#fbcfe8;color:#be185d;}
 .sex-male .psm-card{border-color:#bcd7fb;background:#f5f9ff;}
 .sex-female .psm-card{border-color:#f6bdd9;background:#fff4fa;}
+/* The Sex selector is tinted by its value: pink for Female, blue for Male. */
+.sex-select.is-female{background:#fbcfe8;border-color:#be185d;color:#9d174d;font-weight:800;}
+.sex-select.is-male{background:#c3dbfc;border-color:#1d4ed8;color:#1e3a8a;font-weight:800;}
 /* Operated outside MDH: the sex tint (pink / blue) is kept, with a slim green
    outline on the record page and a green badge in the header, so at a glance you
    read both the sex AND that the stoma was formed outside MDH. */
@@ -1175,6 +1178,14 @@ body.qli-standalone #ql-install-btn{display:none;}
 #app .psm-page:not(.pd-page) .psm-head.psm-oc .psm-avatar,#app .psm-page:not(.pd-page) .psm-head.psm-oc .patient-avatar-photo{background:rgba(255,255,255,.18);color:#fff;}
 #app .psm-page:not(.pd-page) .psm-head.psm-oc .psm-oc-badge,#app .psm-page:not(.pd-page) .psm-head.psm-oc .patient-avatar-status{border-color:rgba(255,255,255,.92);}
 #app .psm-head.psm-oc .psm-close{color:#fff;opacity:.85;}
+/* In the patient dashboard the header sits on a WHITE background, so an outcome
+   patient (deceased, reversed, …) must NOT keep the dark-banner white text —
+   otherwise the name/ID are white-on-white and invisible. Force them dark. */
+#app .pd-page .psm-head.psm-oc,#app .pd-page .psm-head.psm-oc-deceased,#app .pd-page .psm-head.psm-oc-reversed,#app .pd-page .psm-head.psm-oc-discharged_gozo,#app .pd-page .psm-head.psm-oc-relocated_overseas,#app .pd-page .psm-head.psm-oc-paused,#app .pd-page .psm-head.psm-oc-awaiting_feedback{background:transparent;color:var(--navy);}
+#app .pd-page .psm-head.psm-oc .psm-name{color:var(--navy);}
+#app .pd-page .psm-head.psm-oc .psm-sub{color:var(--muted);}
+#app .pd-page .psm-head.psm-oc .psm-id{background:#eef2f6;color:var(--navy);}
+#app .pd-page .psm-head.psm-oc .psm-id strong,#app .pd-page .psm-head.psm-oc .psm-id-label{color:var(--navy);}
 #app .psm-head.psm-oc .psm-close:hover{opacity:1;}
 #app .psm-head.psm-oc .psm-status .cr-out{background:rgba(255,255,255,.22);color:#fff;}
 #app .psm-head.psm-oc .psm-chip-sited{background:rgba(255,255,255,.2);color:#fff;}
@@ -3974,7 +3985,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-715';
+const APP_BUILD='2026.11.01-716';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15551,7 +15562,7 @@ function patientFormHTML(p,prefix){
     <div class="fg"><label>Surname *</label><input type="text" id="${prefix}-surname" oninput="if(!event.isComposing)formatPatientIdentityInput(this,'name')" onblur="formatPatientIdentityInput(this,'name')" value="${v('surname')}" placeholder="Family name"${lk('surname')}/></div>
     `}
     <div class="fg"><label>Phone</label><input type="text" id="${prefix}-phone" value="${v('phone_number')}" placeholder="e.g. 79001122"${lk('phone')}/></div>
-    <div class="fg"><label>Sex *</label><select id="${prefix}-sex"${lksel('sex')}>
+    <div class="fg"><label>Sex *</label><select id="${prefix}-sex" class="sex-select${p?.sex==='Female'?' is-female':p?.sex==='Male'?' is-male':''}" onchange="sexSelectTint(this)"${lksel('sex')}>
       <option value="">— not recorded —</option>
       <option value="Female" ${p?.sex==='Female'?'selected':''}>Female</option>
       <option value="Male" ${p?.sex==='Male'?'selected':''}>Male</option></select></div>
@@ -16244,6 +16255,8 @@ async function attachPatientProfilesByIdCard(rows){
 }
 // Tints the patient modal by sex: blue for male, pink for female.
 function sexModalClass(pat){return pat?.sex==='Male'?' sex-male':pat?.sex==='Female'?' sex-female':'';}
+// Keep the Sex selector tinted (pink Female / blue Male) as it changes.
+function sexSelectTint(sel){if(!sel)return;sel.classList.toggle('is-female',sel.value==='Female');sel.classList.toggle('is-male',sel.value==='Male');}
 /* Some screens already carry a pre-computed `status` / `st`, while full patient
    rows carry the underlying fields used by derivedFollowupStatus. Accept both,
    but never mistake appointment/siting states such as "booked" for a follow-up

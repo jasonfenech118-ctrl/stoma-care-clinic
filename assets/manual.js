@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 November 2026 — ✏️ Edit letter now re-opens a saved discharge letter in the full editor (toolbar and all), with edits autosaving to the same letter, and the 📍 Siting button shows only when the patient has a siting session (opening it to view or amend). Earlier today: Print profile dropped for a single Surgery dates button, the Patient records card hides while Appointments & episodes is open, a larger Back button, a DPA field (run sql/add-dpa-status.sql), and reordered profile sections.'};
+const MANUAL_META={updated:'2 November 2026 — Fixed a deceased (or other outcome) patient's name showing white-on-white in the dashboard profile — it is now dark and readable — and the Sex selector is tinted pink for Female and blue for Male. Also today: ✏️ Edit letter re-opens a saved letter in the full editor, the 📍 Siting button shows only when a siting exists, a clearer autosave status, and a DPA field (run sql/add-dpa-status.sql).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
