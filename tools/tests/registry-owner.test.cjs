@@ -17,7 +17,7 @@ function setup(t){
     function patientEverReversed(p){return p.status==='reversed';} function patientsMarkedOtherButDeceased(){return [];}
     function patientIsIncomplete(){return false;} function isClosedFollowupStatus(){return false;} function fixText(x){return x;}
     function htmlSafe(x){return String(x??'');} function jsSafe(x){return String(x??'');} function fmtShortDate(x){return x||'';}
-    function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
+    function patientNameAvatarHTML(p,nm,meta){return nm+(meta||'');} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
     function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}
     function _d(s){var d=new Date(String(s||'').slice(0,10)+'T00:00:00Z');return isNaN(d.getTime())?null:d;}
     function ageYearsBetween(a,b){a=_d(a);b=_d(b);if(!a||!b)return null;var y=b.getUTCFullYear()-a.getUTCFullYear();var m=b.getUTCMonth()-a.getUTCMonth();if(m<0||(m===0&&b.getUTCDate()<a.getUTCDate()))y--;return y>=0?y:null;}
@@ -82,4 +82,25 @@ test('the Reversed view drops Op/Findings/Actions and shows ages + stoma-days',t
   assert.equal(cells[3],'70','age at stoma formation 1950→2020 = 70');
   assert.equal(cells[7],'71','age at reversal 1950→2021 = 71');
   assert.equal(cells[8],'366','stoma days 2020→2021 = 366 (leap year)');
+});
+
+test('a reversed patient with a deceased date is marked (✝) but stays in the Reversed list',t=>{
+  const w=setup(t);
+  w.eval("patientDirectoryRows=[{id:'r',surname:'A',first_name:'B',status:'reversed',reversed_deceased_date:'2024-05-01',date_of_birth:'1950-01-01',surgery_date:'2020-01-01',reversal_date:'2021-01-01'}];");
+  w.document.getElementById('pd-status').value='reversed';w.renderPatientDirectory();
+  const row=w.document.querySelector('#pd-tbody tr.pd-click-row');
+  assert.ok(row.className.includes('pd-reversed-rip'),'row flagged reversed-deceased');
+  assert.ok(row.className.includes('pd-row-reversed'),'still a reversed row');
+  assert.match(row.innerHTML,/pd-rip-cross/,'shows the ✝ cross');
+  assert.match(row.innerHTML,/openReversedDeceasedDate\('r'\)/,'has the deceased-date button');
+});
+
+test('a reversed patient with no deceased date shows a Set button and no cross',t=>{
+  const w=setup(t);
+  w.eval("patientDirectoryRows=[{id:'r',surname:'A',first_name:'B',status:'reversed',date_of_birth:'1950-01-01',surgery_date:'2020-01-01',reversal_date:'2021-01-01'}];");
+  w.document.getElementById('pd-status').value='reversed';w.renderPatientDirectory();
+  const row=w.document.querySelector('#pd-tbody tr.pd-click-row');
+  assert.ok(!row.className.includes('pd-reversed-rip'));
+  assert.doesNotMatch(row.innerHTML,/pd-rip-cross/);
+  assert.match(row.innerHTML,/openReversedDeceasedDate\('r'\)/,'still has the set button');
 });
