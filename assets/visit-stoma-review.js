@@ -149,8 +149,12 @@
     }
     if(actions&&!actions.dataset.combinedDates){
       actions.dataset.combinedDates='1';
-      actions.querySelectorAll('button').forEach(btn=>{const action=btn.getAttribute('onclick')||'';if(action.includes('openSurgeryDateModal')||action.includes("patientDashboardOpen('outcomes')"))btn.remove();});
-      const plan=document.createElement('button');plan.type='button';plan.className='psm-btn';plan.textContent='Surgery dates';plan.onclick=()=>openCombinedPlanDate();actions.append(plan);
+      const matches=[...actions.querySelectorAll('button')].filter(btn=>{const action=btn.getAttribute('onclick')||'';return action.includes('openSurgeryDateModal')||action.includes("patientDashboardOpen('outcomes')");});
+      const plan=document.createElement('button');plan.type='button';plan.className='psm-btn';plan.textContent='📅 Surgery dates';plan.onclick=()=>openCombinedPlanDate();
+      // Put the combined "Surgery dates" button where the separate date buttons
+      // were (inline), rather than appended on its own row.
+      if(matches.length){matches[0].before(plan);matches.forEach(b=>b.remove());}
+      else actions.append(plan);
     }
     const currentPatient=typeof clrState!=='undefined'?clrState.patient:null;
     if(head&&currentPatient){

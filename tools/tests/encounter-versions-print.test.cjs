@@ -100,10 +100,11 @@ test('JasonEncounters.open accepts a version number and resolves it to an index'
   assert.match(open,/selectRecord\(recordId,idx\)/);
 });
 
-test('the profile and admission Print buttons are wired to their functions',()=>{
-  assert.match(html,/onclick="printPatientProfile\(\)"/);
+test('the admission Print button is wired to its function',()=>{
+  // The whole-profile Print button was removed from the home-action row (its slot
+  // now holds Surgery dates); the admission print button remains.
+  assert.doesNotMatch(html,/onclick="printPatientProfile\(\)"/);
   assert.match(html,/onclick="printCareEpisode\(\)"/);
-  assert.ok(html.includes('function printPatientProfile('),'printPatientProfile defined');
   assert.ok(html.includes('function printCareEpisode('),'printCareEpisode defined');
 });
 
