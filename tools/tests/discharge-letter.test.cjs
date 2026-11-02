@@ -192,11 +192,18 @@ test('a recorded complication does not invent treatment, healthy skin, or a stom
   assert.equal(d.querySelector('#record-skin').value,'');
 });
 test('rod in situ is tied to its stoma and removed status stops in-situ instructions',()=>{
-  const s=snapshot(),{d}=page(s);assert.match(textOf(d,'.body'),/Rod in situ, due for removal on 4 October 2026/);
+  const s=snapshot(),{d}=page(s);assert.match(textOf(d,'.body'),/Rod in situ, due for removal on 4th October 2026/);
   assert.match(textOf(d,'#planList'),/while the rod is in situ/);
   s.stomas[0].rod={inSitu:false,removalDate:'2026-10-04',removedDate:'2026-10-01'};
-  const removed=page(s);assert.match(textOf(removed.d,'.body'),/Rod removed on 1 October 2026/);
+  const removed=page(s);assert.match(textOf(removed.d,'.body'),/Rod removed on 1st October 2026/);
   assert.doesNotMatch(textOf(removed.d,'#planList'),/rod is in situ|Rod in situ/);
+});
+test('the letter date shows its ordinal suffix small (superscript) in the built letter',()=>{
+  const {w,d}=page(snapshot());
+  d.querySelector('#letterDate').value='1st November 2026';
+  const html=w.buildLetterHTML();
+  assert.match(html,/1<sup class="ord">st<\/sup> November 2026/);  // suffix wrapped
+  assert.match(html,/\.ord\{font-size:0\.62em/);                  // and styled small
 });
 test('unknown urostomy stents are not treated as absent and the confirmed answer selects the correct plan',()=>{
   const {w,d}=page(snapshot());assert.match(textOf(d,'#planList'),/Urostomy stent status: \[confirm/);

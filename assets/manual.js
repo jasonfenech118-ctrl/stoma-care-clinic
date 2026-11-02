@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'1 November 2026 — Saved discharge letters and daily handover snapshots are now stored compressed (far less Supabase space); the discharge letter signature auto-fills the signed-in nurse (and is editable) and you can now type spaces freely in the letter; the discharge letter no longer prints the diagnosis/indication or the complications (patient confidentiality); the clinical-review box is a proper rich-text editor (Bold / Italic / Underline / Colour, no ** symbols, normal cursor); a Seen visit shows a fixed “Seen / Attended” outcome; and the separate Complications section/card is removed from the Seen visit — write complications in the review text instead. Run sql/add-schedule-five-collected-date.sql once in Supabase.'};
+const MANUAL_META={updated:'1 November 2026 — The discharge letter now auto-fills the signed-in nurse’s real name as the signature, tidies the procedure wording (no leading capital or trailing “performed”), and shows the date’s ordinal suffix small (e.g. 1ˢᵗ November). It still stores letters and handover snapshots compressed and never prints the diagnosis or complications.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

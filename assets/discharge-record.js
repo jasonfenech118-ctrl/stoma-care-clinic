@@ -31,6 +31,20 @@ function stripIndication(text){
   t=t.replace(/\s+(?:for|due to|secondary to|because of|owing to)\s+[^.,;]*?(?=\s+with\b|,|;|\.|$)/ig,'');
   return t.replace(/\s{2,}/g,' ').replace(/\s+([.,;])/g,'$1').trim();
 }
+// Tidy the procedure so it reads naturally inside "… underwent <procedure> on <date>":
+//  • drop a trailing "performed"/"was performed" and any trailing full stop (the
+//    sentence already says it was performed);
+//  • lower-case the first word when it is an ordinary capitalised word (e.g.
+//    "Defunctioning" → "defunctioning"), but leave acronyms ("AP") and eponyms
+//    with an apostrophe ("Hartmann's") untouched.
+function normalizeProcedure(text){
+  var t=String(text||'').trim();
+  t=t.replace(/[\s,]*\b(?:was\s+)?performed\b[.\s]*$/i,'');  // "… performed." tail
+  t=t.replace(/[.\s]+$/,'').trim();                          // any remaining trailing stop
+  var first=(t.match(/^(\S+)/)||[])[1]||'';
+  if(/^[A-Z][a-z]+$/.test(first))t=first.charAt(0).toLowerCase()+t.slice(1);
+  return t;
+}
 function recordedRodText(rod){
   if(!rod)return '';
   if(rod.removedDate)return 'Rod removed on '+_fmtDate(rod.removedDate)+'.';
@@ -52,7 +66,7 @@ function prefillRecordedLetter(){
       ['title','fname','sname','id','consultant'].forEach(function(key){WZ[key]=master[key];});
       WZ.type=_mapStomaType(stoma.type);
       WZ.subtype=_mapSubtype(stoma.type);
-      WZ.procedure=stripIndication(stoma.operation);
+      WZ.procedure=normalizeProcedure(stripIndication(stoma.operation));
       WZ.opdate=String(stoma.operationDate||'');
       _prefillAppliances((stoma.appliances||[]).join('|'),(stoma.accessories||[]).join('|'));
       // Preserve the known system even if a catalogue name cannot be matched.

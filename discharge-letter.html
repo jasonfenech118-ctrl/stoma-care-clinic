@@ -530,7 +530,7 @@
     var d = new Date();
     var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     var el = document.getElementById('letterDate');
-    if(el){ el.value = d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear(); }
+    if(el){ el.value = _ord(d.getDate()) + ' ' + months[d.getMonth()] + ' ' + d.getFullYear(); }
   })();
 
   /* Pre-fill from the patient record when opened as
@@ -1576,13 +1576,17 @@
   }
   function wzBack(){ if(wzStep > 0){ wzStep--; renderWizard(); } }
 
+  // Ordinal day: 1 -> 1st, 2 -> 2nd, 3 -> 3rd, 11 -> 11th, 21 -> 21st. The st/nd/
+  // rd/th suffix is shown small (superscript) in the rendered letter (see
+  // buildLetterHTML, where the suffix is wrapped in <sup class="ord">).
+  function _ord(d){var s=["th","st","nd","rd"],v=d%100;return d+(s[(v-20)%10]||s[v]||s[0]);}
   function _fmtDate(iso){
     if(!iso) return "";
     var p = iso.split("-"); if(p.length !== 3) return iso;
     var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     var d = parseInt(p[2],10), m = parseInt(p[1],10)-1, y = p[0];
     if(isNaN(d) || m<0 || m>11) return iso;
-    return d + " " + months[m] + " " + y;
+    return _ord(d) + " " + months[m] + " " + y;
   }
   function _humanList(arr){
     if(arr.length === 0) return "";
@@ -2484,7 +2488,7 @@
   function buildLetterHTML(){
     var logo = document.querySelector('.l-header .logo');
     var logoSrc = logo ? logo.src : '';
-    var date = _esc(_v('#letterDate') || _v('.fld-date'));
+    var date = _esc(_v('#letterDate') || _v('.fld-date')).replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi,'$1<sup class="ord">$2</sup>');
     var title = _esc(_v('.fld-title'));
     var first = _esc(_v('.fld-fname'));
     var surname = _esc(_v('.fld-sname'));
@@ -2497,6 +2501,7 @@
 
     var css = '@page{size:' + (LETTER.pageSize || 'A4') + ';margin:' + (LETTER.pageMargin || '1.6cm 2cm') + ';}'
       + "body{font-family:'Times New Roman',serif;font-size:" + (LETTER.fontSize || '11.5pt') + ";line-height:1;color:#000;}"
+      + '.ord{font-size:0.62em;vertical-align:super;line-height:0;}'
       + '.logo{display:block;width:205px;}'
       + '.rule{border-bottom:0.75pt solid #000080;margin-bottom:17pt;}'
       + '.gap{margin:0 0 17pt;}'

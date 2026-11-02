@@ -10,4 +10,12 @@ test('stripIndication drops the diagnosis/indication clause but keeps the proced
   assert.equal(c.stripIndication('APR due to low rectal cancer'),'APR');
   assert.equal(c.stripIndication('Laparotomy converted to open low anterior resection with end colostomy formation'),'Laparotomy converted to open low anterior resection with end colostomy formation');
 });
+test('normalizeProcedure lower-cases an ordinary leading word and drops a trailing "performed"/full stop',()=>{
+  const c=context();
+  assert.equal(c.normalizeProcedure('Defunctioning transverse colostomy performed.'),'defunctioning transverse colostomy');
+  assert.equal(c.normalizeProcedure('End colostomy formation'),'end colostomy formation');
+  assert.equal(c.normalizeProcedure('Loop ileostomy formation was performed'),'loop ileostomy formation');
+  assert.equal(c.normalizeProcedure('AP resection'),'AP resection');            // acronym kept
+  assert.equal(c.normalizeProcedure('Hartmann’s procedure'),'Hartmann’s procedure'); // eponym kept
+});
 test('the combined procedure and indication appear without a reason heading',()=>{const c=context(),body={innerHTML:''},plan={innerHTML:'',appendChild:()=>{}};c.document={querySelector:selector=>selector==='.body'?body:{value:''},getElementById:()=>plan,createElement:()=>({})};c.WZ={};c.withRecordedStoma=(index,fn)=>{c.WZ={...c.recordedStomas[index].wizard,accessories:[]};fn();};c.subtypeLabel=()=>'';c._isFemaleTitle=()=>false;c._an=()=> 'a';c.DEFAULT_BODY_TEMPLATES={colostomy:{discharge:'discharge'}};c.bodyTemplateFor=()=>({opening:'opening',discharge:'discharge'});c.fillBodyTemplate=(template,vars)=>template==='opening'?c._esc(vars.procedure+vars.formation):'Discharge assessment';c.recordedStomaPlan=()=>[];c.autosizePatientFlds=()=>{};c.planText=()=>'';c.updateRibbon=()=>{};c.applyRecordedLetter();assert.match(body.innerHTML,/Hartmann’s procedure for diverticulitis with end colostomy formation/);assert.doesNotMatch(body.innerHTML,/Reason for stoma|Documented operative indication/);assert.match(body.innerHTML,/Loop ileostomy formation/);assert.doesNotMatch(body.innerHTML,/Original findings/);});

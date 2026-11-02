@@ -68,9 +68,9 @@ const plain=value=>JSON.parse(JSON.stringify(value));
 
 test('a present rod carries its planned date into the letter before and after finishing the wizard',()=>{
   const s=letterSession({rod:'present',rodDue:'2026-10-05'});
-  assert.match(s.plan(),/Rod in situ, due for removal on 5 October 2026/);
+  assert.match(s.plan(),/Rod in situ, due for removal on 5th October 2026/);
   s.w.applyWizard();
-  assert.match(s.plan(),/Rod in situ, due for removal on 5 October 2026/);
+  assert.match(s.plan(),/Rod in situ, due for removal on 5th October 2026/);
   assert.equal((s.plan().match(/Rod in situ, due for removal/g)||[]).length,1);
   assert.equal(s.w.WZ.applianceFromRecord,true);
   assert.match(s.dom.window.document.querySelector('.body').textContent,/Appliance A and Appliance B/);
@@ -81,8 +81,8 @@ test('recorded removal overrides the planned date and removes in-situ instructio
   const s=letterSession({rod:'removed',rodDue:'2026-10-05',rodRemoved:'2026-10-01'});
   assert.equal(s.w.WZ.rodRemovalDate,'');
   s.w.applyWizard();
-  assert.match(s.plan(),/Rod removed on 1 October 2026/);
-  assert.doesNotMatch(s.plan(),/in situ|expected removal|5 October 2026/);
+  assert.match(s.plan(),/Rod removed on 1st October 2026/);
+  assert.doesNotMatch(s.plan(),/in situ|expected removal|5th October 2026/);
   s.dom.window.close();
 });
 
