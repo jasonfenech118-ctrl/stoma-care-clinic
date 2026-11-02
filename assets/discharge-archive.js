@@ -27,7 +27,39 @@ async function dischargeDecompress(stored){
   }catch(e){return s;}
 }
 function registerDischargeLetterWindow(token,patientId,target,snapshot){
-  dischargeLetterWindows.set(token,{patientId:String(patientId),target,snapshot,last:null,pending:null});
+  dischargeLetterWindows.set(token,{patientId:String(patientId),target,snapshot,last:null,pending:null,autosave:null});
+}
+// Autosave keeps ONE row per editing session: the first change inserts the
+// letter, every later change updates that same row in place (compressed). This
+// is what the editor calls on each change instead of the manual "save a copy"
+// flow, so the record holds the latest letter without a pile of near-duplicates.
+async function autosaveDischargeLetter(token,source,payload){
+  const session=dischargeLetterWindows.get(token);
+  if(!session||session.target!==source)throw Error('Reopen the letter from the patient record before it can save.');
+  if(!payload||typeof payload.html!=='string'||!payload.html.trim()||payload.html.length>1000000)throw Error('The letter is empty or too large to save.');
+  if(typeof payload.text!=='string'||!payload.text.trim())throw Error('There is nothing to save yet.');
+  if(String(payload.patientIdNo||'').replace(/\s/g,'').toUpperCase()!==String(session.snapshot.patient.id||'').replace(/\s/g,'').toUpperCase())throw Error('The letter ID number differs from the selected patient. Correct it before it can save.');
+  const fingerprint=JSON.stringify(payload);
+  if(session.autosave&&session.autosave.fingerprint===fingerprint)return session.autosave.id;  // nothing changed
+  if(session.busy){session.autosaveDirty=true;return session.autosave?session.autosave.id:null;} // a save is mid-flight; retry after
+  session.busy=true;
+  try{
+    const {data:auth,error:authError}=await SB.auth.getUser();if(authError||!auth?.user)throw Error('Sign in to Stoma Roster again, then reopen the letter.');
+    const letterHtml=await dischargeCompress(payload.html);
+    const fields={created_by_name:String(payload.author||auth.user.email||''),letter_date:String(payload.date||''),filename:String(payload.filename||'Discharge_letter'),letter_html:letterHtml,letter_text:''};
+    if(!session.autosave){
+      const id=crypto.randomUUID();
+      const row={id,patient_id:session.patientId,created_by:auth.user.id,...fields,stoma_uids:session.snapshot.stomas.map(s=>s.uid).filter(Boolean)};
+      const {error}=await SB.from('patient_discharge_letters').insert(row);
+      if(error&&error.code!=='23505')throw Error(error.message);
+      session.autosave={id,fingerprint};
+    }else{
+      const {error}=await SB.from('patient_discharge_letters').update(fields).eq('id',session.autosave.id).eq('patient_id',session.patientId);
+      if(error)throw Error(error.message);
+      session.autosave.fingerprint=fingerprint;
+    }
+    return session.autosave.id;
+  }finally{session.busy=false;}
 }
 async function openDischargeLetterFor(patientId){
   const request=++dischargeArchiveRequest;
