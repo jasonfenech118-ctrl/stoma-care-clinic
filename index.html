@@ -18,19 +18,19 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-718"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-719"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-718"></script>
+<script src="assets/manual.js?v=2026.11.01-719"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
 <script defer src="assets/patient-communications.js?v=2026.11.01-691"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
-<script src="assets/deceased-registry.js?v=2026.10.09-497"></script>
+<script src="assets/deceased-registry.js?v=2026.11.01-719"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
@@ -3992,7 +3992,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-718';
+const APP_BUILD='2026.11.01-719';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14317,9 +14317,16 @@ let pdPage=0,pdLastKey='',pdIncompleteOnly=false,pdSort={col:'name',type:'text',
 // The value a patient row sorts by for a given column. Dates fall back to the
 // stoma-level date/type the registry already shows; empties are handled by caller.
 function patientSortValue(p,col,type){
+  const surgeryOf=p=>String(p.surgery_date||(typeof registrySurgeryDate==='function'?registrySurgeryDate(p):'')||'').slice(0,10);
   if(col==='name')return `${p.surname||''} ${p.first_name||''}`.trim().toLowerCase();
-  if(col==='surgery_date')return String(p.surgery_date||(typeof registrySurgeryDate==='function'?registrySurgeryDate(p):'')||'').slice(0,10);
+  if(col==='surgery_date')return surgeryOf(p);
   if(col==='stoma_type')return String(p.stoma_type||(typeof registryStomaType==='function'?registryStomaType(p):'')||'').toLowerCase();
+  // Computed columns sort numerically via a zero-padded key (blanks → bottom).
+  if(col==='age_stoma')return padNumKey(ageYearsBetween(p.date_of_birth,surgeryOf(p)));
+  if(col==='age_reversal')return padNumKey(ageYearsBetween(p.date_of_birth,p.reversal_date));
+  if(col==='age_death')return padNumKey(ageYearsBetween(p.date_of_birth,p.deceased_date));
+  if(col==='stoma_days_reversed')return padNumKey(daysBetween(surgeryOf(p),p.reversal_date));
+  if(col==='stoma_days_deceased')return padNumKey(daysBetween(surgeryOf(p),p.deceased_date));
   if(type==='date')return String(p[col]||'').slice(0,10);
   return String(p[col]||'').toLowerCase();
 }
@@ -14468,11 +14475,17 @@ function renderPatientDirectory(){
   // a phone number is not what the nurse needs. Those views swap the Phone
   // column for the clinical Operation Performed and Findings instead.
   const outcomeView=['reversed','deceased','discharged_gozo','relocated_overseas'].includes(status);
+  // The Reversed list drops Operation / Findings / Actions and instead carries the
+  // reversal timeline: ages at stoma formation and at reversal, stoma-days until
+  // reversed, and a (not-yet-used) Deceased date column for a future outcome.
+  const reversedView=status==='reversed';
   const thead=document.querySelector('#pd-table thead tr');
-  if(thead)thead.innerHTML=outcomeView
+  if(thead)thead.innerHTML=reversedView
+    ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Age at stoma','age_stoma')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Reversal Date','reversal_date','date')+pdSortableTh('Age at reversal','age_reversal')+pdSortableTh('Stoma days','stoma_days_reversed')+pdSortableTh('Deceased Date','deceased_date','date')
+    : outcomeView
     ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Operation Performed','procedure_performed')+pdSortableTh('Findings','findings')+'<th>Actions</th>'
     : pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Phone','phone_number')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+'<th>Actions</th>';
-  const cols=outcomeView?8:7;
+  const cols=reversedView?10:outcomeView?8:7;
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="${cols}" class="empty">No patients match these filters.</td></tr>`;renderPager('pd-pager',0,0,pdPage,()=>{});return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
   const tcell=(v,n=28)=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>n?t.slice(0,n-2)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
@@ -14492,20 +14505,23 @@ function renderPatientDirectory(){
     // A deceased record is finalised: hide Edit so it is not changed. Correcting a
     // status set in error is done from the record's Outcome tab (Back to follow-up).
     const datesBtn=(patientDatesAvailable&&p.status!=='deceased')?`<button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="openPatientDatesModal('${p.id}')">Edit</button>`:'';
-    const middle=outcomeView
-      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
-      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(registrySurgeryDate(p))}</td><td>${tcell(registryStomaType(p))}</td>`;
+    const surgery=registrySurgeryDate(p);
+    const middle=reversedView
+      ? `<td>${dcell(p.date_of_birth)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,surgery))}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td><td>${dcell(p.reversal_date)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,p.reversal_date))}</td><td>${daysCellHTML(daysBetween(surgery,p.reversal_date))}</td><td>${dcell(p.deceased_date)}</td>`
+      : outcomeView
+      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
+      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td>`;
     const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
     return `<tr class="pd-click-row ${rowCls}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
       <td>${patientNameAvatarHTML(p,nm,(p.archived?'<span class="pd-arch-tag">Archived</span>':'')+extraStatusChipsHTML(p)+docStatusBadgeHTML(p),'sm')}</td>
       <td style="font-family:monospace;">${htmlSafe(p.id_card||'—')}</td>
       ${middle}
-      <td onclick="event.stopPropagation();"><div class="pd-actions">
+      ${reversedView?'':`<td onclick="event.stopPropagation();"><div class="pd-actions">
         ${restoreBtn}
         ${datesBtn}
         <button class="ncb-btn" style="background:#edf1f5;color:var(--navy);" onclick="openFollowupHistory('${p.id}')">History</button>
         ${(hasDue||!['active','awaiting_feedback','paused'].includes(p.status))?'':`<button class="ncb-btn" style="background:#7c3aed;color:white;" onclick="openSetDueMonthModal('${p.id}')">Set due</button>`}
-      </div></td>
+      </div></td>`}
     </tr>`;
   }).join('');
   renderPager('pd-pager',rows.length,PD_PAGE_SIZE,pdPage,d=>{pdPage+=d;renderPatientDirectory();});
@@ -14515,6 +14531,17 @@ function fmtShortDate(v){
   if(Number.isNaN(d.getTime()))return String(v||'');
   return d.toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric'});
 }
+/* Whole completed years between two ISO dates (an age), and whole days between
+   them. Both return null when a date is missing or the span would be negative,
+   so the registry shows a dash rather than a wrong or negative figure. */
+function parseISODate(s){const t=String(s||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(t))return null;const d=new Date(t+'T00:00:00Z');return Number.isNaN(d.getTime())?null:d;}
+function ageYearsBetween(fromISO,toISO){const a=parseISODate(fromISO),b=parseISODate(toISO);if(!a||!b)return null;let y=b.getUTCFullYear()-a.getUTCFullYear();const m=b.getUTCMonth()-a.getUTCMonth();if(m<0||(m===0&&b.getUTCDate()<a.getUTCDate()))y--;return y>=0?y:null;}
+function daysBetween(fromISO,toISO){const a=parseISODate(fromISO),b=parseISODate(toISO);if(!a||!b)return null;const d=Math.round((b-a)/86400000);return d>=0?d:null;}
+function ageCellHTML(y){return y==null?'<span class="pd-dash">—</span>':htmlSafe(String(y));}
+function daysCellHTML(d){return d==null?'<span class="pd-dash">—</span>':htmlSafe(Number(d).toLocaleString('en-GB'));}
+function padNumKey(n){return n==null?'':String(n).padStart(7,'0');}
+// Exposed for the separate deceased-registry module.
+window.ageYearsBetween=ageYearsBetween;window.daysBetween=daysBetween;window.ageCellHTML=ageCellHTML;window.daysCellHTML=daysCellHTML;
 /* The Reversal / RIP pills are a shortcut over the Status dropdown, so the two
    stay in sync: clicking a pill sets the dropdown, and changing the dropdown
    updates the pills. "All Patients" clears the status filter. */

@@ -18,7 +18,13 @@ function setup(t){
     function patientIsIncomplete(){return false;} function isClosedFollowupStatus(){return false;} function fixText(x){return x;}
     function htmlSafe(x){return String(x??'');} function jsSafe(x){return String(x??'');} function fmtShortDate(x){return x||'';}
     function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
-    function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}`);
+    function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}
+    function _d(s){var d=new Date(String(s||'').slice(0,10)+'T00:00:00Z');return isNaN(d.getTime())?null:d;}
+    function ageYearsBetween(a,b){a=_d(a);b=_d(b);if(!a||!b)return null;var y=b.getUTCFullYear()-a.getUTCFullYear();var m=b.getUTCMonth()-a.getUTCMonth();if(m<0||(m===0&&b.getUTCDate()<a.getUTCDate()))y--;return y>=0?y:null;}
+    function daysBetween(a,b){a=_d(a);b=_d(b);if(!a||!b)return null;var d=Math.round((b-a)/86400000);return d>=0?d:null;}
+    function ageCellHTML(y){return y==null?'<span class="pd-dash">—</span>':htmlSafe(String(y));}
+    function daysCellHTML(d){return d==null?'<span class="pd-dash">—</span>':htmlSafe(String(d));}
+    function padNumKey(n){return n==null?'':String(n).padStart(7,'0');}`);
   w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="",pdIncompleteOnly=false,pdSort={col:"name",type:"text",dir:"asc"};const PD_PAGE_SIZE=100;'+fn('patientSortValue')+fn('comparePatients')+fn('pdSortableTh')+fn('setPatientSort')+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
   w.eval(`var patientDirectoryRows=[
     {id:'1',surname:'A',owner:'Jason',status:'active',types:['End colostomy']},
@@ -63,4 +69,17 @@ test('clicking a column header sorts the directory, toggling ascending/descendin
   w.renderPatientDirectory();assert.deepEqual(ids(w),['a','b','c'],'default sort is by name');
   w.setPatientSort('date_of_birth','date');assert.deepEqual(ids(w),['b','a','c'],'ascending DOB = oldest first');
   w.setPatientSort('date_of_birth','date');assert.deepEqual(ids(w),['c','a','b'],'second click flips to descending');
+});
+
+test('the Reversed view drops Op/Findings/Actions and shows ages + stoma-days',t=>{
+  const w=setup(t);
+  w.eval("patientDirectoryRows=[{id:'r',surname:'A',first_name:'B',status:'reversed',date_of_birth:'1950-01-01',surgery_date:'2020-01-01',reversal_date:'2021-01-01',types:[]}];");
+  w.document.getElementById('pd-status').value='reversed';w.renderPatientDirectory();
+  const head=w.document.querySelector('#pd-table thead tr').textContent;
+  assert.match(head,/Age at stoma/);assert.match(head,/Age at reversal/);assert.match(head,/Stoma days/);assert.match(head,/Deceased Date/);
+  assert.doesNotMatch(head,/Operation Performed/);assert.doesNotMatch(head,/Findings/);assert.doesNotMatch(head,/Actions/);
+  const cells=[...w.document.querySelectorAll('#pd-tbody tr.pd-click-row td')].map(td=>td.textContent.trim());
+  assert.equal(cells[3],'70','age at stoma formation 1950→2020 = 70');
+  assert.equal(cells[7],'71','age at reversal 1950→2021 = 71');
+  assert.equal(cells[8],'366','stoma days 2020→2021 = 366 (leap year)');
 });
