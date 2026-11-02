@@ -19,7 +19,7 @@ function setup(t){
     function htmlSafe(x){return String(x??'');} function jsSafe(x){return String(x??'');} function fmtShortDate(x){return x||'';}
     function patientNameAvatarHTML(p,nm){return nm;} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
     function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}`);
-  w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="",pdIncompleteOnly=false;const PD_PAGE_SIZE=100;'+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
+  w.eval(between('const PD_CLOSED_STATUSES=','function renderPatientDirectorySummary(')+fn('renderPatientDirectorySummary')+'\nvar pdPage=0,pdLastKey="",pdIncompleteOnly=false,pdSort={col:"name",type:"text",dir:"asc"};const PD_PAGE_SIZE=100;'+fn('patientSortValue')+fn('comparePatients')+fn('pdSortableTh')+fn('setPatientSort')+fn('pageSlice')+fn('renderPager')+fn('renderPatientDirectory'));
   w.eval(`var patientDirectoryRows=[
     {id:'1',surname:'A',owner:'Jason',status:'active',types:['End colostomy']},
     {id:'2',surname:'B',owner:'Jason',status:'active',types:['Loop ileostomy','Urostomy (ileal conduit)']},
@@ -55,4 +55,12 @@ test('the Incomplete profile filter shows incomplete patients across every statu
   w.eval("patientIsIncomplete=function(p){return p.id==='3'||p.id==='4';};pdIncompleteOnly=true;");
   w.renderPatientDirectory();
   assert.deepEqual(ids(w).sort(),['3','4'],'incomplete reversed and deceased both show, complete actives hidden');
+});
+
+test('clicking a column header sorts the directory, toggling ascending/descending',t=>{
+  const w=setup(t);
+  w.eval("patientDirectoryRows=[{id:'a',surname:'X',first_name:'1',status:'active',date_of_birth:'1950-01-01',types:[]},{id:'b',surname:'Y',first_name:'2',status:'active',date_of_birth:'1930-05-05',types:[]},{id:'c',surname:'Z',first_name:'3',status:'active',date_of_birth:'1970-09-09',types:[]}];");
+  w.renderPatientDirectory();assert.deepEqual(ids(w),['a','b','c'],'default sort is by name');
+  w.setPatientSort('date_of_birth','date');assert.deepEqual(ids(w),['b','a','c'],'ascending DOB = oldest first');
+  w.setPatientSort('date_of_birth','date');assert.deepEqual(ids(w),['c','a','b'],'second click flips to descending');
 });

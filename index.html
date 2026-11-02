@@ -18,13 +18,13 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-717"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.01-718"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.01-717"></script>
+<script src="assets/manual.js?v=2026.11.01-718"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1975,6 +1975,10 @@ td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;
 @media(max-width:640px){.ap-chk,.fg label.ap-chk{width:100%;gap:11px;padding:8px 6px;font-size:13px;}.ap-chk input{width:18px;height:18px;}.ap-panel{max-height:210px;}}
 /* Outcome rows use a calm tint, dark text and a strong left key. The status is
    still immediate, but names, dates and actions remain comfortable to read. */
+#pd-table th.pd-sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+#pd-table th.pd-sortable:hover{color:var(--teal);}
+#pd-table th .pd-sort-arrow{font-size:10px;opacity:.45;margin-left:2px;}
+#pd-table th.pd-sorted .pd-sort-arrow{opacity:1;color:var(--teal);}
 #pd-table tr.pd-row-reversed td{background:#f3e8ff;color:#3b2759;border-color:#e9d5ff;}
 #pd-table tr.pd-row-reversed td:first-child{box-shadow:inset 5px 0 0 #6d28d9;}
 #pd-table tr.pd-row-reversed:hover td{background:#eadcff!important;}
@@ -3988,7 +3992,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.01-717';
+const APP_BUILD='2026.11.01-718';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14309,7 +14313,38 @@ function renderPatientDirectorySummary(owner='all'){
     el.appendChild(b);
   }
 }
-let pdPage=0,pdLastKey='',pdIncompleteOnly=false;
+let pdPage=0,pdLastKey='',pdIncompleteOnly=false,pdSort={col:'name',type:'text',dir:'asc'};
+// The value a patient row sorts by for a given column. Dates fall back to the
+// stoma-level date/type the registry already shows; empties are handled by caller.
+function patientSortValue(p,col,type){
+  if(col==='name')return `${p.surname||''} ${p.first_name||''}`.trim().toLowerCase();
+  if(col==='surgery_date')return String(p.surgery_date||(typeof registrySurgeryDate==='function'?registrySurgeryDate(p):'')||'').slice(0,10);
+  if(col==='stoma_type')return String(p.stoma_type||(typeof registryStomaType==='function'?registryStomaType(p):'')||'').toLowerCase();
+  if(type==='date')return String(p[col]||'').slice(0,10);
+  return String(p[col]||'').toLowerCase();
+}
+function comparePatients(a,b){
+  const dir=pdSort.dir==='desc'?-1:1;
+  const av=patientSortValue(a,pdSort.col,pdSort.type),bv=patientSortValue(b,pdSort.col,pdSort.type);
+  // A blank value (no date, no entry) always sorts to the bottom, both directions.
+  if(av===''&&bv!=='')return 1;
+  if(bv===''&&av!=='')return -1;
+  if(av<bv)return -1*dir;if(av>bv)return 1*dir;
+  // Stable tie-break by name so equal values keep a predictable order.
+  const an=`${a.surname||''} ${a.first_name||''}`.toLowerCase(),bn=`${b.surname||''} ${b.first_name||''}`.toLowerCase();
+  return an<bn?-1:an>bn?1:0;
+}
+function setPatientSort(col,type){
+  if(pdSort.col===col)pdSort.dir=pdSort.dir==='asc'?'desc':'asc';
+  else pdSort={col,type:type||'text',dir:'asc'};
+  renderPatientDirectory();
+}
+// Build a clickable, sortable header cell (an arrow shows the active direction).
+function pdSortableTh(label,col,type){
+  if(!col)return `<th>${label}</th>`;
+  const active=pdSort.col===col,arrow=active?(pdSort.dir==='asc'?'▲':'▼'):'⇅';
+  return `<th class="pd-sortable${active?' pd-sorted':''}" onclick="setPatientSort('${col}','${type||'text'}')" title="Sort by ${htmlSafe(String(label).replace(/<[^>]+>/g,''))}">${label} <span class="pd-sort-arrow">${arrow}</span></th>`;
+}
 const PD_PAGE_SIZE=100;
 // Clamp a page index and return that slice of rows.
 function pageSlice(rows,page,size){
@@ -14388,7 +14423,7 @@ function renderPatientDirectory(){
   const owner=document.getElementById('pd-owner')?.value||'all';
   const status=document.getElementById('pd-status')?.value||'all';
   const docs=document.getElementById('pd-documentation')?.value||'all';
-  const pdKey=q+'|'+owner+'|'+status+'|'+docs+'|'+(pdIncompleteOnly?'inc':'');
+  const pdKey=q+'|'+owner+'|'+status+'|'+docs+'|'+(pdIncompleteOnly?'inc':'')+'|'+pdSort.col+pdSort.dir;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
   // The number tiles follow the owner filter (recomputed only when it changes).
   if(pdSummaryOwner!==owner){pdSummaryOwner=owner;renderPatientDirectorySummary(owner);}
@@ -14414,7 +14449,7 @@ function renderPatientDirectory(){
       if(!terms.every(t=>hay.includes(t)))return false;
     }
     return true;
-  }).sort((a,b)=>String(a.surname||'').localeCompare(String(b.surname||''))||String(a.first_name||'').localeCompare(String(b.first_name||'')));
+  }).sort(comparePatients);
   // Count only the rows that actually carry the amber stripe, so the tally
   // matches what is on screen (closed/finalised records are not flagged).
   const incompleteCount=rows.filter(p=>patientIsIncomplete(p)&&!isClosedFollowupStatus(p.status)).length;
@@ -14435,8 +14470,8 @@ function renderPatientDirectory(){
   const outcomeView=['reversed','deceased','discharged_gozo','relocated_overseas'].includes(status);
   const thead=document.querySelector('#pd-table thead tr');
   if(thead)thead.innerHTML=outcomeView
-    ? '<th>Patient</th><th>ID Card</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Operation Performed</th><th>Findings</th><th>Actions</th>'
-    : '<th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th>';
+    ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Operation Performed','procedure_performed')+pdSortableTh('Findings','findings')+'<th>Actions</th>'
+    : pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Phone','phone_number')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+'<th>Actions</th>';
   const cols=outcomeView?8:7;
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="${cols}" class="empty">No patients match these filters.</td></tr>`;renderPager('pd-pager',0,0,pdPage,()=>{});return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
