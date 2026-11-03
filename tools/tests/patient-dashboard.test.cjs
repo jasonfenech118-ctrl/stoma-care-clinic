@@ -127,25 +127,35 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.doesNotMatch(page,/page-break-before/,'first page has no leading break');}
 // 📄 Informative literature: wired to stoma type + paediatrics, English & Maltese.
 {w.TODAY='2026-11-03';
- // Adult colostomy → the colostomy diet leaflet only.
+ // Adult colostomy → the managing booklet AND the diet leaflet, both EN+MT.
  w.stomasPresentOn=()=>[{type:'End colostomy'}];w.ageYearsBetween=()=>60;
  let docs=w.patientLiteratureDocs({date_of_birth:'1966-01-01'});
- assert.equal(docs.length,1);
- assert.match(docs[0].en,/colostomy-diet-en\.pdf/);
- assert.match(docs[0].mt,/colostomy-diet-mt\.pdf/);
- // A child with a colostomy → the diet sheet AND the paediatric guide.
- w.ageYearsBetween=()=>5;
- docs=w.patientLiteratureDocs({date_of_birth:'2021-01-01'});
  assert.equal(docs.length,2);
+ assert.ok(docs.some(d=>/managing-colostomy-en\.pdf/.test(d.en)&&/managing-colostomy-mt\.pdf/.test(d.mt)));
+ assert.ok(docs.some(d=>/colostomy-diet-en\.pdf/.test(d.en)));
+ // Ileostomy → managing booklet, English only (no Maltese yet).
+ w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
+ docs=w.patientLiteratureDocs({date_of_birth:'1966-01-01'});
+ assert.equal(docs.length,1);
+ assert.match(docs[0].en,/managing-ileostomy-en\.pdf/);
+ assert.equal(docs[0].mt,undefined,'no Maltese ileostomy yet');
+ // Urostomy → managing booklet EN+MT.
+ w.stomasPresentOn=()=>[{type:'Urostomy'}];
+ docs=w.patientLiteratureDocs({date_of_birth:'1966-01-01'});
+ assert.ok(docs.some(d=>/managing-urostomy-en\.pdf/.test(d.en)&&/managing-urostomy-mt\.pdf/.test(d.mt)));
+ // A child with a colostomy → colostomy leaflets AND the paediatric guide.
+ w.ageYearsBetween=()=>5;w.stomasPresentOn=()=>[{type:'End colostomy'}];
+ docs=w.patientLiteratureDocs({date_of_birth:'2021-01-01'});
  assert.ok(docs.some(d=>/stoma-in-children-en\.pdf/.test(d.en)),'paediatric guide included for a child');
- // Urostomy has no leaflet yet → empty.
- w.ageYearsBetween=()=>60;w.stomasPresentOn=()=>[{type:'Urostomy'}];
- assert.equal(w.patientLiteratureDocs({date_of_birth:'1966-01-01'}).length,0);
- // The modal renders an English and a Maltese button per leaflet.
+ // The modal shows an English button; a Maltese button only when a Maltese PDF exists.
+ w.ageYearsBetween=()=>60;w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
+ w.openPatientLiterature();
+ let lm=w.document.getElementById('mb').innerHTML;
+ assert.match(lm,/English/);assert.match(lm,/managing-ileostomy-en\.pdf/);
+ assert.doesNotMatch(lm,/Malti/,'no Maltese button when there is no Maltese PDF');
  w.stomasPresentOn=()=>[{type:'End colostomy'}];
  w.openPatientLiterature();
- const lm=w.document.getElementById('mb').innerHTML;
- assert.match(lm,/English/);assert.match(lm,/Malti/);
- assert.match(lm,/colostomy-diet-en\.pdf/);assert.match(lm,/colostomy-diet-mt\.pdf/);}
+ lm=w.document.getElementById('mb').innerHTML;
+ assert.match(lm,/Malti/);assert.match(lm,/managing-colostomy-mt\.pdf/);}
 const source=appSource;for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new Function(m[1]);
 console.log('PASS: details placement, three home actions, retained sections, grouped history, sorting, safe text, refresh, empty history, idempotent layout and script parsing');dom.window.close();

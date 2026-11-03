@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 November 2026 — Schedule 5 now reads drainable/closed from the Salts and Lentell one-piece product codes, flags a post-operative appliance, and sets the paediatric little-ones bag to one per day. It still builds colostomy, ileostomy and urostomy pages from the current appliance, saves nothing, and is editable before printing.'};
+const MANUAL_META={updated:'3 November 2026 — Informative literature now holds the “Managing your…” / “Kif tieħu ħsieb…” booklets for colostomy, ileostomy and urostomy (English and Maltese, printed separately) alongside the diet sheets and paediatric guide. Schedule 5 also reads drainable/closed from the Salts and Lentell product codes.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
