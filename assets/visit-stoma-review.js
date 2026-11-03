@@ -29,8 +29,10 @@
     #page-patient-record .pd-identity-columns>*{min-width:0!important}
     #page-patient-record .pd-identity-columns .psm-name{font-size:clamp(14px,2vw,22px)!important;overflow-wrap:anywhere!important}
 
-    #page-patient-record .pd-identity-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;width:100%}
-    #page-patient-record .pd-identity-columns dl{display:grid;gap:12px;margin:14px 0 0}
+    #page-patient-record .pd-identity-name{width:100%;margin:0 0 4px}
+    #page-patient-record .pd-identity-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;width:100%;margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0}
+    #page-patient-record .pd-identity-columns dl{display:grid;gap:11px;margin:0}
+    #page-patient-record .pd-identity-heading{margin:0 0 11px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#0d7377;padding-bottom:6px;border-bottom:1px solid #e9eef2}
     #page-patient-record .pd-identity-clinical{border-left:1px solid #d6dde5;padding-left:24px;min-width:0}
     #page-patient-record .pd-identity-clinical dl{margin-top:0}
     #page-patient-record .pd-identity-field dt{font-size:11px;font-weight:800;text-transform:uppercase;color:#43566b;margin-bottom:3px}
@@ -196,7 +198,18 @@
     let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
     const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
-    details.innerHTML='<div class="pd-identity-columns"><div class="pd-identity-contact"><div class="pd-identity-name"></div><dl>'+'<div class="pd-contact-line" aria-label="Address">'+htmlSafe(p.address||'Not recorded')+'</div><div class="pd-contact-line pd-contact-locality" aria-label="Locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></div><div class="pd-contact-line" aria-label="Telephone">'+htmlSafe(p.phone_number||'Not recorded')+'</div>'+(p.date_of_birth?'<div class="pd-contact-line">DOB '+htmlSafe(String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'))+'</div>':'')+'</dl></div><div class="pd-identity-clinical"><dl>'+surgical+'</dl></div></div>'+audit;
+    const dob=p.date_of_birth?String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'):'';
+    const localityDd='<dd class="pd-contact-locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></dd>';
+    details.innerHTML='<div class="pd-identity-name"></div>'
+      +'<div class="pd-identity-columns">'
+      +'<div class="pd-identity-contact"><h4 class="pd-identity-heading">Patient details</h4><dl>'
+        +field('Address',p.address)
+        +'<div class="pd-identity-field"><dt>Locality</dt>'+localityDd+'</div>'
+        +field('Telephone',p.phone_number)
+        +field('Date of birth',dob)
+      +'</dl></div>'
+      +'<div class="pd-identity-clinical"><h4 class="pd-identity-heading">Surgical details</h4><dl>'+surgical+'</dl></div>'
+      +'</div>'+audit;
     if(identity)details.querySelector('.pd-identity-name').append(identity);
     if(edit)(head.querySelector('.psm-identity-row')||details).append(edit);
   }
