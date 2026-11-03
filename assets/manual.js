@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'2 November 2026 — The Reversed list now has a per-row Deceased date button: a reversed patient who later dies is recorded with the date and marked black with a ✝, but stays in the Reversed list (run sql/add-reversed-deceased-date.sql). The Deceased and Reversed lists also gained age and stoma-day columns, sortable headers, and an ⚠ Incomplete profile filter.'};
+const MANUAL_META={updated:'3 November 2026 — The discharge letter now appends a pharmacy-items page for each stoma (wired to its type; paediatric list under age 14) on the Mater Dei letterhead. Also: a "New finding" complication outcome, a tidier patient/surgical details layout, and the Reversed list’s per-row Deceased-date button (run sql/add-reversed-deceased-date.sql).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -555,6 +555,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','The letter uses the <b>latest saved selection for each stoma</b>, even when different stomas were last updated on different days. Stoma powder and other accessories are carried across automatically. Open complications include their latest recorded note; complications not linked to a particular stoma appear separately. A cleared selection stays cleared.')}
     ${manNote('auto','⚙️','Rod status and dates come from the saved handover record. While in situ, its removal-due date is included; once marked removed, its removal date is included and in-situ care instructions stop. There is <b>no rod, complication, accessory or appliance selection page</b> to repeat when opening a recorded patient’s letter. If a current appliance is missing, update the stoma record and reopen the letter.')}
+    ${manNote('auto','💊','The letter automatically appends a <b>pharmacy-items page for each current stoma</b>, on the Mater Dei letterhead (logo + hospital footer) with the patient’s name, ID and DOB. The list is <b>wired to the stoma type</b> — Colostomy, Ileostomy or Urostomy — and a patient <b>under 14</b> on the letter date gets the <b>paediatric</b> list instead. These pages appear when you Print, save as PDF, or on the saved copy.')}
     ${manNote('tip','ℹ️','The general Discharge letters tab still offers Help wizard for a standalone letter. Letters opened from a patient use a fresh snapshot; reopen after changing that patient’s recorded details.')}
   `}
 ]},
