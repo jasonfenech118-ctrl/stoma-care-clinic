@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.03-725"></script>
+<script src="assets/manual.js?v=2026.11.03-726"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-725';
+const APP_BUILD='2026.11.03-726';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19256,7 +19256,87 @@ async function setPatientDPA(patientId,value){
   }
 }
 function openPatientLiterature(){openPatientResourcePlaceholder('📄 Informative literature','Informative literature (leaflets and information sheets) will be shown here. Add the documents and the layout you want, and they will be listed here to open, download or print.');}
-function openPatientScheduleFive(){openPatientResourcePlaceholder('📋 Schedule 5','The Schedule 5 documents and workflow will be set up here. Provide the form(s) and describe what needs to happen — what to fill in, sign and collect — and this section will carry it out.');}
+// Schedule V (Schedule 5): the pharmacy-items entitlement, one page per stoma
+// type on the Mater Dei letterhead. Quantities are fixed per the hospital form;
+// the list is chosen from the stoma type (paediatric list for a patient under 14).
+const SCHEDULE5_ITEMS={
+  colostomy:{title:'Colostomy',items:[
+    ['Flanges (wafers)','15 per month'],
+    ['Pouches – closed','60 per month'],
+    ['Adhesive remover','1 per month <span style="font-size:8.5pt">(if using stomahesive flanges)</span><br>2 per month <span style="font-size:8.5pt">(for others)</span>'],
+    ['Deodorizing Agent','1 per month'],
+    ['Gauze for cleaning','1 per month']]},
+  ileostomy:{title:'Ileostomy',items:[
+    ['Flanges (wafers)','15 per month'],
+    ['Pouches – drainable','45 per month'],
+    ['Adhesive remover','1 per month <span style="font-size:8.5pt">(if using stomahesive flanges)</span><br>2 per month <span style="font-size:8.5pt">(for others)</span>'],
+    ['Deodorizing Agent','1 per month'],
+    ['Gauze for cleaning','1 per month']]},
+  urostomy:{title:'Urostomy',items:[
+    ['Flanges (wafers)','15 per month'],
+    ['Pouches – Urostomy bags','45 per month'],
+    ['Adhesive remover','1 per 3 months'],
+    ['Gauze for cleaning','1 per month'],
+    ['Belt','1 per 3 months'],
+    ['Night drainage bags','4 per month']]},
+  paediatric:{title:'Paediatric',items:[
+    ['One piece paediatric stoma bags (little ones)','60 per month'],
+    ['Gauze for cleaning','1 per month'],
+    ['Protective powder','1 per 3 months']]}
+};
+function schedule5PageHTML(key,pat,logoSrc,isFirst){
+  const list=SCHEDULE5_ITEMS[key];if(!list)return '';
+  const nameLine=[pat.title,pat.fname,pat.sname].filter(Boolean).join(' ');
+  const dob=/^\d{4}-\d{2}-\d{2}$/.test(pat.dob||'')?pat.dob.split('-').reverse().join('/'):'';
+  const rows=list.items.map(it=>'<tr><td style="padding:4pt 14pt 4pt 0;vertical-align:top;width:52%;">&bull;&nbsp;'+htmlSafe(it[0])+'</td>'
+    +'<td style="padding:4pt 0;vertical-align:top;">'+it[1]+'</td></tr>').join('');
+  return '<div style="'+(isFirst?'':'page-break-before:always;')+'font-family:\'Times New Roman\',serif;font-size:11.5pt;color:#000;line-height:1.3;">'
+    +'<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
+      +'<td style="padding:0;vertical-align:middle">'+(logoSrc?'<img width="205" style="display:block" src="'+logoSrc+'" alt="Sptar Mater Dei Hospital">':'')+'</td>'
+    +'</tr></table>'
+    +'<div style="border-bottom:1.0pt solid #000080;height:5px;margin-bottom:16pt;font-size:1px">&nbsp;</div>'
+    +'<p style="margin:0 0 16pt;"><strong>'+htmlSafe(nameLine||'Patient')+'</strong>&nbsp;&nbsp;ID No: '+htmlSafe(pat.id||'')+(dob?'&nbsp;&nbsp;DOB: '+dob:'')+'</p>'
+    +'<p style="margin:0 0 14pt;"><strong>Items from pharmacy: – <u>'+list.title+'</u></strong></p>'
+    +'<table style="width:100%;border-collapse:collapse;margin-bottom:20pt;"><tbody>'+rows+'</tbody></table>'
+    +'<p style="font-weight:bold;margin:0 0 10pt;">Other items are to be ordered only on the advice of a Stoma Care Nurse.</p>'
+    +'<p style="font-weight:bold;margin:0 0 20pt;">Any increase in quantity of items listed above needs a special request.</p>'
+    +'<p style="margin:0 0 6pt;"><u><strong>Items are obtained from:</strong></u></p>'
+    +'<p style="margin:0 0 4pt;">Support Room at Outpatient’s Pharmacy - Tel: 25456533</p>'
+    +'<p style="margin:0;">Pharmacist in charge: Ms. M’Rose Gatt</p>'
+    +'<div style="font-family:\'Arial Narrow\',Arial,sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;margin-top:46pt;padding-top:6px"><strong>Mater Dei Hospital</strong><br>Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090<br>Tel: +356 25450000&nbsp;&nbsp;www.materdeihospital.org.mt</div>'
+    +'</div>';
+}
+// Build the Schedule V page(s) for a patient — one per recognised present stoma
+// type (de-duplicated). Returns an array of page HTML strings.
+function schedule5PagesFor(p,logoSrc){
+  const pat={title:/^m/i.test(p.sex||'')?'Mr':/^f/i.test(p.sex||'')?'Ms':'',
+    fname:p.first_name||'',sname:p.surname||'',id:p.id_card||'',dob:String(p.date_of_birth||'').slice(0,10)};
+  let types=[];try{types=stomasPresentOn(p,TODAY).map(s=>s.type||s.typeLabel||s.label||'').filter(Boolean);}catch(e){}
+  const age=ageYearsBetween(p.date_of_birth,TODAY);
+  const keys=[...new Set(types.map(t=>educationKeyForStoma(t,age)).filter(Boolean))];
+  return keys.map((k,i)=>schedule5PageHTML(k,pat,logoSrc,i===0));
+}
+function openPatientScheduleFive(){
+  const p=clrState.patient;if(!p){alert('Open a patient first.');return;}
+  const logoSrc=new URL('assets/mater-dei-logo.png',location.href).href;
+  const pages=schedule5PagesFor(p,logoSrc);
+  if(!pages.length){
+    openPatientResourcePlaceholder('📋 Schedule 5','No stoma with a recognised type (colostomy, ileostomy or urostomy) is recorded as present for this patient, so there is no Schedule V pharmacy-items page to show yet. Record the stoma type and it will appear here.');
+    return;
+  }
+  const w=window.open('','_blank');
+  if(!w){alert('Please allow pop-ups to open the Schedule V page.');return;}
+  const nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Schedule V — '+htmlSafe(nm)+'</title>'
+    +'<style>@page{size:A4;margin:14mm}body{margin:0;padding:18px;background:#fff}'
+    +'.s5-bar{font-family:Arial,Helvetica,sans-serif;margin:0 0 14px;display:flex;gap:10px;align-items:center}'
+    +'.s5-bar button{font:600 14px/1 Arial,sans-serif;padding:9px 16px;border:1px solid #0d7377;background:#0d7377;color:#fff;border-radius:8px;cursor:pointer}'
+    +'.s5-bar span{font:13px Arial,sans-serif;color:#555}'
+    +'@media print{.s5-bar{display:none}body{padding:0}}</style></head><body>'
+    +'<div class="s5-bar"><button onclick="window.print()">🖨 Print / Save as PDF</button><span>Schedule V — '+htmlSafe(nm)+'</span></div>'
+    +pages.join('')+'</body></html>');
+  w.document.close();w.focus();
+}
 // The Siting button only shows when the patient already has a siting session, so
 // it opens that session for viewing / amending.
 function openPatientSiting(){

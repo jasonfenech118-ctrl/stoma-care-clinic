@@ -53,5 +53,37 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  em=w.document.getElementById('mb').innerHTML;
  assert.match(em,/Booklet being added/);
  assert.doesNotMatch(em,/\.pdf/);}
+// 📋 Schedule 5 (Schedule V pharmacy entitlement): one page per recognised
+// present stoma type, wired to the type, on the Mater Dei letterhead.
+{w.TODAY='2026-11-03';
+ const pat={sex:'M',first_name:'Michael',surname:'John',id_card:'29544A',date_of_birth:'1964-05-08'};
+ // Urostomy patient → the urostomy entitlement page with its specific items.
+ w.stomasPresentOn=()=>[{type:'Urostomy'}];w.ageYearsBetween=()=>62;
+ let pages=w.schedule5PagesFor(pat,'logo.png');
+ assert.equal(pages.length,1,'one page for one stoma type');
+ assert.match(pages[0],/Items from pharmacy: – <u>Urostomy<\/u>/);
+ assert.match(pages[0],/Night drainage bags/);
+ assert.match(pages[0],/ID No: 29544A/);
+ assert.match(pages[0],/DOB: 08\/05\/1964/);
+ assert.match(pages[0],/Support Room at Outpatient/);
+ assert.doesNotMatch(pages[0],/page-break-before/,'first page has no leading page break');
+ // Two stomas of the same type collapse to a single entitlement page.
+ w.stomasPresentOn=()=>[{type:'End colostomy'},{type:'Loop colostomy'}];
+ pages=w.schedule5PagesFor(pat,'logo.png');
+ assert.equal(pages.length,1,'duplicate types de-duplicated');
+ assert.match(pages[0],/<u>Colostomy<\/u>/);
+ // A double stoma of different types yields one page each, the second breaking.
+ w.stomasPresentOn=()=>[{type:'End colostomy'},{type:'Urostomy'}];
+ pages=w.schedule5PagesFor(pat,'logo.png');
+ assert.equal(pages.length,2,'two distinct types → two pages');
+ assert.match(pages[1],/page-break-before:always/,'second page starts a new sheet');
+ // Under 14 → the paediatric list regardless of stoma type.
+ w.ageYearsBetween=()=>6;w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
+ pages=w.schedule5PagesFor(pat,'logo.png');
+ assert.match(pages[0],/<u>Paediatric<\/u>/);
+ assert.match(pages[0],/One piece paediatric stoma bags/);
+ // No recognised stoma → no page (the button shows a message instead).
+ w.ageYearsBetween=()=>62;w.stomasPresentOn=()=>[{type:'Fistula'}];
+ assert.equal(w.schedule5PagesFor(pat,'logo.png').length,0);}
 const source=appSource;for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new Function(m[1]);
 console.log('PASS: details placement, three home actions, retained sections, grouped history, sorting, safe text, refresh, empty history, idempotent layout and script parsing');dom.window.close();

@@ -2494,82 +2494,6 @@
     return parts.length ? parts.join('_') : 'Stoma_Discharge_Letter';
   }
 
-  /* ===================== PHARMACY ENTITLEMENT PAGES =====================
-     A separate page per current stoma, on the Mater Dei letterhead (logo header
-     + hospital footer, no unit/doctor block), listing the pharmacy items that
-     stoma is entitled to. The list is wired to the stoma type; a paediatric
-     patient (under 14 at the letter date) gets the paediatric list instead. */
-  var PHARMACY_ITEMS = {
-    colostomy:{ title:'Colostomy', items:[
-      ['Flanges (wafers)','15 per month'],
-      ['Pouches – closed','60 per month'],
-      ['Adhesive remover','1 per month <span style="font-size:8.5pt">(if using stomahesive flanges)</span><br>2 per month <span style="font-size:8.5pt">(for others)</span>'],
-      ['Deodorizing Agent','1 per month'],
-      ['Gauze for cleaning','1 per month'] ]},
-    ileostomy:{ title:'Ileostomy', items:[
-      ['Flanges (wafers)','15 per month'],
-      ['Pouches – drainable','45 per month'],
-      ['Adhesive remover','1 per month <span style="font-size:8.5pt">(if using stomahesive flanges)</span><br>2 per month <span style="font-size:8.5pt">(for others)</span>'],
-      ['Deodorizing Agent','1 per month'],
-      ['Gauze for cleaning','1 per month'] ]},
-    urostomy:{ title:'Urostomy', items:[
-      ['Flanges (wafers)','15 per month'],
-      ['Pouches – Urostomy bags','45 per month'],
-      ['Adhesive remover','1 per 3 months'],
-      ['Gauze for cleaning','1 per month'],
-      ['Belt','1 per 3 months'],
-      ['Night drainage bags','4 per month'] ]},
-    paediatric:{ title:'Paediatric', items:[
-      ['One piece paediatric stoma bags (little ones)','60 per month'],
-      ['Gauze for cleaning','1 per month'],
-      ['Protective powder','1 per 3 months'] ]}
-  };
-  function _pharmacyAge(dobISO){
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(dobISO||'')) return null;
-    var b=new Date(dobISO+'T00:00:00Z'), n=new Date();
-    var y=n.getUTCFullYear()-b.getUTCFullYear(), m=n.getUTCMonth()-b.getUTCMonth();
-    if(m<0||(m===0&&n.getUTCDate()<b.getUTCDate())) y--;
-    return y>=0?y:null;
-  }
-  function _pharmacyKey(stomaType, age){
-    if(age!=null && age < 14) return 'paediatric';
-    var t=String(stomaType||'').toLowerCase();
-    if(/urostom|conduit/.test(t)) return 'urostomy';
-    if(/ileostom/.test(t)) return 'ileostomy';
-    if(/colostom/.test(t)) return 'colostomy';
-    return '';
-  }
-  function _pharmacyPage(key, pat, logoSrc){
-    var list=PHARMACY_ITEMS[key]; if(!list) return '';
-    var nameLine=[pat.title,pat.fname,pat.sname].filter(Boolean).join(' ');
-    var dob=(/^\d{4}-\d{2}-\d{2}$/.test(pat.dob||''))?pat.dob.split('-').reverse().join('/'):'';
-    var rows=list.items.map(function(it){
-      return '<tr><td style="padding:4pt 14pt 4pt 0;vertical-align:top;width:52%;">&bull;&nbsp;'+_esc(it[0])+'</td>'
-        +'<td style="padding:4pt 0;vertical-align:top;">'+it[1]+'</td></tr>';
-    }).join('');
-    return '<div style="page-break-before:always;font-family:\'Times New Roman\',serif;font-size:11.5pt;color:#000;line-height:1.3;">'
-      +'<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
-        +'<td style="padding:0;vertical-align:middle">'+(logoSrc?'<img width="205" style="display:block" src="'+logoSrc+'" alt="Sptar Mater Dei Hospital">':'')+'</td>'
-      +'</tr></table>'
-      +'<div style="border-bottom:1.0pt solid #000080;height:5px;margin-bottom:16pt;font-size:1px">&nbsp;</div>'
-      +'<p style="margin:0 0 16pt;"><strong>'+_esc(nameLine||'Patient')+'</strong>&nbsp;&nbsp;ID No: '+_esc(pat.id||'')+(dob?'&nbsp;&nbsp;DOB: '+dob:'')+'</p>'
-      +'<p style="margin:0 0 14pt;"><strong>Items from pharmacy: – <u>'+list.title+'</u></strong></p>'
-      +'<table style="width:100%;border-collapse:collapse;margin-bottom:20pt;"><tbody>'+rows+'</tbody></table>'
-      +'<p style="font-weight:bold;margin:0 0 10pt;">Other items are to be ordered only on the advice of a Stoma Care Nurse.</p>'
-      +'<p style="font-weight:bold;margin:0 0 20pt;">Any increase in quantity of items listed above needs a special request.</p>'
-      +'<p style="margin:0 0 6pt;"><u><strong>Items are obtained from:</strong></u></p>'
-      +'<p style="margin:0 0 4pt;">Support Room at Outpatient’s Pharmacy - Tel: 25456533</p>'
-      +'<p style="margin:0;">Pharmacist in charge: Ms. M’Rose Gatt</p>'
-      +'<div style="font-family:\'Arial Narrow\',Arial,sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;margin-top:46pt;padding-top:6px"><strong>Mater Dei Hospital</strong><br>Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090<br>Tel: +356 25450000&nbsp;&nbsp;www.materdeihospital.org.mt</div>'
-      +'</div>';
-  }
-  function buildPharmacyPagesHTML(logoSrc){
-    var rec=(typeof dischargeRecord!=='undefined')?dischargeRecord:null;
-    if(!rec || !rec.stomas || !rec.stomas.length) return '';
-    var pat=rec.patient||{}, age=_pharmacyAge(pat.dob);
-    return rec.stomas.map(function(s){ var k=_pharmacyKey(s.type,age); return k?_pharmacyPage(k,pat,logoSrc):''; }).filter(Boolean).join('');
-  }
-
   function buildLetterHTML(){
     var logo = document.querySelector('.l-header .logo');
     var logoSrc = logo ? logo.src : '';
@@ -2650,7 +2574,6 @@
         + mdBold(LETTER.footerMinistry) + '</div>'
       + '</div>'
       + '</div>'
-      + buildPharmacyPagesHTML(logoSrc)
       + '</body></html>';
     return html;
   }

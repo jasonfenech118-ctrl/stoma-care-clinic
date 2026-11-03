@@ -207,24 +207,12 @@ test('the letter date shows its ordinal suffix small (superscript) in the built 
   assert.match(html,/1<sup class="ord">st<\/sup> November 2026/);  // suffix wrapped
   assert.match(html,/\.ord\{font-size:0\.62em/);                  // and styled small
 });
-test('the letter appends a pharmacy-items page per stoma, wired to each stoma type',()=>{
+test('the pharmacy-items (Schedule V) page is no longer part of the discharge letter',()=>{
+  // The pharmacy entitlement moved to the Schedule 5 button in the main app.
   const {w}=page(snapshot());
   const html=w.buildLetterHTML();
-  assert.match(html,/Items from pharmacy:/);
-  assert.match(html,/<u>Ileostomy<\/u>/);   // base loop ileostomy
-  assert.match(html,/<u>Colostomy<\/u>/);    // end colostomy
-  assert.match(html,/<u>Urostomy<\/u>/);     // urostomy
-  assert.match(html,/Night drainage bags/);  // urostomy-specific entitlement
-  assert.match(html,/Mater Dei Hospital/);   // hospital footer
-  assert.match(html,/Support Room at Outpatient/);
-});
-test('a patient under 14 gets the paediatric pharmacy list regardless of stoma type',()=>{
-  const s=context().dischargeLetterRecord(patient({date_of_birth:'2020-01-01'}),[],[]);
-  const {w}=page(s);
-  const html=w.buildLetterHTML();
-  assert.match(html,/<u>Paediatric<\/u>/);
-  assert.match(html,/One piece paediatric stoma bags/);
-  assert.doesNotMatch(html,/<u>Ileostomy<\/u>/);  // paediatric list overrides the stoma-type lists
+  assert.doesNotMatch(html,/Items from pharmacy:/);
+  assert.doesNotMatch(html,/Support Room at Outpatient/);
 });
 test('unknown urostomy stents are not treated as absent and the confirmed answer selects the correct plan',()=>{
   const {w,d}=page(snapshot());assert.match(textOf(d,'#planList'),/Urostomy stent status: \[confirm/);
