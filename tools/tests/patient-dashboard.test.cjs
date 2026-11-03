@@ -31,5 +31,27 @@ assert.equal(w.document.querySelector('.pd-patient-details').parentElement.class
 let html=w.patientDashboardHistoryHTML();let tmp=w.document.createElement('div');tmp.innerHTML=html;assert.ok(tmp.querySelector('tbody tr'));assert.equal(tmp.querySelector('script'),null);assert.match(tmp.textContent,/<script>unsafe/);w.arrangePatientDashboard();assert.equal(w.document.querySelectorAll('#pd-history').length,1);
 w.clrState.appts.push({id:'b',appt_date:'2026-12-01',status:'booked'});w.refreshPatientDashboardHistory();assert.equal(w.document.querySelectorAll('.pd-history-table tbody tr').length,4);
 w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.patientDashboardHistoryHTML(),/No stomas or clinical records recorded yet/);
+// 📚 Education: the booklet is wired to the patient's stoma type.
+{assert.equal(w.educationKeyForStoma('End urostomy'),'urostomy');
+ assert.equal(w.educationKeyForStoma('Ileal conduit'),'urostomy');
+ assert.equal(w.educationKeyForStoma('Loop ileostomy'),'ileostomy');
+ assert.equal(w.educationKeyForStoma('End colostomy'),'colostomy');
+ assert.equal(w.educationKeyForStoma('End colostomy',10),'paediatric','under 14 gets the paediatric booklet');
+ assert.equal(w.educationKeyForStoma('End colostomy',14),'colostomy','14 and over is not paediatric');
+ // Adult urostomy patient: the urostomy booklet is offered with Open/Download.
+ if(!w.document.getElementById('mb'))w.document.body.insertAdjacentHTML('beforeend','<div id="mb"></div>');
+ w.TODAY='2026-11-03';w.APP_BUILD='test';w.openMo=()=>{};w.closeModal=()=>{};
+ w.stomasPresentOn=()=>[{type:'End urostomy'}];w.ageYearsBetween=()=>60;
+ w.openPatientEducation();
+ let em=w.document.getElementById('mb').innerHTML;
+ assert.match(em,/Managing your urostomy/);
+ assert.match(em,/managing-your-urostomy\.pdf/);
+ assert.match(em,/Download/);
+ // A colostomy patient has no booklet file yet → shown as being added.
+ w.stomasPresentOn=()=>[{type:'End colostomy'}];w.ageYearsBetween=()=>60;
+ w.openPatientEducation();
+ em=w.document.getElementById('mb').innerHTML;
+ assert.match(em,/Booklet being added/);
+ assert.doesNotMatch(em,/\.pdf/);}
 const source=appSource;for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new Function(m[1]);
 console.log('PASS: details placement, three home actions, retained sections, grouped history, sorting, safe text, refresh, empty history, idempotent layout and script parsing');dom.window.close();
