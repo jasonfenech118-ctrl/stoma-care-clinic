@@ -75,7 +75,7 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.equal(w.s5BagKind({name:'Salts XNL1352',bagType:'closed'}),'closed');
  // 2-piece colostomy, stomahesive flange + closed bag → the actual flange named at 15, closed 60, adhesive 1/month.
  let rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],[]);
- assert.equal(q(rows,'Appliances (Stomahesive Flange 45mm)'),'15 per month');
+ assert.equal(q(rows,'Stomahesive Flange 45mm'),'15 per month');
  assert.equal(q(rows,'Pouches – Closed'),'60 per month');
  assert.equal(q(rows,'Adhesive remover'),'1 per month');
  assert.equal(q(rows,'Deodorizing Agent'),'1 per month');
@@ -85,36 +85,33 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.equal(q(rows,'Adhesive remover'),'2 per month');
  // 1-piece drainable (Salts XND1352) → no flange line; 30/month; adhesive 2/month + extra box.
  rows=w.s5AutoItems('Loop ileostomy',['Salts XND1352'],[]);
- assert.ok(!rows.some(r=>/flanges/i.test(r[0])),'no flange line for one-piece');
- assert.match(q(rows,'Appliances (Salts XND1352)'),/30 per month/);
+ assert.ok(!rows.some(r=>/flange/i.test(r[0])),'no flange line for one-piece');
+ assert.match(q(rows,'Salts XND1352'),/30 per month/);
  assert.equal(q(rows,'Adhesive remover'),'2 per month');
  assert.ok(rows.some(r=>/extra box/i.test(r[0])&&/4 months/.test(r[1])),'1-piece has a separate extra adhesive-box line');
  // 1-piece tagged closed (Salts XNL1352) on a colostomy → 60/month.
- assert.equal(w.s5AutoItems('End colostomy',['Salts XNL1352'],[])
-   .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
+ assert.equal(q(w.s5AutoItems('End colostomy',['Salts XNL1352'],[]),'Salts XNL1352'),'60 per month');
  // 1-piece with no tag: colostomy default closed (60), ileostomy default drainable (30).
- assert.equal(w.s5AutoItems('End colostomy',['Generic OnePiece'],[])
-   .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
- assert.equal(w.s5AutoItems('Loop ileostomy',['Generic OnePiece'],[])
-   .find(r=>r[0].indexOf('Appliances')===0)[1],'30 per month');
+ assert.equal(q(w.s5AutoItems('End colostomy',['Generic OnePiece'],[]),'Generic OnePiece'),'60 per month');
+ assert.equal(q(w.s5AutoItems('Loop ileostomy',['Generic OnePiece'],[]),'Generic OnePiece'),'30 per month');
  // A urostomy-tagged one-piece (Salts NDAL13) is treated as a urostomy.
  rows=w.s5AutoItems('End colostomy',['Salts NDAL13'],[]);
  assert.equal(q(rows,'Night drainage bags'),'4 per month','NDAL13 (purpose urostomy) → night bags');
  // A post-operative one-piece (Lentell 201108-1) is flagged, not priced.
  rows=w.s5AutoItems('End colostomy',['Lentell 201108-1 (70mm trans)'],[]);
- const appl=rows.find(r=>r[0].indexOf('Appliances')===0);
- assert.match(appl[0],/post-operative appliance; enter the discharge appliance/);
+ const appl=rows.find(r=>/post-operative appliance/.test(r[0]));
+ assert.ok(appl,'post-op appliance line present');
  assert.equal(appl[1],'','post-op appliance has no quantity');
  // Urostomy is appliance-driven too: 2-piece shows the urostomy pouch at 30/month
  // (1 per day) plus night drainage bags 4/month, and no deodorizing line.
  rows=w.s5AutoItems('Urostomy',['Stomahesive Flange 45mm','Uro/transparent Bag 45mm'],[]);
- assert.equal(q(rows,'Appliances (Stomahesive Flange 45mm)'),'15 per month');
+ assert.equal(q(rows,'Stomahesive Flange 45mm'),'15 per month');
  assert.equal(q(rows,'Urostomy pouch'),'30 per month');
  assert.equal(q(rows,'Night drainage bags'),'4 per month');
  assert.ok(!rows.some(r=>/deodorizing/i.test(r[0])),'no deodorizing line for urostomy');
  // One-piece urostomy → single appliance line at 30/month, still with night bags.
  rows=w.s5AutoItems('Urostomy',[],[]);
- assert.match(rows.find(r=>r[0].indexOf('Appliances')===0)[1],/30 per month/);
+ assert.equal(q(rows,'One-piece appliance'),'30 per month');
  assert.equal(q(rows,'Night drainage bags'),'4 per month');
  // Accessories: powder omitted; belt 1 per 2 months; hydrocolloid 15 per month.
  rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],['Powder','Stoma Belt','Hydrocolloid 5x20','Protective Wipes']);

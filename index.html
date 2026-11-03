@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-736';
+const APP_BUILD='2026.11.03-737';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19337,14 +19337,14 @@ function s5AutoItems(stomaType,appliances,accessories){
   const pouchQty=(kind==='closed')?'60 per month':'30 per month';  // drainable & urostomy = 30
   const rows=[];
   if(two){
-    // Name the actual flange used, not a generic "flanges / wafers".
-    rows.push(['Appliances ('+(flange?flange.name:'flanges / wafers')+')','15 per month']);
+    // Name the actual flange used.
+    rows.push([(flange?flange.name:'Flange / wafer'),'15 per month']);
     rows.push([uro?'Urostomy pouch':('Pouches – '+(kind==='closed'?'Closed':'Drainable')),pouchQty]);
   }else if(postop){
     // A post-operative one-piece appliance is never the discharge appliance.
-    rows.push(['Appliances — '+bag.name+' is a post-operative appliance; enter the discharge appliance','']);
+    rows.push([bag.name+' (post-operative appliance — enter the discharge appliance)','']);
   }else{
-    rows.push(['Appliances ('+(bag?bag.name:'one-piece system')+')',pouchQty]);
+    rows.push([(bag?bag.name:'One-piece appliance'),pouchQty]);
   }
   // A urostomy always gets night drainage bags.
   if(uro)rows.push(['Night drainage bags','4 per month']);
@@ -19436,11 +19436,13 @@ function s5PrintPageHTML(pg,meta,logoSrc,isFirst){
   const rows=pg.rows.filter(r=>String(r[0]).trim()||String(r[1]).trim()).map(r=>
     '<tr><td style="padding:4pt 14pt 4pt 0;vertical-align:top;width:52%;">&bull;&nbsp;'+htmlSafe(r[0])+'</td>'
     +'<td style="padding:4pt 0;vertical-align:top;">'+htmlSafe(r[1])+'</td></tr>').join('');
-  return '<div style="'+(isFirst?'':'page-break-before:always;')+'font-family:\'Times New Roman\',serif;font-size:11.5pt;color:#000;line-height:1.3;">'
-    +'<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
+  // Each stoma is one full A4 page: logo header at the top, content, and the
+  // hospital footer pinned to the bottom (see the .s5-page / .s5-foot CSS).
+  return '<section class="s5-page">'
+    +'<div class="s5-head"><table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
       +'<td style="padding:0;vertical-align:middle">'+(logoSrc?'<img width="205" style="display:block" src="'+logoSrc+'" alt="Sptar Mater Dei Hospital">':'')+'</td>'
     +'</tr></table>'
-    +'<div style="border-bottom:1.0pt solid #000080;height:5px;margin-bottom:16pt;font-size:1px">&nbsp;</div>'
+    +'<div style="border-bottom:1.0pt solid #000080;height:5px;margin-bottom:16pt;font-size:1px">&nbsp;</div></div>'
     +'<p style="margin:0 0 16pt;"><strong>'+htmlSafe(meta.name||'Patient')+'</strong>&nbsp;&nbsp;ID No: '+htmlSafe(meta.id||'')+(dob?'&nbsp;&nbsp;DOB: '+dob:'')+(meta.phone?'&nbsp;&nbsp;Tel: '+htmlSafe(meta.phone):'')+'</p>'
     +'<p style="margin:0 0 14pt;"><strong>Items from pharmacy: – <u>'+htmlSafe(pg.title)+'</u></strong></p>'
     +'<table style="width:100%;border-collapse:collapse;margin-bottom:20pt;"><tbody>'+rows+'</tbody></table>'
@@ -19449,8 +19451,8 @@ function s5PrintPageHTML(pg,meta,logoSrc,isFirst){
     +'<p style="margin:0 0 6pt;"><u><strong>Items are obtained from:</strong></u></p>'
     +'<p style="margin:0 0 4pt;">Support Room at Outpatient’s Pharmacy - Tel: 25456533</p>'
     +'<p style="margin:0;">Pharmacist in charge: Ms. M’Rose Gatt</p>'
-    +'<div style="font-family:\'Arial Narrow\',Arial,sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;margin-top:46pt;padding-top:6px"><strong>Mater Dei Hospital</strong><br>Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090<br>Tel: +356 25450000&nbsp;&nbsp;www.materdeihospital.org.mt</div>'
-    +'</div>';
+    +'<div class="s5-foot"><strong>Mater Dei Hospital</strong><br>Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090<br>Tel: +356 25450000&nbsp;&nbsp;www.materdeihospital.org.mt</div>'
+    +'</section>';
 }
 function s5Print(){
   if(!s5State)return;
@@ -19459,12 +19461,19 @@ function s5Print(){
   const w=window.open('','_blank');
   if(!w){alert('Please allow pop-ups to open the Schedule V page.');return;}
   const nm=s5State.name||'Patient';
+  // @page margin:0 removes the browser's own date / title / URL / page-number
+  // print headers and footers; the real margins live inside each .s5-page.
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Schedule V — '+htmlSafe(nm)+'</title>'
-    +'<style>@page{size:A4;margin:14mm}body{margin:0;padding:18px;background:#fff}'
-    +'.s5-bar{font-family:Arial,Helvetica,sans-serif;margin:0 0 14px;display:flex;gap:10px;align-items:center}'
+    +'<style>@page{size:A4;margin:0}html,body{margin:0;padding:0;background:#fff}'
+    +'.s5-bar{font-family:Arial,Helvetica,sans-serif;margin:12px 16px;display:flex;gap:10px;align-items:center}'
     +'.s5-bar button{font:600 14px/1 Arial,sans-serif;padding:9px 16px;border:1px solid #0d7377;background:#0d7377;color:#fff;border-radius:8px;cursor:pointer}'
     +'.s5-bar span{font:13px Arial,sans-serif;color:#555}'
-    +'@media print{.s5-bar{display:none}body{padding:0}}</style></head><body>'
+    +'.s5-page{position:relative;box-sizing:border-box;min-height:297mm;padding:16mm 18mm 30mm;'
+      +'font-family:\'Times New Roman\',serif;font-size:11.5pt;color:#000;line-height:1.3;page-break-after:always;}'
+    +'.s5-page:last-child{page-break-after:auto}'
+    +'.s5-foot{position:absolute;left:18mm;right:18mm;bottom:14mm;font-family:\'Arial Narrow\',Arial,sans-serif;'
+      +'font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;padding-top:6px}'
+    +'@media print{.s5-bar{display:none}}</style></head><body>'
     +'<div class="s5-bar"><button onclick="window.print()">🖨 Print</button><span>Schedule V — '+htmlSafe(nm)+'</span></div>'
     +pages.join('')+'</body></html>');
   w.document.close();w.focus();
