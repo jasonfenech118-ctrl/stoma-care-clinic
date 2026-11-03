@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.03-726"></script>
+<script src="assets/manual.js?v=2026.11.03-727"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-726';
+const APP_BUILD='2026.11.03-727';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22603,10 +22603,32 @@ const DISCHARGE_META={
   relocated_overseas:{title:'✈️ Relocated overseas',short:'paused and taken off the local follow-up service',
     conseq:'They leave the local follow-up service and the whole patient is <strong>paused</strong>. Today’s date is recorded as the relocated-overseas date.'}
 };
+/* Discharge is HARD-BLOCKED until the Schedule V permit is Collected. The final
+   "collected" and black "archived" states both count (archived keeps the collected
+   date); every earlier state — Not done, Left in ward, Signed — blocks it. */
+function scheduleFiveCollected(p){
+  const v=String(p&&p.schedule_five_permit||'').trim().toLowerCase();
+  return v==='collected'||v==='archived'||!!(p&&p.schedule_five_collected_date);
+}
+function renderScheduleVBlock(p,nm){
+  const mb=document.getElementById('mb');if(!mb)return;
+  mb.className='mb'+sexModalClass(p);
+  const st=handoverDocState('schedule_five_permit',p&&p.schedule_five_permit);
+  const cur=(st&&st.label)||'Not done';
+  mb.innerHTML=`<h2>Discharge patient</h2>
+    <div class="dis-final" style="border-left:4px solid #b91c1c;background:#fef2f2;">
+      ⛔ <strong>${htmlSafe(nm)}</strong> cannot be discharged yet.<br/><br/>
+      The <strong>Schedule V permit</strong> must be marked <strong>Collected</strong> on the handover before this patient is discharged. It is currently <strong>${htmlSafe(cur)}</strong>.<br/><br/>
+      Collect the permit from pharmacy and set the <strong>S5</strong> column to <strong>Collected</strong> (the black box of a previous admission also counts), then try the discharge again.
+    </div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+}
 async function openDischargeModal(patientId,name){
   const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
   if(error||!p){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
   const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
+  // Gate: no discharge until the Schedule V permit has been collected.
+  if(!scheduleFiveCollected(p)){dischargeCtx=null;renderScheduleVBlock(p,nm);openMo();return;}
   dischargeCtx={patient:p,name:nm,choice:null,step:1};
   renderDischargeModal();
   openMo();
@@ -22677,6 +22699,11 @@ async function confirmDischargeModal(patientId){
   // Snapshot the patient fields and the open episode BEFORE changing anything,
   // so the one-time Undo can put everything back exactly as it was.
   const{data:before}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  // Backstop: re-check the Schedule V permit against the fresh record before committing.
+  if(before&&!scheduleFiveCollected(before)){
+    if(btn){btn.disabled=false;btn.textContent='Discharge patient';}
+    renderScheduleVBlock(before,name);return;
+  }
   const snapFields={};
   ['is_inpatient','followup_status','followup_status_effective_date','discharged_gozo_date','relocated_overseas_date','discharge_date','extra_stomas'].forEach(k=>{if(before&&k in before)snapFields[k]=before[k];});
   let epSnap=null;

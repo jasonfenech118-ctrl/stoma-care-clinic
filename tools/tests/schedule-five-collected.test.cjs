@@ -38,6 +38,19 @@ test('each step stamps its own date once; "Not done" clears all three, archived 
   assert.deepEqual(upd(''),{schedule_five_left_date:null,schedule_five_signed_date:null,schedule_five_collected_date:null});
 });
 
+test('discharge gate: only Collected or the black archived state passes',()=>{
+  const c=ctx();vm.runInContext(fn('scheduleFiveCollected'),c);
+  const ok=v=>c.scheduleFiveCollected({schedule_five_permit:v});
+  assert.equal(ok(''),false);          // Not done — blocked
+  assert.equal(ok('in_ward'),false);   // Left in ward — blocked
+  assert.equal(ok('signed'),false);    // Signed — blocked
+  assert.equal(ok('collected'),true);  // Collected — allowed
+  assert.equal(ok('archived'),true);   // black box of a previous admission — allowed
+  // A recorded collected date alone also passes; a missing record never does.
+  assert.equal(c.scheduleFiveCollected({schedule_five_collected_date:'2026-10-03'}),true);
+  assert.equal(c.scheduleFiveCollected(null),false);
+});
+
 function logCtx(opts={}){
   const inserts=[];
   const c=ctx({

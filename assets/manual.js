@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'3 November 2026 — The pharmacy-items (Schedule V) page moved out of the discharge letter to its own 📋 Schedule 5 button on the patient profile, one page per stoma type on the Mater Dei letterhead. The 📚 Education button opens the “Managing your …” booklet for the stoma type.'};
+const MANUAL_META={updated:'3 November 2026 — Discharge is now blocked until the handover Schedule V permit is Collected (the black box of a previous admission also counts). The pharmacy-items (Schedule V) page also moved from the discharge letter to its own 📋 Schedule 5 button on the patient profile.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -511,6 +511,7 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','↩️','After confirming, an <b>Undo</b> banner appears above the handover. Press it once, straight away, to reverse that discharge and put the patient back exactly as they were.')}
     ${manNote('tip','🩹','A <b>fistula</b> (purple FISTULA) or <b>bagging-advice</b> (blue BAGGING) patient keeps its own <b>Discharge patient</b> button. It asks whether the case resolved (it closes) or stays open, and never joins the Postop Discharges list.')}
     ${manNote('auto','⚙️','Every discharge <b>fills today’s date automatically</b> and closes the inpatient episode. Postop stamps the post-op discharge date; Overseas/Gozo stamp the outcome date and status effective date.')}
+    ${manNote('auto','📋','<b>Discharge is blocked until the Schedule V permit is Collected.</b> If the S5 column is Not done, Left in ward or Signed, the button stops and asks you to collect the permit first. The <b>Collected</b> state (and the black box of a previous admission) lets it through.')}
   `},
   {id:'postop',title:'Postop Discharges & Archived Handover',keywords:'postop discharges worklist booking book follow-up appointment nurse column overtime ot til archived snapshot 4pm print pdf add mistake revert reopen search',html:`
     ${manMap('handover')}
@@ -666,6 +667,7 @@ const MANUAL_SECTIONS=[
         ['🔔','Dated reminders','Rod-removal-due and other dated reminders are raised on their day in the bell.','Everywhere'],
         ['📋','Schedule V waiting in the ward','From the saved Left in ward date, the handover colour changes daily from green through yellow and orange to red on day six, then dark red from day seven. The bell starts on day six. Signed or Collected clears it; missing dates are never guessed.','Bell › Handover'],
         ['📋','Schedule 5 steps logged to encounters','Each Schedule 5 step on the handover (Left in ward, Signed, Collected from pharmacy, each with its date) is written to the patient’s encounters — attached to the open admission when there is one, otherwise as its own note — so the controlled-drugs permit history is kept in the record and shows in the patient profile.','Handover'],
+        ['⛔','Schedule V must be collected before discharge','Discharge patient is blocked until the Schedule V permit is Collected. Not done, Left in ward or Signed all stop the discharge with a message; the Collected state, or the black box of a previous admission, lets it through.','Handover › Discharge patient'],
         ['🩹','Flange change due','Saving a two-piece appliance updates its next-change date on the handover and in the bell together. The bell shows it when due or overdue. Later handover date edits remain authoritative.','Bell › Handover'],
         ['✍️','Discharge letter signature','The letter automatically uses the signed-in nurse’s profile name, including print, Word and email copies.','Discharge letter'],
         ['🩺','Surgical Rotation specialty exclusions','Gozo, Orthopaedic / Orthopedic Surgery, HDU / ITU / Interventional Radiology, ENT / Maxillofacial Surgery, Neurosurgery, Plastic and Burns, Urology Surgery, Cardiothoracic Surgery and Vascular Surgery are excluded from the current list, consultant dropdown and every Excel import automatically.','Surgical Rotation'],
