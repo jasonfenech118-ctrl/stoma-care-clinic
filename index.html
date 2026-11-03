@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.03-728"></script>
+<script src="assets/manual.js?v=2026.11.03-729"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-728';
+const APP_BUILD='2026.11.03-729';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19255,7 +19255,39 @@ async function setPatientDPA(patientId,value){
     alert(error?('Could not save the DPA status: '+(error.message||error)):'The database does not have the DPA column yet. Run sql/add-dpa-status.sql once in Supabase, then try again.');
   }
 }
-function openPatientLiterature(){openPatientResourcePlaceholder('📄 Informative literature','Informative literature (leaflets and information sheets) will be shown here. Add the documents and the layout you want, and they will be listed here to open, download or print.');}
+// Informative literature (patient leaflets), wired to the stoma type and to
+// paediatrics. Each leaflet has an English and a Maltese PDF so they open — and
+// print — separately. Add a leaflet here as each is uploaded.
+const LITERATURE_DOCS={
+  colostomy:[{title:'Dietary advice for a colostomy',en:'assets/literature/colostomy-diet-en.pdf',mt:'assets/literature/colostomy-diet-mt.pdf'}],
+  paediatric:[{title:'A practice guide to stoma in babies and young children',en:'assets/literature/stoma-in-children-en.pdf',mt:'assets/literature/stoma-in-children-mt.pdf'}]
+  // ileostomy / urostomy leaflets to be added as they are uploaded.
+};
+function patientLiteratureDocs(p){
+  let types=[];try{types=stomasPresentOn(p,TODAY).map(s=>s.type||s.typeLabel||s.label||'').filter(Boolean);}catch(e){}
+  const age=ageYearsBetween(p.date_of_birth,TODAY);
+  // Stoma-type leaflets (no paediatric override) plus the paediatric guide for a
+  // child, so e.g. a child with a colostomy gets both the diet sheet and the guide.
+  const keys=[...new Set(types.map(t=>educationKeyForStoma(t,null)).filter(Boolean))];
+  if(age!=null&&age<14)keys.push('paediatric');
+  const docs=[],seen=new Set();
+  keys.forEach(k=>(LITERATURE_DOCS[k]||[]).forEach(d=>{if(!seen.has(d.en)){seen.add(d.en);docs.push(d);}}));
+  return docs;
+}
+function openPatientLiterature(){
+  const p=clrState.patient;if(!p){alert('Open a patient first.');return;}
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb';
+  const docs=patientLiteratureDocs(p);
+  const btn=(href,label)=>`<a class="psm-btn" style="text-decoration:none;" href="${htmlSafe(href+'?v='+APP_BUILD)}" target="_blank" rel="noopener">${label}</a>`;
+  const item=(d)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--border);border-radius:9px;padding:12px 14px;margin:8px 0;">`
+    +`<div><strong>${htmlSafe(d.title)}</strong></div>`
+    +`<div style="display:flex;gap:8px;flex-wrap:wrap;">${btn(d.en,'🇬🇧 English')}${btn(d.mt,'🇲🇹 Malti')}</div></div>`;
+  mb.innerHTML=`<h2>📄 Informative literature</h2>
+    <p class="report-note" style="margin:6px 0 12px;line-height:1.6;">Leaflets for this patient's stoma — open the English or Maltese version to read or print.</p>
+    ${docs.map(item).join('')||'<div class="report-note">No leaflet is available for this patient’s stoma type yet.</div>'}
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>`;
+  openMo();
+}
 // ── Schedule V (Schedule 5) pharmacy-items entitlement ─────────────────────
 // Colostomy & ileostomy pages are built from the stoma's CURRENT appliance and
 // accessories (system, bag type, flange type), with the quantities below.
