@@ -27,9 +27,9 @@ test('the signature line shows who entered it, and a later edit by someone else'
   h=c.patientSignatureHTML({created_by:'Jason Fenech',created_at:'2026-10-08',updated_by:'Lorraine Stivala',updated_at:'2026-10-09'});
   assert.match(h,/Entered by <strong>Jason Fenech<\/strong> · 2026-10-08/);
   assert.match(h,/last edited by <strong>Lorraine Stivala<\/strong> · 2026-10-09/);
-  // Old record with nothing recorded says so, never a blank line.
+  // Old record with no author/editor on file renders nothing (no "Author not recorded" note).
   h=c.patientSignatureHTML({});
-  assert.match(h,/Author not recorded/);
+  assert.equal(h,'');
 });
 
 // A minimal harness around saveNewPatient's save tail: who entered is stamped.
