@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.03-729"></script>
+<script src="assets/manual.js?v=2026.11.03-730"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-729';
+const APP_BUILD='2026.11.03-730';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19289,18 +19289,13 @@ function openPatientLiterature(){
   openMo();
 }
 // ── Schedule V (Schedule 5) pharmacy-items entitlement ─────────────────────
-// Colostomy & ileostomy pages are built from the stoma's CURRENT appliance and
-// accessories (system, bag type, flange type), with the quantities below.
-// Urostomy and paediatric keep their fixed lists. Every page is editable before
-// printing, and extra items can be added. Opens from the profile's 📋 Schedule 5.
+// Colostomy, ileostomy & urostomy pages are built from the stoma's CURRENT
+// appliance and accessories (system, bag type, flange type), with the quantities
+// below; a urostomy also gets night drainage bags. Paediatric keeps its fixed
+// list. Every page is editable before printing, and extra items can be added.
+// Nothing is saved — the page is rebuilt from the record each time. Opens from
+// the patient profile's 📋 Schedule 5 button.
 const SCHEDULE5_FIXED={
-  urostomy:{title:'Urostomy',items:[
-    ['Flanges (wafers)','15 per month'],
-    ['Pouches – Urostomy bags','45 per month'],
-    ['Adhesive remover','1 per 3 months'],
-    ['Gauze for cleaning','1 per month'],
-    ['Belt','1 per 3 months'],
-    ['Night drainage bags','4 per month']]},
   paediatric:{title:'Paediatric',items:[
     ['One piece paediatric stoma bags (little ones)','60 per month'],
     ['Gauze for cleaning','1 per month'],
@@ -19316,31 +19311,37 @@ function s5BagKind(item){
   if(/drainable/.test(n))return 'drainable';
   return '';
 }
-// Build the item rows for an appliance-driven (colostomy / ileostomy) page from
-// the stoma's selected appliances + accessories.
+// Build the item rows for an appliance-driven (colostomy / ileostomy / urostomy)
+// page from the stoma's selected appliances + accessories.
 function s5AutoItems(stomaType,appliances,accessories){
   const cat=(appliances||[]).map(n=>APPLIANCE_CATALOGUE.find(a=>a.name===n)).filter(Boolean);
   const two=cat.some(a=>a.system==='two');
-  const one=!two&&cat.some(a=>a.system==='one');
   const bag=cat.find(a=>a.part==='bag')||cat.find(a=>a.system==='one');
   const flange=cat.find(a=>a.part==='flange');
-  // One-piece bowel products carry no drainable/closed marker, so fall back to
-  // the usual per-stoma default (colostomy closed, ileostomy drainable).
-  let kind=s5BagKind(bag);
-  if(!kind||kind==='urostomy')kind=(daStomaGroup(stomaType)==='Ileostomy')?'drainable':'closed';
-  const pouchQty=(kind==='closed')?'60 per month':'30 per month';
+  const group=daStomaGroup(stomaType);
+  const uro=group==='Urostomy'||s5BagKind(bag)==='urostomy';
+  // Bag type. One-piece bowel products carry no drainable/closed marker, so fall
+  // back to the per-stoma default (colostomy closed, ileostomy drainable). A
+  // urostomy pouch counts as one per day, the same as a drainable bag.
+  let kind;
+  if(uro)kind='urostomy';
+  else{kind=s5BagKind(bag);if(!kind||kind==='urostomy')kind=(group==='Ileostomy')?'drainable':'closed';}
+  const pouchQty=(kind==='closed')?'60 per month':'30 per month';  // drainable & urostomy = 30
   const rows=[];
   if(two){
     rows.push(['Appliances (flanges / wafers)','15 per month']);
-    rows.push(['Pouches – '+(kind==='closed'?'Closed':'Drainable'),pouchQty]);
+    rows.push([uro?'Urostomy pouch':('Pouches – '+(kind==='closed'?'Closed':'Drainable')),pouchQty]);
   }else{
     rows.push(['Appliances ('+(bag?bag.name:'one-piece system')+')',pouchQty]);
   }
+  // A urostomy always gets night drainage bags.
+  if(uro)rows.push(['Night drainage bags','4 per month']);
   // Adhesive remover: one-piece (daily change) needs more; two-piece depends on
   // the flange — a stomahesive flange needs less than microporous / convex ones.
   if(!two)rows.push(['Adhesive remover','2 per month, plus 1 extra box every 4 months']);
   else rows.push(['Adhesive remover',(flange&&/stomahesive/i.test(flange.name))?'1 per month':'2 per month']);
-  rows.push(['Deodorizing Agent','1 per month']);
+  // Deodorizing agent is for bowel stomas, not a urostomy.
+  if(!uro)rows.push(['Deodorizing Agent','1 per month']);
   rows.push(['Gauze for cleaning','1 per month']);
   // Accessories: powder is never listed (one is supplied); belt and hydrocolloid
   // have set quantities; anything else is listed with a blank quantity to fill.
@@ -19368,11 +19369,11 @@ function schedule5PagesForPatient(p){
     const type=s.type||s.typeLabel||s.label||'';
     const key=educationKeyForStoma(type,age);
     if(!key||seen.has(key))return;seen.add(key);
-    if(key==='urostomy'||key==='paediatric'){
-      pages.push({title:SCHEDULE5_FIXED[key].title,rows:SCHEDULE5_FIXED[key].items.map(it=>[it[0],it[1]])});
+    if(key==='paediatric'){
+      pages.push({title:SCHEDULE5_FIXED.paediatric.title,rows:SCHEDULE5_FIXED.paediatric.items.map(it=>[it[0],it[1]])});
     }else{
       const last=(history.get(s.uid)||[]).find(e=>!e.date||String(e.date).slice(0,10)<=TODAY);
-      pages.push({title:key==='colostomy'?'Colostomy':'Ileostomy',
+      pages.push({title:key==='colostomy'?'Colostomy':key==='ileostomy'?'Ileostomy':'Urostomy',
         rows:s5AutoItems(type,last?last.appliances:[],last?last.accessories:[])});
     }
   });

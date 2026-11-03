@@ -86,6 +86,17 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  // 1-piece with no detectable bag: colostomy default is closed (60), ileostomy drainable (30).
  assert.equal(w.s5AutoItems('End colostomy',['Salts XND1352'],[])
    .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
+ // Urostomy is appliance-driven too: 2-piece shows the urostomy pouch at 30/month
+ // (1 per day) plus night drainage bags 4/month, and no deodorizing line.
+ rows=w.s5AutoItems('Urostomy',['Stomahesive Flange 45mm','Uro/transparent Bag 45mm'],[]);
+ assert.equal(q(rows,'Appliances (flanges'),'15 per month');
+ assert.equal(q(rows,'Urostomy pouch'),'30 per month');
+ assert.equal(q(rows,'Night drainage bags'),'4 per month');
+ assert.ok(!rows.some(r=>/deodorizing/i.test(r[0])),'no deodorizing line for urostomy');
+ // One-piece urostomy → single appliance line at 30/month, still with night bags.
+ rows=w.s5AutoItems('Urostomy',[],[]);
+ assert.match(rows.find(r=>r[0].indexOf('Appliances')===0)[1],/30 per month/);
+ assert.equal(q(rows,'Night drainage bags'),'4 per month');
  // Accessories: powder omitted; belt 1 per 2 months; hydrocolloid 15 per month.
  rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],['Powder','Stoma Belt','Hydrocolloid 5x20']);
  assert.ok(!rows.some(r=>/powder/i.test(r[0])),'powder left out');
