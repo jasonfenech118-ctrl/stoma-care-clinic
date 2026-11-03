@@ -53,37 +53,48 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  em=w.document.getElementById('mb').innerHTML;
  assert.match(em,/Booklet being added/);
  assert.doesNotMatch(em,/\.pdf/);}
-// 📋 Schedule 5 (Schedule V pharmacy entitlement): one page per recognised
-// present stoma type, wired to the type, on the Mater Dei letterhead.
-{w.TODAY='2026-11-03';
- const pat={sex:'M',first_name:'Michael',surname:'John',id_card:'29544A',date_of_birth:'1964-05-08'};
- // Urostomy patient → the urostomy entitlement page with its specific items.
- w.stomasPresentOn=()=>[{type:'Urostomy'}];w.ageYearsBetween=()=>62;
- let pages=w.schedule5PagesFor(pat,'logo.png');
- assert.equal(pages.length,1,'one page for one stoma type');
- assert.match(pages[0],/Items from pharmacy: – <u>Urostomy<\/u>/);
- assert.match(pages[0],/Night drainage bags/);
- assert.match(pages[0],/ID No: 29544A/);
- assert.match(pages[0],/DOB: 08\/05\/1964/);
- assert.match(pages[0],/Support Room at Outpatient/);
- assert.doesNotMatch(pages[0],/page-break-before/,'first page has no leading page break');
- // Two stomas of the same type collapse to a single entitlement page.
- w.stomasPresentOn=()=>[{type:'End colostomy'},{type:'Loop colostomy'}];
- pages=w.schedule5PagesFor(pat,'logo.png');
- assert.equal(pages.length,1,'duplicate types de-duplicated');
- assert.match(pages[0],/<u>Colostomy<\/u>/);
- // A double stoma of different types yields one page each, the second breaking.
- w.stomasPresentOn=()=>[{type:'End colostomy'},{type:'Urostomy'}];
- pages=w.schedule5PagesFor(pat,'logo.png');
- assert.equal(pages.length,2,'two distinct types → two pages');
- assert.match(pages[1],/page-break-before:always/,'second page starts a new sheet');
- // Under 14 → the paediatric list regardless of stoma type.
- w.ageYearsBetween=()=>6;w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
- pages=w.schedule5PagesFor(pat,'logo.png');
- assert.match(pages[0],/<u>Paediatric<\/u>/);
- assert.match(pages[0],/One piece paediatric stoma bags/);
- // No recognised stoma → no page (the button shows a message instead).
- w.ageYearsBetween=()=>62;w.stomasPresentOn=()=>[{type:'Fistula'}];
- assert.equal(w.schedule5PagesFor(pat,'logo.png').length,0);}
+// 📋 Schedule 5 (Schedule V): colostomy/ileostomy pages are built from the
+// stoma's selected appliance; quantities follow the 1-piece/2-piece rules.
+{w.APPLIANCE_CATALOGUE=[
+   {name:'Stomahesive Flange 45mm',system:'two',part:'flange'},
+   {name:'Microporous 45mm',system:'two',part:'flange'},
+   {name:'Closed Bag 45mm',system:'two',part:'bag'},
+   {name:'Drainable Bag 45mm',system:'two',part:'bag'},
+   {name:'Uro/transparent Bag 45mm',system:'two',part:'bag'},
+   {name:'Salts XND1352',system:'one',group:'Salts'}];
+ w.daStomaGroup=t=>/colo/i.test(t)?'Colostomy':/ileo/i.test(t)?'Ileostomy':/uro/i.test(t)?'Urostomy':'Other';
+ const q=(rows,label)=>{const r=rows.find(x=>x[0].indexOf(label)===0);return r&&r[1];};
+ // Bag-kind detection from catalogue names.
+ assert.equal(w.s5BagKind({name:'Closed Bag 45mm'}),'closed');
+ assert.equal(w.s5BagKind({name:'Drainable Bag 45mm'}),'drainable');
+ assert.equal(w.s5BagKind({name:'Uro/transparent Bag 45mm'}),'urostomy');
+ // 2-piece colostomy, stomahesive flange + closed bag → flanges 15, closed 60, adhesive 1/month.
+ let rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],[]);
+ assert.equal(q(rows,'Appliances (flanges'),'15 per month');
+ assert.equal(q(rows,'Pouches – Closed'),'60 per month');
+ assert.equal(q(rows,'Adhesive remover'),'1 per month');
+ assert.equal(q(rows,'Deodorizing Agent'),'1 per month');
+ assert.equal(q(rows,'Gauze for cleaning'),'1 per month');
+ // 2-piece, microporous flange → adhesive 2/month.
+ rows=w.s5AutoItems('End colostomy',['Microporous 45mm','Closed Bag 45mm'],[]);
+ assert.equal(q(rows,'Adhesive remover'),'2 per month');
+ // 1-piece ileostomy → no flange line; one appliance line at 30/month; adhesive 2/month + extra box.
+ rows=w.s5AutoItems('Loop ileostomy',['Salts XND1352'],[]);
+ assert.ok(!rows.some(r=>/flanges/i.test(r[0])),'no flange line for one-piece');
+ assert.match(q(rows,'Appliances (Salts XND1352)'),/30 per month/);
+ assert.match(q(rows,'Adhesive remover'),/2 per month, plus 1 extra box/);
+ // 1-piece with no detectable bag: colostomy default is closed (60), ileostomy drainable (30).
+ assert.equal(w.s5AutoItems('End colostomy',['Salts XND1352'],[])
+   .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
+ // Accessories: powder omitted; belt 1 per 2 months; hydrocolloid 15 per month.
+ rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],['Powder','Stoma Belt','Hydrocolloid 5x20']);
+ assert.ok(!rows.some(r=>/powder/i.test(r[0])),'powder left out');
+ assert.equal(q(rows,'Stoma belt'),'1 per 2 months');
+ assert.equal(q(rows,'Hydrocolloid 5x20'),'15 per month');
+ // The printed page carries the phone number and the renamed header.
+ const page=w.s5PrintPageHTML({title:'Colostomy',rows},{name:'Mr Michael John',id:'29544A',dob:'1964-05-08',phone:'79000000'},'logo.png',true);
+ assert.match(page,/Tel: 79000000/);
+ assert.match(page,/Items from pharmacy: – <u>Colostomy<\/u>/);
+ assert.doesNotMatch(page,/page-break-before/,'first page has no leading break');}
 const source=appSource;for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new Function(m[1]);
 console.log('PASS: details placement, three home actions, retained sections, grouped history, sorting, safe text, refresh, empty history, idempotent layout and script parsing');dom.window.close();
