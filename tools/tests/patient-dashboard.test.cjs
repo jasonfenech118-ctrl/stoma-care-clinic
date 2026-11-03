@@ -116,10 +116,14 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.match(rows.find(r=>r[0].indexOf('Appliances')===0)[1],/30 per month/);
  assert.equal(q(rows,'Night drainage bags'),'4 per month');
  // Accessories: powder omitted; belt 1 per 2 months; hydrocolloid 15 per month.
- rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],['Powder','Stoma Belt','Hydrocolloid 5x20']);
+ rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],['Powder','Stoma Belt','Hydrocolloid 5x20','Protective Wipes']);
  assert.ok(!rows.some(r=>/powder/i.test(r[0])),'powder left out');
  assert.equal(q(rows,'Stoma belt'),'1 per 2 months');
  assert.equal(q(rows,'Hydrocolloid 5x20'),'15 per month');
+ // Protective wipes: 2-piece 15/month, 1-piece 30/month (one a day).
+ assert.equal(q(rows,'Protective wipes'),'15 per month');  // rows above are a 2-piece system
+ const pw1=w.s5AutoItems('End colostomy',['Salts XNL1352'],['Protective Wipes']);
+ assert.equal(pw1.find(r=>r[0].indexOf('Protective wipes')===0)[1],'30 per month');
  // The printed page carries the phone number and the renamed header.
  const page=w.s5PrintPageHTML({title:'Colostomy',rows},{name:'Mr Michael John',id:'29544A',dob:'1964-05-08',phone:'79000000'},'logo.png',true);
  assert.match(page,/Tel: 79000000/);
