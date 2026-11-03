@@ -133,12 +133,12 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.equal(docs.length,2);
  assert.ok(docs.some(d=>/managing-colostomy-en\.pdf/.test(d.en)&&/managing-colostomy-mt\.pdf/.test(d.mt)));
  assert.ok(docs.some(d=>/colostomy-diet-en\.pdf/.test(d.en)));
- // Ileostomy → managing booklet, English only (no Maltese yet).
+ // Ileostomy → managing booklet, English + Maltese.
  w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
  docs=w.patientLiteratureDocs({date_of_birth:'1966-01-01'});
  assert.equal(docs.length,1);
  assert.match(docs[0].en,/managing-ileostomy-en\.pdf/);
- assert.equal(docs[0].mt,undefined,'no Maltese ileostomy yet');
+ assert.match(docs[0].mt,/managing-ileostomy-mt\.pdf/);
  // Urostomy → managing booklet EN+MT.
  w.stomasPresentOn=()=>[{type:'Urostomy'}];
  docs=w.patientLiteratureDocs({date_of_birth:'1966-01-01'});
@@ -147,15 +147,10 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  w.ageYearsBetween=()=>5;w.stomasPresentOn=()=>[{type:'End colostomy'}];
  docs=w.patientLiteratureDocs({date_of_birth:'2021-01-01'});
  assert.ok(docs.some(d=>/stoma-in-children-en\.pdf/.test(d.en)),'paediatric guide included for a child');
- // The modal shows an English button; a Maltese button only when a Maltese PDF exists.
- w.ageYearsBetween=()=>60;w.stomasPresentOn=()=>[{type:'Loop ileostomy'}];
+ // The modal shows both English and Maltese buttons when both PDFs exist.
+ w.ageYearsBetween=()=>60;w.stomasPresentOn=()=>[{type:'End colostomy'}];
  w.openPatientLiterature();
- let lm=w.document.getElementById('mb').innerHTML;
- assert.match(lm,/English/);assert.match(lm,/managing-ileostomy-en\.pdf/);
- assert.doesNotMatch(lm,/Malti/,'no Maltese button when there is no Maltese PDF');
- w.stomasPresentOn=()=>[{type:'End colostomy'}];
- w.openPatientLiterature();
- lm=w.document.getElementById('mb').innerHTML;
- assert.match(lm,/Malti/);assert.match(lm,/managing-colostomy-mt\.pdf/);}
+ const lm=w.document.getElementById('mb').innerHTML;
+ assert.match(lm,/English/);assert.match(lm,/Malti/);assert.match(lm,/managing-colostomy-mt\.pdf/);}
 const source=appSource;for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new Function(m[1]);
 console.log('PASS: details placement, three home actions, retained sections, grouped history, sorting, safe text, refresh, empty history, idempotent layout and script parsing');dom.window.close();
