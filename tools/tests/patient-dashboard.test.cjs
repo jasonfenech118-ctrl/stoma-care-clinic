@@ -61,13 +61,18 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
    {name:'Closed Bag 45mm',system:'two',part:'bag'},
    {name:'Drainable Bag 45mm',system:'two',part:'bag'},
    {name:'Uro/transparent Bag 45mm',system:'two',part:'bag'},
-   {name:'Salts XND1352',system:'one',group:'Salts'}];
+   {name:'Salts XND1352',system:'one',group:'Salts',bagType:'drainable'},
+   {name:'Salts XNL1352',system:'one',group:'Salts',bagType:'closed'},
+   {name:'Salts NDAL13',system:'one',group:'Salts',bagType:'drainable',purpose:'urostomy'},
+   {name:'Lentell 201108-1 (70mm trans)',system:'one',group:'Lentell',postop:true},
+   {name:'Generic OnePiece',system:'one',group:'Other'}];
  w.daStomaGroup=t=>/colo/i.test(t)?'Colostomy':/ileo/i.test(t)?'Ileostomy':/uro/i.test(t)?'Urostomy':'Other';
  const q=(rows,label)=>{const r=rows.find(x=>x[0].indexOf(label)===0);return r&&r[1];};
- // Bag-kind detection from catalogue names.
+ // Bag-kind detection: catalogue tag wins, then name.
  assert.equal(w.s5BagKind({name:'Closed Bag 45mm'}),'closed');
  assert.equal(w.s5BagKind({name:'Drainable Bag 45mm'}),'drainable');
  assert.equal(w.s5BagKind({name:'Uro/transparent Bag 45mm'}),'urostomy');
+ assert.equal(w.s5BagKind({name:'Salts XNL1352',bagType:'closed'}),'closed');
  // 2-piece colostomy, stomahesive flange + closed bag → flanges 15, closed 60, adhesive 1/month.
  let rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],[]);
  assert.equal(q(rows,'Appliances (flanges'),'15 per month');
@@ -78,14 +83,27 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  // 2-piece, microporous flange → adhesive 2/month.
  rows=w.s5AutoItems('End colostomy',['Microporous 45mm','Closed Bag 45mm'],[]);
  assert.equal(q(rows,'Adhesive remover'),'2 per month');
- // 1-piece ileostomy → no flange line; one appliance line at 30/month; adhesive 2/month + extra box.
+ // 1-piece drainable (Salts XND1352) → no flange line; 30/month; adhesive 2/month + extra box.
  rows=w.s5AutoItems('Loop ileostomy',['Salts XND1352'],[]);
  assert.ok(!rows.some(r=>/flanges/i.test(r[0])),'no flange line for one-piece');
  assert.match(q(rows,'Appliances (Salts XND1352)'),/30 per month/);
  assert.match(q(rows,'Adhesive remover'),/2 per month, plus 1 extra box/);
- // 1-piece with no detectable bag: colostomy default is closed (60), ileostomy drainable (30).
- assert.equal(w.s5AutoItems('End colostomy',['Salts XND1352'],[])
+ // 1-piece tagged closed (Salts XNL1352) on a colostomy → 60/month.
+ assert.equal(w.s5AutoItems('End colostomy',['Salts XNL1352'],[])
    .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
+ // 1-piece with no tag: colostomy default closed (60), ileostomy default drainable (30).
+ assert.equal(w.s5AutoItems('End colostomy',['Generic OnePiece'],[])
+   .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
+ assert.equal(w.s5AutoItems('Loop ileostomy',['Generic OnePiece'],[])
+   .find(r=>r[0].indexOf('Appliances')===0)[1],'30 per month');
+ // A urostomy-tagged one-piece (Salts NDAL13) is treated as a urostomy.
+ rows=w.s5AutoItems('End colostomy',['Salts NDAL13'],[]);
+ assert.equal(q(rows,'Night drainage bags'),'4 per month','NDAL13 (purpose urostomy) → night bags');
+ // A post-operative one-piece (Lentell 201108-1) is flagged, not priced.
+ rows=w.s5AutoItems('End colostomy',['Lentell 201108-1 (70mm trans)'],[]);
+ const appl=rows.find(r=>r[0].indexOf('Appliances')===0);
+ assert.match(appl[0],/post-operative appliance; enter the discharge appliance/);
+ assert.equal(appl[1],'','post-op appliance has no quantity');
  // Urostomy is appliance-driven too: 2-piece shows the urostomy pouch at 30/month
  // (1 per day) plus night drainage bags 4/month, and no deodorizing line.
  rows=w.s5AutoItems('Urostomy',['Stomahesive Flange 45mm','Uro/transparent Bag 45mm'],[]);

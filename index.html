@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.03-730"></script>
+<script src="assets/manual.js?v=2026.11.03-731"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.03-730';
+const APP_BUILD='2026.11.03-731';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6387,11 +6387,11 @@ async function createMissingDntuRowsFromEditForm(patientId,targetCount,sourceApp
    ---------------------------------------------------------------------------- */
 const APPLIANCE_CATALOGUE=[
   /* One-piece systems. Grouped by supplier so a code is quick to find. */
-  {name:'Salts XND 1338',system:'one',group:'Salts'},
-  {name:'Salts XND1352',system:'one',group:'Salts'},
-  {name:'Salts XNL1352',system:'one',group:'Salts'},
-  {name:'Salts NDAL13',system:'one',group:'Salts'},
-  {name:'Salts NAL1390',system:'one',group:'Salts'},
+  {name:'Salts XND 1338',system:'one',group:'Salts',bagType:'drainable'},
+  {name:'Salts XND1352',system:'one',group:'Salts',bagType:'drainable'},
+  {name:'Salts XNL1352',system:'one',group:'Salts',bagType:'closed'},
+  {name:'Salts NDAL13',system:'one',group:'Salts',bagType:'drainable',purpose:'urostomy'},
+  {name:'Salts NAL1390',system:'one',group:'Salts',bagType:'closed'},
   {name:'Hollister 24730',system:'two',part:'bag',coupling:45,connector:'hollister-conform2',purpose:'urostomy'},
   {name:'Hollister 25300',system:'two',part:'flange',coupling:55,connector:'hollister-conform2'},
   {name:'Hollister 25760',system:'two',part:'bag',coupling:55,connector:'hollister-conform2',purpose:'bowel'},
@@ -6409,11 +6409,11 @@ const APPLIANCE_CATALOGUE=[
   {name:'Welland XMHNDS513',system:'one',group:'Welland'},
   {name:'Welland XNHNDL913',system:'one',group:'Welland'},
   {name:'Welland XPOP513',system:'one',group:'Welland'},
-  {name:'Lentell 201102M (70mm)',system:'one',group:'Lentell'},
-  {name:'Lentell 201108-1 (70mm trans)',system:'one',group:'Lentell'},
-  {name:'Lentell 201142 (90mm)',system:'one',group:'Lentell'},
-  {name:'Lentell 201148 (80mm)',system:'one',group:'Lentell'},
-  {name:'Lentell 201156-1 (100mm)',system:'one',group:'Lentell'},
+  {name:'Lentell 201102M (70mm)',system:'one',group:'Lentell',bagType:'closed'},
+  {name:'Lentell 201108-1 (70mm trans)',system:'one',group:'Lentell',postop:true},
+  {name:'Lentell 201142 (90mm)',system:'one',group:'Lentell',bagType:'closed'},
+  {name:'Lentell 201148 (80mm)',system:'one',group:'Lentell',bagType:'closed'},
+  {name:'Lentell 201156-1 (100mm)',system:'one',group:'Lentell',bagType:'drainable'},
   {name:'Lentell 2011446M',system:'one',group:'Lentell'},
   {name:'Little Ones',system:'one',group:'Other'},
   {name:'Stomadress',system:'one',group:'Other'},
@@ -19297,13 +19297,14 @@ function openPatientLiterature(){
 // the patient profile's 📋 Schedule 5 button.
 const SCHEDULE5_FIXED={
   paediatric:{title:'Paediatric',items:[
-    ['One piece paediatric stoma bags (little ones)','60 per month'],
+    ['One piece paediatric stoma bags (little ones)','30 per month'],
     ['Gauze for cleaning','1 per month'],
     ['Protective powder','1 per 3 months']]}
 };
 // Bag type from a catalogue item: closed / drainable / urostomy (or '').
 function s5BagKind(item){
   if(!item)return '';
+  if(item.bagType)return item.bagType;                 // tagged in the catalogue
   if(item.purpose==='urostomy')return 'urostomy';
   const n=String(item.name||'').toLowerCase();
   if(/uro|transparent/.test(n))return 'urostomy';
@@ -19319,18 +19320,22 @@ function s5AutoItems(stomaType,appliances,accessories){
   const bag=cat.find(a=>a.part==='bag')||cat.find(a=>a.system==='one');
   const flange=cat.find(a=>a.part==='flange');
   const group=daStomaGroup(stomaType);
-  const uro=group==='Urostomy'||s5BagKind(bag)==='urostomy';
-  // Bag type. One-piece bowel products carry no drainable/closed marker, so fall
-  // back to the per-stoma default (colostomy closed, ileostomy drainable). A
-  // urostomy pouch counts as one per day, the same as a drainable bag.
+  const postop=!!(bag&&bag.postop);   // e.g. Lentell 201108-1: never discharged on it
+  const uro=group==='Urostomy'||(bag&&bag.purpose==='urostomy')||s5BagKind(bag)==='urostomy';
+  // Bag type comes from the catalogue tag; a product with no tag falls back to
+  // the per-stoma default (colostomy closed, ileostomy drainable). A urostomy
+  // pouch counts as one per day, the same as a drainable bag.
   let kind;
   if(uro)kind='urostomy';
-  else{kind=s5BagKind(bag);if(!kind||kind==='urostomy')kind=(group==='Ileostomy')?'drainable':'closed';}
+  else{kind=postop?'':s5BagKind(bag);if(!kind||kind==='urostomy')kind=(group==='Ileostomy')?'drainable':'closed';}
   const pouchQty=(kind==='closed')?'60 per month':'30 per month';  // drainable & urostomy = 30
   const rows=[];
   if(two){
     rows.push(['Appliances (flanges / wafers)','15 per month']);
     rows.push([uro?'Urostomy pouch':('Pouches – '+(kind==='closed'?'Closed':'Drainable')),pouchQty]);
+  }else if(postop){
+    // A post-operative one-piece appliance is never the discharge appliance.
+    rows.push(['Appliances — '+bag.name+' is a post-operative appliance; enter the discharge appliance','']);
   }else{
     rows.push(['Appliances ('+(bag?bag.name:'one-piece system')+')',pouchQty]);
   }
