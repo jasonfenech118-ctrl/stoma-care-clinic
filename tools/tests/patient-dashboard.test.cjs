@@ -73,9 +73,9 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  assert.equal(w.s5BagKind({name:'Drainable Bag 45mm'}),'drainable');
  assert.equal(w.s5BagKind({name:'Uro/transparent Bag 45mm'}),'urostomy');
  assert.equal(w.s5BagKind({name:'Salts XNL1352',bagType:'closed'}),'closed');
- // 2-piece colostomy, stomahesive flange + closed bag → flanges 15, closed 60, adhesive 1/month.
+ // 2-piece colostomy, stomahesive flange + closed bag → the actual flange named at 15, closed 60, adhesive 1/month.
  let rows=w.s5AutoItems('End colostomy',['Stomahesive Flange 45mm','Closed Bag 45mm'],[]);
- assert.equal(q(rows,'Appliances (flanges'),'15 per month');
+ assert.equal(q(rows,'Appliances (Stomahesive Flange 45mm)'),'15 per month');
  assert.equal(q(rows,'Pouches – Closed'),'60 per month');
  assert.equal(q(rows,'Adhesive remover'),'1 per month');
  assert.equal(q(rows,'Deodorizing Agent'),'1 per month');
@@ -87,7 +87,8 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  rows=w.s5AutoItems('Loop ileostomy',['Salts XND1352'],[]);
  assert.ok(!rows.some(r=>/flanges/i.test(r[0])),'no flange line for one-piece');
  assert.match(q(rows,'Appliances (Salts XND1352)'),/30 per month/);
- assert.match(q(rows,'Adhesive remover'),/2 per month, plus 1 extra box/);
+ assert.equal(q(rows,'Adhesive remover'),'2 per month');
+ assert.ok(rows.some(r=>/extra box/i.test(r[0])&&/4 months/.test(r[1])),'1-piece has a separate extra adhesive-box line');
  // 1-piece tagged closed (Salts XNL1352) on a colostomy → 60/month.
  assert.equal(w.s5AutoItems('End colostomy',['Salts XNL1352'],[])
    .find(r=>r[0].indexOf('Appliances')===0)[1],'60 per month');
@@ -107,7 +108,7 @@ w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.p
  // Urostomy is appliance-driven too: 2-piece shows the urostomy pouch at 30/month
  // (1 per day) plus night drainage bags 4/month, and no deodorizing line.
  rows=w.s5AutoItems('Urostomy',['Stomahesive Flange 45mm','Uro/transparent Bag 45mm'],[]);
- assert.equal(q(rows,'Appliances (flanges'),'15 per month');
+ assert.equal(q(rows,'Appliances (Stomahesive Flange 45mm)'),'15 per month');
  assert.equal(q(rows,'Urostomy pouch'),'30 per month');
  assert.equal(q(rows,'Night drainage bags'),'4 per month');
  assert.ok(!rows.some(r=>/deodorizing/i.test(r[0])),'no deodorizing line for urostomy');
