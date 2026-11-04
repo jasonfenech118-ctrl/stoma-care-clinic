@@ -30,6 +30,20 @@ assert.equal(w.document.querySelector('.pd-patient-details').parentElement.class
  assert.equal(editId,'s9','opens the existing siting session by id');}
 let html=w.patientDashboardHistoryHTML();let tmp=w.document.createElement('div');tmp.innerHTML=html;assert.ok(tmp.querySelector('tbody tr'));assert.equal(tmp.querySelector('script'),null);assert.match(tmp.textContent,/<script>unsafe/);w.arrangePatientDashboard();assert.equal(w.document.querySelectorAll('#pd-history').length,1);
 w.clrState.appts.push({id:'b',appt_date:'2026-12-01',status:'booked'});w.refreshPatientDashboardHistory();assert.equal(w.document.querySelectorAll('.pd-history-table tbody tr').length,4);
+// Handover / ward appliance changes appear as their own rows in the timeline;
+// follow-up appliance changes do not (they already show as appointment rows).
+{const M=new Map();M.set('u1',[
+   {source:'inpatient',first:false,added:['Salts XND1352'],stopped:['Lentell 201108-1'],appliances:['Salts XND1352'],accessories:['Stoma Belt'],ward:'SW4',date:'2026-09-28',order:2},
+   {source:'inpatient',first:true,added:['Lentell 201108-1'],stopped:[],appliances:['Lentell 201108-1'],accessories:[],ward:'ITU',date:'2026-09-16',order:0},
+   {source:'follow-up',first:false,added:['FollowupOnlyBag'],stopped:[],appliances:['FollowupOnlyBag'],accessories:[],ward:'',date:'2026-09-20',order:9}]);
+ w.stomaApplianceHistory=()=>M;
+ const h2=w.patientDashboardHistoryHTML();
+ assert.match(h2,/Appliance changed/);
+ assert.match(h2,/Salts XND1352/);
+ assert.match(h2,/Stopped: Lentell 201108-1/);
+ assert.match(h2,/First appliance recorded/);
+ assert.doesNotMatch(h2,/FollowupOnlyBag/,'follow-up appliance change is not added as an appliance row');
+ w.stomaApplianceHistory=()=>new Map();}
 w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.patientDashboardHistoryHTML(),/No stomas or clinical records recorded yet/);
 // 📚 Education: the booklet is wired to the patient's stoma type.
 {assert.equal(w.educationKeyForStoma('End urostomy'),'urostomy');
