@@ -25900,22 +25900,32 @@ function renderDataAnalysisStomaTypes(){
   if(typeof Chart!=='undefined')makeMultiChart('da-configurations','bar',labels,groups.map((label,i)=>({label,data:counts[i],backgroundColor:['#7c3aed','#0891b2'][i]})));
 }
 // These are text matches for audit review, not inferred clinical diagnoses.
-const DA_REASON_LABELS=['Cancer','Complicated diverticulitis','Bowel emergencies','Inflammatory bowel disease','Protecting a bowel anastomosis','Congenital conditions','Injury','Severe faecal incontinence','Needs review','Not recorded'];
+const DA_REASON_LABELS=['Cancer','Complicated diverticulitis','Bowel emergencies','Inflammatory bowel disease','Protecting a bowel anastomosis','Congenital conditions','Injury','Severe faecal incontinence','Anastomotic leak / postoperative complication','Diverticular disease','Colitis (other / unspecified)','Adhesions','Perineal infection / wound diversion','Tumour / mass (malignancy not stated)','Faecal incontinence (severity unspecified)','Needs review','Not recorded'];
 function daFormationReasons(p){
   const text=patientOperationText(p).toLowerCase().replace(/[’']/g,'');
   if(!text.trim())return ['Not recorded'];
-  // Ambiguous, historical or negated wording requires a person to review it.
-  if(/\b(no|not|without|denies|excluded|exclude|suspected|possible|query|history|previous|ruled out)\b|\?/.test(text))return ['Needs review'];
+  // Suppress only the affected phrase; a separate clear indication still counts.
+  const clear=text.replace(/\b(?:no|not|without|denies|excluded?|suspected|possible|query|history of|previous|ruled out)\s+[^,;—.]*?(?=\b(?:but|due to|for)\b|[,;—.]|$)/g,' ');
+  const has=re=>re.test(clear);
   const labels=[];
-  if(/\b(cancer|carcinoma|adenocarcinoma|malignan\w*|crc)\b|\bca\s+(?:of\s+)?(?:rect\w*|colon|bowel|bladder|sigmoid|caec\w*|cec\w*)\b|\b(?:rectal|colon|bladder|sigmoid)\s+ca\b/.test(text))labels.push('Cancer');
-  const diverticulitis=/\bdiverticulitis\b/.test(text);
-  if(diverticulitis&&/\b(complicated|perforat\w*|abscess|fistul\w*|peritonitis)\b/.test(text))labels.push('Complicated diverticulitis');
-  if(/\b(obstruction|obstructed|perforat\w*|volvulus|ischaemi\w*|ischemi\w*)\b/.test(text))labels.push('Bowel emergencies');
-  if(/\b(crohns?|ulcerative colitis|ibd)\b/.test(text))labels.push('Inflammatory bowel disease');
-  if(/\b(protect\w*|defunction\w*|divert\w*)\b.{0,60}\banastomos\w*\b|\banastomos\w*\b.{0,60}\b(protect\w*|heal\w*)\b/.test(text))labels.push('Protecting a bowel anastomosis');
-  if(/\b(hirschsprungs?|imperforate anus|anorectal malformation|congenital)\b/.test(text))labels.push('Congenital conditions');
-  if(/\b(trauma\w*|injury|injuries)\b/.test(text))labels.push('Injury');
-  if(/\bsevere\s+(?:faecal|fecal)\s+incontinence\b/.test(text))labels.push('Severe faecal incontinence');
+  if(/\b(cancer|carcinoma|adenocarcinoma|malignan\w*|crc)\b|\bca\s+(?:of\s+)?(?:rect\w*|colon|bowel|bladder|sigmoid|caec\w*|cec\w*)\b|\b(?:rectal|colon|bladder|sigmoid)\s+ca\b/.test(clear))labels.push('Cancer');
+  const diverticulitis=/\bdiverticulitis\b/.test(clear);
+  if(diverticulitis&&/\b(complicated|perforat\w*|abscess|fistul\w*|peritonitis)\b/.test(clear))labels.push('Complicated diverticulitis');
+  if(/\b(obstruct\w*|necrotic colitis|bowel necrosis|perforat\w*|volvulus|ischaemi\w*|ischemi\w*)\b/.test(clear))labels.push('Bowel emergencies');
+  if(/\b(crohns?|ulcerative colitis|ibd)\b/.test(clear))labels.push('Inflammatory bowel disease');
+  if(/\b(protect\w*|defunction\w*|divert\w*)\b.{0,60}\banastomos\w*\b|\banastomos\w*\b.{0,60}\b(protect\w*|heal\w*)\b/.test(clear))labels.push('Protecting a bowel anastomosis');
+  if(/\b(hirschsprungs?|imperforate anus|anorectal malformation|congenital)\b/.test(clear))labels.push('Congenital conditions');
+  if(/\b(trauma\w*|injury|injuries)\b/.test(clear))labels.push('Injury');
+  if(/\bsevere\s+(?:faecal|fecal)\s+incontinence\b/.test(clear))labels.push('Severe faecal incontinence');
+  if(has(/\banastomotic\s+(?:leak\w*|dehiscence|breakdown)\b|\bleak\w*\s+(?:at|from|of)\s+(?:the\s+)?anastomosis\b/))labels.push('Anastomotic leak / postoperative complication');
+  if(has(/\bdiverticul\w*\b/)&&!labels.includes('Complicated diverticulitis'))labels.push('Diverticular disease');
+  if(has(/\bcolitis\b/)&&!labels.includes('Inflammatory bowel disease'))labels.push('Colitis (other / unspecified)');
+  if(has(/\badhesion\w*\b/))labels.push('Adhesions');
+  if(has(/\bfourniers?\b|\bnecrotis\w*\s+fasci?itis\b|\bnecrotiz\w*\s+fasci?itis\b|\bperin(?:eal|eum|eum)\b.{0,80}\b(wound|infect\w*|sepsis)\b|\b(wound|infect\w*)\b.{0,80}\bperin(?:eal|eum)\b/))labels.push('Perineal infection / wound diversion');
+  if(has(/\b(tumou?r\w*|mass|neoplasm)\b/)&&!labels.includes('Cancer'))labels.push('Tumour / mass (malignancy not stated)');
+  if(has(/\b(faecal|fecal)\s+incontinence\b/)&&!labels.includes('Severe faecal incontinence'))labels.push('Faecal incontinence (severity unspecified)');
+  // A covering stoma accompanying a resection is explicit protective wording.
+  if(has(/\bcovering\b.{0,50}\b(?:ileo|colo)stomy\b/)&&!labels.includes('Anastomotic leak / postoperative complication')&&!labels.includes('Protecting a bowel anastomosis'))labels.push('Protecting a bowel anastomosis');
   return labels.length?labels:['Needs review'];
 }
 function renderDataAnalysisReasons(){
@@ -25934,7 +25944,7 @@ function renderDataAnalysisReasons(){
     daCard('reasons','Reasons for stoma formation',
       `${cohort.length} patient records with surgery dated in ${daRangeLabel()}. Based on explicit wording in Operation performed and findings. Each patient counts once per matching category; categories can overlap, so totals and percentages may exceed the patient count and 100%.`,
       `<div style="height:330px"><canvas id="da-reasons"></canvas></div>`+daCountTable('Recorded reason',counts,cohort.length)+
-      `<div class="report-note">These are automatic text matches, not confirmed indications. Review the wording below before reporting figures. Operation names alone (for example Hartmann’s or anterior resection) do not establish the reason. Unclear, historical or negated wording is marked Needs review. ${undated} records without a surgery year are excluded.</div>`,true)+
+      `<div class="report-note">These are automatic text matches, not confirmed indications. Review the wording below before reporting figures. Operation names alone (for example Hartmann’s or anterior resection) do not establish the reason. Additional categories capture other stated reasons. Tumour or mass wording is kept separate when malignancy is not stated. Needs review is used when no clear category matches. ${undated} records without a surgery year are excluded.</div>`,true)+
     daCard('reason-wording','Check the recorded surgery wording','Grouped identical wording, with patient counts, so the automatic categories can be checked.',
       `<div class="da-tw"><table class="dt"><thead><tr><th>Operation performed and findings</th><th>Matched categories</th><th>Patients</th></tr></thead><tbody>${[...wording.entries()].sort((a,b)=>b[1].n-a[1].n).map(([text,r])=>`<tr><td>${htmlSafe(text)}</td><td>${htmlSafe(r.reasons.join('; '))}</td><td>${r.n}</td></tr>`).join('')}</tbody></table></div>`,true)+'</div>';
   if(typeof Chart!=='undefined')daBarChart('da-reasons',counts,'#7c3aed');
