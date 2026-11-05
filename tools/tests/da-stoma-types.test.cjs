@@ -42,3 +42,18 @@ test('reasons use explicit operation information and retain ambiguous records fo
  assert.deepEqual(classify('No cancer, suspected obstruction'),['Needs review']);
  assert.deepEqual(classify(''),['Not recorded']);
 });
+test('screenshot wording maps to a stated reason instead of needs review',()=>{
+ const c=vm.createContext({});vm.runInContext(fn('patientOperationText')+'\n'+fn('daFormationReasons'),c);
+ const cases=[
+ ['Hartmann procedure for obstructing sigmoid necrotic colitis','Bowel emergencies'],
+ ['Diverting end sigmoidostomy due to adhesions','Adhesions'],
+ ['Hartmann procedure for rectosigmoid mass (tumor)','Tumour / mass (malignancy not stated)'],
+ ['Hartmann procedure due to anastomotic leak 1 week post secondary cytoreductive surgery','Anastomotic leak / postoperative complication'],
+ ['Defunctioning transverse colostomy and debridement for necrotising fascitis of peritoneum','Perineal infection / wound diversion'],
+ ['Hartmann procedure due to colitis','Colitis (other / unspecified)'],
+ ['Anterior resection for adenocarcinoma with covering loop ileostomy','Protecting a bowel anastomosis'],
+ ['Hartmann for diverticulitis','Diverticular disease'],
+ ['No cancer but bowel obstruction','Bowel emergencies']];
+ for(const [text,label] of cases)assert.ok(Array.from(c.daFormationReasons({procedure_performed:text})).includes(label),text);
+ assert.ok(!Array.from(c.daFormationReasons({procedure_performed:'Rectosigmoid tumour'})).includes('Cancer'));
+});
