@@ -25705,7 +25705,7 @@ function printDuplicates(){
    breakdowns (stoma type, sex, age, status) describe the cohort whose stoma
    was formed inside the range. */
 let dataAnalysisRows=[];
-let daView='overview';         // 'overview' | 'registry'
+let daView='overview';         // 'overview' | 'registry' | 'stoma-types'
 let daRegFrom=null,daRegTo=null,daRegYear=null;   // Registry-view year controls
 let daYearsBack='5';            // '3' | '4' | '5' | '10' | 'all'
 let daSeries={new_cases:true,reversals:true,deaths:true};
@@ -25821,6 +25821,8 @@ function daStomaGroup(text){
 // The years the chart runs over. "All" starts at the earliest date on record.
 function daYearRange(){
   const now=new Date().getFullYear();
+  if(daYearsBack==='current')return{from:now,to:now};
+  if(daYearsBack==='last')return{from:now-1,to:now-1};
   if(daYearsBack==='all'){
     let min=now;
     dataAnalysisRows.forEach(p=>DA_SERIES.forEach(s=>daDatesOf(s,p).forEach(date=>{
@@ -25848,7 +25850,7 @@ const DA_SECTIONS=[
   {key:'timing',  label:'Outcome timing'},
   {key:'gaps',    label:'Gaps in the record'}
 ];
-let daPrintPick=DA_SECTIONS.reduce((m,s)=>{m[s.key]=true;return m;},{});
+let daPrintPick=DA_SECTIONS.reduce((m,s)=>{m[s.key]=true;return m;},{configurations:true,reasons:true,'reason-wording':true});
 function daCard(key,title,sub,inner,wide){
   return `<div class="report-card${wide?' wide':''}" data-da-section="${key}"><h3>${htmlSafe(title)}</h3>
     ${sub?`<div class="report-note">${htmlSafe(sub)}</div>`:''}${inner}</div>`;
@@ -25864,8 +25866,82 @@ function daCountTable(head,list,total){
 function daSubTabs(){
   return `<div class="da-subtabs">
     <button class="da-subtab ${daView==='overview'?'on':''}" onclick="setDaView('overview')">📊 Overview</button>
+    <button class="da-subtab ${daView==='stoma-types'?'on':''}" onclick="setDaView('stoma-types')">Stoma types</button>
+    <button class="da-subtab ${daView==='reasons'?'on':''}" onclick="setDaView('reasons')">Reasons for stoma formation</button>
     <button class="da-subtab ${daView==='registry'?'on':''}" onclick="setDaView('registry')">🗂 Registry</button>
   </div>`;
+}
+function daStomaConfiguration(text){
+  const t=String(text||'').toLowerCase().replace(/[–—_-]/g,' ');
+  if(/\bdouble\s*barrel(?:led|ed)?\b/.test(t))return 'Double-barrel';
+  if(/\bloop\b/.test(t))return 'Loop';
+  if(/\bend\b/.test(t))return 'End';
+  return 'Not specified';
+}
+function renderDataAnalysisStomaTypes(){
+  const body=document.getElementById('da-body');
+  const {from,to}=daYearRange();
+  const cohort=dataAnalysisRows.filter(p=>{const y=daYear(p.surgery_date);return y!==null&&y>=from&&y<=to;});
+  const labels=['End','Double-barrel','Loop','Not specified'];
+  const groups=['Ileostomy','Colostomy'];
+  const counts=groups.map(group=>labels.map(label=>cohort.filter(p=>daStomaGroup(p.stoma_type)===group&&daStomaConfiguration(p.stoma_type)===label).length));
+  const yearBtn=(v,label)=>`<button class="da-chip ${daYearsBack===v?'on':''}" onclick="setDaYears('${v}')">${label}</button>`;
+  const included=counts.flat().reduce((a,b)=>a+b,0);
+  const undated=dataAnalysisRows.filter(p=>groups.includes(daStomaGroup(p.stoma_type))&&!daYear(p.surgery_date)).length;
+  body.innerHTML=daSubTabs()+`<div class="da-controls"><div class="da-control-row"><span class="da-control-label">Years</span>
+    ${[['last','Last year'],['current','Current year'],['3','Last 3'],['4','Last 4'],['5','Last 5'],['10','Last 10'],['all','All time']].map(([v,l])=>yearBtn(v,l)).join('')}
+    <span class="da-range">${htmlSafe(daRangeLabel())}</span></div></div><div class="report-grid">`+
+    daCard('configurations','Ileostomy and colostomy types',
+      `Patient records with surgery dated in ${daRangeLabel()}: ${included} ileostomy or colostomy records. Counts use the recorded stoma type, not the number of individual stomas.`,
+      `<div style="height:300px"><canvas id="da-configurations"></canvas></div><div class="da-tw"><table class="dt"><thead><tr><th>Stoma type</th><th>Ileostomy</th><th>Colostomy</th><th>Total</th></tr></thead><tbody>
+      ${labels.map((label,i)=>`<tr><td>${label}</td><td>${counts[0][i]}</td><td>${counts[1][i]}</td><td><strong>${counts[0][i]+counts[1][i]}</strong></td></tr>`).join('')}
+      <tr><th>Total</th>${counts.map(c=>`<td><strong>${c.reduce((a,b)=>a+b,0)}</strong></td>`).join('')}<td><strong>${included}</strong></td></tr></tbody></table></div>
+      <div class="report-note">Not specified means the record does not name an end, loop or double-barrel configuration. ${cohort.length-included} other or unrecorded stoma types in this period are excluded. ${undated} ileostomy or colostomy records have no surgery year and cannot be assigned to a period.</div>`,true)+'</div>';
+  if(typeof Chart!=='undefined')makeMultiChart('da-configurations','bar',labels,groups.map((label,i)=>({label,data:counts[i],backgroundColor:['#7c3aed','#0891b2'][i]})));
+}
+// These are text matches for audit review, not inferred clinical diagnoses.
+const DA_REASON_LABELS=['Cancer','Complicated diverticulitis','Bowel emergencies','Inflammatory bowel disease','Protecting a bowel anastomosis','Congenital conditions','Injury','Severe faecal incontinence','Needs review','Not recorded'];
+function daFormationReasons(p){
+  const text=patientOperationText(p).toLowerCase().replace(/[’']/g,'');
+  if(!text.trim())return ['Not recorded'];
+  // Ambiguous, historical or negated wording requires a person to review it.
+  if(/\b(no|not|without|denies|excluded|exclude|suspected|possible|query|history|previous|ruled out)\b|\?/.test(text))return ['Needs review'];
+  const labels=[];
+  if(/\b(cancer|carcinoma|adenocarcinoma|malignan\w*|crc)\b|\bca\s+(?:of\s+)?(?:rect\w*|colon|bowel|bladder|sigmoid|caec\w*|cec\w*)\b|\b(?:rectal|colon|bladder|sigmoid)\s+ca\b/.test(text))labels.push('Cancer');
+  const diverticulitis=/\bdiverticulitis\b/.test(text);
+  if(diverticulitis&&/\b(complicated|perforat\w*|abscess|fistul\w*|peritonitis)\b/.test(text))labels.push('Complicated diverticulitis');
+  if(/\b(obstruction|obstructed|perforat\w*|volvulus|ischaemi\w*|ischemi\w*)\b/.test(text))labels.push('Bowel emergencies');
+  if(/\b(crohns?|ulcerative colitis|ibd)\b/.test(text))labels.push('Inflammatory bowel disease');
+  if(/\b(protect\w*|defunction\w*|divert\w*)\b.{0,60}\banastomos\w*\b|\banastomos\w*\b.{0,60}\b(protect\w*|heal\w*)\b/.test(text))labels.push('Protecting a bowel anastomosis');
+  if(/\b(hirschsprungs?|imperforate anus|anorectal malformation|congenital)\b/.test(text))labels.push('Congenital conditions');
+  if(/\b(trauma\w*|injury|injuries)\b/.test(text))labels.push('Injury');
+  if(/\bsevere\s+(?:faecal|fecal)\s+incontinence\b/.test(text))labels.push('Severe faecal incontinence');
+  return labels.length?labels:['Needs review'];
+}
+function renderDataAnalysisReasons(){
+  const body=document.getElementById('da-body');
+  const {from,to}=daYearRange();
+  const cohort=dataAnalysisRows.filter(p=>{const y=daYear(p.surgery_date);return y!==null&&y>=from&&y<=to;});
+  const records=cohort.map(p=>({text:patientOperationText(p),reasons:daFormationReasons(p)}));
+  const counts=DA_REASON_LABELS.map(label=>({label,n:records.filter(r=>r.reasons.includes(label)).length}));
+  const undated=dataAnalysisRows.filter(p=>!daYear(p.surgery_date)).length;
+  const wording=new Map();
+  records.forEach(r=>{const key=r.text||'Not recorded';if(!wording.has(key))wording.set(key,{...r,n:0});wording.get(key).n++;});
+  const yearBtn=(v,label)=>`<button class="da-chip ${daYearsBack===v?'on':''}" onclick="setDaYears('${v}')">${label}</button>`;
+  body.innerHTML=daSubTabs()+`<div class="da-controls"><div class="da-control-row"><span class="da-control-label">Years</span>
+    ${[['last','Last year'],['current','Current year'],['3','Last 3'],['4','Last 4'],['5','Last 5'],['10','Last 10'],['all','All time']].map(([v,l])=>yearBtn(v,l)).join('')}
+    <span class="da-range">${htmlSafe(daRangeLabel())}</span></div></div><div class="report-grid">`+
+    daCard('reasons','Reasons for stoma formation',
+      `${cohort.length} patient records with surgery dated in ${daRangeLabel()}. Based on explicit wording in Operation performed and findings. Each patient counts once per matching category; categories can overlap, so totals and percentages may exceed the patient count and 100%.`,
+      `<div style="height:330px"><canvas id="da-reasons"></canvas></div>`+daCountTable('Recorded reason',counts,cohort.length)+
+      `<div class="report-note">These are automatic text matches, not confirmed indications. Review the wording below before reporting figures. Operation names alone (for example Hartmann’s or anterior resection) do not establish the reason. Unclear, historical or negated wording is marked Needs review. ${undated} records without a surgery year are excluded.</div>`,true)+
+    daCard('reason-wording','Check the recorded surgery wording','Grouped identical wording, with patient counts, so the automatic categories can be checked.',
+      `<div class="da-tw"><table class="dt"><thead><tr><th>Operation performed and findings</th><th>Matched categories</th><th>Patients</th></tr></thead><tbody>${[...wording.entries()].sort((a,b)=>b[1].n-a[1].n).map(([text,r])=>`<tr><td>${htmlSafe(text)}</td><td>${htmlSafe(r.reasons.join('; '))}</td><td>${r.n}</td></tr>`).join('')}</tbody></table></div>`,true)+'</div>';
+  if(typeof Chart!=='undefined')daBarChart('da-reasons',counts,'#7c3aed');
+}
+function daVisiblePrintSections(){
+  if(daView==='reasons')return [{key:'reasons',label:'Reasons for stoma formation'},{key:'reason-wording',label:'Recorded surgery wording and classification'}];
+  return daView==='stoma-types'?[{key:'configurations',label:'Ileostomy and colostomy types'}]:DA_SECTIONS;
 }
 function renderDataAnalysis(){
   const body=document.getElementById('da-body');
@@ -25873,6 +25949,8 @@ function renderDataAnalysis(){
   const rows=dataAnalysisRows;
   if(!rows.length){body.innerHTML=daSubTabs()+'<div class="report-note">No patients in the registry yet.</div>';return;}
   if(daView==='registry'){renderDataAnalysisRegistry();return;}
+  if(daView==='stoma-types'){renderDataAnalysisStomaTypes();return;}
+  if(daView==='reasons'){renderDataAnalysisReasons();return;}
   const{from,to}=daYearRange();
   const years=[];for(let y=from;y<=to;y++)years.push(y);
   const inRange=y=>y!==null&&y>=from&&y<=to;
@@ -25938,7 +26016,7 @@ function renderDataAnalysis(){
   body.innerHTML=daSubTabs()+`
     <div class="da-controls">
       <div class="da-control-row"><span class="da-control-label">Years</span>
-        ${yearBtn('3','Last 3')}${yearBtn('4','Last 4')}${yearBtn('5','Last 5')}${yearBtn('10','Last 10')}${yearBtn('all','All time')}
+        ${yearBtn('last','Last year')}${yearBtn('current','Current year')}${yearBtn('3','Last 3')}${yearBtn('4','Last 4')}${yearBtn('5','Last 5')}${yearBtn('10','Last 10')}${yearBtn('all','All time')}
         <span class="da-range">${htmlSafe(daRangeLabel())}</span></div>
       <div class="da-control-row"><span class="da-control-label">Compare</span>
         ${DA_SERIES.map(seriesBtn).join('')}</div>
@@ -26242,7 +26320,7 @@ function openDataAnalysisPrintModal(){
       <button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="setDaPrintAll(true)">Select all</button>
       <button class="ncb-btn" style="background:#eef2f6;color:var(--navy);" onclick="setDaPrintAll(false)">Select none</button>
     </div>
-    <div class="da-pick">${DA_SECTIONS.map(sec=>`
+    <div class="da-pick">${daVisiblePrintSections().map(sec=>`
       <label class="da-pick-row"><input type="checkbox" data-da-pick="${sec.key}" ${daPrintPick[sec.key]?'checked':''} onchange="onDaPrintPick()"/>
         <span>${htmlSafe(sec.label)}</span></label>`).join('')}</div>
     <div id="da-pick-note" class="registry-lookup-note"></div>
@@ -26257,7 +26335,7 @@ function setDaPrintAll(on){
 }
 function onDaPrintPick(){
   document.querySelectorAll('#mb [data-da-pick]').forEach(c=>{daPrintPick[c.dataset.daPick]=c.checked;});
-  const n=DA_SECTIONS.filter(s=>daPrintPick[s.key]).length;
+  const n=daVisiblePrintSections().filter(s=>daPrintPick[s.key]).length;
   const note=document.getElementById('da-pick-note');
   const go=document.getElementById('da-print-go');
   if(note)note.textContent=n?`${n} section${n!==1?'s':''} selected.`:'Nothing selected — tick at least one section.';
@@ -26266,7 +26344,7 @@ function onDaPrintPick(){
 // Usable width of an A4 portrait page at 11mm margins, in CSS pixels.
 const PRINT_CONTENT_PX=710;
 function printDataAnalysis(){
-  const chosen=DA_SECTIONS.filter(s=>daPrintPick[s.key]);
+  const chosen=daVisiblePrintSections().filter(s=>daPrintPick[s.key]);
   if(!chosen.length)return;
   const parts=[];
   chosen.forEach(sec=>{
