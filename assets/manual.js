@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'4 November 2026 — Appliance changes made on the ward / handover now appear as their own rows under the stoma in Appointments &amp; episodes, not only in the Appliance-history panel. Schedule 5 prints with a proper header and bottom footer and reads drainable/closed from the Salts and Lentell product codes.'};
+const MANUAL_META={updated:'7 November 2026 — Postop Discharges has a 📧 Community follow-up button: it books an email follow-up for Comcare instead of an in-person slot, opens a ready-filled imaging-request email (To Comcare, Cc the clinic), and stores their feedback (run sql/add-community-followup.sql). Ward appliance changes also now show as rows in Appointments &amp; episodes.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -520,6 +520,7 @@ const MANUAL_SECTIONS=[
       <li>Tap a postop row to open <b>Book Follow-up Appointment</b>: it lays out the day with one column per nurse — the <b>same nurses as the Daily Clinic</b>, including anyone on <b>overtime</b> (OT tag) or <b>TIL-In</b> (TIL tag). Pick a free slot under the nurse who will follow the patient up.</li>
       <li>${manBtn('💾 Archived Handover','#fdf0e1','#b45309')} — a read-only copy of each day's handover, saved automatically at 4 pm. It is now stored as <b>lightweight data</b> (the handover sheet as HTML, a few KB) rather than a picture, so the archive barely uses space; each day still opens or downloads as the full sheet. Needs <b>sql/add-handover-snapshot-html.sql</b> run once in Supabase; days saved by the old build stay openable as their picture.</li>
     </ul>
+    ${manNote('tip','📧','<b>Follow up by community instead?</b> Each postop row has a <b>📧 Community follow-up</b> button. It books an <b>email</b> follow-up (not in person): pick a reminder date and it saves as an appointment flagged for Comcare. Its outcome is not Seen / DNTU — press <b>📧 Email Comcare (request imaging)</b> to open a ready-filled email (To Comcare, Cc the clinic, subject from the patient’s name and ID, body requesting imaging), then paste Comcare’s reply into <b>Comcare feedback</b>. Run <code>sql/add-community-followup.sql</code> once in Supabase so the flag and feedback are stored.')}
     ${manNote('tip','➕','<b>Discharged by mistake?</b> Press <span class="man-kbd">➕ Add postop discharge</span> at the top, search for the patient and pick them — their last admission is recorded as a postop discharge so they appear here. To undo one already on the list, press <span class="man-kbd">↩ Revert postop discharge</span> on its row: the admission reopens and the patient goes back on the handover.')}
     ${manNote('auto','⚙️','The handover is <b>archived automatically at 4&nbsp;pm every day</b>, and kept for reference. You can also press "Capture now".')}
   `},
