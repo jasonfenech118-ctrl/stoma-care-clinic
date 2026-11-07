@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.07-739"></script>
+<script src="assets/manual.js?v=2026.11.07-740"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.07-739';
+const APP_BUILD='2026.11.07-740';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4688,6 +4688,33 @@ function openMailtoLink(href){const a=document.createElement('a');a.href=href;do
 // Open an email to Comcare (CC the stoma clinic) in the nurse's mail client.
 function openComcareEmail(subject,body){
   openMailtoLink('mailto:'+COMCARE_EMAIL+'?cc='+encodeURIComponent(STOMA_CARE_EMAIL)+'&subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body));
+}
+// Community-nurse visit frequency by stoma: colostomy twice daily (BD), ileostomy
+// and urostomy daily.
+function comcareFreqText(groups){
+  const map={Colostomy:'twice daily (BD) for the colostomy',Ileostomy:'daily for the ileostomy',Urostomy:'daily for the urostomy'};
+  const parts=(groups||[]).map(g=>map[g]).filter(Boolean);
+  return parts.length?('community nurses '+parts.join('; and ')):'community nurse stoma care';
+}
+// The auto-filled care-plan email body for Comcare (method A: plan in the body).
+function comcarePlanBody(pat,groups,signer){
+  const title=/^m/i.test(pat.sex||'')?'Mr':/^f/i.test(pat.sex||'')?'Ms':'';
+  const nm=[title,pat.first_name,pat.surname].filter(Boolean).join(' ')||'This patient';
+  const op=pat.procedure_performed||'stoma surgery';
+  const surg=pat.surgery_date?fmtShortDate(pat.surgery_date):'';
+  const sign=signer?('Kind regards,\n'+signer+'\nStoma Team'):'Kind regards,\nStoma Team';
+  return `Dear community nurses,\n\n${nm}${pat.id_card?' ('+pat.id_card+')':''} underwent ${op}${surg?' on '+surg:''} and was discharged on ${fmtShortDate(TODAY)}.\n\n${nm} requires ${comcareFreqText(groups)}.\n\nThe care plan is sent for your reference.\n\n${sign}`;
+}
+// Present stoma groups (Colostomy / Ileostomy / Urostomy) for the care plan.
+function patientStomaGroups(pat){
+  let out=[];try{out=stomasPresentOn(pat,TODAY).map(s=>daStomaGroup(s.type||s.typeLabel||s.label)).filter(g=>g&&g!=='Other');}catch(e){}
+  if(!out.length&&pat.stoma_type){const g=daStomaGroup(pat.stoma_type);if(g&&g!=='Other')out=[g];}
+  return [...new Set(out)];
+}
+// Whether a discharge letter has been done (saved) for the patient.
+async function patientHasDischargeLetter(patientId){
+  try{const{count}=await SB.from('patient_discharge_letters').select('id',{count:'exact',head:true}).eq('patient_id',patientId);return (count||0)>0;}
+  catch(e){return false;}
 }
 // Guards the email button so a slow PDF render can't be re-triggered by repeated
 // taps (which would queue several downloads).
@@ -13706,7 +13733,7 @@ async function stomaPatientCount(){
 }
 // The optional columns added by sql/add-registry-columns.sql. The app runs
 // without them — every read falls back to the base columns.
-const PATIENT_DATE_COLS='updated_at,created_at,created_by,updated_by,stoma_operation_history,stoma_care_links,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,upcoming_surgery_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category,minimised_at,minimised_by,dpa_status,reversed_deceased_date';
+const PATIENT_DATE_COLS='updated_at,created_at,created_by,updated_by,stoma_operation_history,stoma_care_links,date_of_birth,surgery_date,discharge_date,reversal_date,deceased_date,proposed_reversal_date,upcoming_surgery_date,stoma_type,stoma_location,stoma_superseded_date,initial_stomas,sex,procedure_performed,findings,locality,address,discharged_gozo_date,relocated_overseas_date,reversal_notes,refashion_closure_date,refashion_formed_date,refashion_discharge_date,refashion_findings,refashion_location,extra_refashionings,newstoma_formed_date,newstoma_findings,newstoma_location,newstoma_closure_date,extra_stomas,extra_statuses,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_since,discharge_letter,schedule_five_permit,consultant,complications,archived,rod_removal_date,rod_removed_date,rod_stoma_uid,followup_flexible,followup_status_effective_date,followup_status_reason,operated_abroad,operated_abroad_hospital,operated_abroad_country,support_referrals,patient_kind,fistula_operation_date,fistula_closed_date,fistula_closed_reason,fistula_category,minimised_at,minimised_by,dpa_status,reversed_deceased_date,community_care,community_care_date,comcare_plan_sent_date';
 /* A record is flagged incomplete when any of these core clinical fields is
    blank. Rows missing one get an amber stripe in the Registry, and the patient
    record modal spells out exactly which are blank. Kept to the core set —
@@ -22812,7 +22839,7 @@ async function openDischargeModal(patientId,name){
   const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
   // Gate: no discharge until the Schedule V permit has been collected.
   if(!scheduleFiveCollected(p)){dischargeCtx=null;renderScheduleVBlock(p,nm);openMo();return;}
-  dischargeCtx={patient:p,name:nm,choice:null,step:1};
+  dischargeCtx={patient:p,name:nm,choice:null,step:1,community:null,planSent:false,letterOk:undefined,ack:false};
   renderDischargeModal();
   openMo();
 }
@@ -22842,13 +22869,36 @@ function renderDischargeModal(){
       <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
         <button class="btn-save" onclick="dischargeStepNext()">Yes, continue →</button></div>`;
   }else{
+    // Community care (Comcare): for a patient going home, ask whether they are
+    // followed up by community nurses. If Yes, the discharge is blocked until a
+    // discharge letter is done AND the care plan has been emailed to Comcare and
+    // the nurse confirms it was sent.
+    const homeType=(c.choice==='postop'||c.choice==='old');
+    let community='';
+    if(homeType){
+      const gate=c.community==='yes'?`
+        <div style="margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#f0fdfa;">
+          ${c.letterOk===false?'<div style="color:#b91c1c;font-weight:700;margin-bottom:6px;">⚠️ A discharge letter must be done first — the care plan is sent to Comcare.</div>':c.letterOk===undefined?'<div style="color:var(--muted);margin-bottom:6px;">Checking for a discharge letter…</div>':''}
+          <p style="margin:0 0 8px;">Send the care plan to Comcare, then confirm — the discharge is blocked until then.</p>
+          <button type="button" class="psm-btn" onclick="emailComcarePlan()">📧 Email care plan to Comcare</button>
+          <label class="dis-ack" style="margin-top:8px;"><input type="checkbox" id="dis-plan-sent" ${c.planSent?'checked':''} onchange="dischargePlanSentToggle()"/> <span>I have sent the care plan to Comcare.</span></label>
+        </div>`:'';
+      community=`<div style="margin:12px 0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Is this patient discharged with community care (Comcare)?</div>
+        <label style="margin-right:16px;"><input type="radio" name="dis-comm" value="yes" ${c.community==='yes'?'checked':''} onchange="dischargeCommunityPick('yes')"/> Yes</label>
+        <label><input type="radio" name="dis-comm" value="no" ${c.community==='no'?'checked':''} onchange="dischargeCommunityPick('no')"/> No</label>
+        ${gate}
+      </div>`;
+    }
     body=`<div class="msub">Step 3 of 3 — <strong>final check</strong>. This is the last step before it is done.</div>
       <div class="dis-final">You are about to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta?meta.title:''}</strong>.<br/>${meta?meta.conseq:''} You can undo this once, straight after.</div>
-      <label class="dis-ack"><input type="checkbox" id="dis-ack" onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
+      ${community}
+      <label class="dis-ack"><input type="checkbox" id="dis-ack" ${c.ack?'checked':''} onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
       <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
         <button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
   }
   mb.innerHTML=`<h2>Discharge patient</h2>${stepper}${body}`;
+  if(c.step===3)dischargeUpdateSaveBtn();
 }
 // Step 1: a picked outcome is remembered and enables Continue.
 function dischargeChoicePicked(){
@@ -22867,10 +22917,37 @@ function dischargeStepBack(){
   dischargeCtx.step=Math.max(1,dischargeCtx.step-1);
   renderDischargeModal();
 }
-// Step 3: the acknowledgement tick is what finally enables the Discharge button.
+// Step 3: the Discharge button needs the acknowledgement tick AND, for a
+// community-care discharge, a done letter plus the care plan confirmed sent.
+function dischargeUpdateSaveBtn(){
+  const c=dischargeCtx;if(!c)return;
+  const homeType=(c.choice==='postop'||c.choice==='old');
+  const gateOk=!(homeType&&c.community==='yes')||(c.letterOk&&c.planSent);
+  const btn=document.getElementById('dis-save');if(btn)btn.disabled=!(c.ack&&gateOk);
+}
 function dischargeFinalToggle(){
-  const ok=!!document.getElementById('dis-ack')?.checked;
-  const btn=document.getElementById('dis-save');if(btn)btn.disabled=!ok;
+  if(dischargeCtx)dischargeCtx.ack=!!document.getElementById('dis-ack')?.checked;
+  dischargeUpdateSaveBtn();
+}
+function dischargePlanSentToggle(){
+  if(dischargeCtx)dischargeCtx.planSent=!!document.getElementById('dis-plan-sent')?.checked;
+  dischargeUpdateSaveBtn();
+}
+async function dischargeCommunityPick(v){
+  const c=dischargeCtx;if(!c)return;
+  c.community=v;
+  if(v==='yes'&&c.letterOk===undefined){
+    renderDischargeModal();   // show "checking…" while we look for a letter
+    const ok=await patientHasDischargeLetter(c.patient.id);
+    if(dischargeCtx===c){c.letterOk=ok;renderDischargeModal();}
+  }else renderDischargeModal();
+}
+async function emailComcarePlan(){
+  const c=dischargeCtx;if(!c)return;
+  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
+  const signer=(typeof attDisplayName==='function'&&attDisplayName(who))||'';
+  openComcareEmail(comcareSubject(c.patient,'stoma care plan'),comcarePlanBody(c.patient,patientStomaGroups(c.patient),signer));
+  setTimeout(()=>alert('The care-plan email has opened addressed to Comcare (Cc: the stoma clinic). Check it and send, then tick "I have sent the care plan to Comcare".'),400);
 }
 async function confirmDischargeModal(patientId){
   const v=dischargeCtx&&dischargeCtx.choice;
@@ -22887,6 +22964,16 @@ async function confirmDischargeModal(patientId){
     if(btn){btn.disabled=false;btn.textContent='Discharge patient';}
     renderScheduleVBlock(before,name);return;
   }
+  // Backstop: a community-care discharge needs the care plan confirmed sent.
+  {const c=dischargeCtx,homeType=(c&&(c.choice==='postop'||c.choice==='old'));
+   if(homeType&&c.community==='yes'&&!c.planSent){
+     if(btn){btn.disabled=false;btn.textContent='Discharge patient';}
+     alert('Send the care plan to Comcare and tick that it was sent before discharging.');return;
+   }
+   // Record the community-care decision, its date and the plan-sent date.
+   if(homeType&&c.community){
+     try{await updatePatientTolerant(patientId,{community_care:c.community,community_care_date:TODAY,...(c.planSent?{comcare_plan_sent_date:TODAY}:{})});}catch(e){}
+   }}
   const snapFields={};
   ['is_inpatient','followup_status','followup_status_effective_date','discharged_gozo_date','relocated_overseas_date','discharge_date','extra_stomas'].forEach(k=>{if(before&&k in before)snapFields[k]=before[k];});
   let epSnap=null;

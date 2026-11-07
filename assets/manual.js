@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'7 November 2026 — Postop Discharges has a 📧 Community follow-up button: it books an email follow-up for Comcare instead of an in-person slot, opens a ready-filled imaging-request email (To Comcare, Cc the clinic), and stores their feedback (run sql/add-community-followup.sql). Ward appliance changes also now show as rows in Appointments &amp; episodes.'};
+const MANUAL_META={updated:'7 November 2026 — A going-home discharge now asks “community care (Comcare)?”; choosing Yes blocks the discharge until the discharge letter is done and the care plan is emailed to Comcare and confirmed (run sql/add-community-care.sql). Postop Discharges also has a 📧 Community follow-up button for an email follow-up (run sql/add-community-followup.sql).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -512,6 +512,7 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','🩹','A <b>fistula</b> (purple FISTULA) or <b>bagging-advice</b> (blue BAGGING) patient keeps its own <b>Discharge patient</b> button. It asks whether the case resolved (it closes) or stays open, and never joins the Postop Discharges list.')}
     ${manNote('auto','⚙️','Every discharge <b>fills today’s date automatically</b> and closes the inpatient episode. Postop stamps the post-op discharge date; Overseas/Gozo stamp the outcome date and status effective date.')}
     ${manNote('auto','📋','<b>Discharge is blocked until the Schedule V permit is Collected.</b> If the S5 column is Not done, Left in ward or Signed, the button stops and asks you to collect the permit first. The <b>Collected</b> state (and the black box of a previous admission) lets it through.')}
+    ${manNote('auto','📧','On the final step of a <b>going-home discharge</b> you are asked <b>“discharged with community care (Comcare)?”</b>. Choose <b>Yes</b> and the discharge is <b>blocked until a discharge letter is done and the care plan is emailed to Comcare</b>: press <b>📧 Email care plan to Comcare</b> (a ready-filled summary — operation, dates, and visit frequency: daily for ileostomy/urostomy, BD for colostomy — To Comcare, Cc the clinic), then tick <b>“I have sent the care plan to Comcare”</b>. The Yes/No answer and the plan-sent date are saved on the record (run <code>sql/add-community-care.sql</code>).')}
   `},
   {id:'postop',title:'Postop Discharges & Archived Handover',keywords:'postop discharges worklist booking book follow-up appointment nurse column overtime ot til archived snapshot 4pm print pdf add mistake revert reopen search',html:`
     ${manMap('handover')}
