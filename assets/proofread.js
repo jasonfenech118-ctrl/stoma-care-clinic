@@ -319,7 +319,7 @@
         +'<span style="font-size:12px;opacity:.9;">'+(issues.length?issues.length+' suggestion'+(issues.length===1?'':'s'):'all clear')+'</span>'
         +'<button type="button" data-pf-close="1" aria-label="Close" style="margin-left:auto;border:none;background:rgba(255,255,255,.18);color:#fff;font-weight:800;font-size:15px;border-radius:7px;width:28px;height:28px;cursor:pointer;">✕</button>'
       +'</div>'
-      +'<div style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #eef2f7;line-height:1.4;">Suggestions keep the meaning. Word fixes have <b>Apply</b>; 💡 <b>Clarity</b> notes flag unclear sentences / the paragraph for you to reword. Runs offline; no note text leaves this app.</div>'
+      +(issues.length?'<div style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #eef2f7;line-height:1.4;">Suggestions keep the meaning. Word fixes have <b>Apply</b>; 💡 <b>Clarity</b> notes flag unclear sentences / the paragraph for you to reword. Runs offline; no note text leaves this app.</div>':'')
       +'<div class="pf-list" style="overflow:auto;flex:1;">'+rows+'</div>'
       +(safeCount?'<div style="padding:10px 12px;border-top:1px solid #eef2f7;background:#f8fafc;"><button type="button" data-pf-applyall="1" style="width:100%;border:none;background:#1a2e4a;color:#fff;font-weight:800;font-size:13px;border-radius:8px;padding:9px;cursor:pointer;">Apply all spelling, grammar &amp; spacing fixes ('+safeCount+')</button></div>':'');
   }
