@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-756"></script>
+<script src="assets/manual.js?v=2026.11.08-757"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2111,6 +2111,7 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 .followup-type-badge{display:inline-block;width:max-content;margin:5px 4px 2px 0;padding:3px 9px;border-radius:12px;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
 .followup-type-badge.follow_up{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc;}
 .followup-type-badge.new_case{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;}
+.followup-type-badge.tele{background:#e6f4f1;color:#0d7377;border:1px solid #8fd4ce;}
 
 
 /* v30AE — clearer appointment cells and cancelled-slot rebooking history */
@@ -3563,12 +3564,12 @@ function followupOwnerOptions(selected='Common'){
 }
 function normaliseFollowupType(type){
   const t=String(type||'follow_up').trim().toLowerCase().replace(/[ -]/g,'_');
-  return t==='new_case'?'new_case':'follow_up';
+  return t==='new_case'?'new_case':t==='tele'?'tele':'follow_up';
 }
-function followupTypeText(type){return normaliseFollowupType(type)==='new_case'?'New case':'Follow-up';}
+function followupTypeText(type){const t=normaliseFollowupType(type);return t==='new_case'?'New case':t==='tele'?'Tele':'Follow-up';}
 function followupTypeOptions(selected='follow_up'){
   const sel=normaliseFollowupType(selected);
-  return `<option value="follow_up" ${sel==='follow_up'?'selected':''}>Follow-up</option><option value="new_case" ${sel==='new_case'?'selected':''}>New case</option>`;
+  return `<option value="follow_up" ${sel==='follow_up'?'selected':''}>Follow-up</option><option value="new_case" ${sel==='new_case'?'selected':''}>New case</option><option value="tele" ${sel==='tele'?'selected':''}>Tele (community / email)</option>`;
 }
 function followupTypeBadge(type){
   const t=normaliseFollowupType(type);
@@ -4015,7 +4016,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-756';
+const APP_BUILD='2026.11.08-757';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -6137,6 +6138,9 @@ async function getMonthlyClinicAvailability(year,context){
   if(!error){
     const rows=await enrichAppointments(apptData||[]);
     rows.forEach(a=>{
+      // A tele / community follow-up is handled by email and never occupies a
+      // clinic chair, so it must not consume a slot in the availability count.
+      if(a.community_followup)return;
       const m=Number(String(a.appt_date||'').slice(5,7));
       if(!load[m])return;
       const onOurDays=isBookableDayForOwner(a.appt_date,owner);
@@ -6179,12 +6183,15 @@ async function getMonthlyClinicAvailability(year,context){
   (fut||[]).forEach(r=>futureBooked.add(String(r.patient_id)));
 
   const{rows:pats,error:patErr}=await fetchAllRows(()=>SB.from('patients')
-    .select('id,followup_owner,followup_due_month,followup_year,followup_status'));
+    .select('id,followup_owner,followup_due_month,followup_year,followup_status,followup_type'));
   if(patErr){
     console.warn('Availability due-month load error:',patErr.message);
   }else{
     (pats||[]).forEach(p=>{
       if(normaliseFollowupStatus(p.followup_status)!=='active')return;
+      // A tele / community follow-up is seen by email, not in a clinic chair, so
+      // it is tracked under Common but never counted against the clinic capacity.
+      if(normaliseFollowupType(p.followup_type)==='tele')return;
       const m=Number(p.followup_due_month),py=Number(p.followup_year);
       if(!(m>=1&&m<=12&&py>2000))return;
       if(ownerFilter&&normaliseFollowupOwner(p.followup_owner||'Common')!==ownerFilter)return;
@@ -24995,14 +25002,14 @@ function renderCommunityFollowup(){
   const fb=appt&&appt.comcare_feedback?String(appt.comcare_feedback):'';
   mb.innerHTML=`<h2>📧 Tele follow-up</h2>
     <div class="patient-modal-identity">${patientNameAvatarHTML(pat,nm,`<span>${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}</span>`,'md')}</div>
-    <p class="report-note" style="margin:6px 0 10px;line-height:1.55;">A <b>tele follow-up</b> — handled with the community team (Comcare) <b>by email, not in person</b>. Requesting the email saves it in the patient profile as a <b>Tele follow-up</b> pathway; the outcome is the email to Comcare (requesting imaging feedback) and the feedback they send back.</p>
-    <div class="fg"><label for="cf-date">Reminder date *</label><input type="date" id="cf-date" value="${htmlSafe(appt&&appt.appt_date?String(appt.appt_date).slice(0,10):defDate)}"/></div>
+    <p class="report-note" style="margin:6px 0 10px;line-height:1.55;">A <b>tele follow-up</b> — handled with the community team (Comcare) <b>by email, not in person</b>. It is saved in the patient profile as a <b>Tele follow-up</b> pathway and the patient is set as a <b>Common</b> follow-up <b>due in the reminder month</b> (tele patients are tracked but <b>do not take a clinic slot</b>). The outcome is the email to Comcare (requesting imaging feedback) and the feedback they send back.</p>
+    <div class="fg"><label for="cf-date">Reminder / due date *</label><input type="date" id="cf-date" value="${htmlSafe(appt&&appt.appt_date?String(appt.appt_date).slice(0,10):defDate)}"/></div>
     <div class="fg"><label for="cf-note">Note (optional)</label><input type="text" id="cf-note" value="${htmlSafe(appt&&appt.community_reminder_note||'')}" placeholder="e.g. request wound / stoma images at 6 weeks"/></div>
     ${sent?`<div class="report-note" style="color:#0d7377;">✓ Imaging request emailed to Comcare on ${htmlSafe(sent)}.</div>`:''}
     <div class="mact" style="flex-wrap:wrap;gap:8px;">
       <button class="btn-cancel" onclick="closeModal()">Close</button>
-      <button class="psm-btn" onclick="emailComcareImaging()">📧 Email Comcare (request imaging)</button>
-      <button class="btn-save" onclick="saveCommunityFollowup()">${appt?'Save':'Book community follow-up'}</button>
+      <button class="psm-btn" onclick="saveCommunityFollowup()">${appt?'Save':'Book only'}</button>
+      <button class="btn-save" onclick="bookAndEmailComcare()">📧 ${appt?'Save':'Book'} &amp; email Comcare</button>
     </div>
     ${appt?`<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
       <label for="cf-fb" style="font-weight:700;color:var(--navy);">Comcare feedback</label>
@@ -25029,26 +25036,49 @@ async function emailComcareImaging(){
   try{loadPostopDischarges();}catch(e){}
   setTimeout(()=>alert('Your email has opened addressed to Comcare (Cc: the stoma clinic). Check the address and send. The tele follow-up is saved in the patient profile. If nothing opened, allow pop-ups / set a default mail app.'),400);
 }
-async function saveCommunityFollowup(){
-  const c=communityFollowupCtx;if(!c)return;
+// Core of a tele follow-up: save/create the reminder record AND set the patient
+// as a Common tele follow-up due in the reminder month. Returns {ok}.
+async function teleFollowupApply(){
+  const c=communityFollowupCtx;if(!c)return {ok:false};
   const date=document.getElementById('cf-date')?.value;
   const note=document.getElementById('cf-note')?.value||'';
-  if(!date){alert('Pick a reminder date.');return;}
+  if(!date){alert('Pick a reminder / due date.');return {ok:false};}
   if(c.appt&&c.appt.id){
     const{error}=await updateAppointmentTolerant(c.appt.id,{appt_date:date,community_reminder_note:note,community_followup:true});
-    if(error){alert('Could not save: '+(error.message||error));return;}
+    if(error){alert('Could not save: '+(error.message||error));return {ok:false};}
     c.appt.appt_date=date;c.appt.community_reminder_note=note;
   }else{
     const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:null,status:'booked'}).select('*').single();
-    if(error){alert('Could not book the community follow-up: '+(error.message||error));return;}
+    if(error){alert('Could not book the tele follow-up: '+(error.message||error));return {ok:false};}
     const up=await updateAppointmentTolerant(data.id,{community_followup:true,community_reminder_note:note});
     c.appt={...data,community_followup:true,community_reminder_note:note};
     if(up.dropped&&up.dropped.includes('community_followup'))
       setTimeout(()=>alert('Saved as a reminder. Run sql/add-community-followup.sql in Supabase so it is tracked as a community follow-up (not a normal appointment).'),300);
   }
+  // Set the patient under Common, as a tele follow-up, due in the reminder month.
+  const d=String(date).slice(0,10),mm=Number(d.slice(5,7)),yy=Number(d.slice(0,4));
+  const patch={followup_owner:'Common',followup_type:'tele',followup_status:'active'};
+  if(mm>=1&&mm<=12&&yy>2000){patch.followup_due_month=mm;patch.followup_year=yy;}
+  try{await updatePatientTolerant(c.patientId,patch);c.pat={...c.pat,...patch};}catch(e){}
+  return {ok:true};
+}
+async function saveCommunityFollowup(){
+  const r=await teleFollowupApply();if(!r.ok)return;
   renderCommunityFollowup();
   try{refreshAppointmentViews();}catch(e){}
   try{loadPostopDischarges();}catch(e){}
+}
+// Book the tele follow-up and open the Comcare imaging email, one after the other.
+async function bookAndEmailComcare(){
+  const c=communityFollowupCtx;if(!c)return;
+  const r=await teleFollowupApply();if(!r.ok)return;
+  openComcareEmail(comcareSubject(c.pat,'imaging feedback request'),comcareImagingBody(c.pat));
+  try{await updateAppointmentTolerant(c.appt.id,{comcare_email_sent_date:TODAY});c.appt.comcare_email_sent_date=TODAY;}catch(e){}
+  renderCommunityFollowup();
+  try{refreshAppointmentViews();}catch(e){}
+  try{loadPostopDischarges();}catch(e){}
+  const mm=Number(String(c.appt.appt_date||'').slice(5,7));
+  setTimeout(()=>alert('Booked as a Common tele follow-up'+(mm>=1&&mm<=12?' (due '+followupMonthName(mm)+')':'')+' and the Comcare email has opened (Cc: the stoma clinic). Check the address and send. Tele patients do not take a clinic slot.'),400);
 }
 async function saveComcareFeedback(){
   const c=communityFollowupCtx;if(!c||!c.appt||!c.appt.id)return;
