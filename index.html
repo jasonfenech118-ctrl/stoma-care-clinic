@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-746"></script>
+<script src="assets/manual.js?v=2026.11.08-747"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4011,7 +4011,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-746';
+const APP_BUILD='2026.11.08-747';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19612,7 +19612,7 @@ async function gatherClinicChanges(date){
       const newApp=(e.appliances||[]).slice();
       // Record the appliance change itself: previous appliance → new appliance.
       if(newApp.length&&(e.first||norm(prevApp)!==norm(newApp)))
-        changes.push({stomaType:e.stoma_type||'',from:prevApp,to:newApp,first:!!e.first,fromText:prevApp.join(', ')});
+        changes.push({stomaType:e.stoma_type||'',from:prevApp,to:newApp,first:!!e.first,fromText:prevApp.join(', '),trial:false});
       const addSet=new Set((e.added||[]).map(lc));
       (e.appliances||[]).filter(a=>e.first||addSet.has(lc(a))).forEach(a=>{if(!seen.has('a'+lc(a))){seen.add('a'+lc(a));items.push({name:a,accessory:false,stomaType:e.stoma_type});}});
       (e.accessories||[]).filter(a=>e.first||addSet.has(lc(a))).forEach(a=>{if(!seen.has('x'+lc(a))){seen.add('x'+lc(a));items.push({name:a,accessory:true,stomaType:e.stoma_type});}});
@@ -19649,7 +19649,9 @@ function renderClinicChanges(){
             +'<span style="color:#64748b;font-size:12px;">previous</span>'
             +'<input value="'+htmlSafe(c.fromText!=null?c.fromText:c.from.join(', '))+'" placeholder="'+(c.first?'add previous appliance / accessories (if any)':'previous appliance / accessories')+'" oninput="clinicChangesSetChange('+pi+','+ci+',\'fromText\',this.value)" style="flex:1;min-width:160px;'+inp+'">'
             +'<span style="color:#0d7377;font-weight:800;">→</span>'
-            +'<b>'+htmlSafe(c.to.join(', '))+'</b></div>').join('')+'</div>':'')
+            +'<b>'+htmlSafe(c.to.join(', '))+'</b>'
+            +'<button type="button" onclick="clinicChangesTrialToggle('+pi+','+ci+')" title="Mark this change as given on a trial basis" style="margin-left:4px;border:1.5px solid '+(c.trial?'#b45309':'var(--border)')+';background:'+(c.trial?'#fef3c7':'#fff')+';color:'+(c.trial?'#92400e':'#64748b')+';border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;cursor:pointer;">'+(c.trial?'🧪 Trial ✓':'🧪 Trial')+'</button>'
+            +'</div>').join('')+'</div>':'')
         +'<table style="width:100%;border-collapse:collapse;">';
       pt.items.forEach((it,ii)=>{
         html+='<tr>'
@@ -19672,6 +19674,7 @@ function renderClinicChanges(){
 }
 function clinicChangesSet(pi,ii,field,val){const s=clinicChangesState;if(s&&s.patients[pi]&&s.patients[pi].items[ii])s.patients[pi].items[ii][field]=val;}
 function clinicChangesSetChange(pi,ci,field,val){const s=clinicChangesState;if(s&&s.patients[pi]&&s.patients[pi].changes&&s.patients[pi].changes[ci])s.patients[pi].changes[ci][field]=val;}
+function clinicChangesTrialToggle(pi,ci){const s=clinicChangesState;if(s&&s.patients[pi]&&s.patients[pi].changes&&s.patients[pi].changes[ci]){const c=s.patients[pi].changes[ci];c.trial=!c.trial;renderClinicChanges();}}
 function clinicChangesAdd(pi){const s=clinicChangesState;if(s&&s.patients[pi]){s.patients[pi].items.push({name:'',qty:'',unit:'per month',accessory:true});renderClinicChanges();}}
 function clinicChangesRemove(pi,ii){const s=clinicChangesState;if(s&&s.patients[pi]){s.patients[pi].items.splice(ii,1);renderClinicChanges();}}
 // One patient's block on the combined changes page (no letterhead / footer of its own).
@@ -19683,7 +19686,7 @@ function clinicChangesBlockHTML(pt){
     return '<tr><td style="padding:3pt 14pt 3pt 0;vertical-align:top;width:34%;">'+(c.stomaType?'<strong>'+htmlSafe(c.stomaType)+'</strong> — ':'')
     +prevTxt+'</td>'
     +'<td style="padding:3pt 10pt 3pt 0;vertical-align:top;width:4%;color:#000080;">&rarr;</td>'
-    +'<td style="padding:3pt 0;vertical-align:top;"><strong>'+htmlSafe(c.to.join(', '))+'</strong></td></tr>';}).join('');
+    +'<td style="padding:3pt 0;vertical-align:top;"><strong>'+htmlSafe(c.to.join(', '))+'</strong>'+(c.trial?' <span style="font-weight:700;color:#92400e;">(trial)</span>':'')+'</td></tr>';}).join('');
   const changes=changeRows?'<table style="width:100%;border-collapse:collapse;margin:0 0 8pt;"><tbody>'+changeRows+'</tbody></table>':'';
   const rows=pt.items.filter(it=>String(it.name).trim()).map(it=>
     '<tr><td style="padding:3pt 14pt 3pt 0;vertical-align:top;width:58%;">&bull;&nbsp;'+htmlSafe(it.name)+'</td>'
