@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'8 November 2026 — The Seen clinical review underlines spelling/grammar live as you type, and the ✓ Proofread panel now also gives 💡 Clarity notes for unclear or over-long sentences and the whole paragraph (advice only, offline, meaning kept). Also: the 🧪 Trial button on appliance changes and the community-care discharge gate.'};
+const MANUAL_META={updated:'8 November 2026 — The Seen clinical review underlines complication terms live in solid red and spelling/grammar in wavy lines as you type; the ✓ Proofread panel adds 💡 Clarity notes for unclear sentences and the paragraph (advice only, offline, meaning kept). Also: the 🧪 Trial button on appliance changes and the community-care discharge gate.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

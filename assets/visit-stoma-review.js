@@ -609,6 +609,7 @@
   function input(e){
     const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;
     history(s);s.notes=htmlToMarkers(el);remember(s);syncDiff(s);
+    refreshHighlights();   // repaint the live complication underline as you type
   }
   function payloadFor(apptId){
     if(!enabled()||!draft||draft.locked||draft.apptId!==String(apptId))return null;
@@ -661,9 +662,46 @@
     return true;
   }
   function clear(){draft=null;histories.clear();}
-  // The contenteditable renders formatting itself; complication terms are
-  // red-underlined in the saved view. Nothing to repaint live.
-  function refreshHighlights(){}
+  // Live complication-term underlining in the editor: recognised complication
+  // words (the bible + the standard list) get a solid red underline AS YOU TYPE,
+  // using the CSS Custom Highlight API — no DOM/caret changes. Where the API is
+  // unsupported it does nothing (the saved view still underlines terms).
+  let vsrHlStyle=false;
+  function vsrSupportsHL(){return typeof CSS!=='undefined'&&CSS.highlights&&typeof Highlight!=='undefined'&&typeof Range!=='undefined';}
+  function vsrInjectStyle(){
+    if(vsrHlStyle||!document.head)return;vsrHlStyle=true;
+    const st=document.createElement('style');
+    st.textContent='::highlight(vsr-complication){text-decoration-line:underline;text-decoration-color:#dc2626;text-decoration-style:solid;text-decoration-thickness:2px;text-underline-offset:2px;}';
+    document.head.appendChild(st);
+  }
+  // Plain text of a contenteditable plus a char→DOM-node map (for building ranges).
+  function vsrModel(root){
+    let text='';const map=[];
+    (function walk(node){node.childNodes.forEach(function(ch){
+      if(ch.nodeType===3){const v=ch.nodeValue;for(let i=0;i<v.length;i++)map.push({node:ch,off:i});text+=v;}
+      else if(ch.nodeType===1){const tag=ch.tagName.toLowerCase();
+        if(tag==='br'){text+='\n';map.push({node:null});}
+        else{if(/^(div|p|li)$/.test(tag)&&text&&!text.endsWith('\n')){text+='\n';map.push({node:null});}walk(ch);}}
+    });})(root);
+    return {text:text,map:map};
+  }
+  function refreshHighlights(){
+    if(!vsrSupportsHL()||!host)return;
+    vsrInjectStyle();
+    if(!CSS.highlights.has('vsr-complication'))CSS.highlights.set('vsr-complication',new Highlight());
+    const hl=CSS.highlights.get('vsr-complication');hl.clear();
+    const choices=terms().map(function(t){return t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
+    if(!choices.length)return;
+    let re;try{re=new RegExp('(?<![\\p{L}\\p{N}_])('+choices.join('|')+')(?![\\p{L}\\p{N}_])','giu');}catch(_){return;}
+    host.querySelectorAll('.vsr-rich[data-vsr="notes"]').forEach(function(ed){
+      const model=vsrModel(ed);let m;re.lastIndex=0;
+      while((m=re.exec(model.text))){
+        const a=model.map[m.index],b=model.map[m.index+m[0].length-1];
+        if(a&&a.node&&b&&b.node){try{const r=document.createRange();r.setStart(a.node,a.off);r.setEnd(b.node,b.off+1);hl.add(r);}catch(_){}}
+        if(re.lastIndex===m.index)re.lastIndex++;
+      }
+    });
+  }
   window.VisitStomaReview={highlighted,formatNotes,markersToHtml,htmlToMarkers,refreshHighlights,validate,enabled,mount,payloadFor,summaryLines,skinFor,isSkinProblem,clear,storedFor,currentRows,
     rowsOf,versionsOf,editableToday,recordedDay,reviewHTML,stamp,get state(){return draft;}};
 })();
