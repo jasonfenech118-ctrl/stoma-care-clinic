@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.07-740';
+const APP_BUILD='2026.11.08-741';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4697,13 +4697,13 @@ function comcareFreqText(groups){
   return parts.length?('community nurses '+parts.join('; and ')):'community nurse stoma care';
 }
 // The auto-filled care-plan email body for Comcare (method A: plan in the body).
-function comcarePlanBody(pat,groups,signer){
+function comcarePlanBody(pat,groups){
   const title=/^m/i.test(pat.sex||'')?'Mr':/^f/i.test(pat.sex||'')?'Ms':'';
   const nm=[title,pat.first_name,pat.surname].filter(Boolean).join(' ')||'This patient';
   const op=pat.procedure_performed||'stoma surgery';
   const surg=pat.surgery_date?fmtShortDate(pat.surgery_date):'';
-  const sign=signer?('Kind regards,\n'+signer+'\nStoma Team'):'Kind regards,\nStoma Team';
-  return `Dear community nurses,\n\n${nm}${pat.id_card?' ('+pat.id_card+')':''} underwent ${op}${surg?' on '+surg:''} and was discharged on ${fmtShortDate(TODAY)}.\n\n${nm} requires ${comcareFreqText(groups)}.\n\nThe care plan is sent for your reference.\n\n${sign}`;
+  // No sign-off — Outlook appends the nurse's own signature block.
+  return `Dear community nurses,\n\n${nm}${pat.id_card?' ('+pat.id_card+')':''} underwent ${op}${surg?' on '+surg:''} and was discharged on ${fmtShortDate(TODAY)}.\n\n${nm} requires ${comcareFreqText(groups)}.\n\nThe care plan is sent for your reference.`;
 }
 // Present stoma groups (Colostomy / Ileostomy / Urostomy) for the care plan.
 function patientStomaGroups(pat){
@@ -22944,9 +22944,7 @@ async function dischargeCommunityPick(v){
 }
 async function emailComcarePlan(){
   const c=dischargeCtx;if(!c)return;
-  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
-  const signer=(typeof attDisplayName==='function'&&attDisplayName(who))||'';
-  openComcareEmail(comcareSubject(c.patient,'stoma care plan'),comcarePlanBody(c.patient,patientStomaGroups(c.patient),signer));
+  openComcareEmail(comcareSubject(c.patient,'stoma care plan'),comcarePlanBody(c.patient,patientStomaGroups(c.patient)));
   setTimeout(()=>alert('The care-plan email has opened addressed to Comcare (Cc: the stoma clinic). Check it and send, then tick "I have sent the care plan to Comcare".'),400);
 }
 async function confirmDischargeModal(patientId){
@@ -24672,11 +24670,11 @@ async function communityFollowupFor(patientId){
   try{const{data}=await SB.from('appointments').select('*').eq('patient_id',patientId).eq('community_followup',true)
     .order('appt_date',{ascending:false}).limit(1);return (data&&data[0])||null;}catch(e){return null;}
 }
-function comcareImagingBody(pat,signer){
+function comcareImagingBody(pat){
   const title=/^m/i.test(pat.sex||'')?'Mr':/^f/i.test(pat.sex||'')?'Ms':'';
   const nm=[title,pat.first_name,pat.surname].filter(Boolean).join(' ')||'this patient';
-  const sign=signer?('Kind regards,\n'+signer+'\nStoma Team'):'Kind regards,\nStoma Team';
-  return `Dear community nurses,\n\nWe would like to request imaging feedback of this patient, ${nm}${pat.id_card?' ('+pat.id_card+')':''}. Kindly provide images.\n\n${sign}`;
+  // No sign-off — Outlook appends the nurse's own signature block.
+  return `Dear community nurses,\n\nWe would like to request imaging feedback of this patient, ${nm}${pat.id_card?' ('+pat.id_card+')':''}. Kindly provide images.`;
 }
 let communityFollowupCtx=null;
 async function openCommunityFollowup(patientId){
@@ -24713,9 +24711,7 @@ function renderCommunityFollowup(){
 }
 async function emailComcareImaging(){
   const c=communityFollowupCtx;if(!c)return;
-  let who={};try{who=await getCurrentUserForAudit();}catch(e){}
-  const signer=(typeof attDisplayName==='function'&&attDisplayName(who))||'';
-  openComcareEmail(comcareSubject(c.pat,'imaging feedback request'),comcareImagingBody(c.pat,signer));
+  openComcareEmail(comcareSubject(c.pat,'imaging feedback request'),comcareImagingBody(c.pat));
   // Stamp the sent date on the saved follow-up (if it exists yet).
   if(c.appt&&c.appt.id){
     try{await updateAppointmentTolerant(c.appt.id,{comcare_email_sent_date:TODAY});c.appt.comcare_email_sent_date=TODAY;renderCommunityFollowup();}catch(e){}
