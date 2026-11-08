@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'8 November 2026 — The 📋 Changes dispensary note now leaves off first-time appliance recordings (an initial record, not a change). The Seen clinical review auto-capitalises each sentence, underlines complication terms in red and spelling/grammar in wavy lines, and the ✓ Proofread panel adds 💡 Clarity notes (offline, meaning kept).'};
+const MANUAL_META={updated:'8 November 2026 — Clinic availability now counts a patient seen today and set a future due month toward that month’s demand (a completed visit no longer hides them, so the free-slot count is correct). Also: the 📋 Changes note skips first-time appliance recordings, and the Seen clinical review auto-capitalises, underlines complication terms and spelling, and has the ✓ Proofread panel.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
