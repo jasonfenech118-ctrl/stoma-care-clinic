@@ -324,5 +324,54 @@
     render();
   }
 
-  window.Proofread={check:check,open:open,close:close};
+  // ---- Live underlining as you type (CSS Custom Highlight API) ----------------
+  // Draws a wavy underline under spelling / grammar / spacing issues over the real
+  // text — no DOM or caret changes, so typing is never disturbed. Where the API is
+  // unsupported it does nothing (the ✓ Proofread button still works).
+  const LIVE_TYPES=['spelling','grammar','mechanics'];   // wording (style) stays button-only
+  const liveEditors=new Set();
+  let liveTimer=null,styleInjected=false;
+  function supportsHighlight(){return typeof CSS!=='undefined'&&CSS.highlights&&typeof Highlight!=='undefined'&&typeof Range!=='undefined';}
+  function injectStyle(){
+    if(styleInjected||!document.head)return;styleInjected=true;
+    const st=document.createElement('style');
+    st.textContent='::highlight(pf-spelling){text-decoration:red wavy underline;text-decoration-skip-ink:none;}'
+      +'::highlight(pf-grammar){text-decoration:#d97706 wavy underline;text-decoration-skip-ink:none;}'
+      +'::highlight(pf-mechanics){text-decoration:#2563eb wavy underline;text-decoration-skip-ink:none;}';
+    document.head.appendChild(st);
+  }
+  function ensureHighlights(){
+    if(!supportsHighlight())return false;
+    LIVE_TYPES.forEach(function(t){if(!CSS.highlights.has('pf-'+t))CSS.highlights.set('pf-'+t,new Highlight());});
+    return true;
+  }
+  function rebuildHighlights(){
+    if(!ensureHighlights())return;
+    const byType={spelling:[],grammar:[],mechanics:[]};
+    Array.from(liveEditors).forEach(function(ed){
+      if(!ed.isConnected){liveEditors.delete(ed);return;}
+      const model=buildModel(ed);
+      check(model.text).forEach(function(i){
+        if(!byType[i.type])return;                       // skip wording etc.
+        const a=model.map[i.start],b=model.map[i.end-1];
+        if(!a||!a.node||!b||!b.node)return;
+        try{const r=document.createRange();r.setStart(a.node,a.off);r.setEnd(b.node,b.off+1);byType[i.type].push(r);}catch(_){}
+      });
+    });
+    LIVE_TYPES.forEach(function(t){const h=CSS.highlights.get('pf-'+t);if(h){h.clear();byType[t].forEach(function(r){h.add(r);});}});
+  }
+  function refreshLive(){clearTimeout(liveTimer);liveTimer=setTimeout(rebuildHighlights,250);}
+  function live(editor){
+    if(!editor||!supportsHighlight())return;
+    injectStyle();
+    if(!editor.dataset.pfLive){
+      editor.dataset.pfLive='1';
+      editor.addEventListener('input',refreshLive);
+      editor.addEventListener('blur',refreshLive);
+      liveEditors.add(editor);
+    }
+    rebuildHighlights();
+  }
+
+  window.Proofread={check:check,open:open,close:close,live:live,refreshLive:refreshLive};
 })();

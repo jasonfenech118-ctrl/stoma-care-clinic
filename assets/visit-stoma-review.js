@@ -538,6 +538,8 @@
       :'<div class="report-note">No stoma is recorded for this patient. Add it in the patient record to assess it here.</div>')+
       (all.length?'<div class="jenc-signature">Signature will be recorded automatically'+(draft.signer?': '+esc(draft.signer):'')+'</div>':'');
     refreshHighlights();
+    // Live spelling / grammar underlining as the nurse types (where supported).
+    if(window.Proofread&&Proofread.live)host.querySelectorAll('.vsr-rich[data-vsr="notes"]').forEach(ed=>Proofread.live(ed));
   }
   function find(el){return draft?.stomas.find(s=>s.uid===el.dataset.uid);}
   // "Healthy skin" stands alone; ticking any finding clears it.
