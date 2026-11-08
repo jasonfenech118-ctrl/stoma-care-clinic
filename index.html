@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-745"></script>
+<script src="assets/manual.js?v=2026.11.08-746"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -35,7 +35,8 @@
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
 <script defer src="assets/jason-encounters.js?v=2026.11.01-691"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.11.03-722"></script>
+<script defer src="assets/proofread.js?v=2026.11.08-746"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.11.08-746"></script>
 <style>
 #page-patient-record #pd-history .psm-card:has(.psm-next){display:none!important}
 
@@ -1845,6 +1846,16 @@ td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;
 #hv-table tr.hv-surgery td{background:#f6efff;}
 .hv-await-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#ffe0b2;
   color:#8a4b00;font-size:11px;font-weight:800;white-space:nowrap;}
+/* Community-care gate: a patient going home with Comcare whose care plan has not
+   been sent yet. The whole row goes amber (over any ward colour) until verified. */
+#hv-table tr.hv-comm-pending td{background:#ffedd5!important;}
+#hv-table tr.hv-comm-pending td.hv-inf{background:#ff2b2b!important;}
+#hv-table tr.hv-comm-pending td:first-child{box-shadow:inset 5px 0 0 #ea580c;}
+.hv-comm-flag{flex:1 1 100%;font-size:11px;font-weight:800;color:#9a3412;background:#fff;
+  border:1px solid #fdba74;border-radius:7px;padding:5px 8px;text-align:center;margin-bottom:4px;line-height:1.3;}
+.hv-actions-cell .hv-verify-plan{background:#ea580c;color:#fff;font-weight:800;}
+.hv-actions-cell .hv-verify-plan:hover{background:#c2410c;}
+.hv-actions-cell .hv-verify-plan:focus-visible{outline:3px solid #fdba74;outline-offset:2px;}
 /* The pre-operative stoma care checklist inside the "Seen" modal. */
 .sit-ck-wrap{max-height:60vh;overflow:auto;margin:10px 0;border:1px solid #e5e7eb;border-radius:10px;}
 .sit-ck-item{padding:10px 12px;border-bottom:1px solid #eef0f3;}
@@ -4000,7 +4011,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-745';
+const APP_BUILD='2026.11.08-746';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -21990,7 +22001,7 @@ async function loadHandover(){
   if(!body)return;
   if(typeof renderDischargeUndoBanner==='function')renderDischargeUndoBanner();
   const version=++handoverLoadVersion;
-  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,schedule_five_collected_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category,procedure_performed,consultant,findings,refashion_findings,newstoma_findings';
+  const HV_COLS='stoma_operation_history,stoma_superseded_date,id,first_name,surname,id_card,phone_number,sex,operated_abroad,is_inpatient,inpatient_ward,inpatient_bed,inpatient_notes,inpatient_nurse_notes,flange_due,inpatient_since,discharge_letter,schedule_five_permit,discharge_letter_done_date,schedule_five_left_date,schedule_five_signed_date,schedule_five_collected_date,surgery_date,discharge_date,stoma_type,stoma_location,reversal_date,deceased_date,followup_status,extra_statuses,rod_removal_date,rod_removed_date,initial_stomas,extra_refashionings,refashion_formed_date,refashion_closure_date,refashion_location,newstoma_formed_date,newstoma_closure_date,newstoma_location,extra_stomas,complications,patient_kind,fistula_operation_date,fistula_category,procedure_performed,consultant,findings,refashion_findings,newstoma_findings,community_care,comcare_plan_sent_date';
   let cols=HV_COLS,data,error;
   // The nurse-note, flange-due and document-date columns are newer than the rest;
   // drop whichever the database does not have yet so the sheet still loads.
@@ -22545,7 +22556,11 @@ function handoverRowHTML(p,cls){
   // opens a modal (openDischargeModal → dischargeOptionsHTML), which decides on
   // its own whether to offer "Postop discharge" for this admission.
   const nameArg=jsSafe(`${p.first_name||''} ${p.surname||''}`.trim());
-  return `<tr class="${cls||''}${fistula?' hv-fistula':''}${isBaggingPatient(p)?' hv-bagging':''}" data-pid="${p.id}">
+  // Community-care gate: a patient going home with Comcare whose care plan has not
+  // yet been emailed to Comcare cannot be discharged — the row is flagged amber and
+  // the Discharge button is replaced by "Verify care plan sent to Comcare".
+  const commPending=String(p.community_care||'').trim().toLowerCase()==='yes'&&!p.comcare_plan_sent_date;
+  return `<tr class="${cls||''}${fistula?' hv-fistula':''}${isBaggingPatient(p)?' hv-bagging':''}${commPending?' hv-comm-pending':''}" data-pid="${p.id}">
     <td class="hv-wb" data-label="Ward" style="${wardBlockStyle(p.inpatient_ward)}" title="${htmlSafe(wardBlockTitle(p.inpatient_ward))}"><div class="hv-wbin"><input type="text" class="hv-inp hv-ward" value="${htmlSafe(p.inpatient_ward||'')}" placeholder="Ward"
       oninput="this.value=this.value.toUpperCase();fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim().toUpperCase())"/><span
       class="hv-dash">-</span><input type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
@@ -22570,7 +22585,10 @@ function handoverRowHTML(p,cls){
     <td data-label="Discharge letter">${handoverDocButtonHTML(p,'discharge_letter')}</td>
     <td data-label="Schedule 5 permit">${handoverDocButtonHTML(p,'schedule_five_permit')}</td>
     <td class="hv-actions-cell"><div class="followup-actions">
-      ${fistula?`<button class="ncb-btn hv-discharge-patient" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}','${isBaggingPatient(p)?'bagging':'fistula'}')" title="Off the handover; fistula and bagging-advice patients are not on the Postop Discharges list">🏷️ Discharge patient</button>`:`<button class="ncb-btn hv-discharge-patient" onclick="openDischargeModal('${p.id}','${nameArg}')" title="Discharge this patient — choose postop discharge, old case, Gozo or relocated overseas, each with its consequence">🏷️ Discharge patient</button>`}
+      ${commPending
+        ? `<div class="hv-comm-flag">📋 Community care — care plan not sent to Comcare</div>
+      <button class="ncb-btn hv-verify-plan" onclick="openVerifyCarePlan('${p.id}','${nameArg}')" title="Email the care plan to Comcare and confirm it was sent — the patient cannot be discharged until this is done">📧 Verify care plan sent to Comcare</button>`
+        : (fistula?`<button class="ncb-btn hv-discharge-patient" onclick="dischargeFistulaFromHandover('${p.id}','${nameArg}','${isBaggingPatient(p)?'bagging':'fistula'}')" title="Off the handover; fistula and bagging-advice patients are not on the Postop Discharges list">🏷️ Discharge patient</button>`:`<button class="ncb-btn hv-discharge-patient" onclick="openDischargeModal('${p.id}','${nameArg}')" title="Discharge this patient — choose postop discharge, old case, Gozo or relocated overseas, each with its consequence">🏷️ Discharge patient</button>`)}
       <button class="ncb-btn hv-mob-only hv-profile" onclick="openHandoverProfile('${p.id}')" title="Open patient profile">🪪 Profile</button>
       <button type="button" class="ncb-btn hv-discharge-letters" onclick="openDischargeLetterFor('${p.id}')" title="Open discharge letter with this patient’s details">📄 Discharge letters</button>
     </div></td>
@@ -23104,11 +23122,65 @@ async function dischargeCommunityPick(v){
     const ok=await patientHasDischargeLetter(c.patient.id);
     if(dischargeCtx===c){c.letterOk=ok;renderDischargeModal();}
   }else renderDischargeModal();
+  // Persist the decision now (fire-and-forget). If the discharge is then blocked
+  // (plan not yet sent) and the nurse closes the modal, the patient is flagged on
+  // the handover — the row goes amber with a "Verify care plan sent" button.
+  try{updatePatientTolerant(c.patient.id,{community_care:v,community_care_date:TODAY}).catch(()=>{});}catch(e){}
 }
 async function emailComcarePlan(){
   const c=dischargeCtx;if(!c)return;
   openComcareEmail(comcareSubject(c.patient,'stoma care plan'),comcarePlanBody(c.patient,patientStomaGroups(c.patient)));
   setTimeout(()=>alert('The care-plan email has opened addressed to Comcare (Cc: the stoma clinic). Check it and send, then tick "I have sent the care plan to Comcare".'),400);
+}
+// Handover "Verify care plan sent to Comcare": for a community-care patient whose
+// discharge is blocked until the care plan is emailed to Comcare. Lifting the block
+// stamps comcare_plan_sent_date, which returns the row to its normal buttons.
+let verifyPlanCtx=null;
+async function openVerifyCarePlan(patientId,name){
+  const{data:p,error}=await SB.from('patients').select('*').eq('id',patientId).maybeSingle();
+  if(error||!p){alert('Could not open this patient: '+(error?error.message:'they are no longer in the registry'));return;}
+  const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
+  verifyPlanCtx={patient:p,name:nm,sent:false};
+  renderVerifyCarePlan();openMo();
+}
+function renderVerifyCarePlan(){
+  const c=verifyPlanCtx;if(!c)return;const mb=document.getElementById('mb');if(!mb)return;
+  mb.className='mb'+sexModalClass(c.patient);
+  const nm=c.name,pid=jsSafe(String(c.patient.id));
+  mb.innerHTML=`<h2>Verify care plan sent to Comcare</h2>
+    <div class="dis-final" style="border-left:4px solid #ea580c;background:#fff7ed;">
+      <strong>${htmlSafe(nm)}</strong> is going home with <strong>community care (Comcare)</strong>. The patient cannot be discharged until the care plan has been emailed to Comcare and you confirm it was sent.
+    </div>
+    <p style="margin:12px 0 6px;">Email the care plan — it opens in Outlook addressed to Comcare (Cc: the stoma clinic). Check it and send, then confirm below.</p>
+    <button type="button" class="psm-btn" onclick="verifyEmailPlan()">📧 Email care plan to Comcare</button>
+    <label class="dis-ack" style="margin-top:10px;"><input type="checkbox" id="vp-sent" ${c.sent?'checked':''} onchange="verifyPlanToggle()"/> <span>I have sent the care plan to Comcare.</span></label>
+    <div class="mact">
+      <button class="btn-cancel" onclick="closeModal()">Close</button>
+      <button type="button" class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);" onclick="verifyPlanNotNeeded('${pid}')">Not community care after all</button>
+      <button class="btn-save" id="vp-confirm" ${c.sent?'':'disabled'} onclick="confirmVerifyCarePlan('${pid}')">Confirm &amp; unblock discharge</button>
+    </div>`;
+}
+function verifyPlanToggle(){if(verifyPlanCtx)verifyPlanCtx.sent=!!document.getElementById('vp-sent')?.checked;const b=document.getElementById('vp-confirm');if(b)b.disabled=!(verifyPlanCtx&&verifyPlanCtx.sent);}
+function verifyEmailPlan(){
+  const c=verifyPlanCtx;if(!c)return;
+  openComcareEmail(comcareSubject(c.patient,'stoma care plan'),comcarePlanBody(c.patient,patientStomaGroups(c.patient)));
+  setTimeout(()=>alert('The care-plan email has opened addressed to Comcare (Cc: the stoma clinic). Check it and send, then tick that it was sent.'),400);
+}
+async function confirmVerifyCarePlan(patientId){
+  const c=verifyPlanCtx;if(!c)return;
+  if(!document.getElementById('vp-sent')||!document.getElementById('vp-sent').checked)return;
+  const b=document.getElementById('vp-confirm');if(b){b.disabled=true;b.textContent='Saving…';}
+  try{await updatePatientTolerant(patientId,{comcare_plan_sent_date:TODAY,community_care:'yes',community_care_date:c.patient.community_care_date||TODAY});}
+  catch(e){alert('Could not save: '+(e&&e.message||e));if(b){b.disabled=false;b.textContent='Confirm & unblock discharge';}return;}
+  closeModal();
+  if(typeof loadHandover==='function')loadHandover();
+}
+async function verifyPlanNotNeeded(patientId){
+  if(!confirm('Mark this patient as NOT needing community care? The discharge block will be removed.'))return;
+  try{await updatePatientTolerant(patientId,{community_care:'no'});}
+  catch(e){alert('Could not save: '+(e&&e.message||e));return;}
+  closeModal();
+  if(typeof loadHandover==='function')loadHandover();
 }
 async function confirmDischargeModal(patientId){
   const v=dischargeCtx&&dischargeCtx.choice;

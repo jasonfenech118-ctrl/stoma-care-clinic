@@ -454,9 +454,9 @@
     return '<div class="jenc-stoma-col"><h4 class="jenc-stoma-title">'+esc(nameOf(s,all))+'</h4>'+
       '<div class="vsr-toolbar" role="toolbar" aria-label="Clinical review formatting">'+
       '<label>Font size <select data-vsr="font"'+ref+' aria-label="Font size">'+[12,14,16,18,20,24].map(n=>'<option'+(n===s.notes_font_size?' selected':'')+'>'+n+'</option>').join('')+'</select></label>'+
-      ['bold','italic','underline','undo','redo','bullets','numbered','complications'].map(k=>{
-        const L={bold:'<b>B</b>',italic:'<i>I</i>',underline:'<u>U</u>',undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complication bible'};
-        const T={bold:'Bold',italic:'Italic',underline:'Underline'};
+      ['bold','italic','underline','undo','redo','bullets','numbered','complications','proofread'].map(k=>{
+        const L={bold:'<b>B</b>',italic:'<i>I</i>',underline:'<u>U</u>',undo:'↶ Undo',redo:'↷ Redo',bullets:'• Bullets',numbered:'1. Numbered list',complications:'⚠ Complication bible',proofread:'✓ Proofread'};
+        const T={bold:'Bold',italic:'Italic',underline:'Underline',proofread:'Check spelling, grammar & wording (offline — suggestions keep the meaning)'};
         return '<button type="button" data-vsr-command="'+k+'"'+(T[k]?' title="'+T[k]+'" aria-label="'+T[k]+'"':'')+ref+'>'+L[k]+'</button>';
       }).join('')+
       '<label>Colour <select data-vsr="textcolour"'+ref+' aria-label="Text colour"><option value="">— colour —</option>'+Object.keys(NOTE_COLOURS).map(c=>'<option value="'+c+'">'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join('')+'</select></label>'+'</div>'+
@@ -588,7 +588,7 @@
   }
   function click(e){
     const control=e.target.closest?.('[data-vsr-command]');
-    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openBible();return;}command(k,s,editorFor(control));return;}
+    if(control){const s=find(control);if(!s)return;const k=control.dataset.vsrCommand;if(k==='complications'){openBible();return;}if(k==='proofread'){if(window.Proofread){window.Proofread.open(editorFor(control));}else{alert('The proofreader is still loading — try again in a moment.');}return;}command(k,s,editorFor(control));return;}
     const btn=e.target.closest?.('[data-vsr-add]');if(!btn)return;const s=find(btn);if(s)addOther(btn.dataset.vsrAdd,s);
   }
   // "+ Add other…": the new wording joins the list for good and is chosen here.
