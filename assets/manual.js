@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'7 November 2026 — A going-home discharge now asks “community care (Comcare)?”; choosing Yes blocks the discharge until the discharge letter is done and the care plan is emailed to Comcare and confirmed (run sql/add-community-care.sql). Postop Discharges also has a 📧 Community follow-up button for an email follow-up (run sql/add-community-followup.sql).'};
+const MANUAL_META={updated:'8 November 2026 — The Daily Clinic has a 📋 Changes button: it lists the day’s appliance &amp; accessory changes per patient with an editable per-day/per-month quantity, and prints a Mater Dei-letterhead pharmacy dispensary note (one page per patient) to download and send. Comcare emails also drop the duplicate sign-off.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -280,6 +280,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('tip','📝','<b>See what was written at a visit.</b> Every appointment card has a <span class="man-kbd">📝</span> button in its row of actions. Press it to open a <b>read-only</b> view of everything recorded at that visit — the <b>follow-up decision</b>, the per-stoma <b>assessment</b> (with its signed versions, via <b>Open review</b>), the <b>complication review</b>, and the <b>appliances &amp; accessories</b> used — without opening the full patient record. The <b>Follow-up decision</b> and the signed <b>Open review</b> both now show the patient’s <b>next follow-up due month</b>. If nothing was written yet (for example a booked or missed appointment), it says so. Nothing can be changed from this view.')}
     ${manNote('tip','👤','<b>Open the patient profile.</b> Next to it is a <span class="man-kbd">👤</span> button that jumps straight to that patient’s full record (Overview, Stomas, Outcome, Appointments, Episodes) from the clinic list — the <b>‹ Back</b> button returns you to the clinic.')}
+    ${manNote('tip','📋','<b>Changes for the pharmacy dispensary.</b> The <b>📋 Changes</b> button at the top of the Daily Clinic gathers every <b>appliance &amp; accessory change</b> made in the day’s attended visits, grouped per patient (discontinued items shown too). Each item gets a <b>quantity</b> and <b>unit</b> (per day / per month), <b>pre-filled</b> and editable; you can add or remove items. Press <b>🖨 Print / Download PDF</b> for a Mater Dei-letterhead dispensary note, <b>one page per patient</b>, to download and send to pharmacy yourself.')}
   `},
   {id:'outcome',title:'Record a visit outcome',keywords:'outcome seen did not turn up dntu cancelled attended visit complete',html:`
     ${manMap('appointments')}

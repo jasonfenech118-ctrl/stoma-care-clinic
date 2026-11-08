@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-742"></script>
+<script src="assets/manual.js?v=2026.11.08-743"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2846,9 +2846,12 @@ tr.pd-row-hit td{background:#fffbeb;}
         <div class="patient-search-results" id="patient-rebook-results"><div class="patient-search-empty">Enter at least 2 characters to search.</div></div>
       </div>
       <div style="background:white;border-radius:12px;border:1px solid #dde3ea;overflow:hidden;">
-        <div style="background:#1a2e4a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="background:#1a2e4a;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
           <strong style="font-size:15px;">Daily Clinic - 11 Slots</strong>
-          <span id="appt-slot-summary" style="font-size:11px;opacity:.65;"></span>
+          <span style="display:flex;align-items:center;gap:10px;">
+            <button type="button" onclick="openClinicChanges()" title="List the appliance & accessory changes made today, set quantities, and print a pharmacy dispensary note" style="font:700 12px/1 Arial,sans-serif;padding:7px 12px;border:1px solid #0d7377;background:#0d7377;color:#fff;border-radius:7px;cursor:pointer;">📋 Changes</button>
+            <span id="appt-slot-summary" style="font-size:11px;opacity:.65;"></span>
+          </span>
         </div>
         <div id="slots-container"></div>
       </div>
@@ -3997,7 +4000,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-742';
+const APP_BUILD='2026.11.08-743';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19545,6 +19548,138 @@ function s5Print(){
     +'@media print{.s5-bar{display:none}}</style></head><body>'
     +'<div class="s5-bar"><button onclick="window.print()">🖨 Print</button><span>Schedule V — '+htmlSafe(nm)+'</span></div>'
     +pages.join('')+'</body></html>');
+  w.document.close();w.focus();
+}
+/* ------------------------------------------------------------------------- *
+ * Clinic "Changes" — the appliance & accessory changes made in the day's
+ * (attended) follow-up visits, grouped per patient, with an editable quantity
+ * and unit (per day / per month) for each item, printed as a pharmacy dispensary
+ * note on the Mater Dei letterhead (one page per patient). Download = print →
+ * save as PDF; the nurse sends it on themselves.
+ * ------------------------------------------------------------------------- */
+let clinicChangesState=null;
+// Default quantity + unit for a changed item, from the Schedule V rules.
+function changesDefaultQty(it){
+  const cat=(typeof APPLIANCE_CATALOGUE!=='undefined')?APPLIANCE_CATALOGUE.find(a=>a.name===it.name):null;
+  if(!it.accessory&&cat){
+    if(cat.part==='flange')return{qty:'15',unit:'per month'};
+    const kind=s5BagKind(cat);
+    if(kind==='closed')return{qty:'60',unit:'per month'};
+    if(kind==='drainable'||kind==='urostomy')return{qty:'30',unit:'per month'};
+    return{qty:(daStomaGroup(it.stomaType)==='Colostomy'?'60':'30'),unit:'per month'};
+  }
+  const n=String(it.name).toLowerCase();
+  if(/adhesive remover/.test(n))return{qty:'2',unit:'per month'};
+  if(/hydrocolloid\s*5\s*x\s*20/.test(n))return{qty:'15',unit:'per month'};
+  if(/stoma belt/.test(n))return{qty:'1',unit:'per month'};
+  if(/powder/.test(n))return{qty:'1',unit:'per month'};
+  return{qty:'',unit:'per month'};
+}
+async function gatherClinicChanges(date){
+  const{data:appts}=await SB.from('appointments').select('patient_id').eq('appt_date',date).eq('status','attended');
+  const ids=[...new Set((appts||[]).map(a=>String(a.patient_id)).filter(Boolean))];
+  if(!ids.length)return [];
+  const[pr,er,ar]=await Promise.all([
+    SB.from('patients').select('*').in('id',ids),
+    SB.from('clinical_records').select('*').in('patient_id',ids).eq('kind','episode'),
+    SB.from('appointments').select('*').in('patient_id',ids)
+  ]);
+  const byPat=new Map((pr.data||[]).map(p=>[String(p.id),p]));
+  const lc=x=>String(x).toLowerCase();
+  const out=[];
+  ids.forEach(pid=>{
+    const p=byPat.get(pid);if(!p)return;
+    const epsP=(er.data||[]).filter(e=>String(e.patient_id)===pid);
+    const apsP=(ar.data||[]).filter(a=>String(a.patient_id)===pid);
+    let hist;try{hist=stomaApplianceHistory(p,epsP,apsP);}catch(e){return;}
+    const items=[],stopped=[],seen=new Set();
+    hist.forEach(entries=>entries.forEach(e=>{
+      if(String(e.date||'').slice(0,10)!==date||e.source!=='followup')return;
+      const addSet=new Set((e.added||[]).map(lc));
+      (e.appliances||[]).filter(a=>e.first||addSet.has(lc(a))).forEach(a=>{if(!seen.has('a'+lc(a))){seen.add('a'+lc(a));items.push({name:a,accessory:false,stomaType:e.stoma_type});}});
+      (e.accessories||[]).filter(a=>e.first||addSet.has(lc(a))).forEach(a=>{if(!seen.has('x'+lc(a))){seen.add('x'+lc(a));items.push({name:a,accessory:true,stomaType:e.stoma_type});}});
+      (e.stopped||[]).forEach(s=>{if(!stopped.includes(s))stopped.push(s);});
+    }));
+    if(items.length||stopped.length)out.push({patient:p,items:items.map(it=>({name:it.name,accessory:it.accessory,...changesDefaultQty(it)})),stopped});
+  });
+  return out;
+}
+async function openClinicChanges(){
+  const date=snapCurrentDate;
+  const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide';
+  mb.innerHTML='<h2>📋 Changes — pharmacy dispensary</h2><p class="report-note">Reading today’s appliance & accessory changes…</p>';
+  openMo();
+  let rows=[];try{rows=await gatherClinicChanges(date);}catch(e){mb.innerHTML='<h2>📋 Changes</h2><p class="report-note" style="color:#b91c1c;">Could not read the changes: '+htmlSafe(e&&e.message||e)+'</p><div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';return;}
+  clinicChangesState={date,patients:rows};
+  renderClinicChanges();
+}
+function renderClinicChanges(){
+  const s=clinicChangesState;if(!s)return;const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide';
+  const inp='padding:6px 8px;border:1px solid var(--border);border-radius:7px;font:inherit;';
+  let html='<h2>📋 Changes — pharmacy dispensary</h2>'
+    +'<p class="report-note" style="margin:4px 0 12px;line-height:1.5;">Appliance &amp; accessory changes from the attended visits on <b>'+htmlSafe(fmtShortDate(s.date))+'</b>. Set the quantity and unit for each item, then print or download the dispensary note.</p>';
+  if(!s.patients.length){
+    html+='<div class="report-note">No appliance or accessory changes were recorded for this day’s visits.</div>';
+  }else{
+    s.patients.forEach((pt,pi)=>{
+      const nm=`${pt.patient.first_name||''} ${pt.patient.surname||''}`.trim()||'Patient';
+      html+='<div style="border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin:10px 0;">'
+        +'<div style="font-weight:800;color:var(--navy);margin-bottom:6px;">'+htmlSafe(nm)+' · '+htmlSafe(pt.patient.id_card||'No ID')+'</div>'
+        +'<table style="width:100%;border-collapse:collapse;">';
+      pt.items.forEach((it,ii)=>{
+        html+='<tr>'
+          +'<td style="padding:3px 6px 3px 0;width:52%;"><input value="'+htmlSafe(it.name)+'" oninput="clinicChangesSet('+pi+','+ii+',\'name\',this.value)" style="width:100%;'+inp+'"></td>'
+          +'<td style="padding:3px 6px;width:70px;"><input value="'+htmlSafe(it.qty)+'" placeholder="qty" oninput="clinicChangesSet('+pi+','+ii+',\'qty\',this.value)" style="width:100%;'+inp+'"></td>'
+          +'<td style="padding:3px 6px;"><select onchange="clinicChangesSet('+pi+','+ii+',\'unit\',this.value)" style="'+inp+'">'
+            +['per day','per month'].map(u=>'<option'+(it.unit===u?' selected':'')+'>'+u+'</option>').join('')+'</select></td>'
+          +'<td style="padding:3px 0 3px 6px;width:30px;"><button onclick="clinicChangesRemove('+pi+','+ii+')" title="Remove" style="border:1px solid var(--border);background:#fff;border-radius:7px;width:28px;height:30px;cursor:pointer;color:#b91c1c;font-weight:800;">✕</button></td>'
+          +'</tr>';
+      });
+      html+='</table>'
+        +'<button onclick="clinicChangesAdd('+pi+')" style="margin-top:6px;border:1px dashed var(--border);background:#f8fafc;border-radius:7px;padding:6px 10px;cursor:pointer;font:inherit;font-weight:700;color:var(--navy);">+ Add item</button>'
+        +(pt.stopped.length?'<div class="report-note" style="margin-top:6px;">Stopped: '+htmlSafe(pt.stopped.join(', '))+'</div>':'')
+        +'</div>';
+    });
+  }
+  html+='<div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button>'
+    +(s.patients.length?'<button class="btn-save" onclick="clinicChangesPrint()">🖨 Print / Download PDF</button>':'')+'</div>';
+  mb.innerHTML=html;
+}
+function clinicChangesSet(pi,ii,field,val){const s=clinicChangesState;if(s&&s.patients[pi]&&s.patients[pi].items[ii])s.patients[pi].items[ii][field]=val;}
+function clinicChangesAdd(pi){const s=clinicChangesState;if(s&&s.patients[pi]){s.patients[pi].items.push({name:'',qty:'',unit:'per month',accessory:true});renderClinicChanges();}}
+function clinicChangesRemove(pi,ii){const s=clinicChangesState;if(s&&s.patients[pi]){s.patients[pi].items.splice(ii,1);renderClinicChanges();}}
+function clinicChangesPageHTML(pt,date,logoSrc,isFirst){
+  const p=pt.patient,nm=`${p.first_name||''} ${p.surname||''}`.trim()||'Patient';
+  const dob=/^\d{4}-\d{2}-\d{2}$/.test(String(p.date_of_birth||''))?String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'):'';
+  const rows=pt.items.filter(it=>String(it.name).trim()).map(it=>
+    '<tr><td style="padding:4pt 14pt 4pt 0;vertical-align:top;width:58%;">&bull;&nbsp;'+htmlSafe(it.name)+'</td>'
+    +'<td style="padding:4pt 0;vertical-align:top;">'+htmlSafe([it.qty,it.unit].filter(x=>String(x).trim()).join(' '))+'</td></tr>').join('');
+  const stopped=pt.stopped.length?'<p style="margin:14pt 0 0;"><strong>Discontinued:</strong> '+htmlSafe(pt.stopped.join(', '))+'</p>':'';
+  return '<section class="s5-page">'
+    +'<div class="s5-head"><table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:2px"><tr>'
+      +'<td style="padding:0;vertical-align:middle">'+(logoSrc?'<img width="205" style="display:block" src="'+logoSrc+'" alt="Sptar Mater Dei Hospital">':'')+'</td>'
+    +'</tr></table><div style="border-bottom:1.0pt solid #000080;height:5px;margin-bottom:16pt;font-size:1px">&nbsp;</div></div>'
+    +'<p style="margin:0 0 16pt;"><strong>'+htmlSafe(nm)+'</strong>&nbsp;&nbsp;ID No: '+htmlSafe(p.id_card||'')+(dob?'&nbsp;&nbsp;DOB: '+dob:'')+(p.phone_number?'&nbsp;&nbsp;Tel: '+htmlSafe(p.phone_number):'')+'</p>'
+    +'<p style="margin:0 0 14pt;"><strong>Pharmacy dispensary — appliance &amp; accessory changes</strong> &nbsp;('+htmlSafe(fmtShortDate(date))+')</p>'
+    +'<table style="width:100%;border-collapse:collapse;margin-bottom:12pt;"><tbody>'+(rows||'<tr><td>No items.</td></tr>')+'</tbody></table>'+stopped
+    +'<div class="s5-foot"><strong>Mater Dei Hospital</strong><br>Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090<br>Tel: +356 25450000&nbsp;&nbsp;www.materdeihospital.org.mt</div>'
+    +'</section>';
+}
+function clinicChangesPrint(){
+  const s=clinicChangesState;if(!s||!s.patients.length)return;
+  const logoSrc=new URL('assets/mater-dei-logo.png',location.href).href;
+  const pages=s.patients.map((pt,i)=>clinicChangesPageHTML(pt,s.date,logoSrc,i===0)).join('');
+  const w=window.open('','_blank');if(!w){alert('Please allow pop-ups to open the dispensary note.');return;}
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Dispensary changes — '+htmlSafe(fmtShortDate(s.date))+'</title>'
+    +'<style>@page{size:A4;margin:0}html,body{margin:0;padding:0;background:#fff}'
+    +'.s5-bar{font-family:Arial,Helvetica,sans-serif;margin:12px 16px;display:flex;gap:10px;align-items:center}'
+    +'.s5-bar button{font:600 14px/1 Arial,sans-serif;padding:9px 16px;border:1px solid #0d7377;background:#0d7377;color:#fff;border-radius:8px;cursor:pointer}'
+    +'.s5-page{position:relative;box-sizing:border-box;min-height:297mm;padding:16mm 18mm 30mm;font-family:\'Times New Roman\',serif;font-size:11.5pt;color:#000;line-height:1.3;page-break-after:always}'
+    +'.s5-page:last-child{page-break-after:auto}'
+    +'.s5-foot{position:absolute;left:18mm;right:18mm;bottom:14mm;font-family:\'Arial Narrow\',Arial,sans-serif;font-size:9.5pt;line-height:1.35;text-align:center;color:#222;border-top:1px solid #9aa3ad;padding-top:6px}'
+    +'@media print{.s5-bar{display:none}}</style></head><body>'
+    +'<div class="s5-bar"><button onclick="window.print()">🖨 Print / Save as PDF</button><span>Dispensary changes — '+htmlSafe(fmtShortDate(s.date))+'</span></div>'
+    +pages+'</body></html>');
   w.document.close();w.focus();
 }
 // The Siting button only shows when the patient already has a siting session, so
