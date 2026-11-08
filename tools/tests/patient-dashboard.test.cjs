@@ -49,8 +49,9 @@ w.clrState.appts.push({id:'b',appt_date:'2026-12-01',status:'booked'});w.refresh
 {w.clrState.appts=[{id:'tf',patient_id:'p',appt_date:'2026-11-08',status:'booked',community_followup:true,comcare_email_sent_date:'2026-11-08',comcare_feedback:'Stoma healthy per images'}];
  const h3=w.patientDashboardHistoryHTML();
  assert.match(h3,/Tele follow-up/);
- assert.match(h3,/Imaging requested/);
- assert.match(h3,/Comcare feedback: Stoma healthy per images/);
+ assert.match(h3,/Imaging request emailed to Comcare/);
+ assert.match(h3,/Comcare feedback/);
+ assert.match(h3,/Stoma healthy per images/);
  assert.doesNotMatch(h3,/See what was written/,'community appt is not shown as a normal follow-up');}
 w.clrState.appts=[];w.clrState.rows=[];w.clrState.encounters=[];assert.match(w.patientDashboardHistoryHTML(),/No stomas or clinical records recorded yet/);
 // 📚 Education: the booklet is wired to the patient's stoma type.

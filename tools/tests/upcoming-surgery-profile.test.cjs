@@ -25,7 +25,7 @@ function setup(t,options={}){
     loadClinicalRecords:async()=>{},loadPatientCommunications:async()=>{},fetchPatientEncounters:async()=>[],
     fetchPatientSiting:async()=>options.noSiting?null:{...siting},fetchSitingImage:async()=>null,
     openEpisodeIn:()=>null,patientStomaList:p=>p.stoma_type?[{}]:[],patientOutcome:()=>['Active',''],psmPatientAge:()=>null,
-    normaliseFollowupStatus:s=>s||'active',patientIsDeceased:()=>false,patientMissingFields:()=>[],
+    normaliseFollowupStatus:s=>s||'active',normaliseFollowupType:t=>String(t||'follow_up'),patientIsDeceased:()=>false,patientMissingFields:()=>[],
     recordOutcomeDecor:()=>({isOutcome:false}),isFistulaPatient:()=>false,isBaggingPatient:()=>false,
     hasStomaNow:p=>!!p?.stoma_type,patientStomaSummaryHTML:()=>'<div>Recorded stoma history</div>',
     sitingStatusLabel:()=> 'Sited',alert:message=>alerts.push(message),closeModal:()=>{c.closed=true;},

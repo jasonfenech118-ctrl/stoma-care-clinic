@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-757"></script>
+<script src="assets/manual.js?v=2026.11.08-758"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1371,6 +1371,8 @@ a.inc-link:hover{border-bottom-color:var(--teal);}
 @media(max-width:720px){.sm-row{align-items:flex-start;}}
 /* Pre-operative stoma siting summary on the record. */
 .psm-chip-sited{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;background:#e7f6f4;color:#087f7b;font-size:10.5px;font-weight:800;white-space:nowrap;}
+.psm-chip-tele{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;background:#e6f4f1;color:#0d7377;border:1px solid #8fd4ce;font-size:10.5px;font-weight:800;white-space:nowrap;}
+#app .psm-head.psm-oc .psm-chip-tele{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.5);}
 .psm-chip-sited svg{width:13px;height:13px;}
 .sit-none{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
 .sit-none-t{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted);}
@@ -4016,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-757';
+const APP_BUILD='2026.11.08-758';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19183,13 +19185,21 @@ function patientDashboardHistoryHTML(){
   const latestApptId=(()=>{let best=null,bd='';(clrState.appts||[]).forEach(a=>{if(a.community_followup)return;const d=String(a.appt_date||'');if(d>=bd){bd=d;best=a.id;}});return best?String(best):'';})();
   (clrState.appts||[]).forEach(a=>{
     if(a.community_followup){
-      // A community (Comcare) email follow-up: show it as a correspondence, with
-      // whether the imaging request was sent and Comcare's feedback inline.
-      const bits=['Tele follow-up (community / Comcare, by email)'];
-      if(a.comcare_email_sent_date)bits.push('Imaging requested '+fmtShortDate(a.comcare_email_sent_date));
-      if(a.community_reminder_note)bits.push(String(a.community_reminder_note));
-      if(a.comcare_feedback)bits.push('Comcare feedback: '+String(a.comcare_feedback));
-      add('appointment:'+a.id,a,'Tele follow-up',bits.join('\n'),`<button type="button" class="clr-mini" onclick="openCommunityFollowup('${jsSafe(String(a.patient_id))}')">Open / email Comcare</button>`);
+      // A community (Comcare) email follow-up: a structured report so everything
+      // written is visible — the due date, the request email, the note and the
+      // feedback Comcare sent back.
+      const telMeta='Tele follow-up (community / Comcare, by email)';
+      const due=a.appt_date?'Due '+fmtShortDate(a.appt_date):'';
+      const sent=a.comcare_email_sent_date?'Imaging request emailed to Comcare '+fmtShortDate(a.comcare_email_sent_date):'Imaging request not emailed yet';
+      const note=a.community_reminder_note?String(a.community_reminder_note):'';
+      const fb=a.comcare_feedback?String(a.comcare_feedback):'';
+      const plain=[telMeta,due,sent,note,fb?'Comcare feedback: '+fb:''].filter(Boolean).join('\n');
+      const telRow=add('appointment:'+a.id,a,'Tele follow-up',plain,`<button type="button" class="clr-mini" onclick="openCommunityFollowup('${jsSafe(String(a.patient_id))}')">Open / email Comcare</button>`);
+      const repSec=(h,b)=>`<div class="pd-rep-sec"><div class="pd-rep-h">${esc(h)}</div><div class="pd-rep-b">${b}</div></div>`;
+      telRow.html=repSec('Outcome',esc(telMeta)+(due?' · '+esc(due):''))
+        +repSec('Comcare email',esc(sent))
+        +(note?repSec('Note',esc(note)):'')
+        +repSec('Comcare feedback',fb?fmtText(fb):'<span style="color:#94a3b8;">Awaiting feedback</span>');
       return;
     }
     const isLatest=String(a.id)===latestApptId;
@@ -21517,7 +21527,7 @@ async function renderPatientRecord(patientId,opts,sequence){
             <span class="psm-id${pat.id_card?'':' is-missing'}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>
           </div>
           ${demo?`<span class="psm-sub">${demo}</span>`:''}
-          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${extraStatusChipsHTML(pat)}${isEncounterUser()&&window.JasonEncounters?JasonEncounters.referralChipsHTML(JasonEncounters.patientReferrals(pat)):''}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
+          <span class="psm-status"><span class="cr-out ${outCls}">${oc.icon?psmIc(oc.icon):''}${htmlSafe(outText)}</span>${normaliseFollowupType(pat.followup_type)==='tele'?'<span class="psm-chip-tele" title="Followed up by the community team (Comcare) by email, not in person">📧 Tele follow-up</span>':''}${extraStatusChipsHTML(pat)}${isEncounterUser()&&window.JasonEncounters?JasonEncounters.referralChipsHTML(JasonEncounters.patientReferrals(pat)):''}${clrState.siting?`<span class="psm-chip-sited">${psmIc('mappin')} Stoma sited</span>`:''}${pat.operated_abroad?`<span class="psm-chip-abroad" title="Stoma formed at another hospital, not Mater Dei">🌍 Operated Outside MDH</span>${(()=>{const l=[pat.operated_abroad_hospital,pat.operated_abroad_country].map(x=>String(x||'').trim()).filter(Boolean).join(', ');return l?`<span class="psm-chip-abroad-loc">${htmlSafe(l)}</span>`:'';})()}`:''}</span>
         </div>
       </div>
       <button class="psm-close" onclick="goRegistry()" aria-label="${patientRecordOrigin==='update-register'?'Back to Update Register':'Back to Registry'}">${psmIc('x')}</button>
