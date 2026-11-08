@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.07-740"></script>
+<script src="assets/manual.js?v=2026.11.08-742"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3997,7 +3997,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-741';
+const APP_BUILD='2026.11.08-742';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19111,11 +19111,11 @@ function patientDashboardHistoryHTML(){
     if(a.community_followup){
       // A community (Comcare) email follow-up: show it as a correspondence, with
       // whether the imaging request was sent and Comcare's feedback inline.
-      const bits=['Community follow-up (email)'];
+      const bits=['Tele follow-up (community / Comcare, by email)'];
       if(a.comcare_email_sent_date)bits.push('Imaging requested '+fmtShortDate(a.comcare_email_sent_date));
       if(a.community_reminder_note)bits.push(String(a.community_reminder_note));
       if(a.comcare_feedback)bits.push('Comcare feedback: '+String(a.comcare_feedback));
-      add('appointment:'+a.id,a,'Community follow-up',bits.join('\n'),`<button type="button" class="clr-mini" onclick="openCommunityFollowup('${jsSafe(String(a.patient_id))}')">Open / email Comcare</button>`);
+      add('appointment:'+a.id,a,'Tele follow-up',bits.join('\n'),`<button type="button" class="clr-mini" onclick="openCommunityFollowup('${jsSafe(String(a.patient_id))}')">Open / email Comcare</button>`);
       return;
     }
     const meta=[statusLabel(a.status,a),a.followup_action?String(a.followup_action).replaceAll('-',' '):''].filter(Boolean).join(' · ');
@@ -24692,9 +24692,9 @@ function renderCommunityFollowup(){
   const defDate=(()=>{const d=new Date();d.setMonth(d.getMonth()+1);return fmt(d);})();
   const sent=appt&&appt.comcare_email_sent_date?fmtShortDate(appt.comcare_email_sent_date):'';
   const fb=appt&&appt.comcare_feedback?String(appt.comcare_feedback):'';
-  mb.innerHTML=`<h2>📧 Community follow-up</h2>
+  mb.innerHTML=`<h2>📧 Tele follow-up</h2>
     <div class="patient-modal-identity">${patientNameAvatarHTML(pat,nm,`<span>${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}</span>`,'md')}</div>
-    <p class="report-note" style="margin:6px 0 10px;line-height:1.55;">A follow-up handled <b>by email, not in person</b>. It saves a reminder in appointments; its outcome is an email to Comcare (requesting imaging feedback) and the feedback they send back.</p>
+    <p class="report-note" style="margin:6px 0 10px;line-height:1.55;">A <b>tele follow-up</b> — handled with the community team (Comcare) <b>by email, not in person</b>. Requesting the email saves it in the patient profile as a <b>Tele follow-up</b> pathway; the outcome is the email to Comcare (requesting imaging feedback) and the feedback they send back.</p>
     <div class="fg"><label for="cf-date">Reminder date *</label><input type="date" id="cf-date" value="${htmlSafe(appt&&appt.appt_date?String(appt.appt_date).slice(0,10):defDate)}"/></div>
     <div class="fg"><label for="cf-note">Note (optional)</label><input type="text" id="cf-note" value="${htmlSafe(appt&&appt.community_reminder_note||'')}" placeholder="e.g. request wound / stoma images at 6 weeks"/></div>
     ${sent?`<div class="report-note" style="color:#0d7377;">✓ Imaging request emailed to Comcare on ${htmlSafe(sent)}.</div>`:''}
@@ -24711,12 +24711,22 @@ function renderCommunityFollowup(){
 }
 async function emailComcareImaging(){
   const c=communityFollowupCtx;if(!c)return;
-  openComcareEmail(comcareSubject(c.pat,'imaging feedback request'),comcareImagingBody(c.pat));
-  // Stamp the sent date on the saved follow-up (if it exists yet).
-  if(c.appt&&c.appt.id){
-    try{await updateAppointmentTolerant(c.appt.id,{comcare_email_sent_date:TODAY});c.appt.comcare_email_sent_date=TODAY;renderCommunityFollowup();}catch(e){}
+  // Requesting the email creates the tele follow-up record if it is not saved yet,
+  // so everything is kept in the patient profile.
+  if(!c.appt||!c.appt.id){
+    const date=document.getElementById('cf-date')?.value||TODAY;
+    const note=document.getElementById('cf-note')?.value||'';
+    const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:null,status:'booked'}).select('*').single();
+    if(error){alert('Could not save the tele follow-up: '+(error.message||error));return;}
+    await updateAppointmentTolerant(data.id,{community_followup:true,community_reminder_note:note});
+    c.appt={...data,community_followup:true,community_reminder_note:note};
   }
-  setTimeout(()=>alert('Your email has opened addressed to Comcare (Cc: the stoma clinic). Check the address and send. If nothing opened, allow pop-ups / set a default mail app.'),400);
+  openComcareEmail(comcareSubject(c.pat,'imaging feedback request'),comcareImagingBody(c.pat));
+  try{await updateAppointmentTolerant(c.appt.id,{comcare_email_sent_date:TODAY});c.appt.comcare_email_sent_date=TODAY;}catch(e){}
+  renderCommunityFollowup();
+  try{refreshAppointmentViews();}catch(e){}
+  try{loadPostopDischarges();}catch(e){}
+  setTimeout(()=>alert('Your email has opened addressed to Comcare (Cc: the stoma clinic). Check the address and send. The tele follow-up is saved in the patient profile. If nothing opened, allow pop-ups / set a default mail app.'),400);
 }
 async function saveCommunityFollowup(){
   const c=communityFollowupCtx;if(!c)return;
