@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-758';
+const APP_BUILD='2026.11.08-759';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25034,7 +25034,7 @@ async function emailComcareImaging(){
   if(!c.appt||!c.appt.id){
     const date=document.getElementById('cf-date')?.value||TODAY;
     const note=document.getElementById('cf-note')?.value||'';
-    const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:null,status:'booked'}).select('*').single();
+    const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:teleSlotPlaceholder(),status:'booked'}).select('*').single();
     if(error){alert('Could not save the tele follow-up: '+(error.message||error));return;}
     await updateAppointmentTolerant(data.id,{community_followup:true,community_reminder_note:note});
     c.appt={...data,community_followup:true,community_reminder_note:note};
@@ -25045,6 +25045,15 @@ async function emailComcareImaging(){
   try{refreshAppointmentViews();}catch(e){}
   try{loadPostopDischarges();}catch(e){}
   setTimeout(()=>alert('Your email has opened addressed to Comcare (Cc: the stoma clinic). Check the address and send. The tele follow-up is saved in the patient profile. If nothing opened, allow pop-ups / set a default mail app.'),400);
+}
+// A tele / community follow-up is not a real clinic slot, but the appointments
+// table requires a non-null appt_slot and keeps one active row per (date, slot,
+// nurse column). Use the current time-of-day (with seconds) as a placeholder: it
+// is effectively unique per booking and never clashes with the half-hour clinic
+// slots, so two tele follow-ups on the same reminder date do not collide.
+function teleSlotPlaceholder(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
 }
 // Core of a tele follow-up: save/create the reminder record AND set the patient
 // as a Common tele follow-up due in the reminder month. Returns {ok}.
@@ -25058,7 +25067,7 @@ async function teleFollowupApply(){
     if(error){alert('Could not save: '+(error.message||error));return {ok:false};}
     c.appt.appt_date=date;c.appt.community_reminder_note=note;
   }else{
-    const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:null,status:'booked'}).select('*').single();
+    const{data,error}=await SB.from('appointments').insert({patient_id:c.patientId,appt_date:date,appt_slot:teleSlotPlaceholder(),status:'booked'}).select('*').single();
     if(error){alert('Could not book the tele follow-up: '+(error.message||error));return {ok:false};}
     const up=await updateAppointmentTolerant(data.id,{community_followup:true,community_reminder_note:note});
     c.appt={...data,community_followup:true,community_reminder_note:note};
