@@ -45,6 +45,19 @@ test('wordy phrases get meaning-preserving concision suggestions (type style)',(
   assert.ok(find('utilised the convex flange','utilised','used'));
 });
 
+test('clarity: long sentences, double negatives and a run-on paragraph are flagged as advice',()=>{
+  const long='The patient was reviewed in clinic today and the stoma appeared healthy and well perfused and the peristomal skin was intact and the appliance was changed and the output was normal in colour and consistency throughout.';
+  assert.ok(check(long).some(i=>i.type==='clarity'&&i.advice&&/long sentence/i.test(i.message)));
+  assert.ok(check('The result was not uncommon.').some(i=>i.type==='clarity'&&/double negative/i.test(i.message)));
+  const block='patient seen stoma pink and healthy skin intact appliance changed output normal no pain no bleeding advised to return if any concerns and given contact details for the clinic';
+  assert.ok(check(block).some(i=>i.paragraph&&/one long block/i.test(i.message)));
+});
+
+test('advice items carry no auto-apply suggestion',()=>{
+  const adv=check('The finding was not unexpected.').find(i=>i.type==='clarity');
+  assert.ok(adv&&adv.advice===true&&adv.suggestion===undefined);
+});
+
 test('clean text yields no suggestions',()=>{
   // Compare length, not the array itself: check() returns a vm-realm Array, so a
   // cross-realm deepEqual against [] fails on prototype even when it is empty.

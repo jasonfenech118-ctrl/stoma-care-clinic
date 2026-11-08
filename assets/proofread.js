@@ -168,10 +168,48 @@
         if(re.lastIndex===m.index)re.lastIndex++;
       }
     });
+    // 11) clarity — advisory notes on unclear sentences and the whole paragraph.
+    clarity(text).forEach(function(i){issues.push(i);});
     // de-duplicate exact overlaps, keep earliest, sort by position
     issues.sort(function(a,b){return a.start-b.start||a.end-b.end;});
     const out=[];const seen=new Set();
-    issues.forEach(function(i){const k=i.start+'|'+i.end+'|'+i.type;if(!seen.has(k)){seen.add(k);out.push(i);}});
+    issues.forEach(function(i){const k=i.start+'|'+i.end+'|'+i.type+'|'+(i.advice?i.message:'');if(!seen.has(k)){seen.add(k);out.push(i);}});
+    return out;
+  }
+
+  // ---- Clarity: sentence- and paragraph-level advice (no silent rewrite) -------
+  function splitSentences(text){
+    const out=[];const re=/[^.!?\n]+[.!?]*/g;let m;
+    while((m=re.exec(text))){
+      const raw=m[0];const lead=raw.length-raw.replace(/^\s+/,'').length;
+      const start=m.index+lead;const content=raw.trim();
+      if(content)out.push({text:content,start:start,end:start+content.length});
+    }
+    return out;
+  }
+  function clarity(text){
+    const out=[];
+    const sents=splitSentences(text);
+    sents.forEach(function(se){
+      const words=se.text.split(/\s+/).filter(Boolean);
+      const wc=words.length;
+      const commas=(se.text.match(/,/g)||[]).length;
+      const conj=(se.text.match(/\b(and|but|which|because|so|then|also|however|therefore|whilst|while|although)\b/gi)||[]).length;
+      if(wc>=28)
+        out.push({start:se.start,end:se.end,message:'Long sentence ('+wc+' words) — consider splitting it into shorter sentences for clarity.',type:'clarity',advice:true});
+      else if(commas>=4||conj>=4)
+        out.push({start:se.start,end:se.end,message:'This sentence packs in many clauses — consider breaking it up.',type:'clarity',advice:true});
+      const dn=se.text.match(/\bnot\s+un\w+|\bnot\s+without\b|\bnever\s+not\b|\bnot\s+never\b/i);
+      if(dn){const s=se.start+se.text.toLowerCase().indexOf(dn[0].toLowerCase());out.push({start:s,end:s+dn[0].length,message:'Possible double negative — reword it as a positive statement for clarity.',type:'clarity',advice:true});}
+    });
+    // whole-paragraph advice
+    const totalWords=(text.match(/\S+/g)||[]).length;
+    const hasTerminal=/[.!?]/.test(text);
+    if(totalWords>=25&&!hasTerminal){
+      out.push({start:0,end:0,paragraph:true,message:'This note is one long block with no full stops — break it into short, separate sentences.',type:'clarity',advice:true});
+    }else if(sents.length>=2&&totalWords>=60&&(totalWords/sents.length)>=22){
+      out.push({start:0,end:0,paragraph:true,message:'The sentences are long on average ('+Math.round(totalWords/sents.length)+' words) — shorter sentences read more clearly.',type:'clarity',advice:true});
+    }
     return out;
   }
 
@@ -214,8 +252,8 @@
   }
 
   // ---- The review panel (an overlay; the visit modal stays open beneath) ------
-  const TYPE_LABEL={spelling:'Spelling',grammar:'Grammar',mechanics:'Spacing',style:'Wording'};
-  const TYPE_COLOUR={spelling:'#b91c1c',grammar:'#9a3412',mechanics:'#1d4ed8',style:'#7c3aed'};
+  const TYPE_LABEL={spelling:'Spelling',grammar:'Grammar',mechanics:'Spacing',style:'Wording',clarity:'Clarity'};
+  const TYPE_COLOUR={spelling:'#b91c1c',grammar:'#9a3412',mechanics:'#1d4ed8',style:'#7c3aed',clarity:'#0f766e'};
   const SAFE=new Set(['spelling','grammar','mechanics']);  // "Apply all" leaves wording to the nurse
   let panel=null;
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -231,7 +269,7 @@
     document.body.appendChild(panel);
     return panel;
   }
-  function sig(i){return i.type+'|'+i.original+'|'+i.suggestion;}
+  function sig(i){return i.advice?('clarity|'+i.message):(i.type+'|'+i.original+'|'+i.suggestion);}
 
   function render(){
     const editor=panel._editor;if(!editor)return;
@@ -245,6 +283,17 @@
       rows='<div style="padding:22px 16px;text-align:center;color:#15803d;font-weight:700;">✓ No issues found — the text reads well.</div>';
     }else{
       issues.forEach(function(i,idx){
+        if(i.advice){
+          // Advisory clarity note: a sentence/paragraph to review (no auto-rewrite,
+          // so the clinical meaning is never changed for you).
+          const snippet=i.paragraph?'':'“'+esc(model.text.slice(i.start,Math.min(i.end,i.start+70)))+(i.end-i.start>70?'…':'')+'”';
+          rows+='<div class="pf-row" style="padding:10px 12px;border-top:1px solid #eef2f7;background:#f0fdfa;">'
+            +'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+TYPE_COLOUR.clarity+';margin-bottom:3px;">💡 '+esc(TYPE_LABEL.clarity)+'</div>'
+            +'<div style="font-size:12.5px;line-height:1.5;color:#334155;margin-bottom:5px;">'+esc(i.message)+(snippet?'<div style="color:#64748b;font-style:italic;margin-top:3px;">'+snippet+'</div>':'')+'</div>'
+            +'<div><button type="button" data-pf-ignore="'+idx+'" style="border:1px solid #cbd5e1;background:#fff;color:#475569;font-weight:600;font-size:12px;border-radius:7px;padding:5px 12px;cursor:pointer;">Dismiss</button></div>'
+          +'</div>';
+          return;
+        }
         const before=esc(model.text.slice(Math.max(0,i.start-24),i.start));
         const after=esc(model.text.slice(i.end,i.end+24));
         const orig=esc(i.original).replace(/ /g,'·');
@@ -270,7 +319,7 @@
         +'<span style="font-size:12px;opacity:.9;">'+(issues.length?issues.length+' suggestion'+(issues.length===1?'':'s'):'all clear')+'</span>'
         +'<button type="button" data-pf-close="1" aria-label="Close" style="margin-left:auto;border:none;background:rgba(255,255,255,.18);color:#fff;font-weight:800;font-size:15px;border-radius:7px;width:28px;height:28px;cursor:pointer;">✕</button>'
       +'</div>'
-      +'<div style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #eef2f7;line-height:1.4;">Suggestions only — meaning is kept. Nothing changes until you press <b>Apply</b>. Runs offline; no note text leaves this app.</div>'
+      +'<div style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #eef2f7;line-height:1.4;">Suggestions keep the meaning. Word fixes have <b>Apply</b>; 💡 <b>Clarity</b> notes flag unclear sentences / the paragraph for you to reword. Runs offline; no note text leaves this app.</div>'
       +'<div class="pf-list" style="overflow:auto;flex:1;">'+rows+'</div>'
       +(safeCount?'<div style="padding:10px 12px;border-top:1px solid #eef2f7;background:#f8fafc;"><button type="button" data-pf-applyall="1" style="width:100%;border:none;background:#1a2e4a;color:#fff;font-weight:800;font-size:13px;border-radius:8px;padding:9px;cursor:pointer;">Apply all spelling, grammar &amp; spacing fixes ('+safeCount+')</button></div>':'');
   }
