@@ -45,6 +45,17 @@ test('wordy phrases get meaning-preserving concision suggestions (type style)',(
   assert.ok(find('utilised the convex flange','utilised','used'));
 });
 
+test('gibberish / non-words are flagged (advice), real words and abbreviations are not',()=>{
+  const g=check('On assessment stoma pink dgsg').find(i=>i.original==='dgsg');
+  assert.ok(g&&g.type==='spelling'&&g.advice===true&&g.suggestion===undefined);
+  // real clinical words and common abbreviations must NOT be flagged as non-words
+  const clean='The peristomal skin is intact. Parastomal hernia present. Given prn analgesia, nbm overnight.';
+  const flagged=check(clean).filter(i=>i.advice&&i.type==='spelling').map(i=>i.original);
+  assert.equal(flagged.length,0,'unexpected non-word flags: '+flagged.join(', '));
+  // triple letter run is caught
+  assert.ok(check('the stoma is piiink').some(i=>i.advice&&i.type==='spelling'));
+});
+
 test('clarity: long sentences, double negatives and a run-on paragraph are flagged as advice',()=>{
   const long='The patient was reviewed in clinic today and the stoma appeared healthy and well perfused and the peristomal skin was intact and the appliance was changed and the output was normal in colour and consistency throughout.';
   assert.ok(check(long).some(i=>i.type==='clarity'&&i.advice&&/long sentence/i.test(i.message)));

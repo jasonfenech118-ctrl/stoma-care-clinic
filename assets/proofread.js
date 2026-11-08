@@ -100,6 +100,21 @@
     return 'aeio'.indexOf(w[0])>=0;                       // a,e,i,o (not u, handled above)
   }
   function keepCase(src,repl){return /^[A-Z]/.test(src)?repl.charAt(0).toUpperCase()+repl.slice(1):repl;}
+  // Valid consonant-only tokens that must never be flagged as non-words.
+  const NOVOWEL_OK=new Set(['mmhg','nbm','tds','qds','prn','dvt','cxr','ecg','fbc','gcs','cvs','bnp','mcug','ppi','nsaid','tpn']);
+  // A high-precision guess that a word is a typo / non-word (never a real word):
+  // 4+ letters with no vowel at all (e.g. "dgsg"), or the same letter 3× in a row.
+  // Acronyms (all caps / internal caps), words with an apostrophe, and the known
+  // abbreviations above are left alone, so valid words are never flagged.
+  function isLikelyNonWord(w){
+    if(!w||w.length<4||w.indexOf("'")>=0)return false;
+    if(/[A-Z]/.test(w.slice(1))||/^[A-Z]+$/.test(w))return false;   // AcroNyms / ALLCAPS
+    const lw=w.toLowerCase();
+    if(NOVOWEL_OK.has(lw))return false;
+    if(!/[aeiouy]/.test(lw))return true;                           // no vowel at all
+    if(/(.)\1\1/.test(lw))return true;                            // same letter 3× in a row
+    return false;
+  }
 
   function check(text){
     text=String(text||'');
@@ -111,6 +126,10 @@
       if(Object.prototype.hasOwnProperty.call(MISSPELL,key)){
         const sug=keepCase(w,MISSPELL[key]);
         if(sug!==w)issues.push({start:m.index,end:m.index+w.length,original:w,suggestion:sug,message:'Spelling: “'+w+'” → “'+sug+'”',type:'spelling'});
+      }else if(isLikelyNonWord(w)){
+        // High-precision catch for obvious non-words / typing slips (e.g. "dgsg").
+        // No correction is known, so it is advice only — the nurse rewords it.
+        issues.push({start:m.index,end:m.index+w.length,original:w,message:'Possible misspelling — check “'+w+'”.',type:'spelling',advice:true});
       }
     }
     // 2) repeated word ("the the")
@@ -269,7 +288,7 @@
     document.body.appendChild(panel);
     return panel;
   }
-  function sig(i){return i.advice?('clarity|'+i.message):(i.type+'|'+i.original+'|'+i.suggestion);}
+  function sig(i){return i.advice?(i.type+'|advice|'+i.message):(i.type+'|'+i.original+'|'+i.suggestion);}
 
   function render(){
     const editor=panel._editor;if(!editor)return;
@@ -277,18 +296,20 @@
     const all=check(model.text);
     const issues=all.filter(function(i){return !panel._ignored.has(sig(i));});
     panel._issues=issues;
-    const safeCount=issues.filter(function(i){return SAFE.has(i.type);}).length;
+    const safeCount=issues.filter(function(i){return SAFE.has(i.type)&&!i.advice;}).length;
     let rows='';
     if(!issues.length){
       rows='<div style="padding:22px 16px;text-align:center;color:#15803d;font-weight:700;">✓ No issues found — the text reads well.</div>';
     }else{
       issues.forEach(function(i,idx){
         if(i.advice){
-          // Advisory clarity note: a sentence/paragraph to review (no auto-rewrite,
-          // so the clinical meaning is never changed for you).
-          const snippet=i.paragraph?'':'“'+esc(model.text.slice(i.start,Math.min(i.end,i.start+70)))+(i.end-i.start>70?'…':'')+'”';
-          rows+='<div class="pf-row" style="padding:10px 12px;border-top:1px solid #eef2f7;background:#f0fdfa;">'
-            +'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+TYPE_COLOUR.clarity+';margin-bottom:3px;">💡 '+esc(TYPE_LABEL.clarity)+'</div>'
+          // Advisory note (clarity, or a possible non-word): flagged for you to
+          // reword — no auto-rewrite, so the clinical meaning is never changed.
+          const isClar=i.type==='clarity';
+          const icon=isClar?'💡':'✎';
+          const snippet=(isClar&&!i.paragraph)?'“'+esc(model.text.slice(i.start,Math.min(i.end,i.start+70)))+(i.end-i.start>70?'…':'')+'”':'';
+          rows+='<div class="pf-row" style="padding:10px 12px;border-top:1px solid #eef2f7;background:'+(isClar?'#f0fdfa':'#fff7f7')+';">'
+            +'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+(TYPE_COLOUR[i.type]||'#334155')+';margin-bottom:3px;">'+icon+' '+esc(TYPE_LABEL[i.type]||i.type)+'</div>'
             +'<div style="font-size:12.5px;line-height:1.5;color:#334155;margin-bottom:5px;">'+esc(i.message)+(snippet?'<div style="color:#64748b;font-style:italic;margin-top:3px;">'+snippet+'</div>':'')+'</div>'
             +'<div><button type="button" data-pf-ignore="'+idx+'" style="border:1px solid #cbd5e1;background:#fff;color:#475569;font-weight:600;font-size:12px;border-radius:7px;padding:5px 12px;cursor:pointer;">Dismiss</button></div>'
           +'</div>';
@@ -365,7 +386,7 @@
   function applyAllSafe(){
     const editor=panel._editor;if(!editor)return;let guard=0;
     while(guard++<800){
-      const issues=check(buildModel(editor).text).filter(function(i){return SAFE.has(i.type)&&!panel._ignored.has(sig(i));});
+      const issues=check(buildModel(editor).text).filter(function(i){return SAFE.has(i.type)&&!i.advice&&!panel._ignored.has(sig(i));});
       let did=false;
       for(let k=0;k<issues.length;k++){const it=issues[k];if(applyFix(editor,it.start,it.end,it.suggestion)){did=true;break;}}
       if(!did)break;
