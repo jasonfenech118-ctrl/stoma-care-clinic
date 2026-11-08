@@ -608,8 +608,42 @@
   }
   function input(e){
     const el=e.target;if(el.dataset?.vsr!=='notes')return;const s=find(el);if(!s)return;
+    autoCapitalise(el,e);  // capitalise the first letter of a new sentence as you type
     history(s);s.notes=htmlToMarkers(el);remember(s);syncDiff(s);
     refreshHighlights();   // repaint the live complication underline as you type
+  }
+  // Does the character at (node, idx) begin a new sentence? True at the very start,
+  // after . ! ? (optionally a closing quote/bracket), or at the start of a new line.
+  function startsNewSentence(el,node,idx){
+    const model=vsrModel(el);let k=-1;
+    for(let i=0;i<model.map.length;i++){const en=model.map[i];if(en.node===node&&en.off===idx){k=i;break;}}
+    if(k<0)return false;
+    const pre=model.text.slice(0,k).replace(/[ \t]+$/,'');
+    if(pre==='')return true;
+    if(pre[pre.length-1]==='\n')return true;
+    const tail=pre.replace(/['"”’)\]]$/,'');      // ignore a closing quote/bracket
+    const tl=tail[tail.length-1];
+    if(tl==='!'||tl==='?')return true;
+    if(tl==='.'){                                 // a full stop — but not an abbreviation / initial
+      const m=tail.match(/([A-Za-z]+)\.$/);
+      return !m||m[1].length>1;                   // "e." / "g." (single letter) = abbreviation, not a new sentence
+    }
+    return false;
+  }
+  // Auto-capitalise: when a single lower-case letter is typed to start a sentence,
+  // replace it in place with its capital (caret kept where it was).
+  function autoCapitalise(el,e){
+    if(!e||e.inputType!=='insertText'||!e.data||e.data.length!==1||!/[a-z]/.test(e.data))return;
+    const sel=window.getSelection&&window.getSelection();
+    if(!sel||!sel.rangeCount)return;
+    const range=sel.getRangeAt(0);if(!range.collapsed)return;
+    const node=range.startContainer,off=range.startOffset;
+    if(!node||node.nodeType!==3||off<1)return;
+    if(node.nodeValue[off-1]!==e.data)return;            // the char before the caret is the one just typed
+    if(!startsNewSentence(el,node,off-1))return;
+    const v=node.nodeValue;
+    node.nodeValue=v.slice(0,off-1)+e.data.toUpperCase()+v.slice(off);
+    try{const r=document.createRange();r.setStart(node,off);r.collapse(true);sel.removeAllRanges();sel.addRange(r);}catch(_){}
   }
   function payloadFor(apptId){
     if(!enabled()||!draft||draft.locked||draft.apptId!==String(apptId))return null;
