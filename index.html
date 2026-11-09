@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.09-763"></script>
+<script src="assets/manual.js?v=2026.11.09-764"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.09-764';
+const APP_BUILD='2026.11.09-765';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -26263,35 +26263,54 @@ async function loadDuplicates(){
   duplicateRows=(res.rows||[]).filter(p=>p.archived!==true);
   renderDuplicates();
 }
-// Build the groups once, so render and print share the same work.
+// Build the groups once, so render and print share the same work. Records are
+// linked into the same group when they share a name-word set OR carry the same
+// ID number once a leading zero and the letter are ignored — so one patient
+// entered twice as "0153391C" and "153391C" is caught even when the two
+// spellings of the name differ (e.g. "Emma Potirniche" vs "Emma Potirniche/
+// Fenech"). A union-find joins the two signals so no pair is listed twice.
 function computeDuplicateGroups(){
-  const byName={};
-  duplicateRows.forEach(p=>{const k=dupNameKey(p);if(k)(byName[k]=byName[k]||[]).push(p);});
+  const rows=duplicateRows;
+  // The ID number with any leading zeros and the trailing letter stripped, so
+  // "0153391C" and "153391M" share the key "153391". Empty when there are no
+  // digits, so letter-only or blank cards never bucket together.
+  const looseIdKey=p=>{const d=String(p&&p.id_card||'').replace(/\D/g,'');return d?String(Number(d)):'';};
+  const parent=rows.map((_,i)=>i);
+  const find=x=>{while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;};
+  const union=(a,b)=>{const ra=find(a),rb=find(b);if(ra!==rb)parent[ra]=rb;};
+  const link=buckets=>Object.values(buckets).forEach(idx=>idx.forEach(i=>union(i,idx[0])));
+  const byName={},byId={};
+  rows.forEach((p,i)=>{
+    const nk=dupNameKey(p);if(nk)(byName[nk]=byName[nk]||[]).push(i);
+    const ik=looseIdKey(p);if(ik)(byId[ik]=byId[ik]||[]).push(i);
+  });
+  link(byName);link(byId);
+  const comp={};
+  rows.forEach((p,i)=>{const r=find(i);(comp[r]=comp[r]||[]).push(p);});
   const groups=[];
-  Object.values(byName).forEach(members=>{
-    const ids=[...new Set(members.map(m=>normaliseIdCard(m.id_card)).filter(Boolean))];
+  Object.values(comp).forEach(members=>{
     if(members.length<2)return;
+    const ids=[...new Set(members.map(m=>normaliseIdCard(m.id_card)).filter(Boolean))];
+    let reason='',strong=false;
     // Two separate registry rows with the exact same normalised ID are the
-    // strongest duplicate signal of all. The old scanner discarded them
-    // because the set contained only one distinct card — exactly backwards.
-    if(ids.length===1){
-      groups.push({members,reason:'same ID card entered twice',strong:true,
-        name:`${members[0].surname||''}, ${members[0].first_name||''}`.replace(/^, |, $/,'').trim()||'(no name)'});
-      return;
+    // strongest duplicate signal of all.
+    if(ids.length===1){reason='same ID card entered twice';strong=true;}
+    else{
+      // Strongest ID reason across any pair in the group (a leading zero, the
+      // same number with a different letter, or one extra digit).
+      for(let i=0;i<ids.length&&!reason;i++)for(let j=i+1;j<ids.length;j++){
+        const r=duplicateIdReason(ids[i],ids[j]); if(r){reason=r;break;}
+      }
+      if(reason)strong=true;
+      // The same name words AND the same surgery date is a strong signal on its
+      // own — one operation cannot belong to two different people — so it is
+      // caught even when the ID cards look unrelated (e.g. a name-order swap).
+      else{
+        const dates=members.map(m=>String(m.surgery_date||'').slice(0,10)).filter(Boolean);
+        if(new Set(dates).size<dates.length){reason='same name & surgery date';strong=true;}
+      }
     }
-    // Strongest ID reason across any pair in the group.
-    let reason='';
-    for(let i=0;i<ids.length&&!reason;i++)for(let j=i+1;j<ids.length;j++){
-      const r=duplicateIdReason(ids[i],ids[j]); if(r){reason=r;break;}
-    }
-    // The same set of name words AND the same surgery date is a strong signal on
-    // its own — one operation cannot belong to two different people — so it is
-    // caught even when the ID cards look unrelated (e.g. a name-order swap).
-    if(!reason){
-      const dates=members.map(m=>String(m.surgery_date||'').slice(0,10)).filter(Boolean);
-      if(new Set(dates).size<dates.length)reason='same name & surgery date';
-    }
-    groups.push({members,reason,strong:!!reason,
+    groups.push({members,reason,strong,
       name:`${members[0].surname||''}, ${members[0].first_name||''}`.replace(/^, |, $/,'').trim()||'(no name)'});
   });
   // Strong matches first, then alphabetical.

@@ -49,6 +49,26 @@ test('Needs Checking flags two registry rows with the exact same ID card',()=>{
   assert.equal(groups[0].members.length,2);
 });
 
+test('Needs Checking flags a leading-zero ID duplicate even when the names differ',()=>{
+  const source=sourceBetween('function duplicateIdReason(a,b){','/* ---- handover')
+    +sourceBetween('function dupNameKey(p){','function importSplitName(')
+    +sourceBetween('function computeDuplicateGroups(){','function renderDuplicates(){');
+  const context=vm.createContext({
+    Number,String,Math,Set,Object,Array,
+    duplicateRows:[
+      {id:'a',id_card:'153391C',first_name:'Emma Maria',surname:'Potirniche',surgery_date:'2026-10-24'},
+      {id:'b',id_card:'0153391C',first_name:'Emma',surname:'Potirniche/ Fenech',surgery_date:'2026-10-24'}
+    ],
+    normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,'')
+  });
+  vm.runInContext(source,context);
+  const groups=vm.runInContext('computeDuplicateGroups()',context);
+  assert.equal(groups.length,1);
+  assert.equal(groups[0].strong,true);
+  assert.equal(groups[0].reason,'leading zero');
+  assert.equal(groups[0].members.length,2);
+});
+
 test('postop worklist counts only real booked or attended follow-ups',()=>{
   assert.match(html,/if\(!\['booked','attended'\]\.includes\(String\(a\.status\|\|''\)\)\)return;/);
   assert.match(html,/\$\{rows\.length\} awaiting · \$\{bookedCount\} booked/);

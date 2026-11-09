@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'9 November 2026 — Each inpatient encounter box now shows the appliance/accessory change at the bottom (Now using / No longer needed), with one nurse’s note + review + appliance change on a day kept in one box (a different nurse that day is a separate box); Seen visits show removed items too. Also: 📧 Switch to tele follow-up on the profile, and a next due month when resolving a tele follow-up.'};
+const MANUAL_META={updated:'9 November 2026 — Needs Checking now also flags near-identical ID cards (a leading zero like 0153391C vs 153391C, or a different letter) even when the names are spelled differently. The Tele follow-up feedback box also gained a Cancel button.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -208,14 +208,14 @@ const MANUAL_SECTIONS=[
     ${manNote('auto','⚙️','From that date the patient rides at the <b>top of the Handover, highlighted</b>, so the ward is expecting them. The date <b>clears itself</b> once they are admitted.')}
     ${manNote('tip','ℹ️','For a brand-new patient with no stoma yet, use <b>Siting</b> instead — the button there is "Add siting session".')}
   `},
-  {id:'duplicates',title:'Needs Checking (duplicates)',keywords:'duplicate needs checking merge same patient twice name swapped',html:`
+  {id:'duplicates',title:'Needs Checking (duplicates)',keywords:'duplicate needs checking merge same patient twice name swapped leading zero id card different letter',html:`
     ${manMap('patients')}
     ${manWhen('To catch the same patient entered twice.')}
     ${manSteps([
       `Open ${manBtn('👥 Registry','#e0f2f5','#0b6b7a')} → ${manBtn('🔍 Needs Checking','#fbeccd','#9a6410')}.`,
       `Review each flagged pair and merge or correct as needed.`
     ])}
-    ${manNote('auto','⚙️','The app flags likely duplicates for you, including <b>name-order-swapped</b> ones (surname/first name entered the wrong way round).')}
+    ${manNote('auto','⚙️','The app flags likely duplicates for you, including <b>name-order-swapped</b> ones and <b>near-identical ID cards</b> — a leading zero (<code>0153391C</code> vs <code>153391C</code>) or the same number with a different letter — even when the two names are spelled differently.')}
   `},
   {id:'fistulas',title:'Fistulas & Bagging Advice (no stoma)',keywords:'fistula fistulas bagging advice drain wound pcd percutaneous drain registry open cases closed cases close case reopen ecf enterocutaneous wound manager no stoma add patient handover admit discharge patient long-term episodes encounters purple tag blue tag no nurse owner no due month convert stoma',html:`
     ${manMap('patients')}
