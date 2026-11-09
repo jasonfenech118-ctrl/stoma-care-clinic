@@ -49,8 +49,24 @@ test('Needs Checking flags two registry rows with the exact same ID card',()=>{
   assert.equal(groups[0].members.length,2);
 });
 
+test('normaliseIdCard ignores leading zeros so 0153391C matches 153391C',()=>{
+  const source=sourceBetween('function normaliseIdCard(v){','function normalisePatientName(');
+  const context=vm.createContext({String});
+  vm.runInContext(source,context);
+  const n=context.normaliseIdCard;
+  assert.equal(n('0153391C'),'153391C');
+  assert.equal(n('153391C'),'153391C');
+  assert.equal(n('00123m '),'123M');     // multiple leading zeros, lower case, trailing space
+  assert.equal(n('10203M'),'10203M');    // a zero inside the number is kept
+  assert.equal(n('0153391C'),n('153391C'));
+});
+
 test('Needs Checking flags a leading-zero ID duplicate even when the names differ',()=>{
-  const source=sourceBetween('function duplicateIdReason(a,b){','/* ---- handover')
+  // Uses the real normaliseIdCard, which drops the leading zero — so the two
+  // spellings collapse to one ID and the pair reads as the same card twice,
+  // caught by the ID link even though the two names are spelled differently.
+  const source=sourceBetween('function normaliseIdCard(v){','function normalisePatientName(')
+    +sourceBetween('function duplicateIdReason(a,b){','/* ---- handover')
     +sourceBetween('function dupNameKey(p){','function importSplitName(')
     +sourceBetween('function computeDuplicateGroups(){','function renderDuplicates(){');
   const context=vm.createContext({
@@ -58,14 +74,13 @@ test('Needs Checking flags a leading-zero ID duplicate even when the names diffe
     duplicateRows:[
       {id:'a',id_card:'153391C',first_name:'Emma Maria',surname:'Potirniche',surgery_date:'2026-10-24'},
       {id:'b',id_card:'0153391C',first_name:'Emma',surname:'Potirniche/ Fenech',surgery_date:'2026-10-24'}
-    ],
-    normaliseIdCard:v=>String(v||'').trim().toUpperCase().replace(/\s+/g,'')
+    ]
   });
   vm.runInContext(source,context);
   const groups=vm.runInContext('computeDuplicateGroups()',context);
   assert.equal(groups.length,1);
   assert.equal(groups[0].strong,true);
-  assert.equal(groups[0].reason,'leading zero');
+  assert.equal(groups[0].reason,'same ID card entered twice');
   assert.equal(groups[0].members.length,2);
 });
 
