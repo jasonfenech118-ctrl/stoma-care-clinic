@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.09-761"></script>
+<script src="assets/manual.js?v=2026.11.09-762"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.09-761';
+const APP_BUILD='2026.11.09-762';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19154,21 +19154,46 @@ function apptDueText(a,usePatientFallback){
 }
 // A follow-up appointment as a structured report (sections like the Seen review
 // modal): outcome, clinical review, appliance & accessories and the due month.
-function apptReportSectionsHTML(a,isLatest){
+function apptReportSectionsHTML(a,isLatest,stopped){
   const esc=htmlSafe;
   const fmt=t=>{try{return (window.VisitStomaReview&&VisitStomaReview.formatNotes)?VisitStomaReview.formatNotes(String(t==null?'':t)):esc(String(t==null?'':t));}catch(e){return esc(String(t==null?'':t));}};
   const sec=(label,inner)=>inner?`<div class="pd-rep-sec"><div class="pd-rep-h">${esc(label)}</div><div class="pd-rep-b">${inner}</div></div>`:'';
   const outcome=[statusLabel(a.status,a),a.followup_action?String(a.followup_action).replaceAll('-',' '):''].filter(Boolean).join(' · ');
   const review=apptReviewInlineText(a);   // per-stoma clinical notes (+ complications)
   const groups=apptApplianceParts(a);
+  const stoppedArr=Array.isArray(stopped)?stopped:[];
   const applHTML=groups.map(g=>(g.label?'<div class="pd-rep-sub">'+esc(g.label)+'</div>':'')
     +(g.app.length?'<div><strong>Appliance:</strong> '+esc(g.app.join(', '))+'</div>':'')
-    +(g.acc.length?'<div><strong>Accessories:</strong> '+esc(g.acc.join(', '))+'</div>':'')).join('');
+    +(g.acc.length?'<div><strong>Accessories:</strong> '+esc(g.acc.join(', '))+'</div>':'')).join('')
+    +(stoppedArr.length?'<div><strong>No longer needed:</strong> '+esc(stoppedArr.join(', '))+'</div>':'');
   const due=apptDueText(a,isLatest);
   return sec('Outcome',esc(outcome))
     +sec('Clinical review',review?fmt(review):'')
     +sec('Appliance & accessories',applHTML)
     +sec('Follow-up',due?esc(due):'');
+}
+// Combine a set of appliance/accessory change entries into the added items and the
+// removed ("no longer needed") items, for the bottom of an encounter / change box.
+function applianceChangeDigest(changes){
+  const added=[],stopped=[];let anyFirst=false;
+  (changes||[]).forEach(c=>{
+    if(c.first)anyFirst=true;
+    const now=(c.first?(c.appliances||[]).concat(c.accessories||[]):(c.added||[]));
+    now.forEach(x=>{if(x&&x!=='None'&&!added.includes(x))added.push(x);});
+    (c.stopped||[]).forEach(x=>{if(x&&x!=='None'&&!stopped.includes(x))stopped.push(x);});
+  });
+  return {added,stopped,anyFirst};
+}
+function applianceChangeSectionHTML(changes){
+  const d=applianceChangeDigest(changes);if(!d.added.length&&!d.stopped.length)return '';
+  let b='';
+  if(d.added.length)b+='<div><strong>'+(d.anyFirst&&!d.stopped.length?'Appliance recorded':'Now using')+':</strong> '+htmlSafe(d.added.join(', '))+'</div>';
+  if(d.stopped.length)b+='<div><strong>No longer needed:</strong> '+htmlSafe(d.stopped.join(', '))+'</div>';
+  return '<div class="pd-rep-sec"><div class="pd-rep-h">Appliance / accessory change</div><div class="pd-rep-b">'+b+'</div></div>';
+}
+function applianceChangePlain(changes){
+  const d=applianceChangeDigest(changes);
+  return [d.added.length?'Appliance: '+d.added.join(', '):'',d.stopped.length?'No longer needed: '+d.stopped.join(', '):''].filter(Boolean).join('\n');
 }
 function patientDashboardHistoryHTML(){
   const p=clrState.patient,model=stomaCareModel(p),rows=[],esc=htmlSafe;
@@ -19183,6 +19208,27 @@ function patientDashboardHistoryHTML(){
   // The patient's latest ordinary follow-up visit — only it falls back to the
   // patient's current due month when the appointment did not record one itself.
   const latestApptId=(()=>{let best=null,bd='';(clrState.appts||[]).forEach(a=>{if(a.community_followup)return;const d=String(a.appt_date||'');if(d>=bd){bd=d;best=a.id;}});return best?String(best):'';})();
+  const normNurse=s=>String(s||'').trim().toLowerCase();
+  // Appliance & accessory changes, computed once. Inpatient (ward / handover)
+  // changes are attached to the encounter written by the same nurse that day (see
+  // below); follow-up (clinic) changes feed the "no longer needed" line of the
+  // Seen appointment report, so a visit shows what was removed as well as added.
+  const applianceChanges=[];const followupStoppedByDate=new Map();
+  try{
+    stomaApplianceHistory(p,clrState.rows,clrState.appts).forEach((entries,uid)=>{
+      const nuid=model.normalize(uid),linked=nuid?[nuid]:[];
+      entries.forEach(e=>{
+        const d=String(e.date||'').slice(0,10);
+        if(e.source==='inpatient'){
+          if(!e.first&&!e.added.length&&!e.stopped.length)return;
+          applianceChanges.push({date:d,nurseKey:normNurse(e.by),by:e.by||'',ward:e.ward||'',first:!!e.first,
+            added:(e.added||[]).slice(),stopped:(e.stopped||[]).slice(),appliances:(e.appliances||[]).slice(),accessories:(e.accessories||[]).slice(),time:e.time||'',order:e.order,linked});
+        }else if(e.source==='followup'&&e.stopped&&e.stopped.length){
+          const arr=followupStoppedByDate.get(d)||[];e.stopped.forEach(x=>{if(x&&x!=='None'&&!arr.includes(x))arr.push(x);});followupStoppedByDate.set(d,arr);
+        }
+      });
+    });
+  }catch(err){}
   (clrState.appts||[]).forEach(a=>{
     if(a.community_followup){
       // A community (Comcare) email follow-up: a structured report so everything
@@ -19207,16 +19253,43 @@ function patientDashboardHistoryHTML(){
     const review=apptReviewInlineText(a);
     // Plain text (for the profile search) covers every section; the displayed row
     // uses the structured HTML below instead.
+    const stopped=followupStoppedByDate.get(String(a.appt_date||'').slice(0,10))||[];
     const applPlain=apptApplianceParts(a).map(g=>[g.label,g.app.length?'Appliance: '+g.app.join(', '):'',g.acc.length?'Accessories: '+g.acc.join(', '):''].filter(Boolean).join(' ')).join('\n');
     const duePlain=apptDueText(a,isLatest);
-    const plain=[meta,review,applPlain,duePlain].filter(Boolean).join('\n');
+    const plain=[meta,review,applPlain,stopped.length?'No longer needed: '+stopped.join(', '):'',duePlain].filter(Boolean).join('\n');
     const row=add('appointment:'+a.id,a,'Follow-up appointment',plain,visitReviewVersionsControl(a));
-    row.html=apptReportSectionsHTML(a,isLatest);
+    row.html=apptReportSectionsHTML(a,isLatest,stopped);
   });
   const encounters=clrState.encounters||[],episodes=(clrState.rows||[]).filter(r=>r.kind==='episode');
   const ordered=episodes.slice().sort((a,b)=>dateOf(a).localeCompare(dateOf(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id)));
   const numbers=new Map(ordered.map((ep,i)=>[String(ep.id),i+1]));
-  const encounterRow=(e,ep)=>({key:'encounter:'+e.id,date:dateOf(e),stamp:e.created_at||'',text:[wb(ep)?wb(ep)+':':'',e.nursing_report||'Clinical encounter'].filter(Boolean).join('\n'),action:`<button type="button" class="clr-mini" onclick="openEncounter('${jsSafe(String(p.id))}','${jsSafe(String(e.id))}')">Open note</button>${encounterVersionsControl(jsSafe(String(p.id)),e)}`,uids:careRecordUids(p,model,'encounter:'+e.id,e,dateOf(e))});
+  // applianceChanges (inpatient) was collected once near the top of this function;
+  // each is shown in the encounter box of the same nurse that day (same nurse, same
+  // day = one box, whatever the ward / bed); a different nurse stays its own box.
+  const consumed=new Set();
+  const encDates=new Map();encounters.forEach(e=>{const d=dateOf(e);(encDates.get(d)||encDates.set(d,[]).get(d)).push(e);});
+  // The changes that belong in this encounter's box: same nurse that day, or — when
+  // the change has no recorded nurse — attached to the only encounter of that day.
+  const changesForEncounter=e=>{
+    const d=dateOf(e),nk=normNurse(e.created_by_name),out=[];
+    applianceChanges.forEach((c,i)=>{
+      if(consumed.has(i)||c.date!==d)return;
+      if(c.nurseKey===nk||(!c.nurseKey&&(encDates.get(d)||[]).length===1)){consumed.add(i);out.push(c);}
+    });
+    return out;
+  };
+  const encounterRow=(e,ep)=>{
+    const changes=changesForEncounter(e);
+    const report=e.nursing_report||'Clinical encounter';
+    const wardLbl=wb(ep)?wb(ep)+': ':'';
+    const html=`<div class="pd-rep-sec"><div class="pd-rep-h">Encounter</div><div class="pd-rep-b">${esc(wardLbl)}${fmtText(report)}</div></div>`+applianceChangeSectionHTML(changes);
+    const plain=[wb(ep)?wb(ep)+':':'',report,applianceChangePlain(changes)].filter(Boolean).join('\n');
+    const baseUids=careRecordUids(p,model,'encounter:'+e.id,e,dateOf(e));
+    const allUids=[...new Set(baseUids.concat(...changes.map(c=>c.linked)))];
+    return {key:'encounter:'+e.id,date:dateOf(e),stamp:e.created_at||'',text:plain,html,
+      action:`<button type="button" class="clr-mini" onclick="openEncounter('${jsSafe(String(p.id))}','${jsSafe(String(e.id))}')">Open note</button>${encounterVersionsControl(jsSafe(String(p.id)),e)}`,
+      uids:allUids.length?allUids:baseUids};
+  };
   episodes.forEach(ep=>{
     const saved=encounters.filter(e=>String(e.episode_id)===String(ep.id));
     if(saved.length){
@@ -19229,23 +19302,23 @@ function patientDashboardHistoryHTML(){
   });
   encounters.filter(e=>!episodes.some(ep=>String(ep.id)===String(e.episode_id))).forEach(e=>rows.push({...encounterRow(e,null),kind:'Inpatient'}));
   (window.PatientCommunications?.historyRows?.()||[]).forEach(r=>add('correspondence:'+r.id,r,'Correspondence',[r.service,r.subject,r.notes].filter(Boolean).join('\n'),`<button type="button" class="clr-mini" onclick="PatientCommunications.open('${jsSafe(r.kind)}','${jsSafe(String(r.id))}')">Open correspondence</button>`));
-  // Appliance changes made on the handover / ward show as their own timeline rows
-  // (grouped under the stoma), so the profile reflects every change — not only the
-  // Appliance-history panel. Follow-up changes already appear as appointment rows.
-  try{
-    stomaApplianceHistory(p,clrState.rows,clrState.appts).forEach((entries,uid)=>{
-      const nuid=model.normalize(uid),linked=nuid?[nuid]:[];
-      entries.forEach(e=>{
-        if(e.source!=='inpatient')return;                       // ward/handover only
-        if(!e.first&&!e.added.length&&!e.stopped.length)return;  // skip unchanged re-records
-        const items=e.appliances.concat(e.accessories);
-        const text=[(e.ward?e.ward+' — ':'')+(e.first?'First appliance recorded':'Appliance changed'),
-          items.join(', '),e.stopped.length?'Stopped: '+e.stopped.join(', '):''].filter(Boolean).join('\n');
-        rows.push({key:'appliance:'+uid+':'+(e.order!=null?e.order:e.date),kind:'Appliance change',
-          date:String(e.date||'').slice(0,10),stamp:e.time||'',time:'',text,action:'',uids:linked});
-      });
-    });
-  }catch(err){}
+  // Any appliance change not attached to an encounter (a ward / bed change with no
+  // written note that day) — one box per nurse per day, with removed items marked.
+  const leftover=new Map();
+  applianceChanges.forEach((c,i)=>{
+    if(consumed.has(i))return;
+    const key=c.date+'|'+c.nurseKey;
+    let g=leftover.get(key);
+    if(!g){g={date:c.date,by:c.by,ward:c.ward,changes:[],linked:new Set(),time:c.time};leftover.set(key,g);}
+    g.changes.push(c);(c.linked||[]).forEach(u=>g.linked.add(u));
+    if(!g.by&&c.by)g.by=c.by;if(!g.ward&&c.ward)g.ward=c.ward;
+  });
+  leftover.forEach((g,key)=>{
+    const head=['Appliance change',g.ward,g.by].filter(Boolean).join(' · ');
+    const html='<div class="pd-rep-sec"><div class="pd-rep-h">'+esc(head)+'</div></div>'+applianceChangeSectionHTML(g.changes);
+    const plain=[head,applianceChangePlain(g.changes)].filter(Boolean).join('\n');
+    rows.push({key:'appliance:'+key,kind:'Appliance change',date:g.date,stamp:g.time||'',time:'',text:plain,html,action:'',uids:[...g.linked]});
+  });
   const groups=[...model.groups.values()];const unknown={key:'__unlinked__',stomas:[],rows:[]};
   rows.forEach(row=>{const keys=[...new Set(row.uids.map(model.root))];if(!keys.length)unknown.rows.push(row);else keys.forEach(key=>model.groups.get(key)?.rows.push(row));});
   if(unknown.rows.length)groups.push(unknown);

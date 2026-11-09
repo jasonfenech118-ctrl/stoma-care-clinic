@@ -40,10 +40,11 @@ w.clrState.appts.push({id:'b',appt_date:'2026-12-01',status:'booked'});w.refresh
    {source:'follow-up',first:false,added:['FollowupOnlyBag'],stopped:[],appliances:['FollowupOnlyBag'],accessories:[],ward:'',date:'2026-09-20',order:9}]);
  w.stomaApplianceHistory=()=>M;
  const h2=w.patientDashboardHistoryHTML();
- assert.match(h2,/Appliance changed/);
+ assert.match(h2,/Now using:/);
  assert.match(h2,/Salts XND1352/);
- assert.match(h2,/Stopped: Lentell 201108-1/);
- assert.match(h2,/First appliance recorded/);
+ assert.match(h2,/No longer needed/);
+ assert.match(h2,/Lentell 201108-1/);
+ assert.match(h2,/Appliance recorded:/);
  assert.doesNotMatch(h2,/FollowupOnlyBag/,'follow-up appliance change is not added as an appliance row');
  w.stomaApplianceHistory=()=>new Map();}
 // A community (Comcare) appointment shows as a "Tele follow-up" pathway with its feedback.
