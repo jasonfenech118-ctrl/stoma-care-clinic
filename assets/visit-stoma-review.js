@@ -187,6 +187,11 @@
     if(actions&&letter){const near=actions.querySelector('#pd-correspondence-button');if(near)near.after(letter);else actions.append(letter);}
     const edit=page.querySelector('.psm-foot button[onclick*="openPatientDatesModal"]');
     if(details&&edit){edit.lastChild.textContent=' Edit details';(head?.querySelector('.psm-identity-row')||details).append(edit);}
+    // Keep the "Switch to tele follow-up" (or "In-person follow-up") button beside
+    // Edit details in the header, rather than in the home-actions row below.
+    const tele=page.querySelector('.pd-home-actions button[onclick*="switchToTeleFollowup"],.pd-home-actions button[onclick*="revertTeleFollowup"]');
+    const idRow=head&&head.querySelector('.psm-identity-row');
+    if(tele&&idRow){tele.classList.add('psm-btn');idRow.append(tele);}
     const historyGroup=page.querySelector('#pd-history')?.closest('details.pd-section');
     if(historyGroup){const sync=()=>page.classList.toggle('pd-history-focused',historyGroup.open);if(!historyGroup.dataset.compactHeader){historyGroup.dataset.compactHeader='1';historyGroup.addEventListener('toggle',sync);}sync();}
     if(!head||!details||details.dataset.twoColumns)return;
