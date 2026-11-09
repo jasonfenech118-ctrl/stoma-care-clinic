@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.08-758"></script>
+<script src="assets/manual.js?v=2026.11.09-760"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.08-759';
+const APP_BUILD='2026.11.09-760';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19395,6 +19395,25 @@ function openPatientEducation(){
   openMo();
 }
 function openPatientTreatment(){openPatientResourcePlaceholder('💊 Treatment','The treatment details and documents will be set up here. Provide what should be recorded or shown, and this section will carry it out.');}
+// Switch an existing patient to a tele (telecommunication / Comcare) follow-up —
+// e.g. a patient whose health deteriorated and can no longer attend the clinic.
+// The tele modal sets them to Common / Tele / due in the reminder month and lets
+// you book and email Comcare in one step.
+function switchToTeleFollowup(patientId){openCommunityFollowup(patientId);}
+// Switch a tele patient back to an ordinary in-person follow-up: restore the
+// type and cancel any pending tele reminder so they can be booked in clinic again.
+async function revertTeleFollowup(patientId){
+  if(!confirm('Switch this patient back to an in-person follow-up?\n\nAny pending tele reminder will be cancelled. Set a new due month / owner in Follow-up Planning if needed.'))return;
+  const r=await updatePatientTolerant(patientId,{followup_type:'follow_up'});
+  if(r&&r.error){alert('Could not switch back: '+(r.error.message||r.error));return;}
+  try{
+    const{data:teles}=await SB.from('appointments').select('id,status').eq('patient_id',patientId).eq('community_followup',true);
+    for(const t of (teles||[])){const s=String(t.status||'');if(s!=='cancelled'&&s!=='attended')await updateAppointmentTolerant(t.id,{status:'cancelled'});}
+  }catch(e){}
+  alert('Switched back to an in-person follow-up. Set the due month and owner in Follow-up Planning if needed.');
+  try{await openPatientRecord(patientId);}catch(e){}
+  try{refreshAppointmentViews();}catch(e){}
+}
 // The DPA (Data Protection Act) field shown at the foot of Patient details — a
 // Yes / No / Not available choice saved straight to the patient record.
 function patientDpaItemHTML(pat){
@@ -19824,7 +19843,7 @@ function arrangePatientDashboard(){
   const nav=root.querySelector('.psm-tabs');if(nav)nav.hidden=true;
   const actions=document.createElement('div');actions.className='pd-home-actions';actions.setAttribute('aria-label','Patient home actions');
   const current=openEpisodeIn(clrState.rows||[]);
-  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="openPatientEducation()">📚 Education</button><button type="button" class="psm-btn" onclick="openPatientLiterature()">📄 Informative literature</button><button type="button" class="psm-btn" onclick="openPatientScheduleFive()">📋 Schedule 5</button><button type="button" class="psm-btn" onclick="openPatientTreatment()">💊 Treatment</button>${clrState.siting?`<button type="button" class="psm-btn" onclick="openPatientSiting()">📍 Siting</button>`:''}`;
+  actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="openPatientEducation()">📚 Education</button><button type="button" class="psm-btn" onclick="openPatientLiterature()">📄 Informative literature</button><button type="button" class="psm-btn" onclick="openPatientScheduleFive()">📋 Schedule 5</button><button type="button" class="psm-btn" onclick="openPatientTreatment()">💊 Treatment</button>${(!isFistulaPatient(pat)&&!['deceased','reversed','relocated_overseas','discharged_gozo'].includes(normaliseFollowupStatus(pat.followup_status)))?(normaliseFollowupType(pat.followup_type)==='tele'?`<button type="button" class="psm-btn" onclick="revertTeleFollowup('${pid}')" title="Switch this patient back to an in-person follow-up">↩ In-person follow-up</button>`:`<button type="button" class="psm-btn" onclick="switchToTeleFollowup('${pid}')" title="Follow this patient up by telecommunication (Comcare email) instead of in person — e.g. if they can no longer attend clinic">📧 Switch to tele follow-up</button>`):''}${clrState.siting?`<button type="button" class="psm-btn" onclick="openPatientSiting()">📍 Siting</button>`:''}`;
   root.querySelector('.pd-patient-details')?.after(actions);
   const doc=root.querySelector('.doc-status-card'); // Existing record-completeness information is retained below the details.
   const home=patientDashboardSection(overview,'Patient overview',false);
