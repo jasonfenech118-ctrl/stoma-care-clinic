@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.09-760"></script>
+<script src="assets/manual.js?v=2026.11.09-761"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.09-760';
+const APP_BUILD='2026.11.09-761';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25029,6 +25029,11 @@ function renderCommunityFollowup(){
   const defDate=(()=>{const d=new Date();d.setMonth(d.getMonth()+1);return fmt(d);})();
   const sent=appt&&appt.comcare_email_sent_date?fmtShortDate(appt.comcare_email_sent_date):'';
   const fb=appt&&appt.comcare_feedback?String(appt.comcare_feedback):'';
+  // When the tele follow-up is resolved (feedback saved) the nurse can set the
+  // next due month — it shows in Follow-up Planning the same as any follow-up.
+  const curM=Number(pat&&pat.followup_due_month||0),curY=Number(pat&&pat.followup_year||0),yNow=new Date().getFullYear();
+  const nextMonthOpts='<option value="">— keep current —</option>'+Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}" ${m===curM?'selected':''}>${followupMonthName(m)}</option>`).join('');
+  const nextYearOpts=[yNow,yNow+1,yNow+2].map(y=>`<option value="${y}" ${y===(curY||yNow)?'selected':''}>${y}</option>`).join('');
   mb.innerHTML=`<h2>📧 Tele follow-up</h2>
     <div class="patient-modal-identity">${patientNameAvatarHTML(pat,nm,`<span>${htmlSafe(pat.id_card||'No ID')} · ${htmlSafe(pat.phone_number||'No phone')}</span>`,'md')}</div>
     <p class="report-note" style="margin:6px 0 10px;line-height:1.55;">A <b>tele follow-up</b> — handled with the community team (Comcare) <b>by email, not in person</b>. It is saved in the patient profile as a <b>Tele follow-up</b> pathway and the patient is set as a <b>Common</b> follow-up <b>due in the reminder month</b> (tele patients are tracked but <b>do not take a clinic slot</b>). The outcome is the email to Comcare (requesting imaging feedback) and the feedback they send back.</p>
@@ -25043,7 +25048,15 @@ function renderCommunityFollowup(){
     ${appt?`<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
       <label for="cf-fb" style="font-weight:700;color:var(--navy);">Comcare feedback</label>
       <textarea id="cf-fb" rows="4" style="width:100%;margin-top:6px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;" placeholder="Paste or type Comcare's reply / feedback here…">${htmlSafe(fb)}</textarea>
-      <div class="mact"><button class="btn-save" onclick="saveComcareFeedback()">Save feedback</button></div>
+      <div style="margin-top:12px;">
+        <label style="font-weight:700;color:var(--navy);">Next follow-up due <span style="font-weight:500;color:var(--muted);">(optional)</span></label>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <select id="cf-next-month" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;flex:1 1 150px;">${nextMonthOpts}</select>
+          <select id="cf-next-year" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;">${nextYearOpts}</select>
+        </div>
+        <p class="report-note" style="margin:4px 0 0;">When this patient is next due — it shows in <b>Follow-up Planning</b> like any follow-up. Leave on “keep current” to leave the plan as it is.</p>
+      </div>
+      <div class="mact"><button class="btn-save" onclick="saveComcareFeedback()">Save feedback &amp; next due</button></div>
     </div>`:'<p class="report-note" style="margin-top:10px;">Save the follow-up first, then you can email Comcare and record their feedback.</p>'}`;
 }
 async function emailComcareImaging(){
@@ -25125,9 +25138,18 @@ async function saveComcareFeedback(){
   if(error){alert('Could not save feedback: '+(error.message||error));return;}
   c.appt.comcare_feedback=fb;c.appt.status='attended';
   if(dropped&&dropped.includes('comcare_feedback')){alert('Run sql/add-community-followup.sql in Supabase so Comcare feedback can be stored.');return;}
+  // Resolving the tele follow-up can set the next due month — it shows in
+  // Follow-up Planning like any follow-up. Keep them active and on Common / Tele.
+  const nm=Number(document.getElementById('cf-next-month')?.value||0),ny=Number(document.getElementById('cf-next-year')?.value||0);
+  let dueMsg='';
+  if(nm>=1&&nm<=12&&ny>2000){
+    try{await updatePatientTolerant(c.patientId,{followup_due_month:nm,followup_year:ny,followup_status:'active',followup_owner:'Common',followup_type:'tele'});
+      c.pat={...c.pat,followup_due_month:nm,followup_year:ny,followup_status:'active',followup_owner:'Common',followup_type:'tele'};
+      dueMsg=' Next due set to '+followupMonthName(nm)+' '+ny+'.';}catch(e){}
+  }
   try{refreshAppointmentViews();}catch(e){}
   try{refreshPatientDashboardHistory();}catch(e){}
-  alert('✅ Comcare feedback saved.');
+  alert('✅ Comcare feedback saved.'+dueMsg);
   closeModal();
 }
 /* The printable postop discharge list, in the same Excel style as the handover
