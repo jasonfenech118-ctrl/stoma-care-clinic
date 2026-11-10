@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.09-766"></script>
+<script src="assets/manual.js?v=2026.11.10-767"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3204,8 +3204,8 @@ tr.pd-row-hit td{background:#fffbeb;}
       <div id="pd-setup-note"></div>
       <div id="pd-deceased-controls" hidden></div>
       <div style="overflow-x:auto;"><table class="dt" id="pd-table">
-        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th></tr></thead>
-        <tbody id="pd-tbody"><tr><td colspan="7" class="empty">Loading patients…</td></tr></tbody>
+        <thead><tr><th>Patient</th><th>ID Card</th><th>Phone</th><th>Date of Birth</th><th>Age</th><th>Surgery Date</th><th>Stoma Type</th><th>Actions</th></tr></thead>
+        <tbody id="pd-tbody"><tr><td colspan="8" class="empty">Loading patients…</td></tr></tbody>
       </table></div>
       <div id="pd-pager" class="pager"></div>
     </div>
@@ -4018,7 +4018,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.09-766';
+const APP_BUILD='2026.11.10-767';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4718,13 +4718,15 @@ function comcareFreqText(groups){
   return parts.length?('community nurses '+parts.join('; and ')):'community nurse stoma care';
 }
 // The auto-filled care-plan email body for Comcare (method A: plan in the body).
-function comcarePlanBody(pat,groups){
+// copyWith, when given, adds a line noting who holds the physical care-plan copy.
+function comcarePlanBody(pat,groups,copyWith){
   const title=/^m/i.test(pat.sex||'')?'Mr':/^f/i.test(pat.sex||'')?'Ms':'';
   const nm=[title,pat.first_name,pat.surname].filter(Boolean).join(' ')||'This patient';
   const op=pat.procedure_performed||'stoma surgery';
   const surg=pat.surgery_date?fmtShortDate(pat.surgery_date):'';
+  const copyLine=copyWith?`\n\nA physical copy of the care plan was left with ${copyWith}.`:'';
   // No sign-off — Outlook appends the nurse's own signature block.
-  return `Dear community nurses,\n\n${nm}${pat.id_card?' ('+pat.id_card+')':''} underwent ${op}${surg?' on '+surg:''} and was discharged on ${fmtShortDate(TODAY)}.\n\n${nm} requires ${comcareFreqText(groups)}.\n\nThe care plan is sent for your reference.`;
+  return `Dear community nurses,\n\n${nm}${pat.id_card?' ('+pat.id_card+')':''} underwent ${op}${surg?' on '+surg:''} and was discharged on ${fmtShortDate(TODAY)}.\n\n${nm} requires ${comcareFreqText(groups)}.\n\nThe care plan is sent for your reference, with the discharge letter attached.${copyLine}`;
 }
 // Present stoma groups (Colostomy / Ileostomy / Urostomy) for the care plan.
 function patientStomaGroups(pat){
@@ -14573,9 +14575,9 @@ function renderPatientDirectory(){
   if(thead)thead.innerHTML=reversedView
     ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Age at stoma','age_stoma')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Reversal Date','reversal_date','date')+pdSortableTh('Age at reversal','age_reversal')+pdSortableTh('Stoma days','stoma_days_reversed')+pdSortableTh('Deceased Date','reversed_deceased_date','date')
     : outcomeView
-    ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Operation Performed','procedure_performed')+pdSortableTh('Findings','findings')+'<th>Actions</th>'
-    : pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Phone','phone_number')+pdSortableTh('Date of Birth','date_of_birth','date')+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+'<th>Actions</th>';
-  const cols=reversedView?10:outcomeView?8:7;
+    ? pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Date of Birth','date_of_birth','date')+'<th>Age</th>'+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+pdSortableTh('Operation Performed','procedure_performed')+pdSortableTh('Findings','findings')+'<th>Actions</th>'
+    : pdSortableTh('Patient','name')+pdSortableTh('ID Card','id_card')+pdSortableTh('Phone','phone_number')+pdSortableTh('Date of Birth','date_of_birth','date')+'<th>Age</th>'+pdSortableTh('Surgery Date','surgery_date','date')+pdSortableTh('Stoma Type','stoma_type')+'<th>Actions</th>';
+  const cols=reversedView?10:outcomeView?9:8;
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="${cols}" class="empty">No patients match these filters.</td></tr>`;renderPager('pd-pager',0,0,pdPage,()=>{});return;}
   const dcell=v=>v?htmlSafe(fmtShortDate(v)):'<span class="pd-dash">—</span>';
   const tcell=(v,n=28)=>{const t=String(v||'').trim();return t?`<span class="pd-text" title="${htmlSafe(t)}">${htmlSafe(t.length>n?t.slice(0,n-2)+'…':t)}</span>`:'<span class="pd-dash">—</span>';};
@@ -14606,8 +14608,8 @@ function renderPatientDirectory(){
     const middle=reversedView
       ? `<td>${dcell(p.date_of_birth)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,surgery))}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td><td>${dcell(p.reversal_date)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,p.reversal_date))}</td><td>${daysCellHTML(daysBetween(surgery,p.reversal_date))}</td>${ripCell}`
       : outcomeView
-      ? `<td>${dcell(p.date_of_birth)}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
-      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td>`;
+      ? `<td>${dcell(p.date_of_birth)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,TODAY))}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td><td>${tcell(p.procedure_performed,32)}</td><td>${tcell(p.findings,40)}</td>`
+      : `<td>${htmlSafe(p.phone_number||'—')}</td><td>${dcell(p.date_of_birth)}</td><td>${ageCellHTML(ageYearsBetween(p.date_of_birth,TODAY))}</td><td>${dcell(surgery)}</td><td>${tcell(registryStomaType(p))}</td>`;
     const restoreBtn=p.archived?`<button class="ncb-btn" style="background:#e8f5f4;color:#0d7377;" onclick="restorePatient('${p.id}','${jsSafe(nm)}')">Restore</button>`:'';
     const ripCross=ripDate?`<span class="pd-rip-cross" title="Deceased ${htmlSafe(fmtShortDate(ripDate))} — kept as reversed">✝</span>`:'';
     return `<tr class="pd-click-row ${rowCls}${ripDate?' pd-reversed-rip':''}${incompleteCls}${p.archived?' pd-row-archived':''}" onclick="openPatientRecord('${p.id}')" title="Click to open patient card"${p.archived?' style="opacity:.6;"':''}>
@@ -23158,11 +23160,15 @@ function dischargeOptionsHTML(p,selected){
   ].filter(Boolean).join('');
 }
 /* One "Discharge patient" button on the handover opens this modal. Discharging
-   is deliberately a THREE-step safety check — layered so each step catches a
-   different mistake (Swiss-cheese): (1) choose the outcome, (2) verify the
-   patient's identity, (3) a final confirm with an acknowledgement tick. Every
-   step has a Back, so an error missed earlier can still be corrected before it
-   commits. After the discharge a one-time Undo banner appears on the handover. */
+   is a layered safety check — each step catches a different mistake
+   (Swiss-cheese): (1) choose the outcome, (2) verify the patient's identity,
+   then a final confirm with an acknowledgement tick. A home discharge (postop /
+   old case) adds, in between, a community-nurse referral question; when the
+   answer is Yes it also walks through the discharge letter, who holds the
+   physical copy, and emailing the care plan to Comcare. Gozo / overseas keep the
+   three core steps. Every step has a Back, so an error missed earlier can still
+   be corrected before it commits. After the discharge a one-time Undo banner
+   appears on the handover. */
 let dischargeCtx=null;
 const DISCHARGE_META={
   postop:{title:'🏥 Postop discharge',short:'on the Postop Discharges list, to be booked for follow-up',
@@ -23200,90 +23206,152 @@ async function openDischargeModal(patientId,name){
   const nm=name||`${p.first_name||''} ${p.surname||''}`.trim()||'this patient';
   // Gate: no discharge until the Schedule V permit has been collected.
   if(!scheduleFiveCollected(p)){dischargeCtx=null;renderScheduleVBlock(p,nm);openMo();return;}
-  dischargeCtx={patient:p,name:nm,choice:null,step:1,community:null,planSent:false,letterOk:undefined,ack:false};
+  dischargeCtx={patient:p,name:nm,choice:null,i:0,community:null,planSent:false,letterOk:undefined,ack:false,copyPreset:'',copyName:'',emailDraft:''};
   renderDischargeModal();
   openMo();
+}
+// The step sequence depends on the outcome and the referral answer. Gozo /
+// overseas are not home discharges, so they keep the three core steps; a home
+// discharge adds the referral question, and answering Yes adds the letter,
+// physical-copy and send steps before the final confirm.
+function dischargeSeq(c){
+  const home=(c.choice==='postop'||c.choice==='old');
+  if(!home)return ['outcome','check','confirm'];
+  if(c.community==='yes')return ['outcome','check','referral','letter','copy','send','confirm'];
+  return ['outcome','check','referral','confirm'];
+}
+// A readable label for who holds the physical copy: the preset, with a name in
+// brackets when one is typed ("Ward nurse (Mary Borg)"); free text for "Other".
+function dischargeCopyLabel(c){
+  if(!c)return '';
+  const preset=c.copyPreset||'',name=(c.copyName||'').trim();
+  if(preset==='Other')return name;
+  if(preset&&name)return preset+' ('+name+')';
+  return preset;
+}
+function dischargeEmailDraft(c){
+  return comcarePlanBody(c.patient,patientStomaGroups(c.patient),dischargeCopyLabel(c));
 }
 function renderDischargeModal(){
   const c=dischargeCtx;if(!c)return;
   const mb=document.getElementById('mb');if(!mb)return;
   const p=c.patient,nm=c.name;
   mb.className='mb'+sexModalClass(p);
+  const seq=dischargeSeq(c);
+  if(c.i>=seq.length)c.i=seq.length-1;
+  const key=seq[c.i],n=seq.length,stepLabel=`Step ${c.i+1} of ${n}`;
   const wardBed=[p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' - ');
   const idLine=`${htmlSafe(p.id_card||'No ID')}${wardBed?' · '+htmlSafe(wardBed):''}`;
-  const stepper=`<div class="dis-stepper">${[1,2,3].map(n=>`<span class="dis-step-dot${n===c.step?' is-on':''}${n<c.step?' is-done':''}">${n<c.step?'✓':n}</span>`).join('<span class="dis-step-line"></span>')}</div>`;
+  const stepper=`<div class="dis-stepper">${seq.map((_,idx)=>`<span class="dis-step-dot${idx===c.i?' is-on':''}${idx<c.i?' is-done':''}">${idx<c.i?'✓':idx+1}</span>`).join('<span class="dis-step-line"></span>')}</div>`;
   const meta=c.choice?DISCHARGE_META[c.choice]:null;
+  const backBtn=`<button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>`;
   let body='';
-  if(c.step===1){
-    body=`<div class="msub">Step 1 of 3 — choose how <strong>${htmlSafe(nm)}</strong> is leaving. Pick one outcome; its consequence is shown.</div>
+  if(key==='outcome'){
+    body=`<div class="msub">${stepLabel} — choose how <strong>${htmlSafe(nm)}</strong> is leaving. Pick one outcome; its consequence is shown.</div>
       <div class="dis-opts">${dischargeOptionsHTML(p,c.choice)}</div>
       <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-save" id="dis-next" ${c.choice?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
-  }else if(c.step===2){
-    body=`<div class="msub">Step 2 of 3 — <strong>check the patient</strong>. Make sure this is the right person before going on.</div>
+  }else if(key==='check'){
+    body=`<div class="msub">${stepLabel} — <strong>check the patient</strong>. Make sure this is the right person before going on.</div>
       <div class="dis-check">
         <div class="dis-check-row"><span class="dis-check-k">Patient</span><span class="dis-check-v"><strong>${htmlSafe(nm)}</strong></span></div>
         <div class="dis-check-row"><span class="dis-check-k">ID · ward</span><span class="dis-check-v">${idLine}</span></div>
         <div class="dis-check-row"><span class="dis-check-k">Outcome</span><span class="dis-check-v"><strong>${meta?meta.title:''}</strong></span></div>
       </div>
       <div class="dis-confirm" style="display:block;">Is this the <strong>right patient</strong> and the <strong>right outcome</strong>? If not, step back and change it.</div>
-      <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
-        <button class="btn-save" onclick="dischargeStepNext()">Yes, continue →</button></div>`;
-  }else{
-    // Community care (Comcare): for a patient going home, ask whether they are
-    // followed up by community nurses. If Yes, the discharge is blocked until a
-    // discharge letter is done AND the care plan has been emailed to Comcare and
-    // the nurse confirms it was sent.
-    const homeType=(c.choice==='postop'||c.choice==='old');
-    let community='';
-    if(homeType){
-      const gate=c.community==='yes'?`
-        <div style="margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#f0fdfa;">
-          ${c.letterOk===false?'<div style="color:#b91c1c;font-weight:700;margin-bottom:6px;">⚠️ A discharge letter must be done first — the care plan is sent to Comcare.</div>':c.letterOk===undefined?'<div style="color:var(--muted);margin-bottom:6px;">Checking for a discharge letter…</div>':''}
-          <p style="margin:0 0 8px;">Send the care plan to Comcare, then confirm — the discharge is blocked until then.</p>
-          <button type="button" class="psm-btn" onclick="emailComcarePlan()">📧 Email care plan to Comcare</button>
-          <label class="dis-ack" style="margin-top:8px;"><input type="checkbox" id="dis-plan-sent" ${c.planSent?'checked':''} onchange="dischargePlanSentToggle()"/> <span>I have sent the care plan to Comcare.</span></label>
-        </div>`:'';
-      community=`<div style="margin:12px 0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;">
-        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Is this patient discharged with community care (Comcare)?</div>
-        <label style="margin-right:16px;"><input type="radio" name="dis-comm" value="yes" ${c.community==='yes'?'checked':''} onchange="dischargeCommunityPick('yes')"/> Yes</label>
-        <label><input type="radio" name="dis-comm" value="no" ${c.community==='no'?'checked':''} onchange="dischargeCommunityPick('no')"/> No</label>
-        ${gate}
-      </div>`;
-    }
-    body=`<div class="msub">Step 3 of 3 — <strong>final check</strong>. This is the last step before it is done.</div>
+      <div class="mact">${backBtn}<button class="btn-save" onclick="dischargeStepNext()">Yes, continue →</button></div>`;
+  }else if(key==='referral'){
+    body=`<div class="msub">${stepLabel} — <strong>community-nurse referral</strong>. Does <strong>${htmlSafe(nm)}</strong> need community-nurse (Comcare) follow-up at home?</div>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;">
+        <label style="display:block;margin-bottom:10px;"><input type="radio" name="dis-comm" value="yes" ${c.community==='yes'?'checked':''} onchange="dischargeCommunityPick('yes')"/> <strong>Yes</strong> — a care plan goes to Comcare (adds the discharge-letter &amp; send steps).</label>
+        <label style="display:block;"><input type="radio" name="dis-comm" value="no" ${c.community==='no'?'checked':''} onchange="dischargeCommunityPick('no')"/> <strong>No</strong> — no community-nurse referral needed.</label>
+      </div>
+      <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${c.community?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
+  }else if(key==='letter'){
+    const checking=c.letterOk===undefined;
+    body=`<div class="msub">${stepLabel} — <strong>discharge letter</strong>. See, write or edit the letter; the care plan is built from it.</div>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:#f0fdfa;">
+        <p style="margin:0 0 10px;">The letter opens in a <strong>new tab</strong> — write or edit it there and <strong>Save to patient record</strong>, then come back here and re-check.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="psm-btn" onclick="createPatientDischargeLetter('${jsSafe(String(p.id))}')">📄 Open / edit discharge letter</button>
+          <button type="button" class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);" onclick="dischargeLetterRecheck()">↻ Re-check</button>
+        </div>
+        <div style="margin-top:10px;font-weight:700;color:${c.letterOk?'#15803d':'#b91c1c'};">${checking?'<span style="color:var(--muted);font-weight:500;">Checking for a saved letter…</span>':(c.letterOk?'✓ A discharge letter is saved for this patient.':'⚠️ No saved discharge letter yet — create one to continue.')}</div>
+      </div>
+      <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${c.letterOk?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
+  }else if(key==='copy'){
+    const presets=['Patient','Relative','Ward nurse','GP','Other'];
+    const needName=c.copyPreset==='Other';
+    const valid=!!c.copyPreset&&(c.copyPreset!=='Other'||!!(c.copyName||'').trim());
+    body=`<div class="msub">${stepLabel} — <strong>physical copy</strong>. Who did you leave the printed care plan with?</div>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:10px;">
+          ${presets.map(o=>`<label><input type="radio" name="dis-copy" value="${o}" ${c.copyPreset===o?'checked':''} onchange="dischargeCopyPick('${o}')"/> ${o}</label>`).join('')}
+        </div>
+        <input type="text" id="dis-copy-name" value="${htmlSafe(c.copyName||'')}" oninput="dischargeCopyName(this.value)" placeholder="${needName?'Name of who holds the copy *':'Name (optional) — e.g. the ward nurse'}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;"/>
+      </div>
+      <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${valid?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
+  }else if(key==='send'){
+    if(!c.emailDraft)c.emailDraft=dischargeEmailDraft(c);
+    body=`<div class="msub">${stepLabel} — <strong>send to Comcare</strong>. Open the letter, check the draft, then email it with the letter attached.</div>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;">
+        <ol style="margin:0 0 10px 18px;padding:0;line-height:1.7;">
+          <li><button type="button" class="psm-btn" onclick="createPatientDischargeLetter('${jsSafe(String(p.id))}')">📄 Open letter → save as PDF</button> (in the new tab: Print → Save as PDF).</li>
+          <li>Check the draft below, then <button type="button" class="psm-btn" onclick="dischargeOpenEmail()">📧 Open email to Comcare</button> and <strong>attach the PDF</strong> before sending.</li>
+        </ol>
+        <div style="display:flex;align-items:center;gap:8px;margin:6px 0;"><strong style="color:var(--navy);">Email draft</strong><button type="button" class="ncb-btn" style="background:#0f766e;color:#fff;" onclick="dischargeGrammar()">✓ Check grammar</button></div>
+        <div id="dis-email-draft" contenteditable="true" style="white-space:pre-wrap;min-height:120px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font:inherit;line-height:1.5;" oninput="dischargeDraftEdited(this)">${htmlSafe(c.emailDraft)}</div>
+        <p class="report-note" style="margin:8px 0 0;">A <code>mailto:</code> email can’t attach for you — attach the saved PDF in your mail app. The draft already notes a physical copy was left with <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong>.</p>
+      </div>
+      <div class="mact">${backBtn}<button class="btn-save" onclick="dischargeStepNext()">Continue →</button></div>`;
+  }else{   // confirm
+    const home=(c.choice==='postop'||c.choice==='old'),yes=home&&c.community==='yes';
+    const summary=yes?`<div style="margin:12px 0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#f8fafc;">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Community-care summary</div>
+        <div>📄 Discharge letter: <strong>${c.letterOk?'done':'not found'}</strong></div>
+        <div>🧾 Physical copy left with: <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong></div>
+        <div>📧 Care plan to Comcare: <strong>${c.planSent?'sent':'not yet sent'}</strong></div>
+      </div>
+      <label class="dis-ack"><input type="checkbox" id="dis-plan-sent" ${c.planSent?'checked':''} onchange="dischargePlanSentToggle()"/> <span>I have emailed the care plan to Comcare <strong>with the discharge letter attached</strong>.</span></label>`:'';
+    body=`<div class="msub">${stepLabel} — <strong>final check</strong>. This is the last step before it is done.</div>
       <div class="dis-final">You are about to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta?meta.title:''}</strong>.<br/>${meta?meta.conseq:''} You can undo this once, straight after.</div>
-      ${community}
+      ${home&&c.community==='no'?'<div class="report-note" style="margin:8px 0;">No community-nurse referral — recorded as not needed.</div>':''}
+      ${summary}
       <label class="dis-ack"><input type="checkbox" id="dis-ack" ${c.ack?'checked':''} onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
-      <div class="mact"><button class="btn-cancel" onclick="dischargeStepBack()">← Back</button>
-        <button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
+      <div class="mact">${backBtn}<button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
   }
   mb.innerHTML=`<h2>Discharge patient</h2>${stepper}${body}`;
-  if(c.step===3)dischargeUpdateSaveBtn();
+  if(key==='confirm')dischargeUpdateSaveBtn();
 }
-// Step 1: a picked outcome is remembered and enables Continue.
+// A picked outcome is remembered and enables Continue.
 function dischargeChoicePicked(){
   const v=document.querySelector('input[name="dis-choice"]:checked')?.value;
   if(dischargeCtx)dischargeCtx.choice=v||null;
   const btn=document.getElementById('dis-next');if(btn)btn.disabled=!v;
 }
 function dischargeStepNext(){
-  if(!dischargeCtx)return;
-  if(dischargeCtx.step===1&&!dischargeCtx.choice)return;
-  dischargeCtx.step=Math.min(3,dischargeCtx.step+1);
+  const c=dischargeCtx;if(!c)return;
+  const seq=dischargeSeq(c),key=seq[c.i];
+  // Per-step validation before advancing.
+  if(key==='outcome'&&!c.choice)return;
+  if(key==='referral'&&!c.community)return;
+  if(key==='letter'&&!c.letterOk)return;
+  if(key==='copy'&&!(c.copyPreset&&(c.copyPreset!=='Other'||(c.copyName||'').trim())))return;
+  if(key==='copy')c.emailDraft=dischargeEmailDraft(c);   // (re)build the draft from the copy recipient
+  c.i=Math.min(seq.length-1,c.i+1);
   renderDischargeModal();
 }
 function dischargeStepBack(){
-  if(!dischargeCtx)return;
-  dischargeCtx.step=Math.max(1,dischargeCtx.step-1);
+  const c=dischargeCtx;if(!c)return;
+  c.i=Math.max(0,c.i-1);
   renderDischargeModal();
 }
-// Step 3: the Discharge button needs the acknowledgement tick AND, for a
-// community-care discharge, a done letter plus the care plan confirmed sent.
+// The Discharge button needs the acknowledgement tick AND, for a community-care
+// discharge, a done letter plus the care plan confirmed sent.
 function dischargeUpdateSaveBtn(){
   const c=dischargeCtx;if(!c)return;
-  const homeType=(c.choice==='postop'||c.choice==='old');
-  const gateOk=!(homeType&&c.community==='yes')||(c.letterOk&&c.planSent);
+  const home=(c.choice==='postop'||c.choice==='old');
+  const gateOk=!(home&&c.community==='yes')||(c.letterOk&&c.planSent);
   const btn=document.getElementById('dis-save');if(btn)btn.disabled=!(c.ack&&gateOk);
 }
 function dischargeFinalToggle(){
@@ -23293,6 +23361,39 @@ function dischargeFinalToggle(){
 function dischargePlanSentToggle(){
   if(dischargeCtx)dischargeCtx.planSent=!!document.getElementById('dis-plan-sent')?.checked;
   dischargeUpdateSaveBtn();
+}
+function dischargeCopyPick(v){
+  const c=dischargeCtx;if(!c)return;
+  c.copyPreset=v;renderDischargeModal();
+  if(v==='Other'){const el=document.getElementById('dis-copy-name');if(el)el.focus();}
+}
+function dischargeCopyName(v){
+  const c=dischargeCtx;if(!c)return;
+  c.copyName=v;
+  const valid=!!c.copyPreset&&(c.copyPreset!=='Other'||!!(v||'').trim());
+  const btn=document.getElementById('dis-next');if(btn)btn.disabled=!valid;
+}
+function dischargeDraftEdited(el){
+  if(dischargeCtx&&el)dischargeCtx.emailDraft=el.innerText;
+}
+function dischargeOpenEmail(){
+  const c=dischargeCtx;if(!c)return;
+  const el=document.getElementById('dis-email-draft');
+  const body=(el?el.innerText:c.emailDraft)||dischargeEmailDraft(c);
+  c.emailDraft=body;
+  openComcareEmail(comcareSubject(c.patient,'stoma care plan'),body);
+  setTimeout(()=>alert('The email opened addressed to Comcare (Cc: the stoma clinic). Attach the saved discharge-letter PDF, then send — and on the last step tick that it was sent.'),400);
+}
+function dischargeGrammar(){
+  const el=document.getElementById('dis-email-draft');
+  if(window.Proofread&&el)Proofread.open(el);
+  else alert('The grammar checker is not available right now.');
+}
+async function dischargeLetterRecheck(){
+  const c=dischargeCtx;if(!c)return;
+  c.letterOk=undefined;renderDischargeModal();
+  const ok=await patientHasDischargeLetter(c.patient.id);
+  if(dischargeCtx===c){c.letterOk=ok;renderDischargeModal();}
 }
 async function dischargeCommunityPick(v){
   const c=dischargeCtx;if(!c)return;
@@ -23383,9 +23484,14 @@ async function confirmDischargeModal(patientId){
      if(btn){btn.disabled=false;btn.textContent='Discharge patient';}
      alert('Send the care plan to Comcare and tick that it was sent before discharging.');return;
    }
-   // Record the community-care decision, its date and the plan-sent date.
+   // Record the community-care decision, its date, the plan-sent date and who
+   // holds the physical copy.
    if(homeType&&c.community){
-     try{await updatePatientTolerant(patientId,{community_care:c.community,community_care_date:TODAY,...(c.planSent?{comcare_plan_sent_date:TODAY}:{})});}catch(e){}
+     const extra={community_care:c.community,community_care_date:TODAY};
+     if(c.planSent)extra.comcare_plan_sent_date=TODAY;
+     const copyLabel=c.community==='yes'?dischargeCopyLabel(c):'';
+     if(copyLabel)extra.care_plan_copy_with=copyLabel;
+     try{await updatePatientTolerant(patientId,extra);}catch(e){}
    }}
   const snapFields={};
   ['is_inpatient','followup_status','followup_status_effective_date','discharged_gozo_date','relocated_overseas_date','discharge_date','extra_stomas'].forEach(k=>{if(before&&k in before)snapFields[k]=before[k];});

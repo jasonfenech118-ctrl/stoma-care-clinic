@@ -11,7 +11,7 @@ function setup(t){
   const dom=new JSDOM(`<div id="pd-summary"></div><select id="pd-owner"><option value="all">All owners</option></select><select id="pd-status"><option value="all">All</option><option value="reversed">Reversed</option></select>
     <input id="pd-search"/><span id="pd-count"></span><div id="pd-setup-note"></div><table id="pd-table"><thead><tr></tr></thead><tbody id="pd-tbody"></tbody></table><div id="pd-pager"></div>`,{runScripts:'outside-only'});
   t.after(()=>dom.window.close());const w=dom.window;
-  w.eval(`var FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];var pdShowArchived=false,patientDatesAvailable=true;
+  w.eval(`var FOLLOWUP_OWNERS=['Common','Jacqueline','Jason','Lorraine','Tracey'];var pdShowArchived=false,patientDatesAvailable=true;var TODAY='2026-11-10';
     function annualKpi(label,value,sub){return '<div class="kpi" data-label="'+label+'"><b>'+value+'</b><i>'+sub+'</i></div>';}
     function patientStomaList(p){return (p.types||[]).map(type=>({type}));}
     function patientEverReversed(p){return p.status==='reversed';} function patientsMarkedOtherButDeceased(){return [];}

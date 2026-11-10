@@ -41,6 +41,9 @@ test('the discharge care-plan email is auto-filled with surgery, dates and frequ
   assert.match(b,/Ms Charlene Tanti \(92188M\) underwent Hartmann’s procedure with end colostomy on 2026-10-29/);
   assert.match(b,/discharged on 2026-11-07/);
   assert.match(b,/twice daily \(BD\) for the colostomy/);
-  assert.match(b,/The care plan is sent for your reference\.$/);
+  assert.match(b,/The care plan is sent for your reference, with the discharge letter attached\.$/);
   assert.doesNotMatch(b,/Kind regards/);
+  // With a physical-copy recipient the body gains the "physical copy" line.
+  const withCopy=ctx.comcarePlanBody(p,['Colostomy'],'Ward nurse (Mary Borg)');
+  assert.match(withCopy,/A physical copy of the care plan was left with Ward nurse \(Mary Borg\)\.$/);
 });
