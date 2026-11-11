@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'10 November 2026 — A going-home discharge (Postop / old case) now walks through a community-nurse referral, the discharge letter, who holds the physical copy, and emailing the care plan to Comcare (attach the PDF yourself; grammar check on the draft). Each Handover row now has a ⧉ Copy button under the ID number to copy it to the clipboard. The Patient Registry also shows each patient’s current Age beside Date of Birth, and a patient record shows the year of death or reversal under the age.'};
+const MANUAL_META={updated:'10 November 2026 — A going-home discharge (Postop / old case) now walks through a community-nurse referral, the discharge letter, who holds the physical copy, and emailing the care plan to Comcare (attach the PDF yourself; grammar check on the draft). In the Pre-operative Assessment each item’s Notes box is always visible, so written notes no longer hide behind the “Notes” choice. Each Handover row also has a ⧉ Copy button under the ID number to copy it to the clipboard. The Patient Registry also shows each patient’s current Age beside Date of Birth, and a patient record shows the year of death or reversal under the age.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -376,6 +376,7 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','📍','The assessment and printed form use a <b>black-and-white, unlabelled abdomen diagram</b> with the abdominal grid and the lower genital area cropped off. Tap the diagram to add sites, drag a marker to move it, or tap a marker to remove it. Older saved sites keep their original diagram so their positions remain accurate; <b>Clear all</b> removes those sites and starts a fresh map on the current diagram.')}
     ${manNote('auto','⚙️','When the planned <b>surgery day arrives</b>, the sited patient appears at the top of the Handover as <b>"Awaiting surgery"</b> automatically — nobody has to add them.')}
     ${manNote('tip','🚫','To <b>cancel</b> a siting session, press <b>Cancel</b> on its row and choose <b>why</b> — <b>Due to the patient</b> or a <b>Hospital complication</b> — with an optional note. It is the same patient / hospital split the clinic records on a cancelled appointment. The cancelled session, with its reason, is kept in the patient’s <b>Siting sessions</b> history (greyed out) so nothing is lost. Needs <b>sql/add-siting-cancellation.sql</b> run once in Supabase to store the reason; until then the session still cancels and the app says the reason could not be saved yet.')}
+    ${manNote('tip','📝','In the <b>Pre-operative Assessment</b> each item has <b>Met / Unmet / Notes</b>, a date and initials, plus a <b>Notes</b> box that is now <b>always visible</b> — so a written note shows and can be added under any choice, not only when “Notes” is picked.')}
   `},
   {id:'cancelled',title:'Cancelled Stoma Appointments',keywords:'cancelled stoma appointments siting cancellation patient hospital reason history note nurse search id card delete remove mistake duplicate',html:`
     ${manMap('siting')}
