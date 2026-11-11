@@ -13,6 +13,21 @@ test('the Remove this stoma button is no longer hidden for the first stoma',()=>
   assert.doesNotMatch(line,/hidden/,'the button must not carry a hidden gate');
 });
 
+test('removing a stoma always asks first via an explicit in-app confirmation',()=>{
+  // The footer button opens the prompt; it never deletes straight away.
+  const btn=html.indexOf('class="btn-cancel sm-remove" onclick="promptRemoveStoma()"');
+  assert.ok(btn>=0,'remove button opens the confirmation prompt');
+  const ps=html.indexOf('function promptRemoveStoma(');
+  assert.ok(ps>=0,'promptRemoveStoma exists');
+  const body=html.slice(ps,html.indexOf('\n}',ps)+2);
+  assert.match(body,/Yes, delete this stoma/);
+  assert.match(body,/onclick="confirmRemoveStoma\(\)"/);
+  // The actual deletion runs only from that Yes button — not on the first tap.
+  const crs=html.indexOf('async function confirmRemoveStoma(');
+  const crsBody=html.slice(crs,html.indexOf('\n}',crs)+2);
+  assert.doesNotMatch(crsBody,/confirm\(/,'no reliance on the native confirm dialog');
+});
+
 test('confirmRemoveStoma clears the base stoma columns and guards same-operation stomas',()=>{
   const start=html.indexOf('async function confirmRemoveStoma(');
   assert.ok(start>=0);
