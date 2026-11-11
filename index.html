@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.11-772"></script>
+<script src="assets/manual.js?v=2026.11.11-774"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4021,7 +4021,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.11-773';
+const APP_BUILD='2026.11.11-774';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -15658,14 +15658,16 @@ function initialStomaCode(uid){
   const s=String(uid||'').replace(/[^a-z0-9]/gi,'');
   return s?'STO-'+s.slice(-8).toUpperCase():'';
 }
-const INITIAL_STOMA_TYPES=['Colostomy','Ileostomy','Mucus fistula'];
 function initialStomaTypeOptions(cur){
   cur=String(cur||'').trim();
-  const inList=INITIAL_STOMA_TYPES.some(t=>t.toLowerCase()===cur.toLowerCase());
-  // A legacy free-text type that is none of the three is kept so nothing is lost.
+  const ck=stomaTypeKey(cur);
+  const known=!!cur&&STOMA_TYPE_OPTIONS.some(t=>stomaTypeKey(t)===ck);
+  // The same specific list as the main stoma type — no bare "Colostomy" /
+  // "Ileostomy". A legacy free-text type that is none of them is kept so nothing
+  // is lost, but a generic umbrella value is dropped so a specific one is chosen.
   return `<option value="">— select —</option>`
-    +(cur&&!inList?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(cur)}</option>`:'')
-    +INITIAL_STOMA_TYPES.map(t=>`<option${cur.toLowerCase()===t.toLowerCase()?' selected':''}>${t}</option>`).join('');
+    +(cur&&!known&&!isGenericStomaUmbrella(cur)?`<option value="${htmlSafe(cur)}" selected>${htmlSafe(cur)}</option>`:'')
+    +STOMA_TYPE_OPTIONS.map(t=>`<option${ck===stomaTypeKey(t)?' selected':''}>${htmlSafe(t)}</option>`).join('');
 }
 // Show or hide the stoma-ID line as a type is chosen or cleared.
 function onInitialStomaType(sel){
@@ -16807,6 +16809,15 @@ function stomaTypeKey(s){
     .replace(/double barrel/g,'double-barrel')
     .trim();
 }
+/* A bare "Colostomy" or "Ileostomy" is too general — the record should name the
+   specific type (End / Loop / Transverse / Double-barrel …). These two umbrella
+   values are therefore not offered or kept in the type dropdowns, so editing a
+   stoma that holds one forces a specific type to be chosen. (Urostomy and Mucus
+   fistula are specific enough on their own and stay.) */
+function isGenericStomaUmbrella(c){
+  const k=stomaTypeKey(c);
+  return k==='colostomy'||k==='ileostomy';
+}
 /* The tidy label for a stored stoma type: the canonical sentence-case spelling
    when it is a known type, otherwise the value exactly as it was recorded, so a
    free-text "Other" entry is never rewritten. */
@@ -16823,7 +16834,7 @@ function stomaTypeOptions(cur){
   // sentence-case option instead of falling through to "(as recorded)".
   const known=!!c&&STOMA_TYPE_OPTIONS.some(t=>stomaTypeKey(t)===ck);
   return '<option value="">— choose the stoma type —</option>'
-    +(c&&!known?`<option value="${htmlSafe(c)}" selected>${htmlSafe(c)}</option>`:'')
+    +(c&&!known&&!isGenericStomaUmbrella(c)?`<option value="${htmlSafe(c)}" selected>${htmlSafe(c)}</option>`:'')
     +STOMA_TYPE_OPTIONS.map(t=>`<option${ck===stomaTypeKey(t)?' selected':''}>${htmlSafe(t)}</option>`).join('');
 }
 
@@ -16992,7 +17003,8 @@ async function openStomaModal(patientId,slot){
             <div class="ap-hint">A refashioning remakes a stoma the patient already has. Saying which one keeps the history straight when there is more than one.</div></div>`:''}
         <div class="fg"><label>Stoma type ${isRef?'':'*'}</label>
           <select id="sm-type" onchange="onStomaTypeChange()" ${isRef?'disabled':''}>${stomaTypeOptions(x.type)}</select>
-          ${isRef?'<div class="ap-hint">The type stays the same as the stoma that was refashioned.</div>':''}</div>
+          ${isRef?'<div class="ap-hint">The type stays the same as the stoma that was refashioned.</div>'
+            :(isGenericStomaUmbrella(x.type)?`<div class="ap-hint" style="color:#b45309;">“${htmlSafe(x.type)}” is too general — choose the specific type (e.g. End colostomy, Loop colostomy, Transverse colostomy).</div>`:'')}</div>
         <div class="fg" id="sm-typeotherwrap" hidden><label>Type it in full</label>
           <input type="text" id="sm-typeother" placeholder="the stoma type as the book writes it"/></div>
         <div class="fg"><label>Stoma location</label>
