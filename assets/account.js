@@ -4,6 +4,11 @@ window.ClinicAccount=(()=>{
   let user=null,offset=0,request=0;
   const $=id=>document.getElementById(id);
   const isJason=()=>user?.id===JASON_ID;
+  // Jacqueline Sammut is a co-administrator (matched by her account email, since
+  // her user id is not hard-coded). isAdmin() gates the admin tools — the App
+  // Access Audit here, and the roster Overtime / Time-in-Lieu sections.
+  const isAdminEmail=()=>{const e=String(user?.email||'').trim().toLowerCase();return e==='jacqueline.sammut@gov.mt'||/jacqueline\.?sammut/.test(e);};
+  const isAdmin=()=>isJason()||isAdminEmail();
   function clear(){
     window.ClinicAccess?.stop();
     user=null;request++;offset=0;
@@ -25,8 +30,10 @@ window.ClinicAccount=(()=>{
     window.ClinicAccess?.start(SB,user.id);
     $('profile-email').textContent=user.email||'';
     $('profile-name').value=user.user_metadata?.full_name||'';
-    $('login-audit-button').hidden=!isJason();
-    $('profile-audit-tools').hidden=!isJason();
+    $('login-audit-button').hidden=!isAdmin();
+    $('profile-audit-tools').hidden=!isAdmin();
+    // Let the rest of the app re-apply admin-gated visibility (roster OT/TIL).
+    try{window.applyRosterOTTILVisibility&&window.applyRosterOTTILVisibility();}catch(e){}
   }
   async function save(event){
     event.preventDefault();
@@ -50,7 +57,7 @@ window.ClinicAccount=(()=>{
     finally{button.disabled=false;}
   }
   async function audit(delta=0){
-    if(!isJason())return;
+    if(!isAdmin())return;
     const token=++request,owner=user.id;
     offset=Math.max(0,offset+delta);
     const status=$('login-audit-status'),body=$('login-audit-rows');
@@ -60,7 +67,7 @@ window.ClinicAccount=(()=>{
       const {data,error}=await SB.from('clinic_app_access')
         .select('id,nurse_name,email,accessed_at,last_activity_at').order('accessed_at',{ascending:false})
         .order('id',{ascending:false}).range(offset,offset+50);
-      if(token!==request||user?.id!==owner||!isJason())return;
+      if(token!==request||user?.id!==owner||!isAdmin())return;
       if(error)throw error;
       const rows=data||[];
       for(const row of rows.slice(0,50)){
@@ -75,5 +82,5 @@ window.ClinicAccount=(()=>{
     }catch(error){if(token===request)status.textContent='Unable to load app access audit. Please refresh and try again.';}
   }
   function openProfile(){ $('profile-audit-tools').open=false; $('profile-password').value='';$('profile-confirm').value='';$('profile-status').textContent=''; }
-  return {sync,clear,save,audit,isJason,openProfile};
+  return {sync,clear,save,audit,isJason,isAdmin,openProfile};
 })();

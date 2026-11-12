@@ -22,9 +22,9 @@
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
-<script src="assets/account.js?v=2026.10.18-579"></script>
+<script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-778"></script>
+<script src="assets/manual.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2738,16 +2738,16 @@ tr.pd-row-hit td{background:#fffbeb;}
       </div>
       <div id="hban-roster"></div>
       <!-- OT BAR -->
-      <div class="ot-bar">
+      <div class="ot-bar" id="roster-ot-bar">
         <div class="ot-field"><label>Nurse Name</label><input type="text" id="ot-name" placeholder="Full name" style="width:180px;"/></div>
         <div class="ot-field"><label>Date</label><input type="date" id="ot-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start (always 07:00)</label><input type="time" id="ot-start" value="07:00" readonly style="width:110px;background:#f8fafc;"/></div>
         <div class="ot-field"><label>Working Until</label><input type="time" id="ot-end" style="width:110px;"/></div>
         <button class="btn-ot" onclick="addOT()">+ Add OT Nurse</button>
       </div>
-      <div class="info-note">ℹ️ Enter any nurse name — new names added automatically</div>
+      <div class="info-note" id="roster-ot-note">ℹ️ Enter any nurse name — new names added automatically</div>
       <!-- TIL BAR -->
-      <div class="ot-bar" style="border-color:var(--teal);">
+      <div class="ot-bar" id="roster-til-bar" style="border-color:var(--teal);">
         <div class="ot-field"><label>Staff Name</label><input type="text" id="til-name" placeholder="Full name" style="width:180px;"/></div>
         <div class="ot-field"><label>Date</label><input type="date" id="til-date" style="width:150px;"/></div>
         <div class="ot-field"><label>Start</label><input type="time" id="til-start" value="07:00" style="width:110px;"/></div>
@@ -2755,7 +2755,7 @@ tr.pd-row-hit td{background:#fffbeb;}
         <button class="btn-til-off" onclick="addTIL('off')">+ TIL Off</button>
         <button class="btn-til-in" onclick="addTIL('in')">+ TIL In</button>
       </div>
-      <div class="info-note">ℹ️ Any staff name — not limited to core staff</div>
+      <div class="info-note" id="roster-til-note">ℹ️ Any staff name — not limited to core staff</div>
       <!-- MONTH NAV + JUMP TO DATE -->
       <div class="mnav">
         <button onclick="changeMonth(-1)">← Prev</button>
@@ -2772,7 +2772,7 @@ tr.pd-row-hit td{background:#fffbeb;}
       </div>
       <div class="roster-wrap"><table class="rt" id="rt"></table></div>
       <!-- OT LIST -->
-      <div class="ot-list-wrap">
+      <div class="ot-list-wrap" id="roster-ot-list">
         <div class="ot-list-hdr">⏰ Overtime Nurses — <span id="ot-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
           <thead><tr><th>Nurse Name</th><th>Date</th><th>Start</th><th>Working Until</th><th>Hours</th><th></th></tr></thead>
@@ -2780,7 +2780,7 @@ tr.pd-row-hit td{background:#fffbeb;}
         </table>
       </div>
       <!-- TIL LIST -->
-      <div class="til-list-wrap">
+      <div class="til-list-wrap" id="roster-til-list">
         <div class="til-list-hdr">🔄 Time in Lieu (TIL) — <span id="til-list-label" style="font-weight:400;opacity:.85;font-size:12px;margin-left:4px;"></span></div>
         <table class="ot-table">
           <thead><tr><th>Staff Name</th><th>Date</th><th>Type</th><th>Start</th><th>Until</th><th>Hours</th><th></th></tr></thead>
@@ -4019,7 +4019,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-778';
+const APP_BUILD='2026.11.12-779';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4878,7 +4878,21 @@ function clearJumpDate(){
 function changeMonth(dir){curMonth=new Date(curMonth);curMonth.setMonth(curMonth.getMonth()+dir);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
 function goToday(){curMonth=new Date();curMonth.setDate(1);selectedJumpDate=null;document.getElementById('jump-date').value='';renderRoster();}
 
+// The Overtime and Time-in-Lieu sections of the Monthly Roster (both add forms
+// and both monthly lists) are managed only by the administrators (Jason and
+// Jacqueline). Everyone still sees the roster grid, and the day's OT/TIL on the
+// Daily Attendance sheet. This hides the sections in the UI; it is not a
+// database lock.
+function canManageRosterOTTIL(){
+  try{return !!(window.ClinicAccount&&ClinicAccount.isAdmin&&ClinicAccount.isAdmin());}catch(e){return false;}
+}
+function applyRosterOTTILVisibility(){
+  const show=canManageRosterOTTIL();
+  ['roster-ot-bar','roster-ot-note','roster-til-bar','roster-til-note','roster-ot-list','roster-til-list']
+    .forEach(id=>{const el=document.getElementById(id);if(el)el.hidden=!show;});
+}
 async function renderRoster(){
+  applyRosterOTTILVisibility();
   const y=curMonth.getFullYear(),m=curMonth.getMonth(),days=dim(y,m);
   document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
 
