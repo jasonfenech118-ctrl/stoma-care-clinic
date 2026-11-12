@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-781"></script>
+<script src="assets/manual.js?v=2026.11.12-782"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2814,12 +2814,12 @@ tr.pd-row-hit td{background:#fffbeb;}
       </div>
       <div class="da-toolbar">
         <label for="da-date">Attendance date</label>
-        <div class="da-day-controls">
+        <div class="da-day-controls" id="da-day-controls">
           <button class="da-button" onclick="DailyAttendance.changeDay(-1)" aria-label="Previous day">←</button>
           <input type="date" id="da-date" onchange="loadDailyAttendance()" aria-describedby="da-help">
           <button class="da-button" onclick="DailyAttendance.changeDay(1)" aria-label="Next day">→</button>
         </div>
-        <button class="da-button" onclick="DailyAttendance.today()">Today</button>
+        <button class="da-button" id="da-today-btn" onclick="DailyAttendance.today()">Today</button>
         <button class="da-button" onclick="loadDailyAttendance()">Refresh</button>
         <button class="da-button" style="background:var(--navy);color:#fff;border-color:var(--navy);" onclick="downloadDailyAttendancePdf()">⤓ Download daily attendance (PDF)</button>
         <button class="da-button" style="background:#0d5c66;color:#fff;border-color:#0d5c66;" onclick="emailDailyAttendanceToHR(this)">✉ Send to Nurse HR</button>
@@ -4019,7 +4019,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-781';
+const APP_BUILD='2026.11.12-782';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4500,7 +4500,19 @@ async function loadStaff(){
 function dailyAttendanceSaveOptions(){
   return {db:SB,fetchRows:fetchAllRows,defaultCode,holiday:isHol,formatDate:fmtLabel,actor:getCurrentUserForAudit,onRosterChanged:(row,date)=>{logRoster('update',row.name,`Sick leave from Daily Attendance — ${row.name} on ${date}`,{date,code:'sick_leave'});renderRoster();}};
 }
-function loadDailyAttendance(){return DailyAttendance.load(dailyAttendanceSaveOptions());}
+// Non-admins see the Daily Attendance for the current day only — the date
+// navigation is hidden and the date is pinned to today, so they cannot browse
+// other days' overtime / leave. Jason and Jacqueline keep full navigation.
+function applyDailyAttendanceDayLock(){
+  const admin=canManageRosterOTTIL();
+  const controls=document.getElementById('da-day-controls');
+  const todayBtn=document.getElementById('da-today-btn');
+  const dateInput=document.getElementById('da-date');
+  if(!admin&&dateInput){dateInput.value=TODAY;dateInput.dataset.initialized='true';}
+  if(controls)controls.style.display=admin?'':'none';
+  if(todayBtn)todayBtn.style.display=admin?'':'none';
+}
+function loadDailyAttendance(){applyDailyAttendanceDayLock();return DailyAttendance.load(dailyAttendanceSaveOptions());}
 function loadAttendanceRecords(){
   return DailyAttendance.loadRecords({db:SB,fetchRows:fetchAllRows});
 }
@@ -4893,6 +4905,8 @@ function applyRosterOTTILVisibility(){
 }
 async function renderRoster(){
   applyRosterOTTILVisibility();
+  // Non-admins may see the roster grid, but not the OT/TIL times (on hover).
+  const otTilTimesVisible=canManageRosterOTTIL();
   const y=curMonth.getFullYear(),m=curMonth.getMonth(),days=dim(y,m);
   document.getElementById('mlbl').textContent=curMonth.toLocaleDateString('en-MT',{month:'long',year:'numeric'});
 
@@ -4977,7 +4991,7 @@ async function renderRoster(){
       const codViceDate=codViceInfo?.date||null;
       const codViceLabel=codViceInfo?.label||'COD';
       const codViceType=codViceInfo?.type||'';
-      const baseChipTitle=coreTIL?`Core staff ${isCoreTilOff?'TIL Off':'TIL In'}${tilEnd?` ${tilStart}–${tilEnd}`:''}`:(coreOT?`Core staff OT${otEnd?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`);
+      const baseChipTitle=coreTIL?`Core staff ${isCoreTilOff?'TIL Off':'TIL In'}${(otTilTimesVisible&&tilEnd)?` ${tilStart}–${tilEnd}`:''}`:(coreOT?`Core staff OT${(otTilTimesVisible&&otEnd)?` ${otStart}–${otEnd}`:''}`:`${hol?hol+' — ':''}${ds}`);
       const vacationTitle=vacation?LeaveHours.label(entry):baseChipTitle;
       const chipTitle=codViceDate?`${vacationTitle} — ${codViceLabel} ${formatViceDate(codViceDate)} (${codViceDate})`:vacationTitle;
       const chipClass=codViceDate?` cod-chip ${codViceType}`:'';
@@ -4988,8 +5002,9 @@ async function renderRoster(){
     html+='</tr>';
   }
 
-  // Overtime Staff — stacked directly below the Core Staff block.
-  if(bd&&bd.length>0){
+  // Overtime Staff — stacked directly below the Core Staff block. Only the
+  // administrators see this dedicated OT listing (the core rota stays for all).
+  if(otTilTimesVisible&&bd&&bd.length>0){
     html+=`<tr class="sr"><td colspan="${days+2}">Overtime Staff</td></tr>`;
     const byS={};bd.forEach(b=>{const n=b.bank_staff.full_name;if(!byS[n])byS[n]={};byS[n][b.work_date]=b;});
     for(const[name,dates] of Object.entries(byS)){
@@ -5007,7 +5022,7 @@ async function renderRoster(){
 
   // TIL rows — core staff TIL is shown in the main Core Staff row, so this section only shows extra/non-core TIL.
   const rosterTILRows=[...otherTILLeave,...bankTilData];
-  if(rosterTILRows&&rosterTILRows.length>0){
+  if(otTilTimesVisible&&rosterTILRows&&rosterTILRows.length>0){
     html+=`<tr class="sr"><td colspan="${days+2}">TIL Staff</td></tr>`;
     const byTIL={};rosterTILRows.forEach(t=>{const n=t.display_name||t.staff?.full_name||t.bank_staff?.full_name||'Unknown';const dtKey=t.work_date||t.start_date;if(!byTIL[n])byTIL[n]={};byTIL[n][dtKey]=t;});
     for(const[name,dates] of Object.entries(byTIL)){

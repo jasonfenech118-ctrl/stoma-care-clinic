@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'12 November 2026 — Each visit report in a patient’s Appointments now shows Seen by (who saw the patient) and the Nurse owner. Jacqueline is also a co-administrator, and the Monthly Roster’s Overtime / Time-in-Lieu sections are shown only to the administrators (Jason and Jacqueline).'};
+const MANUAL_META={updated:'12 November 2026 — Non-administrators no longer see OT/TIL times anywhere on the Monthly Roster (hover times and the Overtime/TIL grid rows are hidden too). Daily Attendance also opens on today only for them; Jason and Jacqueline keep full access.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -583,7 +583,7 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','🌴','Select the nurse’s date on the Monthly Roster and choose <b>Annual Leave</b>. Choose <b>Full day</b> or <b>Number of hours</b>. For hours, enter the duration (e.g. <b>2</b> or <b>2.5</b>) and the start time, or enter <b>Leave starts from</b> and <b>Leave ends at</b>; the duration and finish time stay in sync, then save. Hours use quarter-hour steps and must finish by midnight on the same date. The roster shows <b>L</b> with the hours; reopen the cell to change them. Choosing Day duty clears the leave booking.')}
     ${manNote('tip','🗓️','Each nurse has a default rotation that fills the roster automatically; clicking a day cell records an exception over it. <b>Tracey Galea</b> is on <b>Shift A — 2 days on, 1 day off — from 8 October 2026</b>. To bring a nurse in on an off day, use <b>⏰ Add OT Nurse</b> (enter the name, date and the start/finish time) — the overtime shows as <b>OT</b> on that day and in the Overtime list.')}
     ${manNote('auto','⚙️','A nurse on overtime gets a booking column on that day in the <b>Daily Clinic</b>, the <b>postop follow-up booking</b> and the <b>siting</b> picker alike. A core nurse is always <b>one column</b>, even if their OT was also entered on the Overtime list under a slightly different spelling (e.g. “Tracy” / “Tracey” with the same surname). A <b>cancelled</b> OT entry stays in the OT audit but no longer adds a column; any patient already booked under it stays in that nurse’s own column (so the slot is still shown as taken).')}
-    ${manNote('auto','🔒','The <b>Overtime</b> and <b>Time in Lieu (TIL)</b> sections of the Monthly Roster — the two add forms and the monthly <b>Overtime Nurses</b> and <b>Time in Lieu</b> lists — are shown <b>only to the administrators (Jason and Jacqueline)</b>. Everyone still sees the roster grid, and the OT/TIL that apply to a day still show on the <b>Daily Attendance</b> sheet for that day.')}
+    ${manNote('auto','🔒','All <b>Overtime</b> and <b>Time in Lieu (TIL)</b> detail on the Monthly Roster is shown <b>only to the administrators (Jason and Jacqueline)</b>: the two add forms, the monthly <b>Overtime Nurses</b> and <b>Time in Lieu</b> lists, the stacked <b>Overtime Staff</b> / <b>TIL Staff</b> grid rows, and the <b>OT/TIL start–finish times</b> on a day’s hover tip. Everyone still sees the core roster grid with the OT/TIL tags, just without the times.')}
   `},
   {id:'attendance',title:'Daily Attendance & Records',keywords:'daily attendance sick sickness calendar roster sign in present records history til cancelled overtime cancelled removed',html:`
     ${manMap('calendar')}
@@ -599,6 +599,7 @@ const MANUAL_SECTIONS=[
       `If a TIL In or overtime shift is <b>cancelled or deleted</b> after the person was marked Present, the sheet corrects itself next time it opens: a core nurse now off has the Present mark and times cleared (remarks stay), and bank / extra staff who were only listed for that shift are removed from the sheet and the saved record.`
     ])}
     ${manNote('auto','⚙️','A TIL or overtime shift typed with a <b>small spelling slip</b> in a core nurse’s name (a swapped or mistyped letter) is matched to that nurse, so it joins their own row instead of showing them twice.')}
+    ${manNote('auto','🔒','For everyone except the administrators (Jason and Jacqueline), Daily Attendance opens on <b>today only</b> — the date arrows, date picker and <b>Today</b> button are hidden, so other days cannot be browsed. The administrators keep full date navigation.')}
   `}
 ]},
 

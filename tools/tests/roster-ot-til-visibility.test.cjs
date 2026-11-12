@@ -39,3 +39,31 @@ test('the gating fails safe (hidden) when the account helper is unavailable',()=
   ctx.applyRosterOTTILVisibility();
   for(const id of IDS)assert.equal(w.document.getElementById(id).hidden,true);
 });
+
+// Daily Attendance is locked to today for non-admins (no browsing other days).
+function setupDA(isAdmin,startValue){
+  const dom=new JSDOM('<body><div id="da-day-controls"></div><button id="da-today-btn"></button><input id="da-date" value="'+startValue+'"></body>');
+  const w=dom.window;
+  w.ClinicAccount={isAdmin:()=>isAdmin};
+  const ctx=vm.createContext({window:w,document:w.document,TODAY:'2026-11-12'});
+  vm.runInContext(
+    grab('function canManageRosterOTTIL(){','function applyRosterOTTILVisibility(')
+    +grab('function applyDailyAttendanceDayLock(){','function loadDailyAttendance('),ctx);
+  ctx.applyDailyAttendanceDayLock();
+  return w;
+}
+
+test('Daily Attendance is pinned to today and its day controls hidden for a non-admin',()=>{
+  const w=setupDA(false,'2026-11-20');
+  assert.equal(w.document.getElementById('da-date').value,'2026-11-12','date pinned to today');
+  assert.equal(w.document.getElementById('da-date').dataset.initialized,'true','marked initialized so load keeps today');
+  assert.equal(w.document.getElementById('da-day-controls').style.display,'none','date nav hidden');
+  assert.equal(w.document.getElementById('da-today-btn').style.display,'none','Today button hidden');
+});
+
+test('Daily Attendance keeps full day navigation for an admin',()=>{
+  const w=setupDA(true,'2026-11-20');
+  assert.equal(w.document.getElementById('da-date').value,'2026-11-20','admin date left untouched');
+  assert.notEqual(w.document.getElementById('da-day-controls').style.display,'none','date nav visible');
+  assert.notEqual(w.document.getElementById('da-today-btn').style.display,'none','Today button visible');
+});
