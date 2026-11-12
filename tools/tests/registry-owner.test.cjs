@@ -20,6 +20,7 @@ function setup(t){
     function patientNameAvatarHTML(p,nm,meta){return nm+(meta||'');} function extraStatusChipsHTML(){return '';} function docStatusBadgeHTML(){return '';}
     function registrySurgeryDate(p){return p.surgery_date||'';} function registryStomaType(p){return p.stoma_type||'';}
     function daStomaGroup(t){t=String(t||'').toLowerCase();return /colo/.test(t)?'Colostomy':/ileo/.test(t)?'Ileostomy':/uro/.test(t)?'Urostomy':(t?'Other':null);}
+    function patientLocalityCached(p){return String(p&&p.locality||'').trim();}
     function _d(s){var d=new Date(String(s||'').slice(0,10)+'T00:00:00Z');return isNaN(d.getTime())?null:d;}
     function ageYearsBetween(a,b){a=_d(a);b=_d(b);if(!a||!b)return null;var y=b.getUTCFullYear()-a.getUTCFullYear();var m=b.getUTCMonth()-a.getUTCMonth();if(m<0||(m===0&&b.getUTCDate()<a.getUTCDate()))y--;return y>=0?y:null;}
     function daysBetween(a,b){a=_d(a);b=_d(b);if(!a||!b)return null;var d=Math.round((b-a)/86400000);return d>=0?d:null;}

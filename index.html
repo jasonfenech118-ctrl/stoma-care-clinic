@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-777"></script>
+<script src="assets/manual.js?v=2026.11.12-778"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4019,7 +4019,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-777';
+const APP_BUILD='2026.11.12-778';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13850,10 +13850,11 @@ async function loadPatientDirectory(){
     ownerSel.innerHTML='<option value="all">All owners</option>'+owners.map(o=>`<option value="${htmlSafe(o)}">${htmlSafe(o)}</option>`).join('');
     ownerSel.value=[...ownerSel.options].some(o=>o.value===cur)?cur:'all';
   }
-  // The Locality dropdown lists every locality actually on the registry, A→Z.
+  // The Locality dropdown lists the canonical Maltese towns found on the registry
+  // (derived from each address), A→Z — not the raw street addresses.
   const locSel=document.getElementById('pd-locality');
   if(locSel){
-    const locs=[...new Set(patientDirectoryRows.map(p=>String(p.locality||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const locs=[...new Set(patientDirectoryRows.map(p=>patientLocalityCached(p)).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     const cur=locSel.value||'all';
     locSel.innerHTML='<option value="all">All localities</option>'+locs.map(l=>`<option value="${htmlSafe(l)}">${htmlSafe(l)}</option>`).join('');
     locSel.value=[...locSel.options].some(o=>o.value===cur)?cur:'all';
@@ -14563,7 +14564,7 @@ function renderPatientDirectory(){
     if(status==='ever_reversed'){if(!patientEverReversed(p))return false;}
     else if(status!=='all'&&p.status!==status)return false;
     // Locality, stoma type (by group) and age band filters.
-    if(locality!=='all'&&String(p.locality||'').trim()!==locality)return false;
+    if(locality!=='all'&&patientLocalityCached(p)!==locality)return false;
     if(stomaGroup!=='all'&&(daStomaGroup(registryStomaType(p))||'Other')!==stomaGroup)return false;
     if(ageBand!=='all'){
       const yrs=ageYearsBetween(p.date_of_birth,TODAY);
@@ -14810,6 +14811,57 @@ function normaliseLocality(v){
   if(!v)return v;
   const key=String(v).trim().replace(/[’‘]/g,"'").toLowerCase();
   return LOCALITY_ALIASES[key]||v;
+}
+/* The stored Locality / Address fields often hold a full street address
+   ("103A Viani Str Slima"), so to filter by town we pull the canonical Maltese
+   locality out of the text. locNormKey strips Maltese diacritics and punctuation
+   so "Żabbar" and "Zabbar" match; the lookup holds the official names, their
+   plain and bracketed forms, plus the common free-text short spellings. */
+function locNormKey(s){
+  return String(s||'')
+    .replace(/[’‘]/g,"'").replace(/ħ/gi,'h')
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().replace(/[^a-z]+/g,' ').trim();
+}
+const LOCALITY_LOOKUP=(()=>{
+  const map=[],add=(key,label)=>{const k=locNormKey(key);if(k)map.push({key:k,label});};
+  LOCALITIES_DEFAULT.forEach(name=>{
+    add(name,name);                               // full name ("zebbug malta")
+    const bare=name.replace(/\s*\(.*/,'').trim();  // before a bracket ("Żebbuġ")
+    if(bare&&bare!==name)add(bare,name);
+    const br=(name.match(/\(([^)]*)\)/)||[])[1];   // bracket content ("Vittoriosa")
+    if(br)add(br,name);
+  });
+  // Short / variant spellings as they appear in free-text addresses.
+  [['slima','Sliema'],['sliem','Sliema'],['b kara','Birkirkara'],['bkara','Birkirkara'],
+   ['st venera','Santa Venera'],['sta venera','Santa Venera'],['san gwann','San Ġwann'],
+   ['st julians','San Ġiljan (St Julian\'s)'],['st julian','San Ġiljan (St Julian\'s)'],
+   ['st pauls bay','San Pawl il-Baħar (St Paul\'s Bay)'],['st paul','San Pawl il-Baħar (St Paul\'s Bay)'],
+   ['cospicua','Bormla (Cospicua)'],['vittoriosa','Birgu (Vittoriosa)'],['senglea','Isla (Senglea)'],
+   ['gharghur','Għargħur'],['ghaxaq','Għaxaq']
+  ].forEach(e=>add(e[0],e[1]));
+  // Longer keys first so a two-word town is tried before a word it contains.
+  map.sort((a,b)=>b.key.length-a.key.length);
+  return map;
+})();
+// The canonical Maltese locality for a patient, pulled from the locality/address
+// text (the town is usually at the end, so the latest match in the string wins).
+function patientLocality(p){
+  if(!p)return '';
+  const text=locNormKey([p.locality,p.address].filter(Boolean).join(' '));
+  if(!text)return '';
+  const padded=' '+text+' ';
+  let best='',bestPos=-1;
+  for(let i=0;i<LOCALITY_LOOKUP.length;i++){
+    const pos=padded.lastIndexOf(' '+LOCALITY_LOOKUP[i].key+' ');
+    if(pos>bestPos){bestPos=pos;best=LOCALITY_LOOKUP[i].label;}
+  }
+  return best;
+}
+// Cached per row so the whole registry is not re-scanned on every keystroke.
+function patientLocalityCached(p){
+  if(p&&p._locality!==undefined)return p._locality;
+  const v=patientLocality(p);if(p)p._locality=v;return v;
 }
 /*
    Local-council flags used wherever the app has a dedicated locality view.
