@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-779"></script>
+<script src="assets/manual.js?v=2026.11.12-781"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4019,7 +4019,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-780';
+const APP_BUILD='2026.11.12-781';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19320,7 +19320,18 @@ function apptReportSectionsHTML(a,isLatest,stopped){
     +(g.acc.length?'<div><strong>Accessories:</strong> '+esc(g.acc.join(', '))+'</div>':'')).join('')
     +(stoppedArr.length?'<div><strong>No longer needed:</strong> '+esc(stoppedArr.join(', '))+'</div>':'');
   const due=apptDueText(a,isLatest);
+  // Who saw the patient at this visit — the nurse who recorded the outcome,
+  // else the nurse whose column they were booked under (only for an attended
+  // visit; a booked / not-attended row has not been seen yet).
+  const seenBy=a.status==='attended'
+    ?(a.outcome_recorded_by_name||a.staff?.full_name||a.bank_staff?.full_name||((!a.assigned_to&&!a.bank_staff_id)?'Common':''))
+    :'';
+  // The patient's current follow-up owner (nurse caseload).
+  const owner=(typeof normaliseFollowupOwner==='function'&&typeof clrState!=='undefined'&&clrState&&clrState.patient)
+    ?normaliseFollowupOwner(clrState.patient.followup_owner||'Common'):'';
   return sec('Outcome',esc(outcome))
+    +sec('Seen by',seenBy?esc(seenBy):'')
+    +sec('Nurse owner',owner?esc(owner):'')
     +sec('Clinical review',review?fmt(review):'')
     +sec('Appliance & accessories',applHTML)
     +sec('Follow-up',due?esc(due):'');

@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'12 November 2026 — Jacqueline is now a co-administrator (App Access Audit), and the Monthly Roster’s Overtime and Time-in-Lieu sections are shown only to the administrators (Jason and Jacqueline); the day’s OT/TIL still shows on Daily Attendance. The Registry’s Locality filter also lists clean towns (Sliema, Mosta…) worked out from each address.'};
+const MANUAL_META={updated:'12 November 2026 — Each visit report in a patient’s Appointments now shows Seen by (who saw the patient) and the Nurse owner. Jacqueline is also a co-administrator, and the Monthly Roster’s Overtime / Time-in-Lieu sections are shown only to the administrators (Jason and Jacqueline).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -123,7 +123,7 @@ const MANUAL_SECTIONS=[
       <li><b>Overview</b> — demographics, follow-up status and owner, contact. (A collapsible <b>Surgery snapshot</b> sits just under the name, above the tabs, on every tab.)</li>
       <li><b>Stomas</b> — one card per stoma under the <b>Stomas &amp; operations</b> heading, with its code, operation and dates, and its own appliances &amp; accessories and history. Older appliance entries whose stoma cannot be identified are kept under <b>Other appliance history</b>. Also the upcoming-surgery date for existing patients. The <b>Stoma type</b> must be <b>specific</b> — a bare <b>Colostomy</b> or <b>Ileostomy</b> is not offered; opening a stoma that still holds one shows a hint and asks you to pick the specific type (End / Loop / Transverse / Double-barrel …). Tap a stoma to open it; the stoma window has a <b>🗑 Remove this stoma</b> button (bottom-left) to delete a stoma entered in error — <b>including the first stoma</b>. It <b>always asks first</b>: the footer turns into a clear red prompt with <b>Keep stoma</b> and <b>Yes, delete this stoma</b>, and only the Yes button deletes. The change is kept in the Audit Trail.</li>
       <li><b>Outcome</b> — the follow-up outcome (active, reversed, deceased, relocated overseas, discharged to Gozo …). Under <b>Change the outcome</b>, press <b>Reversal / closure</b> to record the operation on the affected stoma. The buttons match the table: <b>purple</b> for reversal / closure, <b>black</b> for deceased, <b>blue</b> for Gozo and <b>teal</b> for overseas. The current outcome keeps its colour; an amber outline and <b>add date</b> label show a missing date.</li>
-      <li><b>Appointments</b> — this patient's clinic appointments.</li>
+      <li><b>Appointments</b> — this patient's clinic appointments. Each visit opens into a sectioned report: Outcome, <b>Seen by</b> (who saw the patient — the nurse who recorded the visit, else the nurse whose column they were booked under; attended visits only), <b>Nurse owner</b> (the patient's current follow-up owner), Clinical review, Appliance &amp; accessories and Follow-up.</li>
       <li><b>Episodes</b> — their inpatient admissions, community correspondence and patient communication history.</li>
     </ul>
     ${manH2('🎨','Colour tells you the sex at a glance')}
