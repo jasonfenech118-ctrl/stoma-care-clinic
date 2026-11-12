@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-776"></script>
+<script src="assets/manual.js?v=2026.11.12-777"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -1811,9 +1811,11 @@ td.hv-appl-cell.hv-encountered{background:#dcfce7;}
 td.hv-appl-cell.hv-encountered .hv-appl{background:#f0fdf4;border-color:#bbf7d0;}
 .hv-enc-btn{align-self:flex-start;margin-top:6px;padding:5px 10px;font-size:11px;background:#e6f4f1;color:#0d7377;}
 .hv-enc-btn.is-done{background:#16a34a;color:#fff;}
-.hv-id-copy{display:inline-block;margin-top:5px;padding:2px 8px;font-size:10px;font-weight:700;font-family:inherit;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--navy);cursor:pointer;line-height:1.5;}
-.hv-id-copy:hover{background:#eef2f6;}
-.hv-id-copy.is-copied{background:#dcfce7;color:#166534;border-color:#bbf7d0;}
+.hv-id-copy{display:inline-flex;align-items:center;gap:4px;margin-top:5px;padding:2px 8px;font-size:10px;font-weight:700;font-family:inherit;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--navy);cursor:pointer;line-height:1.5;transition:background .12s,border-color .12s,color .12s;}
+.hv-id-copy:hover{background:#eef2f6;border-color:#9fb4c8;}
+.hv-id-copy:active{transform:translateY(0.5px);}
+.hv-id-copy.is-copied{background:#dcfce7;color:#166534;border-color:#86efac;}
+.hv-copy-ic{width:12px;height:12px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 /* Encounter modal — the stoma assessment and nursing report, with earlier
    encounters this admission listed read-only beneath. */
 .enc-sec-h{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800;margin-bottom:6px;}
@@ -4017,7 +4019,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-776';
+const APP_BUILD='2026.11.12-777';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22204,8 +22206,11 @@ function hvNoteInput(el){
 // Copy an ID number to the clipboard (to paste into another system). Shows a
 // brief "Copied" state on the button, with a textarea fallback where the async
 // Clipboard API is unavailable.
+// A tick drawn as inline SVG for the "Copied" state (the copy glyph itself is
+// inlined in the button markup). Crisper than the old ⧉ character.
+const HV_COPIED_ICON='<svg class="hv-copy-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 function copyHandoverId(btn,text){
-  const done=()=>{if(!btn)return;const old=btn.innerHTML;btn.innerHTML='✓ Copied';btn.classList.add('is-copied');
+  const done=()=>{if(!btn)return;const old=btn.innerHTML;btn.innerHTML=HV_COPIED_ICON+'<span>Copied</span>';btn.classList.add('is-copied');
     setTimeout(()=>{if(!btn)return;btn.innerHTML=old;btn.classList.remove('is-copied');},1200);};
   const fallback=()=>{try{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
     document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');ta.remove();done();}
@@ -22844,7 +22849,7 @@ function handoverRowHTML(p,cls){
       oninput="this.value=this.value.toUpperCase();fitWardBed(this)" onchange="recolourWardCell(this);saveHandoverField('${p.id}','inpatient_ward',this.value.trim().toUpperCase())"/><span
       class="hv-dash">-</span><input type="text" class="hv-inp hv-bed" value="${htmlSafe(p.inpatient_bed||'')}" placeholder="Bed"
       oninput="fitWardBed(this)" onchange="saveHandoverField('${p.id}','inpatient_bed',this.value.trim())"/></div>${wardHospitalLabel(p.inpatient_ward)?`<div class="hv-ward-hosp">${htmlSafe(wardHospitalLabel(p.inpatient_ward))}</div>`:''}</td>
-    <td data-label="ID number" style="font-family:monospace;font-size:12px;"><span class="hv-id-text">${htmlSafe(p.id_card||'—')}</span>${p.id_card?`<br/><button type="button" class="hv-id-copy" onclick="event.stopPropagation();copyHandoverId(this,'${jsSafe(p.id_card)}')" title="Copy the ID number to paste elsewhere">⧉ Copy</button>`:''}</td>
+    <td data-label="ID number" style="font-family:monospace;font-size:12px;"><span class="hv-id-text">${htmlSafe(p.id_card||'—')}</span>${p.id_card?`<br/><button type="button" class="hv-id-copy" onclick="event.stopPropagation();copyHandoverId(this,'${jsSafe(p.id_card)}')" title="Copy the ID number to paste elsewhere" aria-label="Copy ID number ${htmlSafe(p.id_card)}"><svg class="hv-copy-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span></button>`:''}</td>
     <td data-label="Surname"><strong>${htmlSafe(p.surname||'')}</strong>${fistulaTagHTML(p)}</td>
     <td data-label="First name">${htmlSafe(p.first_name||'')}</td>
     <td data-label="Appliance + notes" class="hv-appl-cell${infAlert?' hv-inf':''}${encDone?' hv-encountered':''}">
