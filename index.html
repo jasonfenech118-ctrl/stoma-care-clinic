@@ -24,7 +24,7 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.10.18-579"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<script src="assets/manual.js?v=2026.11.12-775"></script>
+<script src="assets/manual.js?v=2026.11.12-776"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -3189,18 +3189,14 @@ tr.pd-row-hit td{background:#fffbeb;}
         <input type="text" id="pd-search" placeholder="Search by name, surname, ID card or phone…" oninput="renderPatientDirectory()"/>
         <label>Owner:</label>
         <select id="pd-owner" onchange="renderPatientDirectory()"><option value="all">All owners</option></select>
-        <label>Status:</label>
-        <select id="pd-status" onchange="onPatientStatusSelect()">
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="awaiting_feedback">Awaiting Feedback</option>
-          <option value="paused">Paused</option>
-          <option value="relocated_overseas">Relocated Overseas</option>
-          <option value="discharged_gozo">Discharged to Gozo</option>
-          <option value="deceased">Deceased</option>
-          <option value="reversed">Reversed</option>
-          <option value="ever_reversed">Ever reversed (any status)</option>
-        </select>
+        <label for="pd-locality">Locality:</label>
+        <select id="pd-locality" onchange="renderPatientDirectory()"><option value="all">All localities</option></select>
+        <label for="pd-stomagroup">Stoma type:</label>
+        <select id="pd-stomagroup" onchange="renderPatientDirectory()"><option value="all">All stoma types</option><option value="Colostomy">Colostomy</option><option value="Ileostomy">Ileostomy</option><option value="Urostomy">Urostomy</option><option value="Other">Other / unspecified</option></select>
+        <label for="pd-age">Age:</label>
+        <select id="pd-age" onchange="renderPatientDirectory()"><option value="all">All ages</option><option value="0-17">Under 18</option><option value="18-39">18–39</option><option value="40-59">40–59</option><option value="60-79">60–79</option><option value="80-200">80+</option></select>
+        <label for="pd-sort">Sort:</label>
+        <select id="pd-sort" onchange="setPatientSortFromSelect(this.value)"><option value="name:asc">Surname A–Z</option><option value="name:desc">Surname Z–A</option><option value="firstname:asc">First name A–Z</option><option value="firstname:desc">First name Z–A</option></select>
       <label for="pd-documentation">Patient records:</label><select id="pd-documentation" onchange="renderPatientDirectory()"><option value="all">All patient records</option><option value="electronic">Electronic notes from surgery</option><option value="earlier_history">Check for earlier paper notes</option><option value="pending">Electronic history incomplete</option><option value="unconfirmed">History not checked / surgery date missing</option></select>
         <span class="pd-count" id="pd-count"></span>
       </div>
@@ -4021,7 +4017,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.12-775';
+const APP_BUILD='2026.11.12-776';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -13852,6 +13848,14 @@ async function loadPatientDirectory(){
     ownerSel.innerHTML='<option value="all">All owners</option>'+owners.map(o=>`<option value="${htmlSafe(o)}">${htmlSafe(o)}</option>`).join('');
     ownerSel.value=[...ownerSel.options].some(o=>o.value===cur)?cur:'all';
   }
+  // The Locality dropdown lists every locality actually on the registry, A→Z.
+  const locSel=document.getElementById('pd-locality');
+  if(locSel){
+    const locs=[...new Set(patientDirectoryRows.map(p=>String(p.locality||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const cur=locSel.value||'all';
+    locSel.innerHTML='<option value="all">All localities</option>'+locs.map(l=>`<option value="${htmlSafe(l)}">${htmlSafe(l)}</option>`).join('');
+    locSel.value=[...locSel.options].some(o=>o.value===cur)?cur:'all';
+  }
   pdSummaryOwner=null;
   renderPatientDirectory();
 }
@@ -14409,11 +14413,15 @@ function renderPatientDirectorySummary(owner='all'){
   }
 }
 let pdPage=0,pdLastKey='',pdIncompleteOnly=false,pdSort={col:'name',type:'text',dir:'asc'};
+// The status filter now lives on the quick-filter pills (the Status dropdown was
+// removed), so it is held here rather than read from a <select>.
+let pdStatusFilter='all';
 // The value a patient row sorts by for a given column. Dates fall back to the
 // stoma-level date/type the registry already shows; empties are handled by caller.
 function patientSortValue(p,col,type){
   const surgeryOf=p=>String(p.surgery_date||(typeof registrySurgeryDate==='function'?registrySurgeryDate(p):'')||'').slice(0,10);
   if(col==='name')return `${p.surname||''} ${p.first_name||''}`.trim().toLowerCase();
+  if(col==='firstname')return `${p.first_name||''} ${p.surname||''}`.trim().toLowerCase();
   if(col==='surgery_date')return surgeryOf(p);
   if(col==='stoma_type')return String(p.stoma_type||(typeof registryStomaType==='function'?registryStomaType(p):'')||'').toLowerCase();
   // Computed columns sort numerically via a zero-padded key (blanks → bottom).
@@ -14523,10 +14531,16 @@ function renderPatientDirectory(){
      and a surname with an ID card or a locality works too. */
   const terms=q.split(/\s+/).filter(Boolean);
   const owner=document.getElementById('pd-owner')?.value||'all';
-  const status=document.getElementById('pd-status')?.value||'all';
+  const status=pdStatusFilter;
   const docs=document.getElementById('pd-documentation')?.value||'all';
-  const pdKey=q+'|'+owner+'|'+status+'|'+docs+'|'+(pdIncompleteOnly?'inc':'')+'|'+pdSort.col+pdSort.dir;
+  const locality=document.getElementById('pd-locality')?.value||'all';
+  const stomaGroup=document.getElementById('pd-stomagroup')?.value||'all';
+  const ageBand=document.getElementById('pd-age')?.value||'all';
+  const pdKey=q+'|'+owner+'|'+status+'|'+docs+'|'+locality+'|'+stomaGroup+'|'+ageBand+'|'+(pdIncompleteOnly?'inc':'')+'|'+pdSort.col+pdSort.dir;
   if(pdKey!==pdLastKey){pdPage=0;pdLastKey=pdKey;}
+  // Keep the Sort dropdown showing the current order when it is a name sort.
+  const sortSel=document.getElementById('pd-sort');
+  if(sortSel){const sv=pdSort.col+':'+pdSort.dir;if([...sortSel.options].some(o=>o.value===sv))sortSel.value=sv;}
   // The number tiles follow the owner filter (recomputed only when it changes).
   if(pdSummaryOwner!==owner){pdSummaryOwner=owner;renderPatientDirectorySummary(owner);}
   const archivedCount=patientDirectoryRows.filter(p=>p.archived).length;
@@ -14546,6 +14560,15 @@ function renderPatientDirectory(){
     // "Ever reversed" cuts across the status buckets — see patientEverReversed.
     if(status==='ever_reversed'){if(!patientEverReversed(p))return false;}
     else if(status!=='all'&&p.status!==status)return false;
+    // Locality, stoma type (by group) and age band filters.
+    if(locality!=='all'&&String(p.locality||'').trim()!==locality)return false;
+    if(stomaGroup!=='all'&&(daStomaGroup(registryStomaType(p))||'Other')!==stomaGroup)return false;
+    if(ageBand!=='all'){
+      const yrs=ageYearsBetween(p.date_of_birth,TODAY);
+      if(yrs==null)return false;
+      const b=ageBand.split('-'),lo=Number(b[0]),hi=Number(b[1]);
+      if(yrs<lo||yrs>hi)return false;
+    }
     if(terms.length){
       const hay=fixText(`${p.first_name||''} ${p.surname||''} ${p.id_card||''} ${p.phone_number||''} ${p.locality||''} ${p.stoma_type||''} ${p.procedure_performed||''} ${p.findings||''}`).toLowerCase();
       if(!terms.every(t=>hay.includes(t)))return false;
@@ -14680,16 +14703,8 @@ function highlightPatientQuickFilter(value){
 }
 function setPatientQuickFilter(value){
   pdIncompleteOnly=false;
-  const sel=document.getElementById('pd-status');
-  if(sel)sel.value=value;
+  pdStatusFilter=value;
   highlightPatientQuickFilter(value);
-  renderPatientDirectory();
-}
-function onPatientStatusSelect(){
-  pdIncompleteOnly=false;
-  const value=document.getElementById('pd-status')?.value||'all';
-  // Only the pill values light a pill; other statuses clear them.
-  highlightPatientQuickFilter(['all','active','reversed','deceased','discharged_gozo','relocated_overseas'].includes(value)?value:'');
   renderPatientDirectory();
 }
 // A cross-cutting filter: show every patient with an incomplete profile (any
@@ -14697,8 +14712,14 @@ function onPatientStatusSelect(){
 // deceased, Gozo, overseas). Spans all statuses, so it clears the status pick.
 function setPatientIncompleteFilter(){
   pdIncompleteOnly=true;
-  const sel=document.getElementById('pd-status');if(sel)sel.value='all';
+  pdStatusFilter='all';
   highlightPatientQuickFilter('incomplete');
+  renderPatientDirectory();
+}
+// The Sort dropdown orders the list alphabetically by surname or first name.
+function setPatientSortFromSelect(value){
+  const parts=String(value||'name:asc').split(':');
+  pdSort={col:parts[0]||'name',type:'text',dir:parts[1]==='desc'?'desc':'asc'};
   renderPatientDirectory();
 }
 /* ── PATIENT DETAILS FORM ─────────────────────────────────────────────────
