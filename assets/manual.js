@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 November 2026 — Fixed the patient record’s 📍 Siting button, which wrongly reported “No siting sessions on record”. It now opens the patient’s siting sessions correctly.'};
+const MANUAL_META={updated:'13 November 2026 — A refashioning whose surgery date is well after the previous operation now defaults “Same admission?” to a separate admission. A close or unknown date is still left for the nurse to answer.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -196,6 +196,7 @@ const MANUAL_SECTIONS=[
     ])}
     <p class="man-lede">On an individual closed stoma, <b>Undo closed / reversed selection</b> also asks for confirmation; press <b>Save this stoma</b> to save the correction. If another user changes the record before saving, reopen it to review their change.</p>
     ${manNote('auto','⚙️','A <b>refashioning automatically supersedes</b> the stoma it replaced — the old stoma stays as an old case. The refashioned stoma gets its own ID; choose a new appliance for that ID in handover.')}
+    ${manNote('auto','📅','When a refashioning’s <b>surgery date is well after the previous operation</b> (more than ~2 months), the <b>“Same admission as the previous operation?”</b> answer defaults to <b>No — separate admission</b>, with a short note saying why. A close date (which could be one long admission) or an unknown date is left for you to answer, and any answer you pick yourself is kept.')}
     ${manNote('auto','⚙️','Recording a <b>reversal</b> clears any planned reversal date and updates the follow-up status; a fully-reversed patient then drops off the handover by itself.')}
   `},
   {id:'surgerydate',title:'Add an upcoming surgery date',keywords:'upcoming surgery date existing patient handover expected coming in operation planned',html:`
