@@ -26,10 +26,12 @@ assert.equal(w.document.querySelector('.pd-patient-details').parentElement.class
  assert.equal(card.hidden,true,'card hidden once the section is open');
  hist.open=false;hist.dispatchEvent(new w.Event('toggle'));
  assert.equal(card.hidden,false,'card shown again when the section closes');}
-// Siting button opens the patient's existing siting session for viewing/amending.
-{let editId=null;w.openSitingEdit=id=>{editId=id;};
- w.clrState.siting={id:'s9',id_card:'X'};w.openPatientSiting();
- assert.equal(editId,'s9','opens the existing siting session by id');}
+// The 📍 Siting button (shown only when a siting session exists) opens the
+// patient's siting-session list modal. The old single-session opener that
+// collided with that modal's name was removed, so the button no longer runs the
+// wrong function and wrongly reports "No siting sessions on record".
+assert.match(appSource,/onclick="openPatientSitingSessions\(\)">📍 Siting/,'Siting button wired to the siting-session list');
+assert.doesNotMatch(appSource,/function\s+openPatientSiting\s*\(/,'the colliding openPatientSiting opener is gone');
 let html=w.patientDashboardHistoryHTML();let tmp=w.document.createElement('div');tmp.innerHTML=html;assert.ok(tmp.querySelector('tbody tr'));assert.equal(tmp.querySelector('script'),null);assert.match(tmp.textContent,/<script>unsafe/);w.arrangePatientDashboard();assert.equal(w.document.querySelectorAll('#pd-history').length,1);
 w.clrState.appts.push({id:'b',appt_date:'2026-12-01',status:'booked'});w.refreshPatientDashboardHistory();assert.equal(w.document.querySelectorAll('.pd-history-table tbody tr').length,4);
 // Handover / ward appliance changes appear as their own rows in the timeline;
