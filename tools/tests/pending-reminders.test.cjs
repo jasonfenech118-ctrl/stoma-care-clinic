@@ -26,7 +26,7 @@ test('unfinished tasks carry forward while completed tasks show only on completi
 
 test('bell UI adds tasks and crosses checked tasks out without deleting them',()=>{
   const start=html.indexOf('let pendingReminderTasks=');
-  const end=html.indexOf('/* Every Saturday Jason is rostered on duty',start);
+  const end=html.indexOf('/* The weekly stores order is due every Saturday',start);
   assert.ok(start>=0&&end>start,'pending reminder block not found');
   const block=html.slice(start,end);
   assert.match(block,/type="checkbox"/);

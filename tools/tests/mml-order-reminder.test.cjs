@@ -1,3 +1,6 @@
+// The Saturday stores-order reminder now delegates to the Ordering module, which
+// owns the schedule and the shared sent-state. getMmlOrderReminder is a thin
+// wrapper over window.ClinicOrdering.dueReminder.
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -13,38 +16,34 @@ function reminderFunction(){
   return html.slice(start,end);
 }
 
-function contextFor(date,working){
-  let staffingLoads=0;
-  const context=vm.createContext({
-    TODAY:date,
-    Date,Number,
-    ownerStaffForCapacity:()=>({id:'jason-id',full_name:'Jason Fenech'}),
-    findCoreStaffByName:()=>null,
-    loadClinicStaffingIndex:async()=>{staffingLoads++;return{};},
-    isNurseWorkingClinicDay:()=>working
-  });
+function contextFor(ordering){
+  const context=vm.createContext({TODAY:'2026-11-14',window:{ClinicOrdering:ordering}});
   vm.runInContext(reminderFunction(),context);
-  return {context,staffingLoads:()=>staffingLoads};
+  return context;
 }
 
-test('MML order appears only on a Saturday when Jason is rostered working',async()=>{
-  const saturdayOn=contextFor('2026-09-26',true);
-  const onItems=await saturdayOn.context.getMmlOrderReminder();
-  assert.equal(onItems.length,1);
-  assert.equal(onItems[0].kind,'mml-order');
-  assert.equal(onItems[0].eff,'2026-09-26');
-
-  const saturdayOff=contextFor('2026-09-26',false);
-  assert.deepEqual(Array.from(await saturdayOff.context.getMmlOrderReminder()),[]);
-
-  const friday=contextFor('2026-09-25',true);
-  assert.deepEqual(Array.from(await friday.context.getMmlOrderReminder()),[]);
-  assert.equal(friday.staffingLoads(),0,'non-Saturdays must not query or display Jason’s roster reminder');
+test('the reminder passes through the Ordering module’s due item',async()=>{
+  const due=await contextFor({dueReminder:async t=>[{kind:'mml-order',eff:t,weekEnding:'2026-11-14'}]}).getMmlOrderReminder();
+  assert.equal(due.length,1);
+  assert.equal(due[0].kind,'mml-order');
+  assert.equal(due[0].eff,'2026-11-14');
 });
 
-test('the clinic bell and daily prompt include the MML order reminder',()=>{
-  assert.match(html,/items\.push\(\.\.\.await getMmlOrderReminder\(\)\)|const mmlItems=await getMmlOrderReminder\(\)/);
-  assert.match(html,/Send MML order/);
+test('a sent (or not-due) week yields no reminder',async()=>{
+  const none=await contextFor({dueReminder:async()=>[]}).getMmlOrderReminder();
+  assert.deepEqual(Array.from(none),[]);
+});
+
+test('a missing module or an error degrades to no reminder',async()=>{
+  assert.deepEqual(Array.from(await contextFor(undefined).getMmlOrderReminder()),[]);
+  const boom=await contextFor({dueReminder:async()=>{throw new Error('x');}}).getMmlOrderReminder();
+  assert.deepEqual(Array.from(boom),[]);
+});
+
+test('the clinic bell and daily prompt still surface the order reminder',()=>{
+  assert.match(html,/const mmlItems=await getMmlOrderReminder\(\)/);
+  assert.match(html,/Send the weekly stores order/);
   assert.match(html,/nMml=todayItems\.filter\(r=>r\.kind==='mml-order'\)/);
-  assert.match(html,/Clinic Reminders/);
+  // The order prompt overrides the once-a-day dismissal so it keeps appearing.
+  assert.match(html,/hasOrder=todayItems\.some\(r=>r\.kind==='mml-order'\)/);
 });

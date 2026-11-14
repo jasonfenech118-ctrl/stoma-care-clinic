@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'13 November 2026 — A refashioning whose surgery date is well after the previous operation now defaults “Same admission?” to a separate admission. A close or unknown date is still left for the nurse to answer.'};
+const MANUAL_META={updated:'14 November 2026 — New 📦 Ordering tab: fill the two weekly stores forms (disposables + cleaning) on one page, then print or email them as two Excel attachments to the stores. A reminder prompts every Saturday after 06:30 until the order is marked sent.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -18,6 +18,7 @@ const MAN_TABS=[
   ['appointments','🕘','Appointments','#2980b9'],
   ['siting','📍','Siting','#7c3aed'],
   ['handover','🏥','Handover','#b45309'],
+  ['ordering','📦','Ordering','#b45309'],
   ['patients','👥','Registry','#0891b2'],
   ['audit','📊','Audit & Reports','#c0392b']
 ];
@@ -628,6 +629,21 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
+{id:'ordering',title:'Ordering',icon:'📦',color:'#b45309',blurb:'The weekly stores order — two forms, printed and emailed every Saturday.',pages:[
+  {id:'weekly-order',title:'Weekly stores order',keywords:'ordering order stores disposables cleaning consumables mml iro top up list saturday email print excel disposablessupplies stomacare attachment forms quantities send',html:`
+    ${manMap('ordering')}
+    ${manWhen('To send the clinic’s weekly stores order to the disposables stores — due every Saturday.')}
+    <p class="man-lede">The ${manBtn('📦 Ordering','#fde9d3','#b45309')} tab holds <b>two official order forms on one page</b>: <b>1 · Disposables</b> (the M.M.M.U. IRO top-up list) and <b>2 · Cleaning consumables</b>. Fill in the quantities, then print or email.</p>
+    ${manSteps([
+      `Open ${manBtn('📦 Ordering','#fde9d3','#b45309')}. The disposables list is pre-filled with the standing <b>top-up</b> quantities in its <b>Required</b> column — adjust any you need. The cleaning list starts blank; type a <b>Demand</b> only against the items you are ordering.`,
+      `Check the header (order date, officer, extension, remarks). ${manBtn('💾 Save draft','#eef0f3','#31474f')} keeps your work so you can come back to it.`,
+      `${manBtn('🖨 Print','#eef0f3','#31474f')} opens both forms laid out to print on paper.`,
+      `${manBtn('✉ Send email','#0d5c66','#fff')} downloads the <b>two Excel files</b> and opens a ready email to <b>disposablessupplies.mdh@gov.mt</b> (CC <b>stomacare.mdh@gov.mt</b>) with the subject and message filled in.`,
+      `<b>Attach both downloaded files</b> to that email and press send in your mail app — a web page cannot attach them for you. Then come back and press <b>✓ Mark as sent</b>.`
+    ])}
+    ${manNote('auto','📅','The order is due <b>every Saturday after 06:30</b>. A reminder keeps appearing (in the bell and the daily pop-up) until you <b>Mark as sent</b>, then stays quiet until the next Saturday.')}
+    ${manNote('tip','📎','The two forms are entered together but always sent as <b>two separate Excel attachments</b> in one email, matching the official stores forms.')}
+  `}]},
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'review-underlining',title:'Complication terms in clinical reviews',keywords:'red underline complications free text automatic',html:`<p>Recognised complication words are underlined in red as you type and when saved reviews are opened. New terms saved with the Complication bible button join the shared catalogue; matching is case-insensitive and matches complete words or phrases. This marks mentions only, including negated wording, and never creates a patient complication automatically.</p>`},
   {id:'login-capture',title:'App access recording',keywords:'login audit automatic successful session 90 days',html:`<p>Opening the app with an existing session is recorded automatically; activity updates at most once a minute during use, and returning after 15 minutes of inactivity starts a new visit. Records are retained for 90 days.</p><p>Only the administrators (Jason and Jacqueline) can see the App Access Audit button and retrieve its records.</p>`},
@@ -639,6 +655,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
+        ['📦','Weekly stores order reminder','Every Saturday after 06:30 the app prompts to send the weekly stores order (bell and daily pop-up). The prompt keeps appearing until the order is marked sent on the Ordering tab, then stays quiet until the next Saturday.','Ordering'],
         ['📝','Encounter records and revisions','Interrupted saves are checked before showing a failure; retrying the same submission keeps one encounter/revision, and controls unlock after a timeout. Confirmed saves display immediately. The screen follows stoma review, appliances, written report, infection and referrals. Each stoma has its own column (named by type, e.g. End Ileostomy) for review, appliances and notes; the report and automatic author/signature cover every stoma. One encounter per patient per day, coded ENC-ID-date; saved encounters reopen read only, with Edit report as V2/V3 starting a deliberate revision. Every encounter has a separate General notes box, saved with each version and included in the report. The patient record’s Episodes tab lists each episode’s encounters underneath, newest first. Background ward updates wait while the encounter is open, including loading, saving and history, then resume when it closes. Corrections append a version to the same encounter; current care updates together, while older records remain in history.','Handover › Encounter'],
         ['🔎','Fresh Update Register search','Returning to Update Register clears the previous search, patient form and messages. Pending search results are cancelled so they cannot reopen the previous patient.','Registry › Update Register'],
         ['📝','Update Register continues to stoma','For new patients, Update Register collects patient details only, then opens the separate new-stoma modal after saving. For existing patients, saving patient details keeps the selected patient through background refreshes, reloads that patient and automatically opens the first current stoma, or the first recorded stoma if all are historical. If the stoma record cannot be loaded, the saved details are retained and you can reopen the patient to continue. Missing optional database fields do not hide the available stoma history. If none is recorded, the new-stoma form opens. Saving the stoma continues to Outcome.','Registry › Update Register'],
