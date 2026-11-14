@@ -69,7 +69,7 @@
       header:{date:weekEnding,team:FORM_META.team,location:FORM_META.location,ward:FORM_META.ward,
         officer:FORM_META.officer,ext:FORM_META.ext,cost_centre:FORM_META.costCentre,remarks:FORM_META.team,
         your_ref:'',our_ref:''},
-      part1:PART1.map(it=>it.topup||''),         // pre-filled standing top-up quantities
+      part1:PART1.map(()=>''),                    // Required starts empty; the nurse adds amounts
       part2:PART2.map(()=>''),                    // cleaning demand starts blank
       status:'draft',sent_at:null,sent_by:null
     };
@@ -225,15 +225,15 @@
     w.document.open();w.document.write(printFormsHTML(o));w.document.close();
   }
 
-  // ── Due state (for the Saturday reminder) ─────────────────────────────────
-  // Returns the reminder item while this week's order is still unsent, else [].
-  async function dueReminder(today){
+  // ── Due state ─────────────────────────────────────────────────────────────
+  // True while this week's order (the most recent due Saturday) is still unsent.
+  // The app uses this to open the Ordering tab automatically on launch.
+  async function isDue(){
     try{
       const dueSat=mostRecentDueSaturday(new Date());
       const o=await loadOrder(dueSat);
-      if(o&&o.status==='sent')return [];
-      return [{kind:'mml-order',eff:today,weekEnding:dueSat}];
-    }catch(e){return [];}
+      return !(o&&o.status==='sent');
+    }catch(e){return false;}
   }
 
   // ── Page rendering ────────────────────────────────────────────────────────
@@ -346,7 +346,7 @@
   }
 
   const api={
-    init:setDeps,open,dueReminder,
+    init:setDeps,open,isDue,
     // pure helpers / data exposed for tests
     mostRecentDueSaturday,addDays,defaultOrder,normaliseOrder,
     buildPart1Aoa,buildPart2Aoa,part1FileName,part2FileName,mailSubject,mailBody,

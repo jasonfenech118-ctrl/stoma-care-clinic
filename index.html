@@ -24,8 +24,8 @@
 <script src="assets/update-register.js?v=2026.10.19-607"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/ordering.css?v=2026.11.14-786"><script src="assets/ordering.js?v=2026.11.14-786"></script>
-<script src="assets/manual.js?v=2026.11.14-786"></script>
+<link rel="stylesheet" href="assets/ordering.css?v=2026.11.14-787"><script src="assets/ordering.js?v=2026.11.14-787"></script>
+<script src="assets/manual.js?v=2026.11.14-787"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4022,7 +4022,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.14-786';
+const APP_BUILD='2026.11.14-787';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4082,7 +4082,7 @@ async function startApp(){
   // Opened from a worklist in its own tab: go straight to that record, and no
   // reminder popup over the top of it.
   else if(deepPatient){openPatientRecord(decodeURIComponent(deepPatient[1]));}
-  else if(!quickLookStart&&!surgicalPhoneStart)openDailyReminderModal(false);
+  else if(!quickLookStart&&!surgicalPhoneStart){openDailyReminderModal(false);maybeOpenWeeklyOrder();}
   startDateRolloverWatch();
 }
 let dateRolloverTimer=null;
@@ -10487,16 +10487,16 @@ async function togglePendingReminderTask(taskId,done,box){
   }
   await refreshReminders();
 }
-/* The weekly stores order is due every Saturday after 06:30. The Ordering module
-   owns the schedule and the sent-state (shared in Supabase): it returns the
-   reminder while this week's order is still unsent, and nothing once it has been
-   marked sent — so the prompt keeps appearing until the order goes, then stays
-   quiet until the next Saturday. */
-async function getMmlOrderReminder(){
-  try{
-    if(!window.ClinicOrdering)return [];
-    return await window.ClinicOrdering.dueReminder(TODAY);
-  }catch(e){return [];}
+/* The weekly stores order is due every Saturday after 06:30, but it is NOT shown
+   as a reminder: when it is due the Ordering tab opens by itself as soon as the
+   app is launched (see maybeOpenWeeklyOrder). This stays a no-op so the reminder
+   pipeline (bell and daily pop-up) carries nothing for it. */
+async function getMmlOrderReminder(){return [];}
+/* On launch, if this week's stores order has not been sent, open the Ordering
+   tab straight away so the forms are in front of the nurse. It keeps opening on
+   each launch until the order is marked sent, then stays quiet until Saturday. */
+async function maybeOpenWeeklyOrder(){
+  try{if(window.ClinicOrdering&&await window.ClinicOrdering.isDue())switchTab('ordering');}catch(e){}
 }
 /* Siting sessions whose surgery day has come (or passed) and whose post-op
    outcome has not been recorded remain in the bell alongside the roster-based
@@ -10736,12 +10736,6 @@ function renderSitingReminderList(items){
       ? '<span style="font-size:9px;font-weight:800;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:5px;margin-left:6px;">TODAY</span>'
       : '<span style="font-size:9px;font-weight:800;background:#fde2e1;color:#a3241a;padding:1px 6px;border-radius:5px;margin-left:6px;">OVERDUE</span>';
     const missed=r.status==='did_not_attend';
-    if(r.kind==='mml-order')
-      return `<div class="rem-row" style="display:block;padding:11px;border:1px solid #efc36a;border-radius:10px;background:#fff8e1;margin-bottom:8px;">
-        <div style="font-weight:900;color:#5f4300;">📦 Send the weekly stores order${tag}<span style="font-size:9px;font-weight:900;background:#e6a817;color:#000;padding:2px 7px;border-radius:5px;margin-left:6px;">ORDER</span></div>
-        <div style="font-size:11px;color:#715600;margin-top:4px;">Due this Saturday — fill in, print and email the two order forms. It keeps showing until sent.</div>
-        <div style="margin-top:8px;"><button class="btn-save" style="padding:7px 12px;font-size:12px;" onclick="closeModal();switchTab('ordering')">📦 Open the weekly order</button></div>
-      </div>`;
     if(r.kind==='schedule-five'||r.kind==='flange'){
       const schedule=r.kind==='schedule-five';
       const waiting=schedule?scheduleFiveWaitingMeta(r):null;
@@ -11078,10 +11072,7 @@ async function openDailyReminderModal(force){
   const nPending=pendingReminderOpenCount();
   const nDated=dueDatedReminderItems().length;
   if(!todayItems.length&&!nPending&&!nDated)return;
-  // The weekly stores order must keep prompting until it is actually sent, so it
-  // overrides the once-a-day "seen" dismissal; everything else respects it.
-  const hasOrder=todayItems.some(r=>r.kind==='mml-order');
-  if(!force&&!hasOrder&&await reminderSeenToday())return;
+  if(!force&&await reminderSeenToday())return;
   const mb=document.getElementById('mb');
   if(!mb)return;
   const nSit=todayItems.filter(r=>r.kind==='siting').length;
@@ -11090,17 +11081,15 @@ async function openDailyReminderModal(force){
   const nNo=todayItems.filter(r=>r.kind==='nodate').length;
   const nRev=todayItems.filter(r=>r.kind==='reversal').length;
   const nRod=todayItems.filter(r=>r.kind==='rod').length;
-  const nMml=todayItems.filter(r=>r.kind==='mml-order').length;
   if(nSit)bits.push(`${nSit} siting appointment${nSit!==1?'s':''}`);
   if(nOp)bits.push(`${nOp} operation${nOp!==1?'s':''}`);
   if(nNo)bits.push(`${nNo} without a surgery date`);
   if(nRev)bits.push(`${nRev} reversal${nRev!==1?'s':''}`);
   if(nRod)bits.push(`${nRod} ROD removal${nRod!==1?'s':''}`);
-  if(nMml)bits.push('the MML order');
   if(!bits.length)bits.push(`${todayItems.length} reminder${todayItems.length!==1?'s':''}`);
-  // Appointment-type reminders (siting, post-op, reversal, ROD…) send the nurse to
-  // the clinic; a popup with only pending to-dos / dated reminders just dismisses.
-  const hasAppt=todayItems.some(r=>r.kind!=='mml-order');
+  // A popup with only pending to-dos / dated reminders (no clinic items) just
+  // dismisses; otherwise it offers to open the clinic.
+  const onlyTasks=!todayItems.length;
   const taskSummary=[nPending?`${nPending} pending to-do${nPending!==1?'s':''}`:'',nDated?`${nDated} dated reminder${nDated!==1?'s':''} due or overdue`:''].filter(Boolean).join(' · ');
   mb.className='mb mb-wide';
   mb.innerHTML=`<h2>🔔 Reminders today</h2>
@@ -11108,12 +11097,8 @@ async function openDailyReminderModal(force){
       ${todayItems.length?bits.join(' and ')+' due today.':''}${taskSummary?'<br/>'+taskSummary:''}</div>
     <div class="rem-popup-scroll"><div id="daily-reminder-tasks">${renderDailyReminderTasksHTML()}</div>${todayItems.length?renderSitingReminderList(todayItems):''}</div>
     <div class="mact">
-      <button class="btn-cancel" onclick="closeModal()">${hasOrder?'Later':'Remind me again later today'}</button>
-      ${hasOrder
-        ? `<button class="btn-save" onclick="closeModal();switchTab('ordering')">📦 Open the weekly order</button>`
-        : hasAppt
-          ? `<button class="btn-save" onclick="markReminderSeenToday();closeModal();switchTab('appointments')">Open appointments</button>`
-          : `<button class="btn-save" onclick="markReminderSeenToday();closeModal();">Dismiss for today</button>`}
+      <button class="btn-cancel" onclick="closeModal()">Remind me again later today</button>
+      <button class="btn-save" onclick="markReminderSeenToday();closeModal();${onlyTasks?'':'switchTab(\'appointments\')'}">${onlyTasks?'Dismiss for today':'Open appointments'}</button>
     </div>`;
   openMo();
 }

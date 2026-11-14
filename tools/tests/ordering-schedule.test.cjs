@@ -19,30 +19,26 @@ test('addDays moves whole weeks correctly',()=>{
   assert.equal(O.addDays('2026-11-14',-7),'2026-11-07');
 });
 
-test('a fresh order pre-fills disposables with the standing top-up and leaves cleaning blank',()=>{
+test('a fresh order starts with every required/demand quantity blank',()=>{
   const o=O.defaultOrder('2026-11-14');
   assert.equal(o.week_ending,'2026-11-14');
   assert.equal(o.status,'draft');
   assert.equal(o.part1.length,O.PART1.length);
   assert.equal(o.part2.length,O.PART2.length);
-  assert.equal(o.part1[0],O.PART1[0].topup,'disposables pre-filled with top-up');
-  assert.equal(o.part2[0],'','cleaning demand starts blank');
+  assert.ok(o.part1.every(v=>v===''),'disposables Required starts empty — the nurse adds amounts');
+  assert.ok(o.part2.every(v=>v===''),'cleaning demand starts blank');
 });
 
 function dbReturning(row){
   return {from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:row,error:null})})})})};
 }
 
-test('the order is due (reminder present) until it is marked sent',async()=>{
+test('the order is due (so the tab auto-opens) until it is marked sent',async()=>{
   O.init({db:dbReturning(null)});                       // nothing saved yet
-  const due=await O.dueReminder('2026-11-14');
-  assert.equal(due.length,1);
-  assert.equal(due[0].kind,'mml-order');
-  assert.equal(due[0].eff,'2026-11-14');
+  assert.equal(await O.isDue(),true,'due while unsent');
 
   O.init({db:dbReturning({week_ending:'2026-11-14',status:'sent'})});
-  const sent=await O.dueReminder('2026-11-14');
-  assert.deepEqual(sent,[],'no reminder once the week’s order is sent');
+  assert.equal(await O.isDue(),false,'not due once this week’s order is sent');
   O.init({db:null});
 });
 
