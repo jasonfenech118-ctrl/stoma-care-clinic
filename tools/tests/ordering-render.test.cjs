@@ -18,7 +18,7 @@ test('the Ordering tab draws both forms, a box per item and the action buttons',
   await O.open();
   const body=window.document.getElementById('ordering-body');
   const inputs=body.querySelectorAll('input[data-part]');
-  assert.equal(inputs.length,O.PART1.length+O.PART2.length,'one quantity box per catalogue item');
+  assert.equal(inputs.length,O.part1FormVisibleCount()+O.PART2.length,'one box per on-screen item (form-hidden disposables excluded)');
   assert.ok(window.document.getElementById('ord-save'),'Save draft button');
   assert.ok(window.document.getElementById('ord-print'),'Print button');
   assert.ok(window.document.getElementById('ord-send'),'Send email button');
@@ -26,4 +26,21 @@ test('the Ordering tab draws both forms, a box per item and the action buttons',
   const first=body.querySelector('input[data-part="2"][data-i="0"]');
   first.value='7';first.dispatchEvent(new window.Event('input'));
   assert.equal(O.PART2.length,92);
+  // The form-hidden standing items have no on-screen row…
+  for(const code of O.PART1_FORM_HIDDEN_CODES){
+    assert.ok(!body.innerHTML.includes('>'+code+'<'),code+' is not shown in the form');
+  }
+});
+
+test('form-hidden standing items are still on the exported Excel form',()=>{
+  const O2=require('../../assets/ordering.js');
+  const aoa=O2.buildPart1Aoa(O2.defaultOrder('2026-11-14'));
+  const codes=aoa.map(r=>r[0]);
+  // Every catalogue item — the form-hidden ones included — is on the Excel form.
+  for(const it of O2.PART1){
+    assert.ok(codes.includes(it.code),it.code+' kept on the Excel form');
+  }
+  for(const code of O2.PART1_FORM_HIDDEN_CODES){
+    assert.ok(codes.includes(code),code+' (hidden from the form) still exported');
+  }
 });
