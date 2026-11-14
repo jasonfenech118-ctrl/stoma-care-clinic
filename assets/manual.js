@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 November 2026 — 📦 Ordering tab: fill the two weekly stores forms (disposables + cleaning) on one page — both start empty, add only what you need — then print or email them as two Excel attachments. A few standing disposables stay on the sent form but are no longer shown for input; every Saturday after 06:30 the tab opens by itself on launch until the order is marked sent.'};
+const MANUAL_META={updated:'14 November 2026 — 📦 Ordering tab: fill the two weekly stores forms (disposables + cleaning) on one page — both start empty, add only what you need — then print or email them as two Excel attachments. Some standing disposables and bulk cleaning items stay on the sent form but are no longer shown for input; every Saturday after 06:30 the tab opens by itself on launch until the order is marked sent.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -643,7 +643,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','📅','The order is due <b>every Saturday after 06:30</b>. From then on the app <b>opens this tab by itself</b> each time you open it — so the forms are in front of you — and keeps doing so until you <b>Mark as sent</b>, then stays quiet until the next Saturday.')}
     ${manNote('tip','📎','The two forms are entered together but always sent as <b>two separate Excel attachments</b> in one email, matching the official stores forms.')}
-    ${manNote('tip','🗂','A few standing disposables (lancets, glucose strips, the two self-adhesive fabric rolls and the skin-care lotion) are <b>not shown for input</b> but stay on the printed and emailed form with their top-up quantity.')}
+    ${manNote('tip','🗂','Some standing items are <b>not shown for input</b> but stay on the printed and emailed forms — a few disposables (lancets, glucose strips, the two self-adhesive fabric rolls, skin-care lotion) and several bulk/domestic cleaning items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine, urine attachment).')}
   `}]},
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'review-underlining',title:'Complication terms in clinical reviews',keywords:'red underline complications free text automatic',html:`<p>Recognised complication words are underlined in red as you type and when saved reviews are opened. New terms saved with the Complication bible button join the shared catalogue; matching is case-insensitive and matches complete words or phrases. This marks mentions only, including negated wording, and never creates a patient complication automatically.</p>`},

@@ -43,6 +43,10 @@
   // on the printed / emailed form (they carry their standing top-up only).
   const PART1_FORM_HIDDEN=new Set(['EQ12036','EQ13096','EQ02037','EQ02038','P3021']);
   const part1FormVisibleCount=()=>PART1.filter(it=>!PART1_FORM_HIDDEN.has(it.code)).length;
+  // Cleaning items the clinic does not order by hand — hidden from the input form
+  // but kept on the printed / emailed cleaning sheet.
+  const PART2_FORM_HIDDEN=new Set(['15HOLDU005','CC-TWINE-001','03DETER005','01THERMOS','03CLEAN015','03SHAMP010','03SKINS005','03SOAP015','03SOAP010','03SOAP005','03SPONG010','03SPONG015']);
+  const part2FormVisibleCount=()=>PART2.filter(it=>!PART2_FORM_HIDDEN.has(it.code)).length;
 
   // ── Date helpers ──────────────────────────────────────────────────────────
   function pad(n){return String(n).padStart(2,'0');}
@@ -271,9 +275,12 @@
       <p class="ord-subnote">Some standing items (lancets, glucose strips, self-adhesive fabric rolls, skin-care lotion) are kept on the printed and emailed order with their top-up, so they are not listed here to fill in.</p>`;
   }
   function part2HTML(o){
-    const rows=PART2.map((it,i)=>`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
+    // Skips the items in PART2_FORM_HIDDEN; they stay on the printed / emailed
+    // cleaning sheet (see buildPart2Aoa / print).
+    const rows=PART2.map((it,i)=>PART2_FORM_HIDDEN.has(it.code)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
       <td class="q"><input type="number" min="0" inputmode="numeric" data-part="2" data-i="${i}" value="${esc(o.part2[i])}" aria-label="Demand ${esc(it.desc)}"></td></tr>`).join('');
-    return `<table class="ord-table"><thead><tr><th>Stock Code</th><th>Stock Item Description</th><th>Unit</th><th>Demand</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<table class="ord-table"><thead><tr><th>Stock Code</th><th>Stock Item Description</th><th>Unit</th><th>Demand</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="ord-subnote">Some bulk/domestic items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine and the urine attachment) are kept on the printed and emailed cleaning sheet but are not listed here to fill in.</p>`;
   }
   function render(){
     const body=root.document.getElementById('ordering-body');
@@ -294,7 +301,7 @@
       ${headerHTML(o)}
       <p class="ord-note">Emails to <b>${esc(ORDER_TO)}</b>, CC <b>${esc(ORDER_CC)}</b>. A web page cannot attach files to an email for you — <b>Send email</b> downloads the two Excel files and opens a ready email; attach both files and press send, then mark it as sent.</p>
       <details class="ord-section" open><summary>1 · Disposables — M.M.M.U. IRO top-up list <span class="ord-count">${part1FormVisibleCount()} items</span></summary>${part1HTML(o)}</details>
-      <details class="ord-section"><summary>2 · Cleaning consumables order list <span class="ord-count">${PART2.length} items</span></summary>${part2HTML(o)}</details>
+      <details class="ord-section"><summary>2 · Cleaning consumables order list <span class="ord-count">${part2FormVisibleCount()} items</span></summary>${part2HTML(o)}</details>
     `;
     wire();
   }
@@ -359,7 +366,8 @@
     mostRecentDueSaturday,addDays,defaultOrder,normaliseOrder,
     buildPart1Aoa,buildPart2Aoa,part1FileName,part2FileName,mailSubject,mailBody,
     PART1,PART2,FORM_META,ORDER_TO,ORDER_CC,
-    PART1_FORM_HIDDEN_CODES:[...PART1_FORM_HIDDEN],part1FormVisibleCount
+    PART1_FORM_HIDDEN_CODES:[...PART1_FORM_HIDDEN],part1FormVisibleCount,
+    PART2_FORM_HIDDEN_CODES:[...PART2_FORM_HIDDEN],part2FormVisibleCount
   };
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.ClinicOrdering=api;
