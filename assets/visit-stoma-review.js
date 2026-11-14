@@ -36,6 +36,7 @@
     #page-patient-record .pd-identity-clinical{border-left:1px solid #d6dde5;padding-left:24px;min-width:0}
     #page-patient-record .pd-identity-clinical dl{margin-top:0}
     #page-patient-record .pd-identity-field dt{font-size:11px;font-weight:800;text-transform:uppercase;color:#43566b;margin-bottom:3px}
+    #page-patient-record .pd-identity-field.pd-fu-next dd{color:#0d7377}#page-patient-record .pd-identity-field.pd-fu-overdue dd{color:#b91c1c}
     #page-patient-record .pd-identity-field dd{margin:0;font-size:14px;line-height:1.5;font-weight:600;color:#1a2e4a;overflow-wrap:anywhere;white-space:pre-wrap}
     #page-patient-record .pd-identity-surgery{display:grid;gap:12px;padding-top:12px;border-top:1px solid #e2e8f0}
     @media(max-width:650px){#page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:12px!important}#page-patient-record .pd-identity-clinical{padding-left:12px!important}#page-patient-record .pd-identity-columns .psm-head-main{flex-wrap:wrap!important}#page-patient-record .pd-identity-columns .psm-name{font-size:clamp(14px,3.6vw,20px)!important}#page-patient-record .pd-identity-columns .psm-id{font-size:12px!important}#page-patient-record .pd-identity-field dd{font-size:12px!important}#page-patient-record .pd-identity-field dt{font-size:10px!important}#page-patient-record .pd-identity-columns dl{gap:9px!important}}
@@ -203,6 +204,8 @@
     let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
     const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
+    const fuSum=window.patientFollowupSummary&&String(window.patientFollowupSummary.patientId)===String(p.id)?window.patientFollowupSummary.items:[];
+    const followupFields=fuSum.map(it=>'<div class="pd-identity-field pd-fu-field'+(it.tone?' pd-fu-'+it.tone:'')+'"><dt>'+htmlSafe(it.label)+'</dt><dd>'+htmlSafe(it.value)+'</dd></div>').join('');
     const dob=p.date_of_birth?String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'):'';
     const localityDd='<dd class="pd-contact-locality">'+(p.locality&&typeof localityFlagHTML==='function'?localityFlagHTML(p.locality,'small',false):'')+'<span>'+htmlSafe(p.locality||'Not recorded')+'</span></dd>';
     details.innerHTML='<div class="pd-identity-name"></div>'
@@ -212,6 +215,7 @@
         +'<div class="pd-identity-field"><dt>Locality</dt>'+localityDd+'</div>'
         +field('Telephone',p.phone_number)
         +field('Date of birth',dob)
+        +followupFields
       +'</dl></div>'
       +'<div class="pd-identity-clinical"><h4 class="pd-identity-heading">Surgical details</h4><dl>'+surgical+'</dl></div>'
       +'</div>'+audit;
