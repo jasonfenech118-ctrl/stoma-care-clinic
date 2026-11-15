@@ -28,7 +28,7 @@ test('Send email opens an Outlook draft to the two recipients, CC the clinic',()
   assert.match(href,/subject=Appliance%20changes%20%E2%80%94%2015%20Nov%202026/,'subject with the automated date');
   const bodyText=decodeURIComponent(href);
   assert.match(bodyText,/Dear both,/);
-  assert.match(bodyText,/Attached to the Gmail is today's clinic appliance and accessories changes\./);
+  assert.match(bodyText,/Attached to this email are today's clinic appliance and accessories changes\./);
   assert.match(bodyText,/Sincerely,/);
 });
 
