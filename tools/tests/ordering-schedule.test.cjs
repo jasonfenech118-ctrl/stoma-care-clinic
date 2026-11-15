@@ -33,12 +33,20 @@ function dbReturning(row){
   return {from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:row,error:null})})})})};
 }
 
-test('the order is due (so the tab auto-opens) until it is marked sent',async()=>{
-  O.init({db:dbReturning(null)});                       // nothing saved yet
-  assert.equal(await O.isDue(),true,'due while unsent');
+test('the tab auto-opens on Saturday only (after 06:30), while unsent',async()=>{
+  const sat=new Date('2026-11-14T07:00:00');       // Saturday, after 06:30
+  const satEarly=new Date('2026-11-14T06:00:00');  // Saturday, before 06:30
+  const sun=new Date('2026-11-15T09:00:00');       // Sunday
+  const wed=new Date('2026-11-18T09:00:00');       // mid-week
+
+  O.init({db:dbReturning(null)});                  // nothing sent yet
+  assert.equal(await O.isDue(sat),true,'due on Saturday after 06:30');
+  assert.equal(await O.isDue(satEarly),false,'not due before 06:30');
+  assert.equal(await O.isDue(sun),false,'not due on Sunday');
+  assert.equal(await O.isDue(wed),false,'not due mid-week');
 
   O.init({db:dbReturning({week_ending:'2026-11-14',status:'sent'})});
-  assert.equal(await O.isDue(),false,'not due once this week’s order is sent');
+  assert.equal(await O.isDue(sat),false,'not due once Saturday’s order is sent');
   O.init({db:null});
 });
 

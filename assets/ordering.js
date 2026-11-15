@@ -235,12 +235,15 @@
   }
 
   // ── Due state ─────────────────────────────────────────────────────────────
-  // True while this week's order (the most recent due Saturday) is still unsent.
-  // The app uses this to open the Ordering tab automatically on launch.
-  async function isDue(){
+  // True only on a Saturday, from 06:30, while that Saturday's order is still
+  // unsent. The app uses this to open the Ordering tab automatically on launch —
+  // so the prompt shows on Saturday only and does not carry into Sunday.
+  async function isDue(now){
     try{
-      const dueSat=mostRecentDueSaturday(new Date());
-      const o=await loadOrder(dueSat);
+      now=now||new Date();
+      if(now.getDay()!==6)return false;                                   // Saturday only
+      if(now.getHours()<DUE_HOUR||(now.getHours()===DUE_HOUR&&now.getMinutes()<DUE_MIN))return false;
+      const o=await loadOrder(mostRecentDueSaturday(now));                // = this Saturday
       return !(o&&o.status==='sent');
     }catch(e){return false;}
   }
