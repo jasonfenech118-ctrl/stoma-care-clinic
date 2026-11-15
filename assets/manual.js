@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'15 November 2026 — On a Daily Clinic appointment card you now open the patient profile by tapping the avatar or name (the separate 👤 button is gone). The cleaning-order form lists only the items the clinic orders, and Surgical details shows each stoma’s current appliance & accessories.'};
+const MANUAL_META={updated:'15 November 2026 — The weekly cleaning-order form is trimmed further to only the items the clinic orders (the rest stay on the emailed/printed sheet). On a Daily Clinic appointment card you open the patient profile by tapping the avatar or name.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
