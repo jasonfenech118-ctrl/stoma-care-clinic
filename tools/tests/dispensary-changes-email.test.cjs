@@ -26,7 +26,10 @@ test('Send email opens an Outlook draft to the two recipients, CC the clinic',()
   assert.ok(href.startsWith('mailto:m-rose.gatt@gov.mt,cherise.chircop@contractors.gov.mt?'),'both recipients');
   assert.match(href,/[?&]cc=stomacare\.mdh%40gov\.mt/,'CC the stoma clinic');
   assert.match(href,/subject=Appliance%20changes%20%E2%80%94%2015%20Nov%202026/,'subject with the automated date');
-  assert.match(decodeURIComponent(href),/attach the dispensary PDF/i,'body reminds to attach the PDF');
+  const bodyText=decodeURIComponent(href);
+  assert.match(bodyText,/Dear both,/);
+  assert.match(bodyText,/Attached to the Gmail is today's clinic appliance and accessories changes\./);
+  assert.match(bodyText,/Sincerely,/);
 });
 
 test('the Changes modal renders a Send email button next to Print',()=>{
