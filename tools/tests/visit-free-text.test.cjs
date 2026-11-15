@@ -37,3 +37,19 @@ test('the Bold button runs the rich-text bold command on the editor (no ** inser
   host.querySelector('[data-vsr-command=bold]').click();
   assert.ok(calls.includes('bold'));
 });
+test('Bullets and numbers insert plain-text prefixes that persist and increment',async t=>{
+  const {w,host,api,el}=await setup(t);
+  el.textContent='Plan:';el.dispatchEvent(new w.Event('input',{bubbles:true}));
+  // Simulate the browser's insertText so the round-trip can be checked.
+  w.document.execCommand=(name,_ui,val)=>{ if(name==='insertText')el.innerHTML+=String(val).replace(/\n/g,'<br>'); return true; };
+  host.querySelector('[data-vsr-command=bullets]').click();
+  host.querySelector('[data-vsr-command=numbered]').click();
+  host.querySelector('[data-vsr-command=numbered]').click();
+  const notes=api.payloadFor('1')[0].notes;
+  assert.match(notes,/•\s/,'a bullet prefix is stored');
+  assert.match(notes,/\n1\.\s/,'the first numbered item');
+  assert.match(notes,/\n2\.\s/,'the next number increments');
+  // The prefixes render as visible text (no list element needed).
+  assert.match(api.markersToHtml(notes),/•\s/);
+  assert.match(api.markersToHtml(notes),/1\.\s/);
+});

@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'14 November 2026 — 📦 Ordering tab: fill the two weekly stores forms (disposables + cleaning) on one page — both start empty, add only what you need — then print or email them as two Excel attachments. Some standing disposables and bulk cleaning items stay on the sent form but are no longer shown for input; on Saturdays only (from 06:30) the tab opens by itself on launch until the order is marked sent.'};
+const MANUAL_META={updated:'15 November 2026 — Complete visit now shows the current appliance straight away (it no longer reads “None recorded” until the profile is opened). Bullets and numbered lists in the clinical review now show and save as “• ” / “1. ” line prefixes.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

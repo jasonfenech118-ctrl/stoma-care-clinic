@@ -484,14 +484,34 @@
     if(k==='undo'||k==='redo'){
       const h=history(s);h.at=Math.max(0,Math.min(h.items.length-1,h.at+(k==='undo'?-1:1)));
       s.notes=h.items[h.at];el.innerHTML=markersToHtml(s.notes);placeCaretEnd(el);
+    }else if(k==='bullets'||k==='numbered'){
+      // Bullets / numbers are kept as plain-text line prefixes ("• " / "1. ") so
+      // they show and persist everywhere the note is rendered (editor, saved
+      // view, diffs, profile). The marker store has no list element, and real
+      // <ul>/<ol> from execCommand were dropped on the round-trip and hidden by
+      // the modal's inherited list-style.
+      insertListPrefix(el,k);
+      s.notes=htmlToMarkers(el);remember(s);
     }else{
-      // Real editing commands on the contenteditable — bold/italic/underline
-      // toggle the selection; lists wrap the current line(s).
-      const cmd={bold:'bold',italic:'italic',underline:'underline',bullets:'insertUnorderedList',numbered:'insertOrderedList'}[k];
+      // Real editing commands on the contenteditable — bold/italic/underline toggle the selection.
+      const cmd={bold:'bold',italic:'italic',underline:'underline'}[k];
       if(cmd){try{document.execCommand('styleWithCSS',false,true);}catch(_){}try{document.execCommand(cmd);}catch(_){}}
       s.notes=htmlToMarkers(el);remember(s);
     }
     syncDiff(s);updateToolbarState(el);
+  }
+  // Insert a bullet, or the next sequential number, at the caret on its own line.
+  function insertListPrefix(el,k){
+    el.focus();
+    let prefix='• ';
+    if(k==='numbered'){
+      const nums=(htmlToMarkers(el).match(/^\s*(\d+)\.\s/gm)||[]).map(x=>parseInt(x,10)).filter(n=>!isNaN(n));
+      prefix=((nums.length?Math.max.apply(null,nums):0)+1)+'. ';
+    }
+    const atStart=!(el.textContent||'').trim();
+    const ins=(atStart?'':'\n')+prefix;
+    try{document.execCommand('insertText',false,ins);}
+    catch(_){el.appendChild(document.createTextNode(ins));placeCaretEnd(el);}
   }
   // Light up Bold / Italic / Underline while the caret sits in formatted text.
   function updateToolbarState(el){
