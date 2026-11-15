@@ -11,19 +11,20 @@ const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');
 function slice(from,to){const i=html.indexOf(from);const j=html.indexOf(to,i);assert.ok(i>=0&&j>i,from);return html.slice(i,j);}
 
 test('Send email opens an Outlook draft to the two recipients, CC the clinic',()=>{
-  let printed=false,href='';
+  let href='',winOpened=false;
   const ctx=vm.createContext({
     clinicChangesState:{patients:[{}],date:'2026-11-15'},
     fmtShortDate:d=>'15 Nov 2026',
     STOMA_CARE_EMAIL:'stomacare.mdh@gov.mt',
-    clinicChangesPrint:()=>{printed=true;},
     openMailtoLink:h=>{href=h;},
+    window:{open:()=>{winOpened=true;}},
     encodeURIComponent,setTimeout:()=>{},alert:()=>{}
   });
   vm.runInContext(slice('const DISPENSARY_EMAILS=','function arrangePatientDashboard'),ctx);
   ctx.clinicChangesEmail();
-  assert.equal(printed,true,'the PDF note is opened to save');
-  assert.ok(href.startsWith('mailto:m-rose.gatt@gov.mt,cherise.chircop@contractors.gov.mt?'),'both recipients');
+  // The email is opened on its own — no pop-up window beforehand (blocked on mobile).
+  assert.equal(winOpened,false,'no pop-up window is opened before the mailto');
+  assert.ok(href.startsWith('mailto:m-rose.gatt@gov.mt,cherise.chircop@contractors.gov.mt?'),'both recipients, literal commas');
   assert.match(href,/[?&]cc=stomacare\.mdh%40gov\.mt/,'CC the stoma clinic');
   assert.match(href,/subject=Appliance%20changes%20%E2%80%94%2015%20Nov%202026/,'subject with the automated date');
   const bodyText=decodeURIComponent(href);
