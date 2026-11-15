@@ -18,7 +18,7 @@ const MAN_TABS=[
   ['appointments','🕘','Appointments','#2980b9'],
   ['siting','📍','Siting','#7c3aed'],
   ['handover','🏥','Handover','#b45309'],
-  ['ordering','📦','Weekly MML','#b45309'],
+  ['ordering','📦','Orders','#b45309'],
   ['patients','👥','Registry','#0891b2'],
   ['audit','📊','Audit & Reports','#c0392b']
 ];
