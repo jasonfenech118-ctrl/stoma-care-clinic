@@ -19,13 +19,13 @@ test('the subject is built from the patient name, surname and ID card',()=>{
   assert.match(s,/imaging feedback request/);
 });
 
-test('the imaging-request body asks for the two images and has no sign-off (Outlook adds it)',()=>{
+test('the imaging-request body asks for the two images with the fixed wording',()=>{
   const b=ctx.comcareImagingBody(pat);
-  assert.match(b,/Good morning,/);
-  assert.match(b,/written feedback for Ms Charlene Tanti \(92188M\), accompanied with two images/);
-  assert.match(b,/1\. With the stoma appliance in place: clearly showing the appliance and the aperture cut-out/);
-  assert.match(b,/2\. Without the stoma appliance: clearly showing the stoma and the surrounding peristomal skin/);
-  assert.match(b,/Thank you for your cooperation$/);
+  assert.match(b,/^Dear nurses/);
+  assert.match(b,/written feedback accompanied with two images/);
+  assert.match(b,/With the stoma appliance in place: clearly showing the appliance and the aperture cut-out/);
+  assert.match(b,/Without the stoma appliance: clearly showing the stoma and the surrounding peristomal skin/);
+  assert.match(b,/Thank you for your cooperation\n\nSincerely,$/);
   assert.doesNotMatch(b,/Kind regards/);
 });
 
