@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'15 November 2026 — The weekly cleaning-order form is trimmed further to only the items the clinic orders (the rest stay on the emailed/printed sheet). On a Daily Clinic appointment card you open the patient profile by tapping the avatar or name.'};
+const MANUAL_META={updated:'15 November 2026 — The Ordering tab is now 📦 Weekly MML and shows the order as one combined list (Save/Send still make the two Excel files). Appointment Seen/DNTU/Edit/Delete are hidden for deceased, reversed, Gozo or overseas patients, and the Comcare imaging-request email now asks for the two images (with and without the appliance).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -18,7 +18,7 @@ const MAN_TABS=[
   ['appointments','🕘','Appointments','#2980b9'],
   ['siting','📍','Siting','#7c3aed'],
   ['handover','🏥','Handover','#b45309'],
-  ['ordering','📦','Ordering','#b45309'],
+  ['ordering','📦','Weekly MML','#b45309'],
   ['patients','👥','Registry','#0891b2'],
   ['audit','📊','Audit & Reports','#c0392b']
 ];
@@ -282,6 +282,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('tip','📝','<b>See what was written at a visit.</b> Every appointment card has a <span class="man-kbd">📝</span> button in its row of actions. Press it to open a <b>read-only</b> view of everything recorded at that visit — the <b>follow-up decision</b>, the per-stoma <b>assessment</b> (with its signed versions, via <b>Open review</b>), the <b>complication review</b>, and the <b>appliances &amp; accessories</b> used — without opening the full patient record. The <b>Follow-up decision</b> and the signed <b>Open review</b> both now show the patient’s <b>next follow-up due month</b>. If nothing was written yet (for example a booked or missed appointment), it says so. Nothing can be changed from this view.')}
     ${manNote('tip','👤','<b>Open the patient profile.</b> Tap the patient’s <b>avatar (photo) or name</b> on the appointment card to jump straight to that patient’s full record (Overview, Stomas, Outcome, Appointments, Episodes) — the <b>‹ Back</b> button returns you to the clinic. (The separate 👤 button has been removed.)')}
+    ${manNote('auto','🔒','When a patient is <b>deceased, reversed, discharged to Gozo or relocated overseas</b>, their appointment’s <b>Seen, DNTU, Edit and Delete</b> buttons are <b>hidden</b> (the read-only 📝 stays). Revert the patient to <b>active</b> from their record to bring the buttons back.')}
     ${manNote('tip','📋','<b>Changes for the pharmacy dispensary.</b> The <b>📋 Changes</b> button at the top of the Daily Clinic gathers every <b>appliance &amp; accessory change</b> made in the day’s attended visits, grouped per patient. A <b>first-time appliance recording</b> (nothing on record before) is treated as a <b>record update, not a change</b>, so it is <b>left off this note</b>. For each real change it shows the <b>previous appliance &rarr; new appliance</b>; if the previous appliance was not recorded, you can <b>type it</b> in the editable box. When a change was done on a trial, press the <b>🧪 Trial</b> button on that change — the printed note then marks it <b>(trial)</b> so pharmacy knows it is a trial. Then it lists the items to dispense — each with a <b>quantity</b> and <b>unit</b> (per day / per month), <b>pre-filled</b> and editable; you can add or remove items, and discontinued items are listed too. Press <b>🖨 Print / Download PDF</b> for a Mater Dei-letterhead dispensary note with <b>all the patients’ changes on one page</b>, to download and send to pharmacy yourself.')}
   `},
   {id:'outcome',title:'Record a visit outcome',keywords:'outcome seen did not turn up dntu cancelled attended visit complete',html:`
@@ -629,13 +630,13 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'ordering',title:'Ordering',icon:'📦',color:'#b45309',blurb:'The weekly stores order — two forms, printed and emailed every Saturday.',pages:[
+{id:'ordering',title:'Weekly MML',icon:'📦',color:'#b45309',blurb:'The weekly stores order — two forms, printed and emailed every Saturday.',pages:[
   {id:'weekly-order',title:'Weekly stores order',keywords:'ordering order stores disposables cleaning consumables mml iro top up list saturday email print excel disposablessupplies stomacare attachment forms quantities send',html:`
     ${manMap('ordering')}
     ${manWhen('To send the clinic’s weekly stores order to the disposables stores — due every Saturday.')}
-    <p class="man-lede">The ${manBtn('📦 Ordering','#fde9d3','#b45309')} tab holds <b>two official order forms on one page</b>: <b>1 · Disposables</b> (the M.M.M.U. IRO top-up list) and <b>2 · Cleaning consumables</b>. Fill in the quantities, then print or email.</p>
+    <p class="man-lede">The ${manBtn('📦 Weekly MML','#fde9d3','#b45309')} tab shows <b>one combined list</b> to fill in — the disposables (M.M.M.U. IRO top-up list) followed by the cleaning consumables. You enter the quantities once; <b>Save and Send still produce the two separate Excel files</b> for the stores.</p>
     ${manSteps([
-      `Open ${manBtn('📦 Ordering','#fde9d3','#b45309')}. Both lists start empty — type a quantity only against the items you are ordering: a <b>Required</b> amount on the disposables list (the standing <b>Top-up</b> is shown beside it for reference) and a <b>Demand</b> on the cleaning list.`,
+      `Open ${manBtn('📦 Weekly MML','#fde9d3','#b45309')}. The list starts empty — type an <b>Order qty</b> only against the items you are ordering (the <b>Top-up / Unit</b> column shows the standing top-up for a disposable or the unit for a cleaning item).`,
       `Check the header (order date, officer, extension, remarks). ${manBtn('💾 Save draft','#eef0f3','#31474f')} keeps your work so you can come back to it.`,
       `${manBtn('🖨 Print','#eef0f3','#31474f')} opens both forms laid out to print on paper.`,
       `${manBtn('✉ Send email','#0d5c66','#fff')} downloads the <b>two Excel files</b> and opens a ready email to <b>disposablessupplies.mdh@gov.mt</b> (CC <b>stomacare.mdh@gov.mt</b>) with the subject and message filled in.`,
@@ -656,7 +657,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
-        ['📦','Weekly stores order opens itself','On Saturdays only, from 06:30, the app opens the Ordering tab automatically on launch so the two order forms are in front of you, until the order is marked sent. It does not prompt on other days.','Ordering'],
+        ['📦','Weekly stores order opens itself','On Saturdays only, from 06:30, the app opens the Weekly MML tab automatically on launch so the order form is in front of you, until the order is marked sent. It does not prompt on other days.','Weekly MML'],
         ['📝','Encounter records and revisions','Interrupted saves are checked before showing a failure; retrying the same submission keeps one encounter/revision, and controls unlock after a timeout. Confirmed saves display immediately. The screen follows stoma review, appliances, written report, infection and referrals. Each stoma has its own column (named by type, e.g. End Ileostomy) for review, appliances and notes; the report and automatic author/signature cover every stoma. One encounter per patient per day, coded ENC-ID-date; saved encounters reopen read only, with Edit report as V2/V3 starting a deliberate revision. Every encounter has a separate General notes box, saved with each version and included in the report. The patient record’s Episodes tab lists each episode’s encounters underneath, newest first. Background ward updates wait while the encounter is open, including loading, saving and history, then resume when it closes. Corrections append a version to the same encounter; current care updates together, while older records remain in history.','Handover › Encounter'],
         ['🔎','Fresh Update Register search','Returning to Update Register clears the previous search, patient form and messages. Pending search results are cancelled so they cannot reopen the previous patient.','Registry › Update Register'],
         ['📝','Update Register continues to stoma','For new patients, Update Register collects patient details only, then opens the separate new-stoma modal after saving. For existing patients, saving patient details keeps the selected patient through background refreshes, reloads that patient and automatically opens the first current stoma, or the first recorded stoma if all are historical. If the stoma record cannot be loaded, the saved details are retained and you can reopen the patient to continue. Missing optional database fields do not hide the available stoma history. If none is recorded, the new-stoma form opens. Saving the stoma continues to Outcome.','Registry › Update Register'],

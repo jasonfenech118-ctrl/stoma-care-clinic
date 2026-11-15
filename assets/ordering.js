@@ -278,21 +278,18 @@
       <label>Remarks<input type="text" id="ord-remarks" value="${esc(h.remarks||'')}"></label>
     </div>`;
   }
-  function part1HTML(o){
-    // The form skips the standing items in PART1_FORM_HIDDEN; they stay on the
-    // printed / emailed form with their top-up (see buildPart1Aoa / print).
-    const rows=PART1.map((it,i)=>PART1_FORM_HIDDEN.has(it.code)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="n">${esc(it.topup)}</td>
-      <td class="q"><input type="number" min="0" inputmode="numeric" data-part="1" data-i="${i}" value="${esc(o.part1[i])}" aria-label="Required ${esc(it.desc)}"></td></tr>`).join('');
-    return `<table class="ord-table"><thead><tr><th>EQ Number</th><th>Item Description</th><th>Top-up</th><th>Required</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="ord-subnote">Some standing items (lancets, glucose strips, self-adhesive fabric rolls, skin-care lotion) are kept on the printed and emailed order with their top-up, so they are not listed here to fill in.</p>`;
-  }
-  function part2HTML(o){
-    // Skips the items in PART2_FORM_HIDDEN; they stay on the printed / emailed
-    // cleaning sheet (see buildPart2Aoa / print).
-    const rows=PART2.map((it,i)=>isPart2Hidden(it)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
-      <td class="q"><input type="number" min="0" inputmode="numeric" data-part="2" data-i="${i}" value="${esc(o.part2[i])}" aria-label="Demand ${esc(it.desc)}"></td></tr>`).join('');
-    return `<table class="ord-table"><thead><tr><th>Stock Code</th><th>Stock Item Description</th><th>Unit</th><th>Demand</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="ord-subnote">Standing bulk / domestic cleaning items the clinic does not order are kept on the printed and emailed cleaning sheet but are not listed here to fill in.</p>`;
+  // The two forms are filled in as ONE list on screen (disposables then cleaning).
+  // Each input keeps its data-part so Save / Send still export the two separate
+  // Excel files. Hidden standing items stay off the list but on the exports.
+  function combinedListHTML(o){
+    const r1=PART1.map((it,i)=>PART1_FORM_HIDDEN.has(it.code)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="n">${esc(it.topup)}</td>
+      <td class="q"><input type="number" min="0" inputmode="numeric" data-part="1" data-i="${i}" value="${esc(o.part1[i])}" aria-label="Order quantity ${esc(it.desc)}"></td></tr>`).join('');
+    const r2=PART2.map((it,i)=>isPart2Hidden(it)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
+      <td class="q"><input type="number" min="0" inputmode="numeric" data-part="2" data-i="${i}" value="${esc(o.part2[i])}" aria-label="Order quantity ${esc(it.desc)}"></td></tr>`).join('');
+    const total=part1FormVisibleCount()+part2FormVisibleCount();
+    return `<div class="ord-list-head"><h3>Items to order <span class="ord-count">${total} items</span></h3></div>
+      <table class="ord-table"><thead><tr><th>Code</th><th>Item Description</th><th>Top-up / Unit</th><th>Order qty</th></tr></thead><tbody>${r1}${r2}</tbody></table>
+      <p class="ord-subnote">Standing items the clinic does not order by hand (some disposables, and bulk / domestic cleaning items) are kept on the printed and emailed order but are not listed here to fill in. Save or Send still produces the two separate Excel files.</p>`;
   }
   function render(){
     const body=root.document.getElementById('ordering-body');
@@ -312,8 +309,7 @@
       <div id="ord-send-note"></div>
       ${headerHTML(o)}
       <p class="ord-note">Emails to <b>${esc(ORDER_TO)}</b>, CC <b>${esc(ORDER_CC)}</b>. A web page cannot attach files to an email for you — <b>Send email</b> downloads the two Excel files and opens a ready email; attach both files and press send, then mark it as sent.</p>
-      <details class="ord-section" open><summary>1 · Disposables — M.M.M.U. IRO top-up list <span class="ord-count">${part1FormVisibleCount()} items</span></summary>${part1HTML(o)}</details>
-      <details class="ord-section"><summary>2 · Cleaning consumables order list <span class="ord-count">${part2FormVisibleCount()} items</span></summary>${part2HTML(o)}</details>
+      ${combinedListHTML(o)}
     `;
     wire();
   }
