@@ -202,8 +202,14 @@
     const field=(label,value)=>'<div class="pd-identity-field"><dt>'+htmlSafe(label)+'</dt><dd>'+htmlSafe(String(value||'Not recorded'))+'</dd></div>';
     const audit=details.querySelector('.psm-audit')?.outerHTML||'';
     let surgeries=[];try{surgeries=patientStomaList(p);}catch(_){}
+    // The current appliance & accessories per stoma — the newest recorded entry
+    // from the same appliance history the Stomas panel shows.
+    let applHist=new Map();
+    try{if(typeof stomaApplianceHistory==='function'&&typeof clrState!=='undefined'&&clrState&&clrState.available!==false)applHist=stomaApplianceHistory(p,clrState.rows||[],clrState.appts||[]);}catch(_){}
+    const applianceFor=uid=>{const latest=(applHist.get(uid)||[])[0];if(!latest)return '';return [...(latest.appliances||[]),...(latest.accessories||[])].filter(n=>n&&n!=='None').join(', ');};
+    const latestAppliance=()=>{let best=null;applHist.forEach(list=>{const e=list&&list[0];if(e&&(!best||String(e.date||'')>String(best.date||'')))best=e;});return best?[...(best.appliances||[]),...(best.accessories||[])].filter(n=>n&&n!=='None').join(', '):'';};
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
-    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings);
+    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+field('Current appliance & accessories',applianceFor(st.uid))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings)+field('Current appliance & accessories',latestAppliance());
     const fuSum=window.patientFollowupSummary&&String(window.patientFollowupSummary.patientId)===String(p.id)?window.patientFollowupSummary.items:[];
     const followupFields=fuSum.map(it=>'<div class="pd-identity-field pd-fu-field'+(it.tone?' pd-fu-'+it.tone:'')+'"><dt>'+htmlSafe(it.label)+'</dt><dd>'+htmlSafe(it.value)+'</dd></div>').join('');
     const dob=p.date_of_birth?String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'):'';
