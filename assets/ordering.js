@@ -44,9 +44,18 @@
   const PART1_FORM_HIDDEN=new Set(['EQ12036','EQ13096','EQ02037','EQ02038','P3021']);
   const part1FormVisibleCount=()=>PART1.filter(it=>!PART1_FORM_HIDDEN.has(it.code)).length;
   // Cleaning items the clinic does not order by hand — hidden from the input form
-  // but kept on the printed / emailed cleaning sheet.
-  const PART2_FORM_HIDDEN=new Set(['15HOLDU005','CC-TWINE-001','03DETER005','01THERMOS','03CLEAN015','03SHAMP010','03SKINS005','03SOAP015','03SOAP010','03SOAP005','03SPONG010','03SPONG015']);
-  const part2FormVisibleCount=()=>PART2.filter(it=>!PART2_FORM_HIDDEN.has(it.code)).length;
+  // but kept on the printed / emailed cleaning sheet. Most match by code; a few
+  // need the description too: the French mops have no code, and only the WHITE
+  // aprons of the shared 15APRON015 code are removed (the plain apron line stays).
+  const PART2_HIDE_CODES=new Set(['15HOLDU005','CC-TWINE-001','03DETER005','01THERMOS','03CLEAN015','03SHAMP010','03SKINS005','03SOAP015','03SOAP010','03SOAP005','03SPONG010','03SPONG015','10FOIL-005','11BAGS-070','11BAGS-040','11BAGS-080','11BAGS-062','01BINS002','CC-BLADE-001','01BOWLS007','15BRACE010','15BRACE020','15BRACE005','15BRACE015','03BROOM015','03BRUSH015','03BRUSH005','15CAPS-015','15CAPS-005','15CAPS-010','03DETER020','03DETER025','01ENDM005','15FOAMS005','01JUGSE010','01KNIVE030','03MOPS010','01MATCH005','03MOPS020','03MOPS015','15NAPPI010','15NAPPI015','15NAPPI020','03SHAMP005','03SPONG005','08SPRAY005','08SPRAY010','03SQUEE005','03SQUEE010','01STRAWS005','03STEEL005','03STICK005','01STRET005','03SWABS005','15TAPE015','01TORCH005','01WRING005','15APRON020']);
+  const PART2_HIDE_DESC=new Set(['FRENCH MOPS COMPLETE (60 WIDE)','FRENCH MOPS COMPLETE (40 WIDE)']);
+  const PART2_HIDE_CODE_DESC=new Set(['15APRON015||WHITE DISPOSABLE APRONS FOR DISPENSERS']);
+  function isPart2Hidden(it){
+    const code=it&&it.code||'',desc=it&&it.desc||'';
+    if(code)return PART2_HIDE_CODES.has(code)||PART2_HIDE_CODE_DESC.has(code+'||'+desc);
+    return PART2_HIDE_DESC.has(desc);
+  }
+  const part2FormVisibleCount=()=>PART2.filter(it=>!isPart2Hidden(it)).length;
 
   // ── Date helpers ──────────────────────────────────────────────────────────
   function pad(n){return String(n).padStart(2,'0');}
@@ -280,10 +289,10 @@
   function part2HTML(o){
     // Skips the items in PART2_FORM_HIDDEN; they stay on the printed / emailed
     // cleaning sheet (see buildPart2Aoa / print).
-    const rows=PART2.map((it,i)=>PART2_FORM_HIDDEN.has(it.code)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
+    const rows=PART2.map((it,i)=>isPart2Hidden(it)?'':`<tr><td class="c">${esc(it.code)}</td><td>${esc(it.desc)}</td><td class="u">${esc(it.unit)}</td>
       <td class="q"><input type="number" min="0" inputmode="numeric" data-part="2" data-i="${i}" value="${esc(o.part2[i])}" aria-label="Demand ${esc(it.desc)}"></td></tr>`).join('');
     return `<table class="ord-table"><thead><tr><th>Stock Code</th><th>Stock Item Description</th><th>Unit</th><th>Demand</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="ord-subnote">Some bulk/domestic items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine and the urine attachment) are kept on the printed and emailed cleaning sheet but are not listed here to fill in.</p>`;
+      <p class="ord-subnote">Standing bulk / domestic cleaning items the clinic does not order are kept on the printed and emailed cleaning sheet but are not listed here to fill in.</p>`;
   }
   function render(){
     const body=root.document.getElementById('ordering-body');
@@ -370,7 +379,7 @@
     buildPart1Aoa,buildPart2Aoa,part1FileName,part2FileName,mailSubject,mailBody,
     PART1,PART2,FORM_META,ORDER_TO,ORDER_CC,
     PART1_FORM_HIDDEN_CODES:[...PART1_FORM_HIDDEN],part1FormVisibleCount,
-    PART2_FORM_HIDDEN_CODES:[...PART2_FORM_HIDDEN],part2FormVisibleCount
+    isPart2Hidden,part2FormVisibleCount
   };
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.ClinicOrdering=api;

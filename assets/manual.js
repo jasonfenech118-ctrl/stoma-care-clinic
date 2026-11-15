@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'15 November 2026 — The patient record’s Surgical details now lists the current appliance & accessories for each stoma. (Also: Complete visit shows the appliance straight away, and clinical-review bullets/numbers now show and save.)'};
+const MANUAL_META={updated:'15 November 2026 — The weekly cleaning-order form now lists only the items the clinic actually orders (the bulk/domestic items stay on the emailed and printed sheet). The patient record’s Surgical details also shows each stoma’s current appliance & accessories.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

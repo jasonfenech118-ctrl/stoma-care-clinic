@@ -22,14 +22,20 @@ test('the Ordering tab draws both forms, a box per item and the action buttons',
   assert.ok(window.document.getElementById('ord-save'),'Save draft button');
   assert.ok(window.document.getElementById('ord-print'),'Print button');
   assert.ok(window.document.getElementById('ord-send'),'Send email button');
-  // Typing a quantity updates the in-memory order.
-  const first=body.querySelector('input[data-part="2"][data-i="0"]');
+  // Typing a quantity updates the in-memory order (first visible cleaning row).
+  const first=body.querySelector('input[data-part="2"]');
   first.value='7';first.dispatchEvent(new window.Event('input'));
   assert.equal(O.PART2.length,92);
-  // The form-hidden items have no on-screen row…
-  for(const code of [...O.PART1_FORM_HIDDEN_CODES,...O.PART2_FORM_HIDDEN_CODES]){
+  // The form-hidden disposables have no on-screen row…
+  for(const code of O.PART1_FORM_HIDDEN_CODES){
     assert.ok(!body.innerHTML.includes('>'+code+'<'),code+' is not shown in the form');
   }
+  // …and every hidden cleaning row is absent while the kept ones are present.
+  const shownRow=new Set([...body.querySelectorAll('input[data-part="2"]')].map(inp=>+inp.getAttribute('data-i')));
+  O.PART2.forEach((it,i)=>{
+    if(O.isPart2Hidden(it))assert.ok(!shownRow.has(i),(it.code||it.desc)+' should be hidden');
+    else assert.ok(shownRow.has(i),(it.code||it.desc)+' should be shown');
+  });
 });
 
 test('form-hidden items are still on the exported Excel forms',()=>{
@@ -41,5 +47,6 @@ test('form-hidden items are still on the exported Excel forms',()=>{
   for(const it of O2.PART1)assert.ok(codes1.includes(it.code),it.code+' kept on the disposables Excel');
   for(const it of O2.PART2)if(it.code)assert.ok(codes2.includes(it.code),it.code+' kept on the cleaning Excel');
   for(const code of O2.PART1_FORM_HIDDEN_CODES)assert.ok(codes1.includes(code),code+' (hidden) still exported');
-  for(const code of O2.PART2_FORM_HIDDEN_CODES)assert.ok(codes2.includes(code),code+' (hidden) still exported');
+  // Every hidden cleaning row is still on the Excel (nothing removed from it).
+  for(const it of O2.PART2)if(O2.isPart2Hidden(it)&&it.code)assert.ok(codes2.includes(it.code),it.code+' (hidden) still exported');
 });
