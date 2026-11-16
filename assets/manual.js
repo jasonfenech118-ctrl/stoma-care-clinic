@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'15 November 2026 — The pharmacy dispensary “Changes” note gains a ✉ Send email button (opens the PDF to save and an Outlook draft to the pharmacy). The Orders area holds the Weekly MML form as one combined list, and appointment actions are hidden for deceased/reversed/Gozo/overseas patients.'};
+const MANUAL_META={updated:'16 November 2026 — New 🧾 ESRF tab in Orders fills the original Logistics extra-supplies Excel form, with automatic date and signature. Send email opens a draft to logisticsdept.mdh@gov.mt (CC stomacare.mdh@gov.mt).'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -630,7 +630,7 @@ const MANUAL_SECTIONS=[
   `}
 ]},
 
-{id:'ordering',title:'Weekly MML',icon:'📦',color:'#b45309',blurb:'The weekly stores order — two forms, printed and emailed every Saturday.',pages:[
+{id:'ordering',title:'Weekly MML',icon:'📦',color:'#b45309',blurb:'The weekly stores order and the ESRF extra-supplies form.',pages:[
   {id:'weekly-order',title:'Weekly stores order',keywords:'ordering order stores disposables cleaning consumables mml iro top up list saturday email print excel disposablessupplies stomacare attachment forms quantities send',html:`
     ${manMap('ordering')}
     ${manWhen('To send the clinic’s weekly stores order to the disposables stores — due every Saturday.')}
@@ -645,6 +645,17 @@ const MANUAL_SECTIONS=[
     ${manNote('auto','📅','<b>On Saturdays only</b>, from 06:30, the app <b>opens this tab by itself</b> when you open the app — so the forms are in front of you — until you <b>Mark as sent</b>. It does not prompt on Sunday or other days; you can still open the tab yourself any time.')}
     ${manNote('tip','📎','The two forms are entered together but always sent as <b>two separate Excel attachments</b> in one email, matching the official stores forms.')}
     ${manNote('tip','🗂','Some standing items are <b>not shown for input</b> but stay on the printed and emailed forms — a few disposables (lancets, glucose strips, the two self-adhesive fabric rolls, skin-care lotion) and several bulk/domestic cleaning items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine, urine attachment).')}
+  `},
+  {id:'esrf',title:'ESRF — Extra Supplies Requisition',keywords:'esrf extra supplies requisition form logistics logisticsdept sto-01 excel email signature date approved ef reason',html:`
+    ${manMap('ordering')}
+    ${manWhen('To request extra supplies from the Logistics Department outside the weekly order.')}
+    <p class="man-lede">The ${manBtn('🧾 ESRF','#fde9d3','#b45309')} tab (in Orders) fills the <b>original Logistics ESRF Excel form</b> for Stoma Care (STO-01) — the same file, logo and layout included.</p>
+    ${manSteps([
+      `Open ${manBtn('🧾 ESRF','#fde9d3','#b45309')} and enter each item: <b>Item code</b>, <b>description</b>, <b>quantity (APP)</b> and the <b>reason</b>. Typing a known clinic code fills its description. ${manBtn('＋ Add item','#eef0f3','#31474f')} adds lines beyond the form’s three.`,
+      `The <b>date</b> and <b>signature</b> fill in automatically (today, and the signed-in nurse); you can change them if needed.`,
+      `${manBtn('✉ Send email','#0d5c66','#fff')} downloads the filled Excel form and opens an email to <b>logisticsdept.mdh@gov.mt</b> (CC <b>stomacare.mdh@gov.mt</b>), subject <b>ESRF Stoma Care</b> + date. Attach the downloaded file and press send.`
+    ])}
+    ${manNote('tip','📝','The lines are kept on this device until you press ↺ Clear. “Approved EF” is left blank for Logistics.')}
   `}]},
 {id:'auto',title:'⚙️ Automations — what the app does for you',icon:'⚙️',color:'#e6a817',blurb:'Everything that happens automatically, in one place.',pages:[
   {id:'review-underlining',title:'Complication terms in clinical reviews',keywords:'red underline complications free text automatic',html:`<p>Recognised complication words are underlined in red as you type and when saved reviews are opened. New terms saved with the Complication bible button join the shared catalogue; matching is case-insensitive and matches complete words or phrases. This marks mentions only, including negated wording, and never creates a patient complication automatically.</p>`},
@@ -657,6 +668,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
+        ['🧾','ESRF date and signature','The ESRF form is dated today and signed with the signed-in nurse’s name automatically each time it is opened.','ESRF'],
         ['📦','Weekly stores order opens itself','On Saturdays only, from 06:30, the app opens the Weekly MML tab automatically on launch so the order form is in front of you, until the order is marked sent. It does not prompt on other days.','Weekly MML'],
         ['📝','Encounter records and revisions','Interrupted saves are checked before showing a failure; retrying the same submission keeps one encounter/revision, and controls unlock after a timeout. Confirmed saves display immediately. The screen follows stoma review, appliances, written report, infection and referrals. Each stoma has its own column (named by type, e.g. End Ileostomy) for review, appliances and notes; the report and automatic author/signature cover every stoma. One encounter per patient per day, coded ENC-ID-date; saved encounters reopen read only, with Edit report as V2/V3 starting a deliberate revision. Every encounter has a separate General notes box, saved with each version and included in the report. The patient record’s Episodes tab lists each episode’s encounters underneath, newest first. Background ward updates wait while the encounter is open, including loading, saving and history, then resume when it closes. Corrections append a version to the same encounter; current care updates together, while older records remain in history.','Handover › Encounter'],
         ['🔎','Fresh Update Register search','Returning to Update Register clears the previous search, patient form and messages. Pending search results are cancelled so they cannot reopen the previous patient.','Registry › Update Register'],
