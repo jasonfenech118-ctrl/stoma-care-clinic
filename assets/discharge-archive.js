@@ -61,6 +61,8 @@ async function autosaveDischargeLetter(token,source,payload){
       if(error)throw Error(error.message);
       session.autosave.fingerprint=fingerprint;
     }
+    // Let an open discharge wizard refresh its read-only view of this letter.
+    try{if(typeof window.onDischargeLetterSaved==='function')window.onDischargeLetterSaved(session.patientId,session.autosave.id);}catch(e){}
     return session.autosave.id;
   }finally{session.busy=false;}
 }

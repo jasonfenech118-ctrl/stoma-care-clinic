@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-805"></script>
+<script src="assets/manual.js?v=2026.11.16-806"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2619,7 +2619,7 @@ tr.pd-row-hit td{background:#fffbeb;}
 </style>
 <link rel="stylesheet" href="assets/clinic-visuals.css?v=2026.10.09-479" media="screen">
 <link rel="stylesheet" href="assets/visit-review-editor.css?v=2026.11.01-699"/>
-<script defer src="assets/discharge-archive.js?v=2026.11.01-714"></script>
+<script defer src="assets/discharge-archive.js?v=2026.11.16-806"></script>
 </head>
 <body>
 
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-805';
+const APP_BUILD='2026.11.16-806';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23593,16 +23593,28 @@ function renderDischargeModal(){
       </div>
       <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${c.community?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
   }else if(key==='letter'){
-    const checking=c.letterOk===undefined;
-    body=`<div class="msub">${stepLabel} — <strong>discharge letter</strong>. See, write or edit the letter; the care plan is built from it.</div>
-      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:#f0fdfa;">
-        <p style="margin:0 0 10px;">The letter opens in a <strong>new tab</strong> — write or edit it there and <strong>Save to patient record</strong>, then come back here and re-check.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button type="button" class="psm-btn" onclick="createPatientDischargeLetter('${jsSafe(String(p.id))}')">📄 Open / edit discharge letter</button>
-          <button type="button" class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);" onclick="dischargeLetterRecheck()">↻ Re-check</button>
-        </div>
-        <div style="margin-top:10px;font-weight:700;color:${c.letterOk?'#15803d':'#b91c1c'};">${checking?'<span style="color:var(--muted);font-weight:500;">Checking for a saved letter…</span>':(c.letterOk?'✓ A discharge letter is saved for this patient.':'⚠️ No saved discharge letter yet — create one to continue.')}</div>
-      </div>
+    // The saved letter opens here automatically, read only. Edit opens the full
+    // editor on that same letter; every edit autosaves and this preview refreshes.
+    if(c.letterOk===undefined&&!c.letterLoading)dischargeLoadLetter(c);
+    const loading=c.letterOk===undefined;
+    const btnLite='class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);"';
+    const inner=loading
+      ?'<p class="report-note" style="margin:0;">Loading the discharge letter…</p>'
+      :c.letterOk
+        ?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+            <button type="button" class="psm-btn" onclick="dischargeEditLetter()">✏️ Edit letter</button>
+            <button type="button" ${btnLite} onclick="dischargePrintLetter()">🖨 Print / save PDF</button>
+            <button type="button" ${btnLite} onclick="dischargeLetterRecheck()">↻ Refresh</button>
+            <span style="font-weight:700;color:#15803d;">✓ Saved discharge letter · read only</span></div>
+          <iframe id="dis-letter-frame" title="Discharge letter (read only)" sandbox="allow-same-origin allow-modals" style="width:100%;height:55vh;background:#fff;border:1px solid #d1d9e2;border-radius:8px;"></iframe>
+          <p class="report-note" style="margin:6px 0 0;">Edits open in a new tab and <strong>save automatically</strong> — this view updates as they save.</p>`
+        :`<p style="margin:0 0 10px;font-weight:700;color:#b91c1c;">⚠️ No discharge letter is saved for this patient yet.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="psm-btn" onclick="createPatientDischargeLetter('${jsSafe(String(p.id))}')">📄 Create discharge letter</button>
+            <button type="button" ${btnLite} onclick="dischargeLetterRecheck()">↻ Refresh</button></div>
+          <p class="report-note" style="margin:8px 0 0;">It opens in a new tab and <strong>saves automatically</strong> as you write; it then appears here, read only.</p>`;
+    body=`<div class="msub">${stepLabel} — <strong>discharge letter</strong>. The care plan is built from it.</div>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;background:#f0fdfa;">${inner}</div>
       <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${c.letterOk?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
   }else if(key==='copy'){
     const presets=['Patient','Relative','Ward nurse','GP','Other'];
@@ -23621,7 +23633,7 @@ function renderDischargeModal(){
     body=`<div class="msub">${stepLabel} — <strong>send to Comcare</strong>. Open the letter, check the draft, then email it with the letter attached.</div>
       <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;">
         <ol style="margin:0 0 10px 18px;padding:0;line-height:1.7;">
-          <li><button type="button" class="psm-btn" onclick="createPatientDischargeLetter('${jsSafe(String(p.id))}')">📄 Open letter → save as PDF</button> (in the new tab: Print → Save as PDF).</li>
+          <li><button type="button" class="psm-btn" onclick="dischargePrintLetter()">🖨 Print letter → save as PDF</button> (choose <em>Save as PDF</em> in the print window).</li>
           <li>Check the draft below, then <button type="button" class="psm-btn" onclick="dischargeOpenEmail()">📧 Open email to Comcare</button> and <strong>attach the PDF</strong> before sending.</li>
         </ol>
         <div style="display:flex;align-items:center;gap:8px;margin:6px 0;"><strong style="color:var(--navy);">Email draft</strong><button type="button" class="ncb-btn" style="background:#0f766e;color:#fff;" onclick="dischargeGrammar()">✓ Check grammar</button></div>
@@ -23645,7 +23657,10 @@ function renderDischargeModal(){
       <label class="dis-ack"><input type="checkbox" id="dis-ack" ${c.ack?'checked':''} onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
       <div class="mact">${backBtn}<button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
   }
+  if(key==='letter')mb.className+=' mb-wide';
   mb.innerHTML=`<h2>Discharge patient</h2>${stepper}${body}`;
+  const frame=document.getElementById('dis-letter-frame');
+  if(frame)frame.srcdoc=c.letterHtml||'';
   if(key==='confirm')dischargeUpdateSaveBtn();
 }
 // A picked outcome is remembered and enables Continue.
@@ -23714,20 +23729,59 @@ function dischargeGrammar(){
   if(window.Proofread&&el)Proofread.open(el);
   else alert('The grammar checker is not available right now.');
 }
+// Load the patient's most recent saved discharge letter for the read-only view.
+async function dischargeLoadLetter(c){
+  if(!c||c.letterLoading)return;
+  c.letterLoading=true;
+  try{
+    const{data,error}=await SB.from('patient_discharge_letters').select('id,letter_html,created_at')
+      .eq('patient_id',c.patient.id).order('created_at',{ascending:false}).limit(1);
+    if(error)throw error;
+    const row=(data||[])[0]||null;
+    const html=row?await dischargeDecompress(row.letter_html):'';
+    if(dischargeCtx!==c)return;
+    c.letterId=row?String(row.id):null;c.letterHtml=html;c.letterOk=!!row;
+  }catch(e){if(dischargeCtx===c){c.letterOk=false;c.letterId=null;c.letterHtml='';}}
+  finally{c.letterLoading=false;}
+  if(dischargeCtx===c&&dischargeSeq(c)[c.i]==='letter')renderDischargeModal();
+}
 async function dischargeLetterRecheck(){
   const c=dischargeCtx;if(!c)return;
   c.letterOk=undefined;renderDischargeModal();
-  const ok=await patientHasDischargeLetter(c.patient.id);
-  if(dischargeCtx===c){c.letterOk=ok;renderDischargeModal();}
 }
+// Edit the shown letter in the full editor; autosave updates this same letter.
+function dischargeEditLetter(){
+  const c=dischargeCtx;if(!c||!c.letterId)return;
+  dischargeArchiveContext={patientId:String(c.patient.id)};
+  editDischargeLetterFull(c.letterId);
+}
+// Print (or save as PDF) the saved letter without opening the editor.
+async function dischargePrintLetter(){
+  const c=dischargeCtx;if(!c)return;
+  if(!c.letterHtml){await dischargeLoadLetter(c);}
+  if(!c.letterHtml){alert('No saved discharge letter was found for this patient.');return;}
+  const f=document.createElement('iframe');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  f.onload=()=>{try{f.contentWindow.focus();f.contentWindow.print();}catch(e){}setTimeout(()=>f.remove(),60000);};
+  document.body.append(f);f.srcdoc=c.letterHtml;
+}
+// Refresh the read-only letter when an edit autosaves, or when the nurse comes
+// back to this tab, while the discharge wizard is on the letter step.
+let dischargeLetterRefreshTimer=null;
+function dischargeLetterMaybeRefresh(patientId){
+  const c=dischargeCtx;
+  if(!c||c.letterLoading||dischargeSeq(c)[c.i]!=='letter')return;
+  if(patientId&&String(patientId)!==String(c.patient.id))return;
+  clearTimeout(dischargeLetterRefreshTimer);
+  dischargeLetterRefreshTimer=setTimeout(()=>{if(dischargeCtx===c)dischargeLoadLetter(c);},700);
+}
+window.onDischargeLetterSaved=dischargeLetterMaybeRefresh;
+window.addEventListener('focus',()=>dischargeLetterMaybeRefresh());
 async function dischargeCommunityPick(v){
   const c=dischargeCtx;if(!c)return;
   c.community=v;
-  if(v==='yes'&&c.letterOk===undefined){
-    renderDischargeModal();   // show "checking…" while we look for a letter
-    const ok=await patientHasDischargeLetter(c.patient.id);
-    if(dischargeCtx===c){c.letterOk=ok;renderDischargeModal();}
-  }else renderDischargeModal();
+  renderDischargeModal();
+  if(v==='yes'&&c.letterOk===undefined)dischargeLoadLetter(c);   // ready for the letter step
   // Persist the decision now (fire-and-forget). If the discharge is then blocked
   // (plan not yet sent) and the nurse closes the modal, the patient is flagged on
   // the handover — the row goes amber with a "Verify care plan sent" button.
