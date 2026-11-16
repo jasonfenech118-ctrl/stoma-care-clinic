@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-807"></script>
+<script src="assets/manual.js?v=2026.11.16-808"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-807';
+const APP_BUILD='2026.11.16-808';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23532,6 +23532,8 @@ async function openDischargeModal(patientId,name){
   // Gate: no discharge until the Schedule V permit has been collected.
   if(!scheduleFiveCollected(p)){dischargeCtx=null;renderScheduleVBlock(p,nm);openMo();return;}
   dischargeCtx={patient:p,name:nm,choice:null,i:0,community:null,planSent:false,letterOk:undefined,ack:false,copyPreset:'',copyName:'',emailDraft:''};
+  const ctxNow=dischargeCtx;   // who is signed in decides webmail vs Outlook for the email step
+  getCurrentUserForAudit().then(u=>{if(dischargeCtx===ctxNow)ctxNow.who=u;}).catch(()=>{});
   renderDischargeModal();
   openMo();
 }
@@ -23631,15 +23633,16 @@ function renderDischargeModal(){
       <div class="mact">${backBtn}<button class="btn-save" id="dis-next" ${valid?'':'disabled'} onclick="dischargeStepNext()">Continue →</button></div>`;
   }else if(key==='send'){
     if(!c.emailDraft)c.emailDraft=dischargeEmailDraft(c);
-    body=`<div class="msub">${stepLabel} — <strong>send to Comcare</strong>. Open the letter, check the draft, then email it with the letter attached.</div>
+    body=`<div class="msub">${stepLabel} — <strong>send to Comcare</strong>. Check the message, then open the email — the discharge letter is attached as a PDF.</div>
       <div style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:9px;">
-        <ol style="margin:0 0 10px 18px;padding:0;line-height:1.7;">
-          <li><button type="button" class="psm-btn" onclick="dischargePrintLetter()">🖨 Print letter → save as PDF</button> (choose <em>Save as PDF</em> in the print window).</li>
-          <li>Check the draft below, then <button type="button" class="psm-btn" onclick="dischargeOpenEmail()">📧 Open email to Comcare</button> and <strong>attach the PDF</strong> before sending.</li>
-        </ol>
-        <div style="display:flex;align-items:center;gap:8px;margin:6px 0;"><strong style="color:var(--navy);">Email draft</strong><button type="button" class="ncb-btn" style="background:#0f766e;color:#fff;" onclick="dischargeGrammar()">✓ Check grammar</button></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:0 0 6px;"><strong style="color:var(--navy);">Email message</strong><button type="button" class="ncb-btn" style="background:#0f766e;color:#fff;" onclick="dischargeGrammar()">✓ Check grammar</button></div>
         <div id="dis-email-draft" contenteditable="true" style="white-space:pre-wrap;min-height:120px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;font:inherit;line-height:1.5;" oninput="dischargeDraftEdited(this)">${htmlSafe(c.emailDraft)}</div>
-        <p class="report-note" style="margin:8px 0 0;">A <code>mailto:</code> email can’t attach for you — attach the saved PDF in your mail app. The draft already notes a physical copy was left with <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong>.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
+          <button type="button" class="btn-save" onclick="dischargeOpenEmail(this)">📧 Open email to Comcare with PDF attached</button>
+          <button type="button" class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);" onclick="dischargePrintLetter()">🖨 Print letter</button>
+        </div>
+        ${c.emailDraftFile?`<div class="ord-confirm" style="margin-top:10px;padding:10px 12px;border-radius:9px;background:#fff8e1;border:1px solid #efc36a;color:#5f4300;"><strong>The email draft was downloaded with the PDF attached.</strong> Open it from the browser’s downloads (top right) — it opens in Outlook addressed to Comcare (Cc the stoma clinic), with the letter attached. Press <strong>Send</strong>.</div>`:''}
+        <p class="report-note" style="margin:8px 0 0;">To: <strong>${htmlSafe(COMCARE_EMAIL)}</strong> · Cc: <strong>${htmlSafe(STOMA_CARE_EMAIL)}</strong>. The message notes a physical copy was left with <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong>. Draft won’t open? <a href="#" onclick="dischargePlainEmail();return false;">Use a plain email and attach the downloaded PDF</a>.</p>
       </div>
       <div class="mact">${backBtn}<button class="btn-save" onclick="dischargeStepNext()">Continue →</button></div>`;
   }else{   // confirm
@@ -23717,13 +23720,101 @@ function dischargeCopyName(v){
 function dischargeDraftEdited(el){
   if(dischargeCtx&&el)dischargeCtx.emailDraft=el.innerText;
 }
-function dischargeOpenEmail(){
-  const c=dischargeCtx;if(!c)return;
+// Browsers drop a download name with non-English characters (—, ·, ż) and save
+// it as "download", so attachment / draft names are kept to plain letters.
+function asciiFileName(name){
+  return String(name||'file').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/ħ/g,'h').replace(/Ħ/g,'H')
+    .replace(/[^\x20-\x7e]+/g,'-').replace(/[\/\\:*?"<>|]+/g,'-').replace(/\s*-\s*(-\s*)+/g,' - ').replace(/\s+/g,' ').trim().slice(0,120)||'file';
+}
+// Render a complete HTML document (the saved discharge letter) to a PDF File.
+async function letterHtmlToPdfFile(filename,fullHtml){
+  const H=await ensureHtml2Canvas(),JS=await ensureJsPDF();
+  const iframe=document.createElement('iframe');
+  iframe.setAttribute('aria-hidden','true');
+  iframe.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  try{
+    const doc=iframe.contentDocument||iframe.contentWindow.document;
+    doc.open();doc.write(fullHtml);doc.close();
+    await new Promise(r=>setTimeout(r,500));
+    const canvas=await H(doc.body,{backgroundColor:'#ffffff',scale:2,useCORS:true,windowWidth:794});
+    const img=canvas.toDataURL('image/jpeg',0.92);
+    const pdf=new JS.jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
+    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight();
+    const fih=canvas.height*(pw/canvas.width);
+    pdf.addImage(img,'JPEG',0,0,pw,fih);
+    let yy=ph;while(yy<fih-2){pdf.addPage();pdf.addImage(img,'JPEG',0,-yy,pw,fih);yy+=ph;}
+    return new File([pdf.output('blob')],asciiFileName(filename||'Discharge letter')+'.pdf',{type:'application/pdf'});
+  }finally{iframe.remove();}
+}
+// An Outlook-ready draft (.eml, marked unsent) with To / Cc / subject / message
+// and the PDF already attached. Opening it on the ward PC gives a draft to send.
+async function buildEmlDraft({to,cc,subject,body,file,fileName}){
+  const b64=s=>btoa(unescape(encodeURIComponent(s)));
+  const wrap=s=>s.replace(/.{1,76}/g,'$&\r\n');
+  const buf=new Uint8Array(await file.arrayBuffer());
+  let bin='';for(let i=0;i<buf.length;i+=0x8000)bin+=String.fromCharCode.apply(null,buf.subarray(i,i+0x8000));
+  const boundary='----=_StomaCare_'+Math.random().toString(36).slice(2);
+  const encName='=?UTF-8?B?'+b64(file.name)+'?=';
+  const eml=['X-Unsent: 1','To: '+to,(cc?'Cc: '+cc:''),'Subject: =?UTF-8?B?'+b64(subject)+'?=','MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="'+boundary+'"','','--'+boundary,
+    'Content-Type: text/plain; charset="utf-8"','Content-Transfer-Encoding: base64','',wrap(b64(String(body).replace(/\r?\n/g,'\r\n'))),
+    '--'+boundary,'Content-Type: application/pdf; name="'+encName+'"','Content-Transfer-Encoding: base64',
+    'Content-Disposition: attachment; filename="'+encName+'"','',wrap(btoa(bin)),'--'+boundary+'--',''].filter((l,i)=>!(i===2&&!l)).join('\r\n');
+  return new File([eml],asciiFileName(fileName||subject)+'.eml',{type:'message/rfc822'});
+}
+async function dischargeOpenEmail(btn){
+  const c=dischargeCtx;if(!c||c.emailBusy)return;
   const el=document.getElementById('dis-email-draft');
   const body=(el?el.innerText:c.emailDraft)||dischargeEmailDraft(c);
   c.emailDraft=body;
+  const subject=comcareSubject(c.patient,'stoma care plan');
+  const jason=attIsJason(c.who||{},'');
+  // Webmail (OWA) cannot take an attachment from a web page: open its compose now
+  // (while it still counts as the click) and download the PDF to attach.
+  let owaWin=null;
+  if(jason){try{owaWin=window.open(attOwaComposeUrl(COMCARE_EMAIL,STOMA_CARE_EMAIL,subject,body),'_blank');}catch(e){}}
+  c.emailBusy=true;const label=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Preparing the email with the PDF…';}
+  try{
+    if(!c.letterHtml)await dischargeLoadLetter(c);
+    if(!c.letterHtml)throw Error('No saved discharge letter was found for this patient.');
+    const nm=`${c.patient.first_name||''} ${c.patient.surname||''}`.trim()||'patient';
+    const file=await letterHtmlToPdfFile(`Discharge letter - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`,c.letterHtml);
+    if(jason){
+      attDownloadFile(file);
+      alert((owaWin?'Webmail is open in a new tab. ':'Allow pop-ups to open webmail. ')+'Attach the downloaded PDF “'+file.name+'”, then send — and tick that it was sent on the last step.');
+      return;
+    }
+    // Phones / tablets: the share sheet hands the PDF straight to Outlook.
+    const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
+    if(touch&&navigator.canShare&&navigator.canShare({files:[file]})){
+      try{await navigator.share({files:[file],title:subject,text:`To: ${COMCARE_EMAIL}\nCc: ${STOMA_CARE_EMAIL}\nSubject: ${subject}\n\n${body}`});return;}
+      catch(e){if(e&&e.name==='AbortError')return;}
+    }
+    // Ward PC: an Outlook draft with the PDF already attached.
+    attDownloadFile(await buildEmlDraft({to:COMCARE_EMAIL,cc:STOMA_CARE_EMAIL,subject,body,file,
+      fileName:`Email to Comcare - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`}));
+    c.emailDraftFile=true;renderDischargeModal();
+  }catch(e){
+    alert('Could not prepare the email with the PDF: '+(e.message||e)+'\n\nA plain email will open instead — attach the letter PDF yourself.');
+    openComcareEmail(subject,body);
+  }finally{
+    c.emailBusy=false;
+    if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent=label;}
+  }
+}
+// Fallback: the plain email (no attachment) plus the letter PDF downloaded.
+async function dischargePlainEmail(){
+  const c=dischargeCtx;if(!c)return;
+  const el=document.getElementById('dis-email-draft');
+  const body=(el?el.innerText:c.emailDraft)||dischargeEmailDraft(c);c.emailDraft=body;
   openComcareEmail(comcareSubject(c.patient,'stoma care plan'),body);
-  setTimeout(()=>alert('The email opened addressed to Comcare (Cc: the stoma clinic). Attach the saved discharge-letter PDF, then send — and on the last step tick that it was sent.'),400);
+  try{
+    if(!c.letterHtml)await dischargeLoadLetter(c);
+    const nm=`${c.patient.first_name||''} ${c.patient.surname||''}`.trim()||'patient';
+    if(c.letterHtml)attDownloadFile(await letterHtmlToPdfFile(`Discharge letter - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`,c.letterHtml));
+  }catch(e){}
 }
 function dischargeGrammar(){
   const el=document.getElementById('dis-email-draft');
