@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 November 2026 — In the Discharge patient wizard the saved discharge letter now opens automatically, read only, with ✏️ Edit letter (every edit autosaves) and Print / save PDF. Visits saved before a stoma was recorded now link to the patient’s only stoma automatically.'};
+const MANUAL_META={updated:'16 November 2026 — In the Discharge patient wizard the saved discharge letter opens automatically, read only, with ✏️ Edit letter (autosaves), Print / save PDF and Proceed → to the next step.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -520,7 +520,7 @@ const MANUAL_SECTIONS=[
     ${manH2('📧','Going-home discharge — community-nurse referral')}
     <p>On a <b>Postop</b> or <b>old-case</b> discharge the wizard asks <b>“community-nurse (Comcare) referral needed?”</b>. <b>No</b> goes straight to the final confirm; <b>Yes</b> adds, in order:</p>
     <ul class="man-ul">
-      <li><b>Discharge letter</b> — the latest saved letter <b>opens automatically, read only</b>. ${manBtn('✏️ Edit letter','#eef2f5','#0b6b7a')} opens it in the full editor; every edit <b>saves automatically</b> to that same letter and the read-only view updates. With no letter yet, ${manBtn('📄 Create discharge letter','#eef2f5','#0b6b7a')} starts one (it also autosaves). You cannot continue without a saved letter.</li>
+      <li><b>Discharge letter</b> — the latest saved letter <b>opens automatically, read only</b>. ${manBtn('✏️ Edit letter','#eef2f5','#0b6b7a')} opens it in the full editor; every edit <b>saves automatically</b> to that same letter and the read-only view updates. ${manBtn('Proceed →','#0d5c66','#fff')} beside it goes straight to the next step. With no letter yet, ${manBtn('📄 Create discharge letter','#eef2f5','#0b6b7a')} starts one (it also autosaves). You cannot continue without a saved letter.</li>
       <li><b>Physical copy</b> — pick <b>who you left the printed care plan with</b> (Patient / Relative / Ward nurse / GP / Other) and add a name.</li>
       <li><b>Send</b> — ${manBtn('🖨 Print letter → save as PDF','#eef2f5','#0b6b7a')} (prints the saved letter), check the email draft (<b>✓ Check grammar</b> runs the proofreader on it), then ${manBtn('📧 Open email to Comcare','#eef2f5','#0b6b7a')} and <b>attach the PDF yourself</b> — a <code>mailto:</code> email can’t attach for you. The draft already notes who holds the physical copy.</li>
       <li><b>Confirm</b> — a summary is shown; tick <b>“emailed with the letter attached”</b>, then <b>Discharge patient</b>.</li>
