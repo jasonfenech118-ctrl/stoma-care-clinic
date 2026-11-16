@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-803"></script>
+<script src="assets/manual.js?v=2026.11.16-804"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -37,7 +37,7 @@
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
 <script defer src="assets/jason-encounters.js?v=2026.11.01-691"></script>
 <script defer src="assets/proofread.js?v=2026.11.08-754"></script>
-<script defer src="assets/visit-stoma-review.js?v=2026.11.15-792"></script>
+<script defer src="assets/visit-stoma-review.js?v=2026.11.16-804"></script>
 <style>
 #page-patient-record #pd-history .psm-card:has(.psm-next){display:none!important}
 
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-803';
+const APP_BUILD='2026.11.16-804';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14711,6 +14711,12 @@ function renderPatientDirectory(){
   }).join('');
   renderPager('pd-pager',rows.length,PD_PAGE_SIZE,pdPage,d=>{pdPage+=d;renderPatientDirectory();});
 }
+// A date written in full, e.g. "12 March 2012".
+function fmtLongDate(v){
+  const d=new Date(String(v)+'T12:00:00');
+  if(Number.isNaN(d.getTime()))return String(v||'');
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+}
 function fmtShortDate(v){
   const d=new Date(String(v)+'T12:00:00');
   if(Number.isNaN(d.getTime()))return String(v||'');
@@ -17104,7 +17110,11 @@ async function openStomaModal(patientId,slot){
   if(!x){alert('That stoma is no longer on this record.');return;}
   // The stomas a refashioning can name, so it can say which one it remade.
   PF_STOMA_TARGETS=collectStomaTargetsFromPatient(pat).filter(t=>t.uid!==x.uid);
-  stomaModalCtx={patientId,slot,pat};
+  // Older and imported stomas keep "Operation and findings" in their findings /
+  // comments field instead of the operation field. Show that text in the box
+  // rather than an empty box, and save any edit back to where it came from.
+  const opFromComments=!String(x.operation||'').trim()&&!!String(x.comments||'').trim();
+  stomaModalCtx={patientId,slot,pat,opFromComments};
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const v=k=>htmlSafe(x[k]||'');
   const kind=STOMA_KINDS[x.kind];
@@ -17157,7 +17167,7 @@ async function openStomaModal(patientId,slot){
           <label>Date of discharge</label>
           <input type="date" id="sm-discharge" value="${v('discharge_date')}" max="${htmlSafe(TODAY)}"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label>
-          <textarea id="sm-operation" rows="3" placeholder="Operation and findings">${v('operation')}</textarea></div>
+          <textarea id="sm-operation" rows="3" placeholder="Operation and findings">${opFromComments?v('comments'):v('operation')}</textarea></div>
       </div>
 
       <div class="sm-actions" aria-label="Stoma actions">
@@ -17410,8 +17420,13 @@ async function saveStomaModal(){
       if(!confirm(`This stoma replaces ${stomaTitle(tgt)}${tgt.type?' · '+prettyStomaType(tgt.type):''} at the same site.\n\nThat earlier stoma will be closed on ${fmtShortDate(f.formed_date)} and no longer counted as present. This is NOT a reversal.`))return;
     }
   }
+  // The box showed the stoma's findings/comments text (no operation on file):
+  // leave the operation field as it was and write any edit back to that text.
+  const typedOp=f.operation;
+  if(ctx.opFromComments)f.operation=x.operation||null;
   let payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
+  if(ctx.opFromComments&&(typedOp||'')!==String(x.comments||'').trim())stomaWriteCommentsText(ctx.slot,payload,typedOp);
   payload=applyStomaReplacement(ctx.pat,ctx.slot,f,x,payload);
   // Guard against a double click creating two writes: disable the save while it
   // is in flight and restore it if the write fails.
@@ -17434,6 +17449,20 @@ async function saveStomaModal(){
   closeModal();
   refreshReminders();
   await afterStomaSaved(ctx.patientId,{promptOutcome:true});
+}
+// Write edited "Operation and findings" text back into the field it was read
+// from (the patient's findings for Stoma 1, else the stoma entry's own
+// comments / row_comments / findings) so nothing is duplicated or lost.
+function stomaWriteCommentsText(slot,payload,text){
+  const[where,uid]=String(slot).split(':');
+  if(where==='base'){payload.findings=text||null;return;}
+  const col={initial:'initial_stomas',refashion:'extra_refashionings',later:'extra_stomas'}[where];
+  if(!col||!Array.isArray(payload[col]))return;
+  payload[col]=payload[col].map(it=>{
+    if(String(it.uid||'')!==String(uid||''))return it;
+    const key=['comments','row_comments','findings'].find(k=>String(it[k]||'').trim())||'comments';
+    return{...it,[key]:text||null};
+  });
 }
 /* Which column or JSON entry this stoma lives in, and the row that updates it.
    Only the one stoma is touched; every other entry in the array is written
@@ -21862,10 +21891,15 @@ async function renderPatientRecord(patientId,opts,sequence){
   // A discharge date: blank + deceased means the patient died as an inpatient.
   const deceased=st==='deceased'||!!pat.deceased_date;
   const dDischarge=(label,val)=>dItem(label,val?fmtShortDate(val):(deceased?'Deceased as inpatient':''));
-  // Under the age line: the year the patient died or was reversed, when known.
+  // Under the age line: the patient's status written in full, with its full date.
   const eventYearText=(()=>{
-    if(deceased){const y=String(pat.deceased_date||pat.followup_status_effective_date||'').slice(0,4);return /^\d{4}$/.test(y)?'✝ Died '+y:'';}
-    if(st==='reversed'){const y=String(pat.reversal_date||pat.followup_status_effective_date||'').slice(0,4);return /^\d{4}$/.test(y)?'↩ Reversed '+y:'';}
+    const when=d=>{const t=String(d||'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(t)?' on '+fmtLongDate(t):' — date not recorded';};
+    const eff=pat.followup_status_effective_date;
+    if(deceased)return '✝ Deceased'+when(pat.deceased_date||eff);
+    if(st==='reversed')return '↩ Reversed'+when(pat.reversal_date||eff);
+    if(st==='discharged_gozo')return 'Discharged to Gozo'+when(pat.discharged_gozo_date||eff);
+    if(st==='relocated_overseas')return 'Relocated overseas'+when(pat.relocated_overseas_date||eff);
+    if(st==='paused')return 'Paused'+(eff?' since '+fmtLongDate(String(eff).slice(0,10)):'');
     return '';
   })();
   const nextCopy=next

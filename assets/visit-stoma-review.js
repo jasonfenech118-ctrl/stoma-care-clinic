@@ -258,7 +258,11 @@
     const st=stomaBySlot(stomaModalCtx.pat,slot),field=document.createElement('div');field.className='fg';
     field.innerHTML='<label for="sm-consultant">Consultant for this stoma / operation</label><input id="sm-consultant" type="text" autocomplete="off">';
     field.querySelector('input').value=st?.consultant||'';
-    anchor.closest('.fg')?.before(field);return result;
+    anchor.closest('.fg')?.before(field);
+    // The form's "as opened" picture was taken before this box existed; retake it
+    // so Cancel does not report unsaved changes when nothing was typed.
+    if(typeof stomaModalSnapshot==='function')stomaModalCtx.opened=stomaModalSnapshot();
+    return result;
   };
   const originalReadStoma=window.readStomaModal;
   window.readStomaModal=function(){const f=originalReadStoma();const input=document.getElementById('sm-consultant');if(input)f.consultant=input.value.trim()||null;return f;};
