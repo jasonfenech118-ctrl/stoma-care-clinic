@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-809"></script>
+<script src="assets/manual.js?v=2026.11.16-810"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-809';
+const APP_BUILD='2026.11.16-810';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -14711,6 +14711,13 @@ function renderPatientDirectory(){
   }).join('');
   renderPager('pd-pager',rows.length,PD_PAGE_SIZE,pdPage,d=>{pdPage+=d;renderPatientDirectory();});
 }
+// Join text pieces with " — ", skipping blanks and repeats (an operation and its
+// findings often hold the same sentence; show it once).
+function joinDistinctText(parts){
+  const seen=new Set(),out=[];
+  (parts||[]).forEach(t=>{const v=String(t||'').trim();const k=v.toLowerCase().replace(/\s+/g,' ');if(v&&!seen.has(k)){seen.add(k);out.push(v);}});
+  return out.join(' — ');
+}
 // A date written in full, e.g. "12 March 2012".
 function fmtLongDate(v){
   const d=new Date(String(v)+'T12:00:00');
@@ -17867,7 +17874,7 @@ function patientStomaSummaryHTML(pat){
           x.location?` · <strong>Location:</strong> ${htmlSafe(x.location)}`:''}${
           x.discharge_date?` · <strong>Discharged:</strong> ${htmlSafe(fmtShortDate(x.discharge_date))}`:' · <strong>Discharge:</strong> date not recorded'}${
           x.kind==='refashion'&&x.same_admission===true?' · same admission':''}</span>
-        ${(x.operation||x.comments)?`<span class="sm-row-op"><strong>Operation &amp; findings:</strong> ${htmlSafe([x.operation,x.comments].filter(Boolean).join(' — '))}</span>`:''}
+        ${(x.operation||x.comments)?`<span class="sm-row-op"><strong>Operation &amp; findings:</strong> ${htmlSafe(joinDistinctText([x.operation,x.comments]))}</span>`:''}
         ${(x.kind==='refashion'&&x.fromStoma)?`<span class="sm-lineage">${psmIc('refresh')} Refashioned from Stoma ${x.fromStoma.number}${x.formed_date?' on '+htmlSafe(fmtShortDate(x.formed_date)):''}</span>`:''}
         ${rodCardLine(pat,x)}
         ${stomaBadgesHTML(x)}
@@ -21906,7 +21913,11 @@ async function renderPatientRecord(patientId,opts,sequence){
     const when=d=>{const t=String(d||'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(t)?' on '+fmtLongDate(t):' — date not recorded';};
     const eff=pat.followup_status_effective_date;
     if(deceased)return '✝ Deceased'+when(pat.deceased_date||eff);
-    if(st==='reversed')return '↩ Reversed'+when(pat.reversal_date||eff);
+    if(st==='reversed'){
+      // The reversal date may sit on the stoma itself (a later stoma), not the patient.
+      let latest='';try{patientStomaList(pat).forEach(x=>{const d=String(x.reversal_date||'').slice(0,10);if(d>latest)latest=d;});}catch(e){}
+      return '↩ Reversed'+when(latest||pat.reversal_date||eff);
+    }
     if(st==='discharged_gozo')return 'Discharged to Gozo'+when(pat.discharged_gozo_date||eff);
     if(st==='relocated_overseas')return 'Relocated overseas'+when(pat.relocated_overseas_date||eff);
     if(st==='paused')return 'Paused'+(eff?' since '+fmtLongDate(String(eff).slice(0,10)):'');

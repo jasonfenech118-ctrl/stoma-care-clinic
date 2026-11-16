@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 November 2026 — Discharge wizard: the email button prepares the Outlook draft with the letter PDF attached and moves straight to the last step, which asks whether the email was sent and confirms the discharge. A confirmed discharge removes the patient from the handover.'};
+const MANUAL_META={updated:'16 November 2026 — The patient header’s “Reversed on …” date now also reads the reversal recorded on the stoma itself, and identical operation / findings text is shown once. Discharge wizard: the email button prepares the Outlook draft with the letter PDF and moves to the final step.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
