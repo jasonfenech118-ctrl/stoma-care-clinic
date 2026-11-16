@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'16 November 2026 — Discharge wizard: the Send step now prepares an Outlook email draft to Comcare with the discharge letter PDF already attached. The letter step shows the saved letter read only, with ✏️ Edit letter (autosaves) and Proceed →.'};
+const MANUAL_META={updated:'16 November 2026 — Discharge wizard: the email button prepares the Outlook draft with the letter PDF attached and moves straight to the last step, which asks whether the email was sent and confirms the discharge. A confirmed discharge removes the patient from the handover.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -522,8 +522,8 @@ const MANUAL_SECTIONS=[
     <ul class="man-ul">
       <li><b>Discharge letter</b> — the latest saved letter <b>opens automatically, read only</b>. ${manBtn('✏️ Edit letter','#eef2f5','#0b6b7a')} opens it in the full editor; every edit <b>saves automatically</b> to that same letter and the read-only view updates. ${manBtn('Proceed →','#0d5c66','#fff')} beside it goes straight to the next step. With no letter yet, ${manBtn('📄 Create discharge letter','#eef2f5','#0b6b7a')} starts one (it also autosaves). You cannot continue without a saved letter.</li>
       <li><b>Physical copy</b> — pick <b>who you left the printed care plan with</b> (Patient / Relative / Ward nurse / GP / Other) and add a name.</li>
-      <li><b>Send</b> — check the email message (<b>✓ Check grammar</b> runs the proofreader), then ${manBtn('📧 Open email to Comcare with PDF attached','#0d5c66','#fff')}. The saved discharge letter is turned into a PDF and an <b>Outlook email draft with the PDF already attached</b> (To Comcare, Cc the stoma clinic) is downloaded — open it from the browser’s downloads and press Send. On a phone the share sheet passes the PDF into Outlook; on webmail (OWA) the PDF downloads to attach by hand.</li>
-      <li><b>Confirm</b> — a summary is shown; tick <b>“emailed with the letter attached”</b>, then <b>Discharge patient</b>.</li>
+      <li><b>Send</b> — check the email message (<b>✓ Check grammar</b> runs the proofreader), then ${manBtn('📧 Open email to Comcare with PDF attached','#0d5c66','#fff')}. The saved discharge letter is turned into a PDF and an <b>Outlook email draft with the PDF already attached</b> (To Comcare, Cc the stoma clinic) is downloaded — open it from the browser’s downloads and press Send. The wizard then moves straight to the last step. On a phone the share sheet passes the PDF into Outlook; on webmail (OWA) the PDF downloads to attach by hand.</li>
+      <li><b>Confirm</b> — answer <b>“Was the email sent to Comcare?”</b> (Yes / Not yet — Not yet takes you back), tick <b>“Are you sure you want to discharge …?”</b>, then <b>Discharge patient</b>. The patient is then <b>removed from the handover</b> (one-time Undo shown at the top).</li>
     </ul>
     ${manNote('auto','📧','Discharge is blocked until a letter is saved and you confirm the plan was emailed; closing early turns the handover row amber with a 📧 Verify care plan sent button. The referral answer, who holds the copy and the sent date are saved — run <code>sql/add-community-care.sql</code> and <code>sql/add-care-plan-copy.sql</code>.')}
   `},

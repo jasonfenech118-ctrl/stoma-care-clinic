@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-808"></script>
+<script src="assets/manual.js?v=2026.11.16-809"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-808';
+const APP_BUILD='2026.11.16-809';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -23641,24 +23641,30 @@ function renderDischargeModal(){
           <button type="button" class="btn-save" onclick="dischargeOpenEmail(this)">📧 Open email to Comcare with PDF attached</button>
           <button type="button" class="ncb-btn" style="background:#fff;border:1px solid var(--border);color:var(--navy);" onclick="dischargePrintLetter()">🖨 Print letter</button>
         </div>
-        ${c.emailDraftFile?`<div class="ord-confirm" style="margin-top:10px;padding:10px 12px;border-radius:9px;background:#fff8e1;border:1px solid #efc36a;color:#5f4300;"><strong>The email draft was downloaded with the PDF attached.</strong> Open it from the browser’s downloads (top right) — it opens in Outlook addressed to Comcare (Cc the stoma clinic), with the letter attached. Press <strong>Send</strong>.</div>`:''}
         <p class="report-note" style="margin:8px 0 0;">To: <strong>${htmlSafe(COMCARE_EMAIL)}</strong> · Cc: <strong>${htmlSafe(STOMA_CARE_EMAIL)}</strong>. The message notes a physical copy was left with <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong>. Draft won’t open? <a href="#" onclick="dischargePlainEmail();return false;">Use a plain email and attach the downloaded PDF</a>.</p>
       </div>
       <div class="mact">${backBtn}<button class="btn-save" onclick="dischargeStepNext()">Continue →</button></div>`;
   }else{   // confirm
     const home=(c.choice==='postop'||c.choice==='old'),yes=home&&c.community==='yes';
-    const summary=yes?`<div style="margin:12px 0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#f8fafc;">
-        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Community-care summary</div>
-        <div>📄 Discharge letter: <strong>${c.letterOk?'done':'not found'}</strong></div>
-        <div>🧾 Physical copy left with: <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong></div>
-        <div>📧 Care plan to Comcare: <strong>${c.planSent?'sent':'not yet sent'}</strong></div>
-      </div>
-      <label class="dis-ack"><input type="checkbox" id="dis-plan-sent" ${c.planSent?'checked':''} onchange="dischargePlanSentToggle()"/> <span>I have emailed the care plan to Comcare <strong>with the discharge letter attached</strong>.</span></label>`:'';
+    const howNote={
+      eml:`The email draft <strong>${htmlSafe(c.emailFile||'')}</strong> was downloaded with the PDF attached. Open it from the browser’s downloads (top right) — it opens in Outlook addressed to Comcare — and press <strong>Send</strong>.`,
+      owa:`Webmail is open in a new tab. Attach the downloaded PDF <strong>${htmlSafe(c.emailFile||'')}</strong> and press <strong>Send</strong>.`,
+      'owa-blocked':`Pop-ups were blocked, so webmail did not open. Go back one step and press the email button again; the PDF <strong>${htmlSafe(c.emailFile||'')}</strong> was downloaded.`,
+      share:'The letter PDF was shared to your mail app — make sure the email was sent.',
+      plain:`A plain email opened${c.emailFile?` and the PDF <strong>${htmlSafe(c.emailFile)}</strong> was downloaded`:''} — attach the PDF and press <strong>Send</strong>.`
+    }[c.emailHow]||'';
+    const summary=yes?`${howNote?`<div style="margin:12px 0;padding:10px 12px;border-radius:9px;background:#fff8e1;border:1px solid #efc36a;color:#5f4300;">${howNote}</div>`:''}
+      <div style="margin:12px 0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#f8fafc;">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">Was the email sent to Comcare?</div>
+        <label style="display:block;margin-bottom:6px;"><input type="radio" name="dis-sent" ${c.planSent?'checked':''} onchange="dischargePlanSentSet(true)"/> <strong>Yes</strong> — the email with the discharge letter attached was sent.</label>
+        <label style="display:block;"><input type="radio" name="dis-sent" ${c.planSent===false&&c.sentAnswered?'checked':''} onchange="dischargePlanSentSet(false)"/> <strong>Not yet</strong> — <a href="#" onclick="dischargeStepBack();return false;">go back to the email step</a>.</label>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);">📄 Letter: <strong>${c.letterOk?'saved':'not found'}</strong> · 🧾 Physical copy with: <strong>${htmlSafe(dischargeCopyLabel(c)||'—')}</strong></div>
+      </div>`:'';
     body=`<div class="msub">${stepLabel} — <strong>final check</strong>. This is the last step before it is done.</div>
       <div class="dis-final">You are about to discharge <strong>${htmlSafe(nm)}</strong> as <strong>${meta?meta.title:''}</strong>.<br/>${meta?meta.conseq:''} You can undo this once, straight after.</div>
       ${home&&c.community==='no'?'<div class="report-note" style="margin:8px 0;">No community-nurse referral — recorded as not needed.</div>':''}
       ${summary}
-      <label class="dis-ack"><input type="checkbox" id="dis-ack" ${c.ack?'checked':''} onchange="dischargeFinalToggle()"/> <span>I have checked the patient and the outcome is correct.</span></label>
+      <label class="dis-ack"><input type="checkbox" id="dis-ack" ${c.ack?'checked':''} onchange="dischargeFinalToggle()"/> <span><strong>Are you sure you want to discharge ${htmlSafe(nm)}?</strong> I have checked the patient and the outcome is correct. They will be removed from the handover.</span></label>
       <div class="mact">${backBtn}<button class="btn-save" id="dis-save" disabled onclick="confirmDischargeModal('${jsSafe(String(p.id))}')">Discharge patient</button></div>`;
   }
   if(key==='letter')mb.className+=' mb-wide';
@@ -23700,6 +23706,11 @@ function dischargeUpdateSaveBtn(){
 }
 function dischargeFinalToggle(){
   if(dischargeCtx)dischargeCtx.ack=!!document.getElementById('dis-ack')?.checked;
+  dischargeUpdateSaveBtn();
+}
+function dischargePlanSentSet(v){
+  if(!dischargeCtx)return;
+  dischargeCtx.planSent=!!v;dischargeCtx.sentAnswered=true;
   dischargeUpdateSaveBtn();
 }
 function dischargePlanSentToggle(){
@@ -23783,22 +23794,24 @@ async function dischargeOpenEmail(btn){
     const file=await letterHtmlToPdfFile(`Discharge letter - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`,c.letterHtml);
     if(jason){
       attDownloadFile(file);
-      alert((owaWin?'Webmail is open in a new tab. ':'Allow pop-ups to open webmail. ')+'Attach the downloaded PDF “'+file.name+'”, then send — and tick that it was sent on the last step.');
+      dischargeGoConfirm(c,owaWin?'owa':'owa-blocked',file.name);
       return;
     }
     // Phones / tablets: the share sheet hands the PDF straight to Outlook.
     const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
     if(touch&&navigator.canShare&&navigator.canShare({files:[file]})){
-      try{await navigator.share({files:[file],title:subject,text:`To: ${COMCARE_EMAIL}\nCc: ${STOMA_CARE_EMAIL}\nSubject: ${subject}\n\n${body}`});return;}
+      try{await navigator.share({files:[file],title:subject,text:`To: ${COMCARE_EMAIL}\nCc: ${STOMA_CARE_EMAIL}\nSubject: ${subject}\n\n${body}`});dischargeGoConfirm(c,'share',file.name);return;}
       catch(e){if(e&&e.name==='AbortError')return;}
     }
     // Ward PC: an Outlook draft with the PDF already attached.
-    attDownloadFile(await buildEmlDraft({to:COMCARE_EMAIL,cc:STOMA_CARE_EMAIL,subject,body,file,
-      fileName:`Email to Comcare - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`}));
-    c.emailDraftFile=true;renderDischargeModal();
+    const eml=await buildEmlDraft({to:COMCARE_EMAIL,cc:STOMA_CARE_EMAIL,subject,body,file,
+      fileName:`Email to Comcare - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`});
+    attDownloadFile(eml);
+    dischargeGoConfirm(c,'eml',eml.name);
   }catch(e){
     alert('Could not prepare the email with the PDF: '+(e.message||e)+'\n\nA plain email will open instead — attach the letter PDF yourself.');
     openComcareEmail(subject,body);
+    dischargeGoConfirm(c,'plain','');
   }finally{
     c.emailBusy=false;
     if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent=label;}
@@ -23810,11 +23823,21 @@ async function dischargePlainEmail(){
   const el=document.getElementById('dis-email-draft');
   const body=(el?el.innerText:c.emailDraft)||dischargeEmailDraft(c);c.emailDraft=body;
   openComcareEmail(comcareSubject(c.patient,'stoma care plan'),body);
+  let name='';
   try{
     if(!c.letterHtml)await dischargeLoadLetter(c);
     const nm=`${c.patient.first_name||''} ${c.patient.surname||''}`.trim()||'patient';
-    if(c.letterHtml)attDownloadFile(await letterHtmlToPdfFile(`Discharge letter - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`,c.letterHtml));
+    if(c.letterHtml){const f=await letterHtmlToPdfFile(`Discharge letter - ${nm}${c.patient.id_card?' '+c.patient.id_card:''}`,c.letterHtml);attDownloadFile(f);name=f.name;}
   }catch(e){}
+  dischargeGoConfirm(c,'plain',name);
+}
+// Once the email is prepared, go straight to the last step: was it sent, and
+// are you sure you want to discharge. `how` says what the nurse must still do.
+function dischargeGoConfirm(c,how,fileName){
+  if(!c||dischargeCtx!==c)return;
+  c.emailHow=how;c.emailFile=fileName||'';c.planSent=false;c.ack=false;
+  c.i=dischargeSeq(c).indexOf('confirm');
+  renderDischargeModal();
 }
 function dischargeGrammar(){
   const el=document.getElementById('dis-email-draft');
