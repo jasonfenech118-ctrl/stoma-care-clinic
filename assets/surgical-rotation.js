@@ -194,7 +194,7 @@ window.SurgicalRotation=(()=>{
   window.addEventListener('focus',autoRefresh);
   window.addEventListener('online',autoRefresh);
   document.addEventListener('visibilitychange',autoRefresh);
-  setInterval(autoRefresh,60000);
+  setInterval(autoRefresh,30*60*1000);   // every 30 minutes
   function open(context){
     db=context.db;reader=context.readExcel;
     if(!$('sr-file')){
