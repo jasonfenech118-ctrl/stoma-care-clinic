@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'17 November 2026 — The stoma form now shows a stoma’s separate findings note in its own “Further findings / notes” box, so all text on the stoma card can be seen and edited.'};
+const MANUAL_META={updated:'17 November 2026 — Fixed: setting an outcome (Deceased, Gozo, Overseas) no longer wipes stoma operation text, imported notes, consultant or the patient’s findings. Adding an operation for an existing patient from Siting now keeps the operation text.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
