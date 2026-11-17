@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.10.28-656"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.16-810"></script>
+<script src="assets/manual.js?v=2026.11.17-811"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4029,7 +4029,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.16-810';
+const APP_BUILD='2026.11.17-811';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17121,7 +17121,11 @@ async function openStomaModal(patientId,slot){
   // comments field instead of the operation field. Show that text in the box
   // rather than an empty box, and save any edit back to where it came from.
   const opFromComments=!String(x.operation||'').trim()&&!!String(x.comments||'').trim();
-  stomaModalCtx={patientId,slot,pat,opFromComments};
+  // A stoma can hold BOTH an operation and a separate findings note (imported
+  // register text). Show the note in its own box so it can be seen and edited.
+  const normTxt=t=>String(t||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const showFindings=!opFromComments&&!!normTxt(x.comments)&&normTxt(x.comments)!==normTxt(x.operation);
+  stomaModalCtx={patientId,slot,pat,opFromComments,showFindings};
   const nm=`${pat.first_name||''} ${pat.surname||''}`.trim()||'Patient';
   const v=k=>htmlSafe(x[k]||'');
   const kind=STOMA_KINDS[x.kind];
@@ -17175,6 +17179,9 @@ async function openStomaModal(patientId,slot){
           <input type="date" id="sm-discharge" value="${v('discharge_date')}" max="${htmlSafe(TODAY)}"/></div>
         <div class="fg" style="grid-column:1 / -1;"><label>Operation and findings</label>
           <textarea id="sm-operation" rows="3" placeholder="Operation and findings">${opFromComments?v('comments'):v('operation')}</textarea></div>
+        ${showFindings?`<div class="fg" style="grid-column:1 / -1;"><label>Further findings / notes</label>
+          <textarea id="sm-findings" rows="3" placeholder="Further findings">${v('comments')}</textarea>
+          <div class="ap-hint">Kept on file with this stoma; shown after the operation on the stoma card.</div></div>`:''}
       </div>
 
       <div class="sm-actions" aria-label="Stoma actions">
@@ -17434,6 +17441,11 @@ async function saveStomaModal(){
   let payload=stomaPayloadFor(ctx.pat,ctx.slot,f);
   if(!payload){say('Could not work out where to save this stoma.');return;}
   if(ctx.opFromComments&&(typedOp||'')!==String(x.comments||'').trim())stomaWriteCommentsText(ctx.slot,payload,typedOp);
+  if(ctx.showFindings){
+    const fEl=document.getElementById('sm-findings');
+    const typedF=fEl?String(fEl.value||'').trim():String(x.comments||'').trim();
+    if(typedF!==String(x.comments||'').trim())stomaWriteCommentsText(ctx.slot,payload,typedF);
+  }
   payload=applyStomaReplacement(ctx.pat,ctx.slot,f,x,payload);
   // Guard against a double click creating two writes: disable the save while it
   // is in flight and restore it if the write fails.
