@@ -19,9 +19,9 @@ window.UpdateRegister=(()=>{
     if(term.length<2){host.textContent='Enter at least two characters of an ID number, first name or surname.';return;}
     host.textContent='Searching existing patients…';
     try{
-      let data,error;
+      let data,error,dupNote='';
       if(completeId){
-        const result=await findRegistryPatientsByIdCard(term);data=result.matches;error=result.error;
+        const result=await duplicateAwareIdSearch(term);data=result.rows;error=result.error;
       }else{
         const result=await SB.from('patients').select('id,id_card,first_name,surname,followup_status')
           .or(`id_card.ilike.%${term}%,first_name.ilike.%${term}%,surname.ilike.%${term}%`)
@@ -37,12 +37,53 @@ window.UpdateRegister=(()=>{
         }
         host.textContent='No existing patient found. Complete the ID number with its final letter to see the Create New Profile button, or search by name.';return;
       }
-      host.innerHTML=data.map(p=>`<div class="ur-row">
-        <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''}<br>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}<br><small>${htmlSafe(followupStatusText(p.followup_status))}</small></div>
-        <div><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open Profile</button>
-</div>
-      </div>`).join('')+(data.length===30?'<p>Showing the first 30 matches. Enter more of the ID or name to narrow the search.</p>':'');
+      // A record whose ID (normalised) appears more than once is a duplicate,
+      // whether it came from the ID search or a name search.
+      const idCount={};data.forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)idCount[k]=(idCount[k]||0)+1;});
+      const isDup=p=>!!p._sameName||(normaliseIdCard(p.id_card)&&idCount[normaliseIdCard(p.id_card)]>1);
+      const dupCount=data.filter(isDup).length;
+      if(dupCount>1||data.some(p=>p._sameName))
+        dupNote=`<div class="ur-dup-note">⚠ <strong>${dupCount} records look like the same patient.</strong> Open each to check, keep the correct one, and press <strong>🗑 Remove duplicate</strong> on the others (it archives the record — it can be restored — with an option to delete it permanently).</div>`;
+      const d=v=>v?fmtShortDate(String(v).slice(0,10)):'';
+      host.innerHTML=dupNote+data.map(p=>{
+        const extra=[p.date_of_birth?'DOB '+d(p.date_of_birth):'',p.surgery_date?'Surgery '+d(p.surgery_date):'',p.stoma_type||'',
+          p.updated_at?'Last edited '+d(p.updated_at):(p.created_at?'Added '+d(p.created_at):'')].filter(Boolean).join(' · ');
+        const nm=[p.first_name,p.surname].filter(Boolean).join(' ');
+        const tag=p._sameName?'<span class="ur-dup-tag">Possible duplicate — same name, different ID</span>':isDup(p)?'<span class="ur-dup-tag">Duplicate ID</span>':'';
+        return `<div class="ur-row${isDup(p)?' ur-row-dup':''}">
+        <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''} ${tag}<br>${htmlSafe(nm)}<br><small>${htmlSafe(followupStatusText(p.followup_status))}${extra?' · '+htmlSafe(extra):''}</small></div>
+        <div class="ur-row-actions"><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open Profile</button>
+          ${isDup(p)?`<button type="button" class="btn-cancel ur-dup-remove" onclick="confirmArchivePatient('${jsSafe(p.id)}','${jsSafe(nm||p.id_card||'this record')}')">🗑 Remove duplicate</button>`:''}
+        </div>
+      </div>`;}).join('')+(data.length===30?'<p>Showing the first 30 matches. Enter more of the ID or name to narrow the search.</p>':'');
     }catch(error){if(token===request)host.textContent='Could not search the register. Please try again.';}
+  }
+  /* Every record that may be this patient: all copies of the ID (including ones
+     stored with spaces, a different letter case or leading zeros) and records
+     with the same first name and surname under a different or missing ID.
+     Archived records are left out. */
+  async function duplicateAwareIdSearch(term){
+    const key=normaliseIdCard(term),digits=key.replace(/\D/g,'');
+    const live=p=>p.archived!==true;
+    let res=await SB.from('patients').select('*').ilike('id_card','%'+digits+'%').limit(40);
+    if(res.error)return {rows:[],error:res.error};
+    const byId=(res.data||[]).filter(p=>live(p)&&normaliseIdCard(p.id_card)===key);
+    if(!byId.length){
+      // Fall back to the original exact lookup (it scans the whole table).
+      const r=await findRegistryPatientsByIdCard(term);
+      if(r.error)return {rows:[],error:r.error};
+      return {rows:r.matches,error:null};
+    }
+    const seen=new Set(byId.map(p=>String(p.id))),rows=byId.slice();
+    const names=new Set(byId.map(p=>(String(p.first_name||'').trim()+'|'+String(p.surname||'').trim()).toLowerCase()).filter(n=>n!=='|'));
+    for(const n of names){
+      const[first,sur]=n.split('|');if(!first||!sur)continue;
+      try{
+        const q=await SB.from('patients').select('*').ilike('first_name',first).ilike('surname',sur).limit(20);
+        (q.data||[]).forEach(p=>{if(live(p)&&!seen.has(String(p.id))&&normaliseIdCard(p.id_card)!==key){seen.add(String(p.id));rows.push({...p,_sameName:true});}});
+      }catch(e){}
+    }
+    return {rows,error:null};
   }
   async function profile(id){
     flow={id,step:'details'};
@@ -115,5 +156,5 @@ window.UpdateRegister=(()=>{
     }catch(error){status.textContent='Could not save: '+(error.message||'Please try again.');}
     finally{saving=false;button.disabled=false;}
   }
-  return {open,search,profile,surgery,edit,outcome,saveNew,detailsSaved,renderFlowControls,stomaSaved,createNewProfile:newPatient};
+  return {open,search,refresh:()=>{clearTimeout(timer);run();},profile,surgery,edit,outcome,saveNew,detailsSaved,renderFlowControls,stomaSaved,createNewProfile:newPatient};
 })();
