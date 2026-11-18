@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="assets/dntu-workflow.css?v=2026.09.27-318"/>
 <script src="assets/dntu-workflow.js?v=2026.10.06-436"></script>
 <link rel="stylesheet" href="assets/cancellations.css?v=2026.11.01-691"/>
-<script src="assets/cancellations.js?v=2026.10.28-656"></script>
+<script src="assets/cancellations.js?v=2026.11.18-819"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.18-818"></script>
+<script src="assets/manual.js?v=2026.11.18-819"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4030,7 +4030,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.18-818';
+const APP_BUILD='2026.11.18-819';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25542,9 +25542,11 @@ async function loadPostopDischarges(){
       (appts||[]).forEach(a=>{
         if(!a||!a.patient_id||!a.appt_date)return;
         if(isLegacyAdminAppliancePlaceholder(a))return;
-        // Cancelled and DNTU visits still need a new appointment. Only a real
-        // booking or a follow-up that genuinely happened closes this work item.
-        if(!['booked','attended'].includes(String(a.status||'')))return;
+        // A booking, an attended visit, or a booking that was later CANCELLED all
+        // close this work item: once booked, the patient belongs to the allocated
+        // nurse, and a cancellation sends them to that nurse's follow-up list
+        // (not back here). DNTU still needs a new appointment from this list.
+        if(!['booked','attended','cancelled'].includes(String(a.status||'')))return;
         (followups[a.patient_id]=followups[a.patient_id]||[]).push(a);
       });
     }catch(e){}
@@ -25566,12 +25568,14 @@ async function loadPostopDischarges(){
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date));
     if(after.some(a=>String(a.status)==='booked'))return 'booked';
     if(after.some(a=>String(a.status)==='attended'))return 'completed';
+    if(after.some(a=>String(a.status)==='cancelled'))return 'with-nurse';
     return 'waiting';
   };
   const episodeStates=discharged.map(ep=>({ep,state:stateFor(ep)}));
   const eps=episodeStates.filter(x=>x.state==='waiting').map(x=>x.ep);
   const bookedCount=episodeStates.filter(x=>x.state==='booked').length;
   const completedCount=episodeStates.filter(x=>x.state==='completed').length;
+  const withNurseCount=episodeStates.filter(x=>x.state==='with-nurse').length;
   // Oldest discharge first: the person who has waited longest for a follow-up
   // appointment sits at the top, so the worklist is worked from the top down.
   eps.sort((a,b)=>String(a.discharge_date).localeCompare(String(b.discharge_date)));
@@ -25580,7 +25584,7 @@ async function loadPostopDischarges(){
     body.innerHTML=emptyStateHTML('📤',
       discharged.length?'Nobody is awaiting a postop appointment':'No postop discharges yet',
       discharged.length
-        ? `${bookedCount} booked${completedCount?` · ${completedCount} follow-up${completedCount===1?'':'s'} completed`:''}.`
+        ? `${bookedCount} booked${completedCount?` · ${completedCount} follow-up${completedCount===1?'':'s'} completed`:''}${withNurseCount?` · ${withNurseCount} with their nurse after a cancelled appointment`:''}.`
         : 'A patient joins this list when you press <strong>Postop discharge</strong> on their handover row. They come off it again as soon as a follow-up appointment is booked for them.');
     return;
   }
@@ -25690,6 +25694,35 @@ function pickPostopSlot(nurseId,nurseName,slot){
   postopBookCtx.nurseId=nurseId;postopBookCtx.nurseName=nurseName;postopBookCtx.slot=slot;
   refreshPostopSlots();
 }
+/* After an appointment is cancelled, the patient stays with the nurse it was
+   booked with instead of dropping back onto the Postop Discharges list: the
+   nurse becomes the follow-up owner (if the patient had none, or Common) and,
+   when no due month is set, the cancelled appointment's month becomes the due
+   month, so the patient appears on that nurse's follow-up list. Skipped when
+   the patient still has another booked appointment or has left the service. */
+async function allocateAfterCancellation(appt){
+  try{
+    if(!appt||!appt.patient_id)return;
+    const{data:p}=await SB.from('patients').select('id,followup_owner,followup_due_month,followup_year,followup_status')
+      .eq('id',appt.patient_id).maybeSingle();
+    if(!p)return;
+    if(['deceased','reversed','relocated_overseas','discharged_gozo'].includes(normaliseFollowupStatus(p.followup_status)))return;
+    const{data:other}=await SB.from('appointments').select('id').eq('patient_id',appt.patient_id).eq('status','booked').gte('appt_date',TODAY).limit(1);
+    if(other&&other.length)return;
+    const patch={};
+    const nurseOwner=normaliseFollowupOwner(appointmentNurseLabel(appt));
+    const curOwner=normaliseFollowupOwner(p.followup_owner||'Common');
+    if(curOwner==='Common'&&nurseOwner!=='Common')patch.followup_owner=nurseOwner;
+    const hasDue=Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000;
+    const m=/^(\d{4})-(\d{2})/.exec(String(appt.appt_date||''));
+    if(!hasDue&&m){patch.followup_due_month=Number(m[2]);patch.followup_year=Number(m[1]);}
+    if(!Object.keys(patch).length)return;
+    await updatePatientTolerant(appt.patient_id,patch);
+    try{logAudit({action:'update',entity:'patient',entity_id:String(appt.patient_id),patient_id:String(appt.patient_id),
+      summary:'Kept with the allocated nurse after a cancelled appointment',details:patch});}catch(e){}
+  }catch(e){}
+}
+window.allocateAfterCancellation=allocateAfterCancellation;
 async function savePostopBooking(){
   const ctx=postopBookCtx; if(!ctx)return;
   const date=document.getElementById('pb-date')?.value;

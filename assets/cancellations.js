@@ -141,7 +141,7 @@ async function openCancellationForm(apptId){
       <div class="fg"><label for="cancel-reason">Reason *</label><select id="cancel-reason" onchange="cancellationUpdateSummary()"></select></div>
       <div class="fg"><label for="cancel-date">Cancellation date${existing?' (if known)':' *'}</label><input type="date" id="cancel-date" max="${TODAY}" value="${htmlSafe(existing?(raw.cancellation_date||''):TODAY)}"/>${existing?'<small class="cancel-help">Leave blank if the date is not known from the record.</small>':''}</div>
       <div class="fg"><label id="cancel-note-label" for="cancel-note">Note (optional)</label><textarea id="cancel-note" maxlength="1000" rows="3">${htmlSafe(existing?(raw.cancellation_note||''):'')}</textarea></div>
-      <div class="cancel-summary"><strong>When you save</strong><p id="cancel-summary"></p><p>The appointment will be recorded as cancelled and kept in the history. Follow-up details and DNTU counts are unchanged.</p></div>
+      <div class="cancel-summary"><strong>When you save</strong><p id="cancel-summary"></p><p>The appointment will be recorded as cancelled and kept in the history. The patient stays with the nurse it was booked with — if no due month is set, this appointment’s month becomes the due month, so they appear on that nurse’s follow-up list (not back on Postop Discharges). DNTU counts are unchanged.</p></div>
       <p id="cancel-error" role="alert" hidden></p>
       <div class="mact"><button type="button" class="btn-cancel" onclick="closeModal()">Back</button><button type="button" class="btn-save" id="cancel-save" onclick="saveCancellationForm()">${existing?'Save cancellation details':'Save cancellation'}</button></div>`;
     cancellationChangeSource();document.getElementById('cancel-reason').value=existing?(raw.cancellation_reason||''):'';cancellationUpdateSummary();openMo();
@@ -167,6 +167,9 @@ async function saveCancellationForm(){
     const{data,error}=await query.select('id');
     if(error)throw error;
     if(!data?.length)throw new Error('This appointment has changed. Reopen it before saving.');
+    // A newly cancelled appointment keeps the patient with the nurse it was booked
+    // with (owner + due month), so they do not drop back onto Postop Discharges.
+    if(s.appt.status==='booked'&&typeof allocateAfterCancellation==='function'){try{await allocateAfterCancellation(s.appt);}catch(e){}}
     closeModal();refreshAppointmentViews();await openCancelledAppointmentModal(s.appt.id,s.appt.patient_id);
   }catch(e){errorBox.hidden=false;errorBox.textContent=cancellationError(e);}
   finally{
