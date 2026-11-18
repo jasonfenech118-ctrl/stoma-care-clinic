@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 November 2026 — Christmas theme (15 Nov – 6 Jan): faint Father and Mother Christmas, reindeer and elves in the background, plus candy canes, an elf and sweets in the screen corners. It switches off by itself after 6 January.'};
+const MANUAL_META={updated:'18 November 2026 — Printed discharge letters no longer show the browser’s date, title, web address or page number, and the hospital address footer sits at the bottom of the A4 page. Christmas theme runs 15 November – 6 January.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[

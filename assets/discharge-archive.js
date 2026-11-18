@@ -98,7 +98,7 @@ async function viewSavedDischargeLetter(letterId){
     host.innerHTML='<h3>Saved discharge letter</h3><p class="report-note" id="saved-discharge-note">Saved copy · read only</p>'
       +'<div id="saved-discharge-actions"><button class="psm-btn" type="button" onclick="printSavedDischargeLetter()">Print / save PDF</button> '
       +'<button class="psm-btn" type="button" onclick="editDischargeLetterFull(\''+jsSafe(String(data.id))+'\')">✏️ Edit letter</button></div>';
-    const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';frame.srcdoc=await dischargeDecompress(data.letter_html);host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
+    const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';{const raw=await dischargeDecompress(data.letter_html);frame.srcdoc=typeof dischargeLetterPrintable==='function'?dischargeLetterPrintable(raw):raw;}host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){if(request===dischargeArchiveRequest)host.textContent='Could not open this saved letter. '+e.message;}
 }
 function printSavedDischargeLetter(){document.getElementById('saved-discharge-letter-frame')?.contentWindow?.print();}
