@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'17 November 2026 — The automatic background refresh (Handover, Data Analysis, Surgical Rotation) now runs every 30 minutes; saved changes still appear straight away. Setting an outcome no longer wipes stoma operation text, notes or consultant.'};
+const MANUAL_META={updated:'18 November 2026 — The Help paperclip wears a Christmas hat from 15 November to 6 January. Automatic background refresh runs every 30 minutes.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -893,6 +893,11 @@ function stomaHelperShow(){
   if(helper){helper.hidden=false;const bubble=helper.querySelector('.sh-bubble');if(bubble)bubble.hidden=true;helper.classList.remove('sh-open');helper.querySelector('.sh-character')?.setAttribute('aria-expanded','false');}
   try{localStorage.removeItem('stoma-helper-hidden');}catch(e){}
 }
+// The paperclip wears a Christmas hat from 15 November to 6 January.
+function shSeasonalHat(d){
+  d=d||new Date();const m=d.getMonth()+1,day=d.getDate();
+  return (m===11&&day>=15)||m===12||(m===1&&day<=6);
+}
 (function(){
   function init(){
     if(document.getElementById('stoma-helper'))return;
@@ -912,6 +917,7 @@ function stomaHelperShow(){
         <linearGradient id="sh-paper" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a99f56"/><stop offset=".48" stop-color="#e8df8f"/><stop offset=".8" stop-color="#fff4b0"/><stop offset="1" stop-color="#e1d788"/></linearGradient>
         <radialGradient id="sh-eye" cx=".35" cy=".25" r=".8"><stop offset=".35" stop-color="#fff"/><stop offset=".7" stop-color="#f5f3fc"/><stop offset="1" stop-color="#a8a1bc"/></radialGradient>
         <radialGradient id="sh-pupil" cx=".3" cy=".22"><stop stop-color="#555"/><stop offset=".5" stop-color="#242426"/><stop offset="1" stop-color="#08090b"/></radialGradient>
+        <linearGradient id="sh-red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ef4444"/><stop offset=".55" stop-color="#c81e1e"/><stop offset="1" stop-color="#8f1414"/></linearGradient>
         <clipPath id="sh-paper-clip"><path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z"/></clipPath>
       </defs>
       <path d="M110 56 L191 54 C157 84 175 156 141 215 L15 193 C68 157 53 102 110 56Z" fill="url(#sh-paper)"/>
@@ -946,6 +952,13 @@ function stomaHelperShow(){
           <path d="M91 60 C95 58 99 60 103 65 L101 70 C98 65 95 64 92 66Z M43 50 C38 48 37 53 42 55 L47 56 L46 51Z M143 64 C149 62 152 66 147 69 L142 71Z"/>
         </g>
         <g class="sh-brows" fill="#211f24"><path d="M52 46 Q64 27 86 35 Q94 43 83 42 Q67 35 52 46Z"/><path d="M110 48 Q132 43 143 68 Q126 53 112 55 Q107 54 110 48Z"/></g>
+        ${shSeasonalHat()?`<!-- Christmas hat (15 Nov – 6 Jan); sits on the hair and sways with the clip. -->
+        <g class="sh-hat">
+          <path d="M60 19 C64 -8 90 -33 121 -36 C143 -38 160 -25 168 -5 C160 -13 150 -18 141 -16 C146 -4 148 7 147 18 Z" fill="url(#sh-red)" stroke="#7f1212" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M80 -14 C96 -28 116 -32 132 -28" fill="none" stroke="#ff8a8a" stroke-width="2.2" stroke-linecap="round" opacity=".55"/>
+          <path d="M52 17 C82 6 121 6 151 15 C155 21 154 28 149 32 C119 22 83 22 55 33 C49 28 49 22 52 17Z" fill="#fff" stroke="#cfd4dc" stroke-width="1"/>
+          <circle cx="168" cy="-4" r="10" fill="#fff" stroke="#cfd4dc" stroke-width="1"/>
+        </g>`:''}
       </g>
     </svg><span>Help</span></button>`;
     document.body.appendChild(root);
