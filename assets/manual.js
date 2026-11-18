@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 November 2026 — Christmas theme on every page from 15 November to 6 January: faint Father and Mother Christmas, reindeer and elves in the background, plus the paperclip’s Santa hat. It switches off by itself after 6 January.'};
+const MANUAL_META={updated:'18 November 2026 — Christmas theme (15 Nov – 6 Jan): faint Father and Mother Christmas, reindeer and elves in the background, plus candy canes, an elf and sweets in the screen corners. It switches off by itself after 6 January.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -669,7 +669,7 @@ const MANUAL_SECTIONS=[
     <div class="man-auto-grid">
       ${[
         ['🧾','ESRF date and signature','The ESRF form is dated today and signed with the signed-in nurse’s name automatically each time it is opened.','ESRF'],
-        ['🎄','Christmas theme','From 15 November to 6 January every page shows a faint Father Christmas, Mother Christmas, reindeer and elves in the background, a candy-cane stripe under the top bar, and the Help paperclip wears a Santa hat. It switches off by itself after 6 January.','Every page'],
+        ['🎄','Christmas theme','From 15 November to 6 January every page shows a faint Father Christmas, Mother Christmas, reindeer and elves in the background, a candy-cane stripe under the top bar, candy canes, an elf and sweets in the screen corners (they never block a button), and the Help paperclip wears a Santa hat. It switches off by itself after 6 January.','Every page'],
         ['📦','Weekly stores order opens itself','On Saturdays only, from 06:30, the app opens the Weekly MML tab automatically on launch so the order form is in front of you, until the order is marked sent. It does not prompt on other days.','Weekly MML'],
         ['📝','Encounter records and revisions','Interrupted saves are checked before showing a failure; retrying the same submission keeps one encounter/revision, and controls unlock after a timeout. Confirmed saves display immediately. The screen follows stoma review, appliances, written report, infection and referrals. Each stoma has its own column (named by type, e.g. End Ileostomy) for review, appliances and notes; the report and automatic author/signature cover every stoma. One encounter per patient per day, coded ENC-ID-date; saved encounters reopen read only, with Edit report as V2/V3 starting a deliberate revision. Every encounter has a separate General notes box, saved with each version and included in the report. The patient record’s Episodes tab lists each episode’s encounters underneath, newest first. Background ward updates wait while the encounter is open, including loading, saving and history, then resume when it closes. Corrections append a version to the same encounter; current care updates together, while older records remain in history.','Handover › Encounter'],
         ['🔎','Fresh Update Register search','Returning to Update Register clears the previous search, patient form and messages. Pending search results are cancelled so they cannot reopen the previous patient.','Registry › Update Register'],
