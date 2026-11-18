@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 November 2026 — An outcome date (death, reversal, Gozo, overseas) on the date of birth is now refused, and a death within the first year asks you to confirm. A patient whose death date matches their birth date shows a warning in the header instead of “0 years”.'};
+const MANUAL_META={updated:'18 November 2026 — On the Outcome tab the date box now takes the colour of the status being set (purple reversal, black deceased, blue Gozo, teal overseas). An outcome date on the date of birth is refused.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
