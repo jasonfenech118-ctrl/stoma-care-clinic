@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'18 November 2026 — On the Outcome tab the date box now takes the colour of the status being set (purple reversal, black deceased, blue Gozo, teal overseas). An outcome date on the date of birth is refused.'};
+const MANUAL_META={updated:'18 November 2026 — Relocated overseas no longer asks for a date: confirm and press OK (a note is optional). The outcome confirmation box takes the colour of the chosen status.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
