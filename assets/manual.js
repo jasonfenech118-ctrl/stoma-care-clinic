@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'19 November 2026 — Audit & Reports checked and corrected: archived duplicates, later stomas, misspelt types, F/M sex, tele follow-ups and new-case visits are now counted correctly, lists over 1000 records are read in full, and the DNTU page loads again. The Audit Trail shows each change once.'};
+const MANUAL_META={updated:'19 November 2026 — New 🖨️ Printing Press tab in Orders fills the original STO-01 Printing Press form, with the date and officer filled in automatically, and emails it with the form attached. Audit & Reports counting was corrected.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -647,6 +647,16 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','📎','The two forms are entered together but always sent as <b>two separate Excel attachments</b> in one email, matching the official stores forms.')}
     ${manNote('tip','🗂','Some standing items are <b>not shown for input</b> but stay on the printed and emailed forms — a few disposables (lancets, glucose strips, the two self-adhesive fabric rolls, skin-care lotion) and several bulk/domestic cleaning items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine, urine attachment).')}
   `},
+  {id:'printing-press',title:'Government Printing Press order',keywords:'printing press stationery forms envelopes letter head folders lab forms sto-01 excel email edwin bartolo mark jason ciantar third week',html:`
+    ${manMap('ordering')}
+    ${manWhen('To order stationery from the Government Printing Press — every third week of the month.')}
+    <p class="man-lede">The ${manBtn('🖨️ Printing Press','#fde9d3','#b45309')} tab (in Orders) fills the <b>original Printing Press Excel form</b> for Stoma Care (STO-01).</p>
+    ${manSteps([
+      `Type a <b>Demand</b> against each item needed (e.g. 2, or 1 box); leave the rest blank.`,
+      `The <b>date</b> (today) and <b>Officer I/c</b> (the signed-in nurse) fill in automatically.`,
+      `${manBtn('✉ Send email','#0d5c66','#fff')} downloads an Outlook draft to <b>edwin.bartolo@gov.mt</b> and <b>mark-jason.ciantar@gov.mt</b> (CC <b>stomacare.mdh@gov.mt</b>) with the form already attached — open it from the downloads and press Send.`
+    ])}
+  `},
   {id:'esrf',title:'ESRF — Extra Supplies Requisition',keywords:'esrf extra supplies requisition form logistics logisticsdept sto-01 excel email signature date approved ef reason',html:`
     ${manMap('ordering')}
     ${manWhen('To request extra supplies from the Logistics Department outside the weekly order.')}
@@ -669,6 +679,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
+        ['🖨️','Printing Press date and officer','The Printing Press order is dated today and its Officer I/c is the signed-in nurse, filled in automatically each time the tab is opened.','Orders › Printing Press'],
         ['🧾','ESRF date and signature','The ESRF form is dated today and signed with the signed-in nurse’s name automatically each time it is opened.','ESRF'],
         ['🎄','Christmas theme','From 15 November to 6 January every page shows a faint Father Christmas, Mother Christmas, reindeer and elves in the background, a candy-cane stripe under the top bar, candy canes, an elf and sweets in the screen corners (they never block a button), and the Help paperclip wears a Santa hat. It switches off by itself after 6 January.','Every page'],
         ['↪️','Cancelled postop appointment stays with the nurse','When a booked appointment is cancelled, the patient keeps the nurse it was booked with as owner and, if no due month is set, the appointment’s month becomes the due month — so they land on that nurse’s follow-up list instead of back on Postop Discharges.','Handover › Postop Discharges'],

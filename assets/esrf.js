@@ -256,7 +256,7 @@
 
   const api={init(d){deps=Object.assign(deps,d||{});},open,
     // pure helpers exposed for tests
-    patchSheetXml,patchWorkbookXml,shiftRows,setCell,mailSubject,mailBody,fileName,defaultDraft,normaliseDraft,dmy,
+    patchSheetXml,patchWorkbookXml,shiftRows,setCell,mailSubject,mailBody,fileName,defaultDraft,normaliseDraft,dmy,ensureJSZip,downloadBlob,
     MAIL_TO,MAIL_CC,TEMPLATE_URL};
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.ClinicESRF=api;
