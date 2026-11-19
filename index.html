@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.16-803"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.16-803"></script>
-<script src="assets/manual.js?v=2026.11.18-827"></script>
+<script src="assets/manual.js?v=2026.11.19-828"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4044,7 +4044,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.18-827';
+const APP_BUILD='2026.11.19-828';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -9102,15 +9102,19 @@ async function getAppointmentRowsForPatients(patientIds,year,month){
 async function getRecallWorklistRows(){
   const now=new Date();
   const nowKey=now.getFullYear()*100+(now.getMonth()+1);
-  const{data:pats,error}=await SB.from('patients').select('id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type');
+  // Paged: a single request stops at 1000 rows, which silently dropped patients.
+  const recallCols='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
+  let{rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(recallCols+',archived'));
+  if(error&&/archived/i.test(String(error.message||'')))({rows:pats,error}=await fetchAllRows(()=>SB.from('patients').select(recallCols)));
   if(error)return {rows:[],error};
   const candidates=(await withoutFistulaPatients(pats||[])).filter(p=>{
+    if(p.archived===true)return false;
     if(normaliseFollowupStatus(p.followup_status)!=='active')return false;
     const m=Number(p.followup_due_month),y=Number(p.followup_year);
     return m>=1&&m<=12&&y>2000&&(y*100+m)<=nowKey;
   });
   if(!candidates.length)return {rows:[],error:null};
-  const{data:future}=await SB.from('appointments').select('patient_id').gte('appt_date',TODAY).neq('status','cancelled');
+  const{rows:future}=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id').gte('appt_date',TODAY).neq('status','cancelled'));
   const hasFuture=new Set((future||[]).map(r=>String(r.patient_id)));
   const dueNoBooking=candidates.filter(p=>!hasFuture.has(String(p.id)));
   if(!dueNoBooking.length)return {rows:[],error:null};
@@ -11503,7 +11507,10 @@ async function loadStaffAudit(){
 
   let allPatients=[];
   const patientSelect='id,first_name,surname,id_card,phone_number,followup_owner,followup_due_month,followup_year,followup_status,followup_type';
-  const{data,error}=await SB.from('patients').select(patientSelect).order('surname',{ascending:true}).order('first_name',{ascending:true});
+  // Paged (a single request stops at 1000 rows); archived duplicates left out.
+  let{rows:data,error}=await fetchAllRows(()=>SB.from('patients').select(patientSelect+',archived').order('surname',{ascending:true}).order('first_name',{ascending:true}));
+  if(error&&/archived/i.test(String(error.message||''))){({rows:data,error}=await fetchAllRows(()=>SB.from('patients').select(patientSelect).order('surname',{ascending:true}).order('first_name',{ascending:true})));}
+  if(!error)data=(data||[]).filter(p=>p.archived!==true);
   if(error){
     console.error('Follow-up patient query error:',error);
     if(tbody)tbody.innerHTML='<tr><td colspan="10" class="empty">Follow-up fields are missing. Run the v30L SQL first, then refresh.</td></tr>';
@@ -12345,7 +12352,7 @@ async function loadAuditTrail(){
       : `<div class="report-note">Could not load the audit trail: ${htmlSafe(error.message||'')}</div>`;
     return;
   }
-  auditRows=data||[];
+  auditRows=mergeAuditDuplicates(data||[]);
   // Fill in any patient names the log did not store (edits key on id alone).
   const need=[...new Set(auditRows.filter(r=>(r.entity||'patient')==='patient'&&!String(r.patient_name||'').trim()&&r.patient_id).map(r=>String(r.patient_id)))]
     .filter(id=>!(id in auditNamesById));
@@ -12357,6 +12364,27 @@ async function loadAuditTrail(){
   }
   if(version!==auditTrailVersion)return;
   renderAuditTrail();
+}
+/* One patient edit used to appear twice: the app logs its own readable line
+   ("Edited Due month") and the database trigger logs the same change with its
+   recovery data ("Edited patients"). Pair them — same patient, action and user
+   within 30 seconds — and keep ONE line: the trigger's (it can be restored),
+   carrying the app's clearer wording. */
+function mergeAuditDuplicates(rows){
+  const isTrigger=r=>!!(r&&r.details&&r.details.source_table);
+  const t=r=>Date.parse(r&&r.at)||0;
+  const used=new Set(),drop=new Set();
+  const triggers=rows.filter(r=>isTrigger(r)&&r.details.source_table==='patients');
+  rows.forEach(app=>{
+    if(isTrigger(app)||(app.entity||'patient')!=='patient'||!app.patient_id)return;
+    const match=triggers.find(tr=>!used.has(tr)&&String(tr.patient_id)===String(app.patient_id)&&tr.action===app.action
+      &&String(tr.actor_email||'').toLowerCase()===String(app.actor_email||'').toLowerCase()&&Math.abs(t(tr)-t(app))<=30000);
+    if(!match)return;
+    used.add(match);drop.add(app);
+    if(app.summary)match.summary=app.summary;
+    if(!String(match.patient_name||'').trim()&&app.patient_name)match.patient_name=app.patient_name;
+  });
+  return rows.filter(r=>!drop.has(r));
 }
 function auditWhen(at){
   const d=new Date(at);
@@ -12458,10 +12486,15 @@ function dntuActionHTML(r){
   return `<button class="dntu-action-btn ${Number(r.streak)>=2?'warn':''}" onclick="openDntuAppointmentModal('${jsSafe(r.latestDntuId)}',${Number(r.streak)||0})">Review DNTU history</button>`;
 }
 
+// The patient's name on an enriched appointment. (This helper had been removed
+// while the DNTU page still called it, so the page crashed whenever a patient
+// had a DNTU and never got past "Loading DNTU patients…".)
+function clinicPatientName(a){return `${a?.patients?.first_name||''} ${a?.patients?.surname||''}`.trim()||'—';}
 async function loadDntuPolicy(){
   const tbody=document.getElementById('dntu-tbody');
   if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading DNTU patients...</td></tr>';
-  const{data:raw,error}=await SB.from('appointments').select('*').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false});
+  // Paged: a single request stops at 1000 rows, so older DNTUs were never read.
+  const{rows:raw,error}=await fetchAllRows(()=>SB.from('appointments').select('*').order('appt_date',{ascending:false}).order('appt_slot',{ascending:false}));
   if(error){console.error('DNTU load error:',error);if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Could not load DNTU records.</td></tr>';return;}
   const appts=await enrichAppointments(raw||[]);
   const groups={};
@@ -12762,7 +12795,7 @@ async function loadReports(){
     return;
   }
 
-  const appts=await enrichAppointments(rawReportAppts||[]);
+  const appts=withoutTeleAppointments(await enrichAppointments(rawReportAppts||[]));
   if(request!==reportLoadRequest)return;
   const total=appts.length;
   const attended=appts.filter(a=>a.status==='attended').length;
@@ -12793,7 +12826,9 @@ async function loadReports(){
   // the tables above, but these describe the shape of the whole year, so they
   // always run across all twelve months.
   try{
-    const{rows:duePats}=await fetchAllRows(()=>SB.from('patients').select('id,followup_due_month,followup_year,followup_status'));
+    let{rows:duePats,error:dueErr}=await fetchAllRows(()=>SB.from('patients').select('id,followup_due_month,followup_year,followup_status,archived'));
+    if(dueErr)({rows:duePats}=await fetchAllRows(()=>SB.from('patients').select('id,followup_due_month,followup_year,followup_status')));
+    duePats=await withoutFistulaPatients((duePats||[]).filter(p=>p.archived!==true));
     if(request===reportLoadRequest){
       const dueByMonth=monthNums.map((mm,i)=>(duePats||[]).filter(p=>
         normaliseFollowupStatus(p.followup_status)==='active'
@@ -12858,13 +12893,17 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
     }
     appts=await enrichAppointments(result.rows||[]);
   }
+  appts=withoutTeleAppointments(appts);   // tele follow-ups are not clinic visits
   const total=appts.length;
   const attended=appts.filter(a=>a.status==='attended').length;
   const cancelled=appts.filter(a=>a.status==='cancelled').length;
   const dna=appts.filter(a=>a.status==='did_not_attend').length;
   const activeTotal=appts.filter(a=>a.status!=='cancelled').length;
   const uniquePatients=[...new Set(appts.map(a=>a.patient_id).filter(Boolean))].length;
-  const newCases=appts.filter(a=>a.status!=='cancelled'&&a.patients?.followup_type==='new_case').length;
+  let newCaseIds=null;
+  try{newCaseIds=await reportNewCaseIds(pats||reportRequiredRows(await fetchAllStomaPatients(),'patients'));}catch(e){console.warn('New-case split failed',e);}
+  const newCases=newCaseIds?appts.filter(a=>a.status!=='cancelled'&&newCaseIds.has(String(a.id))).length
+    :appts.filter(a=>a.status!=='cancelled'&&a.patients?.followup_type==='new_case').length;
   const fuCases=Math.max(0,activeTotal-newCases);
 
   let totalRegisteredPatients='—';
@@ -12897,7 +12936,7 @@ async function renderPeriodTotals(elId,year,month,pats,preAppts){
       if(metricOperatedInYear(p,year)&&st==='discharged_gozo'&&outcomeInPeriod(p.discharged_gozo_date,eff))gozoNew++;
       // Same anchor for relocations: the stoma has to have been performed in
       // this period too, not in some earlier year.
-      if(inRange(p.surgery_date)&&st==='relocated_overseas')reloNew++;
+      if(st==='relocated_overseas'&&metricFormationDates(p).some(inRange))reloNew++;
       // Stomas actually formed in the period, split by type. Refashionings remake
       // an existing stoma (they keep its number) so they are not counted as new.
       // Only the three recognised types are counted — an unrecognised or blank
@@ -13017,9 +13056,8 @@ async function metricCompareEnsureData(years){
   const minY=Math.min(...years), maxY=Math.max(...years);
   if(!d.apptsSpan||d.apptsSpan[0]>minY||d.apptsSpan[1]<maxY){
     const result=await fetchAllRows(()=>SB.from('appointments')
-      .select('id,appt_date,status,patient_id,appt_slot,assigned_to,bank_staff_id,outcome_recorded_at,stoma_appliances,appliances,accessories')
-      .gte('appt_date',`${minY}-01-01`).lte('appt_date',`${maxY}-12-31`).order('id'));
-    d.appts=reportRequiredRows(result,'appointments').filter(a=>!isLegacyAdminAppliancePlaceholder(a));
+      .select('*').gte('appt_date',`${minY}-01-01`).lte('appt_date',`${maxY}-12-31`).order('id'));
+    d.appts=withoutTeleAppointments(reportRequiredRows(result,'appointments').filter(a=>!isLegacyAdminAppliancePlaceholder(a)));
     d.apptsSpan=[minY,maxY];
   }
   if(!d.patients){
@@ -13027,6 +13065,7 @@ async function metricCompareEnsureData(years){
     d.fuType={};
     d.patients.forEach(p=>{d.fuType[p.id]=p.followup_type;});
   }
+  if(!d.newCaseIds){try{d.newCaseIds=await reportNewCaseIds(d.patients);}catch(e){d.newCaseIds=null;}}
   if(!d.sitings)d.sitings=reportRequiredRows(await fetchAllRows(()=>SB.from('siting_sessions').select('*')),'sitings');
   if(!d.noStoma)d.noStoma=reportRequiredRows(await fetchAllRows(()=>SB.from('operations_no_stoma').select('*')),'operations without a stoma');
   if(!d.episodes){
@@ -13050,7 +13089,7 @@ function metricMonthly(key,year,d){
   else if(key==='attended')byStatus('attended');
   else if(key==='dntu')byStatus('did_not_attend');
   else if(key==='cancellations')byStatus('cancelled');
-  else if(key==='followups'){(d.appts||[]).forEach(a=>{if(a.status!=='cancelled'&&d.fuType[a.patient_id]!=='new_case')addByDate(a.appt_date);});}
+  else if(key==='followups'){(d.appts||[]).forEach(a=>{if(a.status!=='cancelled'&&!(d.newCaseIds?d.newCaseIds.has(String(a.id)):d.fuType[a.patient_id]==='new_case'))addByDate(a.appt_date);});}
   else if(key==='unique_patients'){const seen=Array.from({length:12},()=>new Set());(d.appts||[]).forEach(a=>{const i=mi(a.appt_date);if(i>=0&&a.patient_id)seen[i].add(a.patient_id);});for(let i=0;i<12;i++)arr[i]=seen[i].size;}
   else if(key==='sitings'){(d.sitings||[]).forEach(s=>{if(String(s.status||'')!=='cancelled')addByDate(s.session_date);});}
   else if(key==='stoma_performed'){(d.sitings||[]).forEach(s=>{if(String(s.status||'')!=='cancelled'&&s.stoma_formed===true)addByDate(metricSurgeryDate(s));});}
@@ -13061,7 +13100,7 @@ function metricMonthly(key,year,d){
   else if(key==='deaths_new'){(d.patients||[]).forEach(p=>{if(metricIsDead(p)&&metricOperatedInYear(p,Y))addByDate(p.deceased_date||p.followup_status_effective_date);});}
   else if(key==='gozo'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo')addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
   else if(key==='gozo_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&metricOperatedInYear(p,Y))addByDate(p.discharged_gozo_date||p.followup_status_effective_date);});}
-  else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.surgery_date);});}
+  else if(key==='overseas_new'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas'){const f=metricFormationDates(p).find(x=>x.slice(0,4)===Y);if(f)addByDate(f);}});}
   else if(key==='overseas'){(d.patients||[]).forEach(p=>{if(normaliseFollowupStatus(p.followup_status)==='relocated_overseas')addByDate(p.relocated_overseas_date||p.followup_status_effective_date);});}
   else if(key==='stomas_formed'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&['Colostomy','Ileostomy','Urostomy'].indexOf(daStomaGroup(s.type))>=0)addByDate(s.formed_date);});}catch(e){}});}
   else if(key==='colostomies'){(d.patients||[]).forEach(p=>{try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)==='Colostomy')addByDate(s.formed_date);});}catch(e){}});}
@@ -13126,7 +13165,63 @@ function metricReversalDates(p){
   return [...dates].sort();
 }
 function metricIsDead(p){return !!p.deceased_date||normaliseFollowupStatus(p.followup_status)==='deceased';}
-function metricOperatedInYear(p,year){return String(p.surgery_date||'').slice(0,4)===String(year);}
+// Every date a NEW stoma was formed (refashionings remake an existing stoma).
+function metricFormationDates(p){
+  const out=[];
+  try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&s.formed_date)out.push(String(s.formed_date).slice(0,10));});}catch(e){}
+  if(!out.length&&p&&p.surgery_date)out.push(String(p.surgery_date).slice(0,10));
+  return [...new Set(out)].sort();
+}
+// Operated in the year when ANY new stoma was formed that year — not only the
+// first stoma, so a patient whose stoma that year was a later one is counted.
+function metricOperatedInYear(p,year){return metricFormationDates(p).some(d=>d.slice(0,4)===String(year));}
+// Tele (Comcare) follow-ups are stored as appointments but are not clinic visits.
+function isTeleAppointment(a){return a&&a.community_followup===true;}
+function withoutTeleAppointments(rows){return (rows||[]).filter(a=>!isTeleAppointment(a));}
+/* Which appointments were NEW-CASE visits. A patient's type flips to follow-up
+   when their first visit is marked Seen, so the patient's CURRENT type cannot
+   say what an older visit was. Instead: after each new stoma formation, every
+   non-cancelled visit up to and including the first attended one is a new-case
+   visit; later visits are follow-ups. A patient with no formation on record who
+   is still a new case counts their visits up to the first attended one. */
+function newCaseAppointmentIds(allAppts,patientsById){
+  const byPatient=new Map();
+  (allAppts||[]).forEach(a=>{
+    if(!a||!a.patient_id||a.status==='cancelled'||isTeleAppointment(a))return;
+    const k=String(a.patient_id);if(!byPatient.has(k))byPatient.set(k,[]);byPatient.get(k).push(a);
+  });
+  const ids=new Set();
+  byPatient.forEach((list,pid)=>{
+    list.sort((x,y)=>String(x.appt_date).localeCompare(String(y.appt_date))||String(x.id).localeCompare(String(y.id)));
+    const p=patientsById[pid];
+    let starts=p?metricFormationDates(p):[];
+    if(!starts.length&&p&&normaliseFollowupType(p.followup_type)==='new_case')starts=['0000-00-00'];
+    starts.forEach((f,i)=>{
+      const next=starts[i+1]||'9999-99-99';
+      for(const a of list){
+        const d=String(a.appt_date||'').slice(0,10);
+        if(d<f||d>=next)continue;
+        ids.add(String(a.id));
+        if(a.status==='attended')break;
+      }
+    });
+  });
+  return ids;
+}
+// Whole appointment history (light columns) for the new-case rule, cached briefly.
+let reportApptHistory={at:0,rows:null};
+async function reportAllAppointmentsLite(){
+  if(reportApptHistory.rows&&Date.now()-reportApptHistory.at<60000)return reportApptHistory.rows;
+  let r=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,status,community_followup'));
+  if(r.error)r=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,status'));
+  if(r.error)throw r.error;
+  reportApptHistory={at:Date.now(),rows:r.rows||[]};
+  return reportApptHistory.rows;
+}
+async function reportNewCaseIds(patients){
+  const byId={};(patients||[]).forEach(p=>{byId[String(p.id)]=p;});
+  return newCaseAppointmentIds(await reportAllAppointmentsLite(),byId);
+}
 function metricSurgeryDate(s){return s.surgery_date||s.session_date;}
 /* The total for a period, counted the same way the Annual Report tile counts it
    — so clicking a box always opens on the number that was on the box.
@@ -13156,7 +13251,7 @@ function metricPeriodTotal(key,period,d,monthly){
   if(key==='gozo_new')
     return (d.patients||[]).filter(p=>metricOperatedInYear(p,year)&&normaliseFollowupStatus(p.followup_status)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date)).length;
   if(key==='overseas_new')
-    return (d.patients||[]).filter(p=>inRange(p.surgery_date)&&normaliseFollowupStatus(p.followup_status)==='relocated_overseas').length;
+    return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&metricFormationDates(p).some(inRange)).length;
   if(key==='overseas')
     return (d.patients||[]).filter(p=>normaliseFollowupStatus(p.followup_status)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date)).length;
   return month?(monthly[Number(month)-1]||0):monthly.reduce((a,b)=>a+b,0);
@@ -13206,7 +13301,7 @@ function metricPeriodRecords(key,period,d){
     (d.appts||[]).forEach(a=>{
       if(!inRange(a.appt_date))return;
       if(want&&a.status!==want)return;
-      if(key==='followups'&&(a.status==='cancelled'||d.fuType[a.patient_id]==='new_case'))return;
+      if(key==='followups'&&(a.status==='cancelled'||(d.newCaseIds?d.newCaseIds.has(String(a.id)):d.fuType[a.patient_id]==='new_case')))return;
       push(sourcePatient(a),a.appt_date,statusLabel(a.status));
     });
     return out;
@@ -13214,13 +13309,13 @@ function metricPeriodRecords(key,period,d){
   if(key==='deaths'){pats.forEach(p=>{if(metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
     push(p,p.deceased_date||p.followup_status_effective_date,p.deceased_date?'died':'dated by status change');});return out;}
   if(key==='deaths_new'){pats.forEach(p=>{if(metricOperatedInYear(p,year)&&metricIsDead(p)&&inRange(p.deceased_date||p.followup_status_effective_date))
-    push(p,p.deceased_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
+    push(p,p.deceased_date||p.followup_status_effective_date,'operated '+fmtShortDate(metricFormationDates(p).find(x=>x.slice(0,4)===year)||p.surgery_date));});return out;}
   if(key==='gozo'){pats.forEach(p=>{if(st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
     push(p,p.discharged_gozo_date||p.followup_status_effective_date,p.discharged_gozo_date?'':'⚠ no discharge date on file');});return out;}
   if(key==='gozo_new'){pats.forEach(p=>{if(metricOperatedInYear(p,year)&&st(p)==='discharged_gozo'&&outcomeIn(p.discharged_gozo_date,p.followup_status_effective_date))
-    push(p,p.discharged_gozo_date||p.followup_status_effective_date,'operated '+fmtShortDate(p.surgery_date));});return out;}
-  if(key==='overseas_new'){pats.forEach(p=>{if(inRange(p.surgery_date)&&st(p)==='relocated_overseas')
-    push(p,p.surgery_date,'operated · now overseas');});return out;}
+    push(p,p.discharged_gozo_date||p.followup_status_effective_date,'operated '+fmtShortDate(metricFormationDates(p).find(x=>x.slice(0,4)===year)||p.surgery_date));});return out;}
+  if(key==='overseas_new'){pats.forEach(p=>{const f=metricFormationDates(p).find(inRange);if(f&&st(p)==='relocated_overseas')
+    push(p,f,'operated · now overseas');});return out;}
   if(key==='overseas'){pats.forEach(p=>{if(st(p)==='relocated_overseas'&&outcomeIn(p.relocated_overseas_date,p.followup_status_effective_date))
     push(p,p.relocated_overseas_date||p.followup_status_effective_date,p.relocated_overseas_date?'':'⚠ no date on file');});return out;}
   if(key==='reversals'){pats.forEach(p=>{
@@ -13493,7 +13588,10 @@ async function loadAnnualReport(){
     .order('appt_date',{ascending:true}).order('appt_slot',{ascending:true}));
   if(request!==annualReportRequest)return;
   if(error){if(body)body.innerHTML='<div class="report-note" style="color:#b91c1c;">Could not load the annual report: '+htmlSafe(error.message)+'</div>';return;}
-  const appts=await enrichAppointments(raw||[]);
+  const appts=withoutTeleAppointments(await enrichAppointments(raw||[]));
+  if(request!==annualReportRequest)return;
+  let annualNewIds=null;
+  try{annualNewIds=await reportNewCaseIds(reportRequiredRows(await fetchAllStomaPatients(),'patients'));}catch(e){console.warn('New-case split failed',e);}
   if(request!==annualReportRequest)return;
 
   const statuses=['booked','attended','did_not_attend','cancelled'];
@@ -13511,7 +13609,7 @@ async function loadAnnualReport(){
     booked:countBy(appts,a=>a.status==='booked'),
     active:active.length,
     patients:new Set(appts.map(a=>a.patient_id).filter(Boolean)).size,
-    newCases:countBy(active,a=>a.patients?.followup_type==='new_case'),
+    newCases:countBy(active,a=>annualNewIds?annualNewIds.has(String(a.id)):a.patients?.followup_type==='new_case'),
     clinicDays:new Set(active.map(a=>a.appt_date)).size
   };
   totals.followups=Math.max(0,totals.active-totals.newCases);
@@ -13818,9 +13916,12 @@ function fistulaOpText(p){return [p?.procedure_performed,p?.findings].map(x=>Str
 function fistulaKindLabel(p){return isBaggingPatient(p)?'Bagging advice':'Fistula';}
 // The whole registry of stoma patients. Without the column there are no
 // fistula patients, so nothing needs filtering.
-async function fetchAllStomaPatients(){
+// Stoma patients for reports and lists. Archived records (removed duplicates)
+// are left out so nobody is counted twice; the Patient Registry, which has its
+// own "show archived" list, asks for them with includeArchived.
+async function fetchAllStomaPatients(opts={}){
   const res=await fetchPatientsSelect(cols=>fetchAllRows(()=>SB.from('patients').select(cols)));
-  return res.error?res:{...res,rows:(res.rows||[]).filter(p=>!isFistulaPatient(p))};
+  return res.error?res:{...res,rows:(res.rows||[]).filter(p=>!isFistulaPatient(p)&&(opts.includeArchived||p.archived!==true))};
 }
 let fistulaIdCache={at:0,ids:new Set()};
 async function fistulaPatientIds(force){
@@ -13841,7 +13942,9 @@ async function withoutFistulaPatients(rows){
 }
 // The registry head-count, fistula patients left out.
 async function stomaPatientCount(){
-  const{count,error}=await SB.from('patients').select('id',{count:'exact',head:true});
+  // Archived duplicates are not registered patients, so they are not counted.
+  let{count,error}=await SB.from('patients').select('id',{count:'exact',head:true}).not('archived','is',true);
+  if(error)({count,error}=await SB.from('patients').select('id',{count:'exact',head:true}));
   if(error||count==null)return{count:null,error};
   const ids=await fistulaPatientIds();
   return{count:Math.max(0,count-ids.size),error:null};
@@ -13898,11 +14001,12 @@ function refashioningError(payload){
     ?'Each stoma refashioning needs a refashioned-on date and operation and findings.':'';
 }
 async function loadPatientDirectory(){
+  const PD_INCLUDE_ARCHIVED=true;
   const tbody=document.getElementById('pd-tbody');
   if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Loading patients…</td></tr>';
   // Try with the clinical-date columns; if the migration has not been run yet
   // the column-missing error is caught and the page loads without them.
-  let{rows:pats,error}=await fetchAllStomaPatients();
+  let{rows:pats,error}=await fetchAllStomaPatients({includeArchived:PD_INCLUDE_ARCHIVED});
   if(error){if(tbody)tbody.innerHTML='<tr><td colspan="6" class="empty">Could not load patients: '+htmlSafe(error.message)+'</td></tr>';return;}
   patientDirectoryRows=(pats||[]).map(p=>({...p,
     owner:normaliseFollowupOwner(p.followup_owner||'Common'),
@@ -14420,10 +14524,11 @@ function pdStomaKinds(p){
   try{types=patientStomaList(p).map(x=>x.type);}catch(e){}
   if(!types.some(t=>String(t||'').trim()))types=[p.stoma_type];
   const kinds=new Set();
-  types.forEach(t=>{const v=String(t||'').toLowerCase();
-    if(/urostom|ileal conduit|uretero/.test(v))kinds.add('urostomy');
-    else if(/ileostom/.test(v))kinds.add('ileostomy');
-    else if(/colostom/.test(v))kinds.add('colostomy');});
+  // Same classifier as every report, so the Registry and the reports agree.
+  types.forEach(t=>{const g=daStomaGroup(t);
+    if(g==='Urostomy'||/uretero/i.test(String(t||'')))kinds.add('urostomy');
+    else if(g==='Ileostomy')kinds.add('ileostomy');
+    else if(g==='Colostomy')kinds.add('colostomy');});
   return kinds;
 }
 function pdStomaKindTiles(rows,scopeNote){
@@ -19764,11 +19869,8 @@ const EDUCATION_BOOKLETS={
 const EDUCATION_KEY_LABEL={colostomy:'Colostomy',ileostomy:'Ileostomy',urostomy:'Urostomy',paediatric:'Paediatric'};
 function educationKeyForStoma(stomaType,age){
   if(age!=null&&age<14)return 'paediatric';
-  const t=String(stomaType||'').toLowerCase();
-  if(/urostom|conduit/.test(t))return 'urostomy';
-  if(/ileostom/.test(t))return 'ileostomy';
-  if(/colostom/.test(t))return 'colostomy';
-  return '';
+  const g=daStomaGroup(stomaType);
+  return g==='Urostomy'?'urostomy':g==='Ileostomy'?'ileostomy':g==='Colostomy'?'colostomy':'';
 }
 function openPatientEducation(){
   const p=clrState.patient;if(!p){alert('Open a patient first.');return;}
@@ -24383,7 +24485,7 @@ function applySitingPatches(rows){
    Performed Stoma. Idempotent: a done session no longer matches. */
 async function reconcileSitedInpatients(){
   try{
-    const{data:sess}=await SB.from('siting_sessions').select('id,id_card,surgery_date,session_date,stoma_formed,surgery_performed,status');
+    const{rows:sess}=await fetchAllRows(()=>SB.from('siting_sessions').select('id,id_card,surgery_date,session_date,stoma_formed,surgery_performed,status'));
     // Never touch a session whose surgery outcome is already decided — a
     // cancelled, done, or operated session (stoma or no stoma) stays as recorded.
     const pending=(sess||[]).filter(r=>r&&r.stoma_formed!==true&&r.surgery_performed!==true
@@ -24407,8 +24509,8 @@ async function loadSitingSessions(){
   const body=document.getElementById('siting-body');
   if(!body)return;
   await reconcileSitedInpatients();
-  const{data,error}=await SB.from('siting_sessions').select('*')
-    .order('session_date',{ascending:true}).order('session_slot',{ascending:true});
+  const{rows:data,error}=await fetchAllRows(()=>SB.from('siting_sessions').select('*')
+    .order('session_date',{ascending:true}).order('session_slot',{ascending:true}));
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
     body.innerHTML=missing
@@ -25517,7 +25619,7 @@ async function loadStomaPerformed(){
   const body=document.getElementById('stomaperformed-body');
   if(!body)return;
   await reconcileSitedInpatients();
-  const{data,error}=await SB.from('siting_sessions').select('*').order('surgery_date',{ascending:false});
+  const{rows:data,error}=await fetchAllRows(()=>SB.from('siting_sessions').select('*').order('surgery_date',{ascending:false}));
   if(error){
     const missing=/siting_sessions|relation|does not exist|column/i.test(String(error.message||''));
     body.innerHTML=missing
@@ -27175,7 +27277,7 @@ const DA_STATUS_COLORS={
   reversed:'#7c3aed', deceased:'#1a1a1a'
 };
 const DA_SERIES=[
-  {key:'new_cases', label:'New cases',  color:'#0891b2', dateField:'surgery_date'},
+  {key:'new_cases', label:'New cases',  color:'#0891b2', dateField:'surgery_date', dateOf:p=>daFirstFormation(p).date||null},
   // A urostomy is permanent, so it is never counted as a reversal — here as
   // everywhere else in the audit.
   {key:'reversals', label:'Reversals',  color:'#7c3aed', dateField:'reversal_date',
@@ -27193,10 +27295,13 @@ const DA_SEX_COLORS={Female:'#c2410c',Male:'#1d4ed8','Not recorded':'#94a3b8'};
 // Free-text stoma types are inconsistent — "End - Colostomy", "Sigmoid Loop
 // Colestomy", "Urostomy". Group them by the word that matters, and keep the
 // exact wording in its own table so nothing is hidden by the grouping.
+// Tested against the type with everything but letters removed, so dashes,
+// spaces and the register's old misspellings (ileosotmy, Ilesosotomy, iliostomy,
+// colestomy, colostmy …) still land in the right group.
 const DA_STOMA_GROUPS=[
-  {label:'Colostomy', color:'#0891b2', test:/colo?e?stomy|colost/i},
-  {label:'Ileostomy', color:'#7c3aed', test:/ile?o?stomy|ileost/i},
-  {label:'Urostomy',  color:'#d97706', test:/uro?stomy|urost|ileal conduit/i},
+  {label:'Colostomy', color:'#0891b2', test:/colo?e?s?t?o?my|colost|colest/},
+  {label:'Ileostomy', color:'#7c3aed', test:/ile?o?stomy|ileost|ileos|ilios|iles|ilost|ilst/},
+  {label:'Urostomy',  color:'#d97706', test:/uro?stomy|urost|uros|conduit|urinary/},
   {label:'Other',     color:'#64748b', test:/./}
 ];
 
@@ -27271,9 +27376,25 @@ function daBand(values,bands){
   return out;
 }
 function daStomaGroup(text){
-  const t=String(text||'').trim();
-  if(!t)return null;
+  const raw=String(text||'').trim();
+  if(!raw)return null;
+  const t=raw.toLowerCase().replace(/[^a-z]/g,'');
   return (DA_STOMA_GROUPS.find(g=>g.test.test(t))||DA_STOMA_GROUPS[DA_STOMA_GROUPS.length-1]).label;
+}
+// The patient's sex as Female / Male / Not recorded. Older imports hold "F",
+// "M", "female " etc.; the rest of the app reads the first letter, so do the same
+// (otherwise those patients fell out of every sex count).
+function daSexLabel(v){const t=String(v||'').trim().toLowerCase();return t.startsWith('f')?'Female':t.startsWith('m')?'Male':'Not recorded';}
+// The patient's FIRST stoma formation (any stoma, not only the first-stoma
+// fields) and its type — so a patient whose operation is recorded only as a
+// later or imported stoma is still in the cohort with the right type.
+function daFirstFormation(p){
+  let best=null;
+  try{patientStomaList(p).forEach(s=>{if(s.kind==='refashion'||!s.formed_date)return;const d=String(s.formed_date).slice(0,10);
+    if(!best||d<best.date)best={date:d,type:s.type||''};});}catch(e){}
+  if(!best&&p&&p.surgery_date)best={date:String(p.surgery_date).slice(0,10),type:p.stoma_type||''};
+  if(best&&!String(best.type||'').trim())best.type=p.stoma_type||'';
+  return best||{date:'',type:p&&p.stoma_type||''};
 }
 // The years the chart runs over. "All" starts at the earliest date on record.
 function daYearRange(){
@@ -27338,18 +27459,26 @@ function daStomaConfiguration(text){
 function renderDataAnalysisStomaTypes(){
   const body=document.getElementById('da-body');
   const {from,to}=daYearRange();
-  const cohort=dataAnalysisRows.filter(p=>{const y=daYear(p.surgery_date);return y!==null&&y>=from&&y<=to;});
+  // Every ileostomy / colostomy FORMED in the range — each stoma counts, so a
+  // patient's later stoma is included, not only the first one on their record.
+  const formed=[],undatedList=[];
+  dataAnalysisRows.forEach(p=>{let any=false;
+    try{patientStomaList(p).forEach(st=>{if(st.kind==='refashion')return;any=true;
+      const y=daYear(st.formed_date);if(y===null){undatedList.push(st);return;}
+      if(y>=from&&y<=to)formed.push(st);});}catch(e){}
+    if(!any&&p.stoma_type){const y=daYear(p.surgery_date);if(y===null)undatedList.push({type:p.stoma_type});else if(y>=from&&y<=to)formed.push({type:p.stoma_type});}
+  });
   const labels=['End','Double-barrel','Loop','Not specified'];
   const groups=['Ileostomy','Colostomy'];
-  const counts=groups.map(group=>labels.map(label=>cohort.filter(p=>daStomaGroup(p.stoma_type)===group&&daStomaConfiguration(p.stoma_type)===label).length));
+  const counts=groups.map(group=>labels.map(label=>formed.filter(st=>daStomaGroup(st.type)===group&&daStomaConfiguration(st.type)===label).length));
   const yearBtn=(v,label)=>`<button class="da-chip ${daYearsBack===v?'on':''}" onclick="setDaYears('${v}')">${label}</button>`;
   const included=counts.flat().reduce((a,b)=>a+b,0);
-  const undated=dataAnalysisRows.filter(p=>groups.includes(daStomaGroup(p.stoma_type))&&!daYear(p.surgery_date)).length;
+  const undated=undatedList.filter(st=>groups.includes(daStomaGroup(st.type))).length;
   body.innerHTML=daSubTabs()+`<div class="da-controls"><div class="da-control-row"><span class="da-control-label">Years</span>
     ${[['last','Last year'],['current','Current year'],['3','Last 3'],['4','Last 4'],['5','Last 5'],['10','Last 10'],['all','All time']].map(([v,l])=>yearBtn(v,l)).join('')}
     <span class="da-range">${htmlSafe(daRangeLabel())}</span></div></div><div class="report-grid">`+
     daCard('configurations','Ileostomy and colostomy types',
-      `Patient records with surgery dated in ${daRangeLabel()}: ${included} ileostomy or colostomy records. Counts use the recorded stoma type, not the number of individual stomas.`,
+      `Ileostomies and colostomies formed in ${daRangeLabel()}: ${included}. Every stoma formed counts (a patient's later stoma included); refashionings are not new stomas.`,
       `<div style="height:300px"><canvas id="da-configurations"></canvas></div><div class="da-tw"><table class="dt"><thead><tr><th>Stoma type</th><th>Ileostomy</th><th>Colostomy</th><th>Total</th></tr></thead><tbody>
       ${labels.map((label,i)=>`<tr><td>${label}</td><td>${counts[0][i]}</td><td>${counts[1][i]}</td><td><strong>${counts[0][i]+counts[1][i]}</strong></td></tr>`).join('')}
       <tr><th>Total</th>${counts.map(c=>`<td><strong>${c.reduce((a,b)=>a+b,0)}</strong></td>`).join('')}<td><strong>${included}</strong></td></tr></tbody></table></div>
@@ -27388,10 +27517,10 @@ function daFormationReasons(p){
 function renderDataAnalysisReasons(){
   const body=document.getElementById('da-body');
   const {from,to}=daYearRange();
-  const cohort=dataAnalysisRows.filter(p=>{const y=daYear(p.surgery_date);return y!==null&&y>=from&&y<=to;});
+  const cohort=dataAnalysisRows.filter(p=>{const y=daYear(daFirstFormation(p).date);return y!==null&&y>=from&&y<=to;});
   const records=cohort.map(p=>({text:patientOperationText(p),reasons:daFormationReasons(p)}));
   const counts=DA_REASON_LABELS.map(label=>({label,n:records.filter(r=>r.reasons.includes(label)).length}));
-  const undated=dataAnalysisRows.filter(p=>!daYear(p.surgery_date)).length;
+  const undated=dataAnalysisRows.filter(p=>!daYear(daFirstFormation(p).date)).length;
   const wording=new Map();
   records.forEach(r=>{const key=r.text||'Not recorded';if(!wording.has(key))wording.set(key,{...r,n:0});wording.get(key).n++;});
   const yearBtn=(v,label)=>`<button class="da-chip ${daYearsBack===v?'on':''}" onclick="setDaYears('${v}')">${label}</button>`;
@@ -27434,24 +27563,21 @@ function renderDataAnalysis(){
   const totals={};DA_SERIES.forEach(s=>{totals[s.key]=counts[s.key].reduce((a,b)=>a+b,0);});
 
   /* the cohort whose stoma was formed in the range — everything below uses it */
-  const cohort=rows.filter(p=>inRange(daYear(p.surgery_date)));
+  const cohort=rows.filter(p=>inRange(daYear(daFirstFormation(p).date)));
   const cohortNote=`Patients whose stoma was formed in ${daRangeLabel()} — ${cohort.length} patient${cohort.length!==1?'s':''}.`;
 
   const stomaGroups=DA_STOMA_GROUPS.map(g=>({label:g.label,color:g.color,
-    n:cohort.filter(p=>daStomaGroup(p.stoma_type)===g.label).length}));
-  const stomaUnrecorded=cohort.filter(p=>!daStomaGroup(p.stoma_type)).length;
+    n:cohort.filter(p=>daStomaGroup(daFirstFormation(p).type)===g.label).length}));
+  const stomaUnrecorded=cohort.filter(p=>!daStomaGroup(daFirstFormation(p).type)).length;
   const stomaExact={};
-  cohort.forEach(p=>{const t=String(p.stoma_type||'').trim();if(t)stomaExact[t]=(stomaExact[t]||0)+1;});
+  cohort.forEach(p=>{const t=String(daFirstFormation(p).type||'').trim();if(t)stomaExact[t]=(stomaExact[t]||0)+1;});
   const stomaExactRows=Object.entries(stomaExact).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([label,n])=>({label,n}));
 
   const sexRows=['Female','Male','Not recorded'].map(label=>({label,color:DA_SEX_COLORS[label],
-    n:cohort.filter(p=>{
-      const v=String(p.sex||'').trim();
-      return label==='Not recorded'?!v:v.toLowerCase()===label.toLowerCase();
-    }).length}));
+    n:cohort.filter(p=>daSexLabel(p.sex)===label).length}));
 
   const ageAtSurgery=daBand(cohort.map(p=>{
-    const m=daMonthsBetween(p.date_of_birth,p.surgery_date);
+    const m=daMonthsBetween(p.date_of_birth,daFirstFormation(p).date);
     return m===null?null:Math.floor(m/12);
   }),[['Under 40',v=>v<40],['40–54',v=>v<55],['55–64',v=>v<65],['65–74',v=>v<75],['75–84',v=>v<85],['85+',()=>true]]);
   const ageNow=daBand(rows.filter(p=>p.st!=='deceased').map(p=>daYearsSince(p.date_of_birth)),
@@ -27460,8 +27586,8 @@ function renderDataAnalysis(){
   const statusRows=FOLLOWUP_STATUSES.map(st=>({st,label:followupStatusText(st),color:DA_STATUS_COLORS[st],
     n:cohort.filter(p=>p.st===st).length})).filter(r=>r.n);
 
-  const toReversal=cohort.map(p=>daMonthsBetween(p.surgery_date,p.reversal_date)).filter(v=>v!==null);
-  const toRip=cohort.map(p=>daMonthsBetween(p.surgery_date,p.deceased_date)).filter(v=>v!==null);
+  const toReversal=cohort.map(p=>{const f=daFirstFormation(p).date,r=metricReversalDates(p).find(x=>x>=f);return daMonthsBetween(f,r);}).filter(v=>v!==null);
+  const toRip=cohort.map(p=>daMonthsBetween(daFirstFormation(p).date,p.deceased_date)).filter(v=>v!==null);
 
   const activeRows=rows.filter(p=>p.st==='active');
   const missing=[
@@ -27469,7 +27595,7 @@ function renderDataAnalysis(){
     ['Date of birth',   activeRows.filter(p=>!p.date_of_birth).length],
     ['Surgery date',    activeRows.filter(p=>!p.surgery_date).length],
     ['Stoma type',      activeRows.filter(p=>!String(p.stoma_type||'').trim()).length],
-    ['Sex',             activeRows.filter(p=>!String(p.sex||'').trim()).length],
+    ['Sex',             activeRows.filter(p=>daSexLabel(p.sex)==='Not recorded').length],
     ['Follow-up owner', activeRows.filter(p=>!String(p.followup_owner||'').trim()).length],
     ['Due month',       activeRows.filter(p=>!(Number(p.followup_due_month)>=1&&Number(p.followup_year)>2000)).length]
   ];
@@ -27556,7 +27682,7 @@ function renderDataAnalysisRegistry(){
   // before it — and the From / To list offers only years that have something.
   const nowY=new Date().getFullYear();
   const incByYearMap=new Map();
-  incomplete.forEach(p=>{const y=daYear(p.surgery_date);if(y)incByYearMap.set(y,(incByYearMap.get(y)||0)+1);});
+  incomplete.forEach(p=>{const y=daYear(daFirstFormation(p).date);if(y)incByYearMap.set(y,(incByYearMap.get(y)||0)+1);});
   const yearsWithInc=[...incByYearMap.keys()].sort((a,b)=>a-b);
   const inYears=y=>yearsWithInc.includes(y);
   const incMinY=yearsWithInc.length?yearsWithInc[0]:nowY;
@@ -27570,15 +27696,15 @@ function renderDataAnalysisRegistry(){
   // To — gap-free — plus an Unknown bucket for records with no surgery date.
   const years=yearsWithInc.filter(y=>y>=daRegFrom&&y<=daRegTo);
   const incByYear=years.map(y=>incByYearMap.get(y)||0);
-  const unknownInc=incomplete.filter(p=>!daYear(p.surgery_date)).length;
+  const unknownInc=incomplete.filter(p=>!daYear(daFirstFormation(p).date)).length;
   const yearLabels=years.map(String).concat(unknownInc?['Unknown']:[]);
   const yearData=incByYear.concat(unknownInc?[unknownInc]:[]);
 
   // Incomplete records per month for the chosen year.
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const incByMonth=MONTHS.map((_,i)=>incomplete.filter(p=>{
-    if(daYear(p.surgery_date)!==daRegYear)return false;
-    const m=Number(String(p.surgery_date).slice(5,7));
+    if(daYear(daFirstFormation(p).date)!==daRegYear)return false;
+    const m=Number(String(daFirstFormation(p).date).slice(5,7));
     return m===i+1;
   }).length);
 
@@ -28826,11 +28952,13 @@ function mapAgeAt(dob,when){
   return m===null?null:Math.floor(m/12);
 }
 const MAP_METRICS=[
-  {key:'colostomy',label:'Colostomy',   color:'#0891b2',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Colostomy',date:p=>p.surgery_date},
-  {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Ileostomy',date:p=>p.surgery_date},
-  {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>daStomaGroup(p.stoma_type)==='Urostomy',date:p=>p.surgery_date},
+  // A patient counts for a type when ANY of their stomas is that type (not only
+  // the first one), dated by when a stoma of that type was formed.
+  {key:'colostomy',label:'Colostomy',   color:'#0891b2',kind:'count',unit:'patients',hit:p=>mapGroupDates(p,'Colostomy').length>0,dates:p=>mapGroupDates(p,'Colostomy')},
+  {key:'ileostomy',label:'Ileostomy',   color:'#7c3aed',kind:'count',unit:'patients',hit:p=>mapGroupDates(p,'Ileostomy').length>0,dates:p=>mapGroupDates(p,'Ileostomy')},
+  {key:'urostomy', label:'Urostomy',    color:'#d97706',kind:'count',unit:'patients',hit:p=>mapGroupDates(p,'Urostomy').length>0,dates:p=>mapGroupDates(p,'Urostomy')},
   {key:'deaths',   label:'Deaths',      color:'#b91c1c',kind:'count',unit:'patients',hit:p=>!!p.deceased_date||p.st==='deceased',date:p=>p.deceased_date||p.followup_status_effective_date},
-  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>!!p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy',date:p=>p.reversal_date},
+  {key:'reversals',label:'Reversals',   color:'#15803d',kind:'count',unit:'patients',hit:p=>metricReversalDates(p).length>0,dates:p=>metricReversalDates(p)},
   {key:'agedeath', label:'Age at death',color:'#9d174d',kind:'avg',  unit:'years',   val:p=>p.deceased_date?mapAgeAt(p.date_of_birth,p.deceased_date):null,date:p=>p.deceased_date},
   {key:'agerev',   label:'Age at reversal',color:'#1d4ed8',kind:'avg',unit:'years',  val:p=>(p.reversal_date&&daStomaGroup(p.stoma_type)!=='Urostomy')?mapAgeAt(p.date_of_birth,p.reversal_date):null,date:p=>p.reversal_date},
   {key:'hospdays', label:'Hospital days',color:'#0f766e',kind:'avg', unit:'days',    val:p=>mapDays(p.surgery_date,p.discharge_date),date:p=>p.surgery_date}
@@ -28844,13 +28972,18 @@ function mapMetricDef(){return MAP_METRICS.find(m=>m.key===mapMetric)||MAP_METRI
 // Whether a patient falls inside the chosen period for a given measure — each
 // measure is dated by its own event (a stoma by its formation, a death by the
 // death date, a reversal by the reversal date). No year picked = all-time.
+// Formation dates of a patient's stomas of one type (refashionings excluded).
+function mapGroupDates(p,group){
+  const out=[];
+  try{patientStomaList(p).forEach(s=>{if(s.kind!=='refashion'&&daStomaGroup(s.type)===group)out.push(String(s.formed_date||'').slice(0,10));});}catch(e){}
+  if(!out.length&&daStomaGroup(p&&p.stoma_type)===group)out.push(String(p.surgery_date||'').slice(0,10));
+  return out;
+}
 function mapPeriodOK(m,p){
   if(!mapYear)return true;
-  const ds=String((m&&m.date?m.date(p):'')||'').slice(0,10);
-  if(!ds)return false;
-  if(ds.slice(0,4)!==String(mapYear))return false;
-  if(mapMonth&&ds.slice(5,7)!==mapMonth)return false;
-  return true;
+  // A measure can carry several dates (e.g. two reversals): any one in the period counts.
+  const list=(m&&m.dates?m.dates(p):[m&&m.date?m.date(p):'']).map(d=>String(d||'').slice(0,10)).filter(Boolean);
+  return list.some(ds=>ds.slice(0,4)===String(mapYear)&&(!mapMonth||ds.slice(5,7)===mapMonth));
 }
 function mapCountHit(m,p){return m.hit(p)&&mapPeriodOK(m,p);}
 function mapPeriodLabel(){return mapYear?(mapMonth?`${followupMonthName(mapMonth)} ${mapYear}`:String(mapYear)):'all time';}
