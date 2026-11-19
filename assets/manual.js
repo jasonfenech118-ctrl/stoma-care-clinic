@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'19 November 2026 — New 🖨️ Printing Press tab in Orders fills the original STO-01 Printing Press form, with the date and officer filled in automatically, and emails it with the form attached. Audit & Reports counting was corrected.'};
+const MANUAL_META={updated:'19 November 2026 — The handover’s Discharge letter button now turns Done by itself once a letter is saved during the current admission. New 🖨️ Printing Press tab in Orders.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -679,6 +679,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">These run without anyone pressing a special button. Each card says where you will see it.</p>
     <div class="man-auto-grid">
       ${[
+        ['📨','Discharge letter column marks itself Done','When a discharge letter is saved for an inpatient, the handover’s Discharge letter button turns Done (dated) by itself. A letter already saved during the current admission marks it Done when the handover opens.','Handover'],
         ['🖨️','Printing Press date and officer','The Printing Press order is dated today and its Officer I/c is the signed-in nurse, filled in automatically each time the tab is opened.','Orders › Printing Press'],
         ['🧾','ESRF date and signature','The ESRF form is dated today and signed with the signed-in nurse’s name automatically each time it is opened.','ESRF'],
         ['🎄','Christmas theme','From 15 November to 6 January every page shows a faint Father Christmas, Mother Christmas, reindeer and elves in the background, a candy-cane stripe under the top bar, candy canes, an elf and sweets in the screen corners (they never block a button), and the Help paperclip wears a Santa hat. It switches off by itself after 6 January.','Every page'],

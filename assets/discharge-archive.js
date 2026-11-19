@@ -56,6 +56,8 @@ async function autosaveDischargeLetter(token,source,payload){
       const {error}=await SB.from('patient_discharge_letters').insert(row);
       if(error&&error.code!=='23505')throw Error(error.message);
       session.autosave={id,fingerprint};
+      // The handover's Discharge letter column turns Done once a letter exists.
+      try{if(typeof window.markDischargeLetterDone==='function')window.markDischargeLetterDone(session.patientId);}catch(e){}
     }else{
       const {error}=await SB.from('patient_discharge_letters').update(fields).eq('id',session.autosave.id).eq('patient_id',session.patientId);
       if(error)throw Error(error.message);
@@ -156,6 +158,7 @@ async function savePatientDischargeLetter(token,source,payload){
     if(error&&error.code!=='23505')throw Error(error.message);
     if(error){const check=await SB.from('patient_discharge_letters').select('id,letter_html').eq('id',id).eq('patient_id',session.patientId).single();if(check.error||check.data?.letter_html!==letterHtml)throw Error('Could not verify the saved letter. Try saving again.');}
     session.last={id,fingerprint};session.pending=null;
+    try{if(typeof window.markDischargeLetterDone==='function')window.markDischargeLetterDone(session.patientId);}catch(e){}
     if(dischargeArchiveContext?.patientId===session.patientId&&document.getElementById('page-discharge-letters')?.classList.contains('active'))openDischargeLetterFor(session.patientId);
     return id;
   }finally{session.busy=false;}
