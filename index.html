@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.15-796"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.20-831"></script>
+<script src="assets/manual.js?v=2026.11.20-832"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2557,6 +2557,8 @@ tr.pd-row-hit td{background:#fffbeb;}
 .ur-dup-tag{display:inline-block;margin-left:4px;padding:2px 8px;border-radius:999px;background:#fde68a;color:#7c2d12;font-size:11px;font-weight:700;}
 .ur-row-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
 .ur-dup-remove{color:#b91c1c!important;border-color:#fecaca!important;}
+.siting-dup-tag{display:inline-block;padding:1px 7px;border-radius:999px;background:#fde68a;color:#7c2d12;font-size:10.5px;font-weight:800;margin-right:4px;}
+tr.siting-dup-row td{background:#fffbeb;}
 </style>
 <style id="followup-design-review">
 #page-handover.hv-manual #hv-table,
@@ -4046,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.20-831';
+const APP_BUILD='2026.11.20-832';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -24673,14 +24675,18 @@ function renderCancelledSitingSessions(){
     body.innerHTML=emptyStateHTML('🔍','No matching cancelled appointments','Try another name, ID card or cancellation reason.');
     return;
   }
-  const trs=rows.map(r=>`<tr>
+  // Two cancelled sessions for the same ID card, date and time are the same
+  // booking entered twice — flag both so the extra one can be deleted.
+  const dupKey=r=>[normaliseIdCard(r.id_card||''),r.session_date||'',String(r.session_slot||'').slice(0,5)].join('|');
+  const dupCount={};all.forEach(r=>{const k=dupKey(r);dupCount[k]=(dupCount[k]||0)+1;});
+  const trs=rows.map(r=>`<tr${dupCount[dupKey(r)]>1?' class="siting-dup-row"':''}>
     <td data-label="Appointment"><div>${r.session_date?htmlSafe(fmtShortDate(r.session_date)):'—'}<div><small>${htmlSafe(sitingSlotLabel(r.session_slot))}</small></div></div></td>
     <td data-label="ID number" style="font-family:monospace;font-size:12px;"><strong>${htmlSafe(r.id_card||'—')}</strong></td>
     <td data-label="Surname"><span class="patient-name-avatar" style="gap:7px;">${patientAvatarHTML(r,'xs')}<strong>${htmlSafe(r.surname||'')}</strong></span></td>
     <td data-label="First name">${htmlSafe(r.first_name||'')}</td>
     <td data-label="Firm">${htmlSafe(r.consultant||'—')}</td>
     <td data-label="Sited for">${htmlSafe(r.siting_for||'—')}</td>
-    <td data-label="Reason / note"><div><strong>${htmlSafe(sitingCancelReasonLabel(r)||'Not recorded')}</strong>${r.cancellation_note?`<div style="white-space:pre-wrap;margin-top:4px;">${htmlSafe(r.cancellation_note)}</div>`:''}</div></td>
+    <td data-label="Reason / note"><div>${dupCount[dupKey(r)]>1?'<span class="siting-dup-tag" title="Same ID card, date and time as another cancelled booking — delete the extra copy with 🗑 Delete">Duplicate</span> ':''}<strong>${htmlSafe(sitingCancelReasonLabel(r)||'Not recorded')}</strong>${r.cancellation_note?`<div style="white-space:pre-wrap;margin-top:4px;">${htmlSafe(r.cancellation_note)}</div>`:''}</div></td>
     <td data-label="Cancelled on / by"><div>${r.cancelled_at?htmlSafe(new Date(r.cancelled_at).toLocaleDateString('en-MT',{day:'2-digit',month:'short',year:'numeric',timeZone:'Europe/Malta'})):'Not recorded'}<div><small>${htmlSafe(r.cancelled_by||'Not recorded')}</small></div></div></td>
     <td data-label="Actions" class="hv-actions-cell"><div class="followup-actions"><button type="button" class="ncb-btn" data-siting-id="${htmlSafe(r.id)}" onclick="rebookCancelledSiting(this.dataset.sitingId)">Rebook</button><button type="button" class="ncb-btn ncb-del" data-siting-id="${htmlSafe(r.id)}" onclick="confirmDeleteCancelledSiting(this.dataset.sitingId)" aria-label="Delete cancelled appointment for ${htmlSafe([r.first_name,r.surname].filter(Boolean).join(' ')||'patient')}, ID card ${htmlSafe(r.id_card||'not recorded')}">🗑 Delete</button></div></td>
   </tr>`).join('');
@@ -24940,7 +24946,16 @@ async function refreshSitingSlotAvail(){
 }
 
 function pickSitingSlot(sl){sitingChosenSlot=sl;refreshSitingSlotAvail();}
+let sitingSaveBusy=false;
 async function saveSitingSession(){
+  // One save at a time: a double click used to book the same siting twice.
+  if(sitingSaveBusy)return;
+  sitingSaveBusy=true;
+  const saveBtn=document.querySelector('#mb .btn-save');if(saveBtn)saveBtn.disabled=true;
+  try{return await saveSitingSessionInner();}
+  finally{sitingSaveBusy=false;if(saveBtn&&document.body.contains(saveBtn))saveBtn.disabled=false;}
+}
+async function saveSitingSessionInner(){
   const val=id=>String(document.getElementById(id)?.value||'').trim();
   const idcard=normaliseIdCard(val('sit-idcard'));
   const first=val('sit-first'), surname=val('sit-surname');
@@ -24955,6 +24970,18 @@ async function saveSitingSession(){
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
   await refreshSitingSlotAvail();
   if(sitingChosenSlot!==slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error">That hour is no longer available. Choose another time.</div>';return;}
+  // A NEW booking for a patient who already has an active siting is usually the
+  // same booking entered twice — ask before creating a second one.
+  if(!sitingEditId){
+    try{
+      const{data:open}=await SB.from('siting_sessions').select('id,id_card,session_date,session_slot,status').ilike('id_card',idcard).limit(20);
+      const active=(open||[]).filter(r=>normaliseIdCard(r.id_card)===idcard&&!['cancelled','done'].includes(String(r.status||'')));
+      if(active.length){
+        const a=active[0];
+        if(!confirm(`${first} ${surname} (${idcard}) already has a siting booked${a.session_date?' on '+fmtShortDate(a.session_date)+(a.session_slot?' at '+sitingSlotLabel(a.session_slot):''):''}.\n\nBook ANOTHER siting session anyway?`))return;
+      }
+    }catch(e){}
+  }
   const surgdate=val('sit-surgdate');
   const payload={id_card:idcard,first_name:first,surname:surname,
     consultant:(consultant&&consultant!=='__add__')?consultant:null,

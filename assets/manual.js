@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'20 November 2026 — The Audit Trail now records every signed-in nurse’s changes once sql/audit-record-all-nurses.sql is run in Supabase. The handover’s Discharge letter button turns Done by itself when a letter is saved.'};
+const MANUAL_META={updated:'20 November 2026 — Booking a siting for a patient who already has one now asks first (and a double click no longer books twice); duplicate cancelled bookings are flagged so the extra copy can be deleted. The Audit Trail records every nurse once sql/audit-record-all-nurses.sql is run.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
