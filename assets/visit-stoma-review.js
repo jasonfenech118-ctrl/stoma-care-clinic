@@ -39,6 +39,9 @@
     #page-patient-record .pd-identity-field.pd-fu-next dd{color:#0d7377}#page-patient-record .pd-identity-field.pd-fu-overdue dd{color:#b91c1c}
     #page-patient-record .pd-identity-field dd{margin:0;font-size:14px;line-height:1.5;font-weight:600;color:#1a2e4a;overflow-wrap:anywhere;white-space:pre-wrap}
     #page-patient-record .pd-identity-surgery{display:grid;gap:12px;padding-top:12px;border-top:1px solid #e2e8f0}
+    #page-patient-record .pd-surg-title{font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#0d7377}
+    #page-patient-record .pd-latest-op{background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:10px 12px!important}
+    #page-patient-record .pd-earlier-stomas{margin-top:10px}#page-patient-record .pd-earlier-stomas>summary{cursor:pointer;font-weight:800;color:#475569;font-size:12.5px}
     @media(max-width:650px){#page-patient-record .pd-identity-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:12px!important}#page-patient-record .pd-identity-clinical{padding-left:12px!important}#page-patient-record .pd-identity-columns .psm-head-main{flex-wrap:wrap!important}#page-patient-record .pd-identity-columns .psm-name{font-size:clamp(14px,3.6vw,20px)!important}#page-patient-record .pd-identity-columns .psm-id{font-size:12px!important}#page-patient-record .pd-identity-field dd{font-size:12px!important}#page-patient-record .pd-identity-field dt{font-size:10px!important}#page-patient-record .pd-identity-columns dl{gap:9px!important}}
 
     #page-patient-record .pd-page .psm-head{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:16px!important;border:1px solid #d6dde5!important;border-radius:10px!important;padding:16px!important;background:#fff!important}
@@ -209,7 +212,37 @@
     const applianceFor=uid=>{const latest=(applHist.get(uid)||[])[0];if(!latest)return '';return [...(latest.appliances||[]),...(latest.accessories||[])].filter(n=>n&&n!=='None').join(', ');};
     const latestAppliance=()=>{let best=null;applHist.forEach(list=>{const e=list&&list[0];if(e&&(!best||String(e.date||'')>String(best.date||'')))best=e;});return best?[...(best.appliances||[]),...(best.accessories||[])].filter(n=>n&&n!=='None').join(', '):'';};
     const operation=s=>s.operation||(s.uid==='base'&&typeof patientOperationText==='function'?patientOperationText(p):'')||s.comments||'';
-    const surgical=surgeries.length?surgeries.map(st=>'<div class="pd-identity-surgery">'+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+field('Current appliance & accessories',applianceFor(st.uid))+'</div>').join(''):field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings)+field('Current appliance & accessories',latestAppliance());
+    /* Latest first. The LATEST OPERATION is the most recent of: a stoma formed,
+       a refashioning, or a reversal / closure (with what was done). The LATEST
+       STOMA is the newest stoma still present (else the newest on record), with
+       its own details. Earlier stomas fold away underneath. */
+    const day=v=>String(v||'').slice(0,10);
+    const sorted=surgeries.slice().sort((a,b)=>day(b.formed_date).localeCompare(day(a.formed_date)));
+    const latestStoma=sorted.find(s=>s.present)||sorted[0]||null;
+    const ops=[];
+    surgeries.forEach(st=>{
+      if(st.formed_date)ops.push({date:day(st.formed_date),what:(st.kind==='refashion'?'Refashioning':'Stoma formed')+' · '+(prettyStomaType(st.type)||'Stoma'),text:operation(st),consultant:st.consultant});
+      if(st.reversal_date)ops.push({date:day(st.reversal_date),what:'Reversal / closure · '+(prettyStomaType(st.type)||'Stoma'),text:st.reversal_notes||'',consultant:''});
+    });
+    try{(typeof stomaOperationHistory==='function'?stomaOperationHistory(p):[]).forEach(ev=>{
+      if(!ev||!ev.date)return;const d=day(ev.date);
+      const same=ops.find(o=>o.date===d);
+      if(same){if(!same.text&&ev.operation)same.text=ev.operation;return;}
+      ops.push({date:d,what:{new:'Stoma formed',reversal:'Reversal / closure',refashion:'Refashioning'}[ev.kind]||'Operation',text:ev.operation||'',consultant:''});
+    });}catch(_){}
+    ops.sort((a,b)=>b.date.localeCompare(a.date));
+    const latestOp=ops[0]||null;
+    const stomaBlock=(st,title)=>'<div class="pd-identity-surgery">'+(title?'<div class="pd-surg-title">'+htmlSafe(title)+'</div>':'')+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+field('Current appliance & accessories',st.present===false?'Stoma no longer present':applianceFor(st.uid))+'</div>';
+    const earlier=sorted.filter(st=>st!==latestStoma);
+    const opBlock=latestOp?'<div class="pd-identity-surgery pd-latest-op"><div class="pd-surg-title">Latest operation</div>'
+      +field('Date',fmtShortDate(latestOp.date))+field('Operation',[latestOp.what,latestOp.text].filter(Boolean).join(' — '))
+      +(latestOp.consultant?field('Consultant',latestOp.consultant):'')+'</div>':'';
+    // When the latest operation IS the forming of the latest stoma, one block says both.
+    const sameEvent=latestOp&&latestStoma&&latestOp.date===day(latestStoma.formed_date)&&/^(Stoma formed|Refashioning)/.test(latestOp.what);
+    const surgical=surgeries.length
+      ? (sameEvent?'':opBlock)+stomaBlock(latestStoma,(sameEvent?'Latest operation & stoma':'Latest stoma')+(latestStoma.present?'':' (no stoma present now)'))
+        +(earlier.length?'<details class="pd-earlier-stomas"><summary>Earlier stomas ('+earlier.length+')</summary>'+earlier.map(st=>stomaBlock(st,'')).join('')+'</details>':'')
+      : field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings)+field('Current appliance & accessories',latestAppliance());
     const fuSum=window.patientFollowupSummary&&String(window.patientFollowupSummary.patientId)===String(p.id)?window.patientFollowupSummary.items:[];
     const followupFields=fuSum.map(it=>'<div class="pd-identity-field pd-fu-field'+(it.tone?' pd-fu-'+it.tone:'')+'"><dt>'+htmlSafe(it.label)+'</dt><dd>'+htmlSafe(it.value)+'</dd></div>').join('');
     const dob=p.date_of_birth?String(p.date_of_birth).slice(0,10).split('-').reverse().join('/'):'';
