@@ -50,7 +50,7 @@ window.UpdateRegister=(()=>{
         const extra=[p.date_of_birth?'DOB '+d(p.date_of_birth):'',p.surgery_date?'Surgery '+d(p.surgery_date):'',p.stoma_type||'',
           p.updated_at?'Last edited '+d(p.updated_at):(p.created_at?'Added '+d(p.created_at):'')].filter(Boolean).join(' · ');
         const nm=[p.first_name,p.surname].filter(Boolean).join(' ');
-        const tag=p._sameName?`<span class="ur-dup-tag">Possible duplicate — same name${p.date_of_birth?' and date of birth':''}, different ID</span>`:isDup(p)?'<span class="ur-dup-tag">Duplicate ID</span>':'';
+        const tag=p._sameName?`<span class="ur-dup-tag">Possible duplicate — ${htmlSafe(p._why||'same name')}</span>`:isDup(p)?'<span class="ur-dup-tag">Duplicate ID</span>':'';
         return `<div class="ur-row${isDup(p)?' ur-row-dup':''}">
         <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''} ${tag}<br>${htmlSafe(nm)}<br><small>${htmlSafe(followupStatusText(p.followup_status))}${extra?' · '+htmlSafe(extra):''}</small></div>
         <div class="ur-row-actions"><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open Profile</button>
@@ -81,15 +81,40 @@ window.UpdateRegister=(()=>{
       const[first,sur]=n.split('|');if(!first||!sur)continue;
       try{
         const q=await SB.from('patients').select('*').ilike('first_name',first).ilike('surname',sur).limit(20);
-        // Same name is only a POSSIBLE duplicate when the date of birth agrees
-        // (or one of them is missing): two different recorded birth dates mean
-        // two different people who happen to share a name.
+        // A shared name alone is NOT evidence — common names belong to many
+        // people. A same-name record is offered only with a reason:
+        //  • its ID is near-identical (one digit added, missing or changed, same
+        //    letter — a typing slip), or
+        //  • both records have a date of birth and they match.
         const dobs=new Set(byId.map(p=>String(p.date_of_birth||'').slice(0,10)).filter(Boolean));
-        const sameDob=p=>{const d=String(p.date_of_birth||'').slice(0,10);return !d||!dobs.size||dobs.has(d);};
-        (q.data||[]).forEach(p=>{if(live(p)&&!seen.has(String(p.id))&&normaliseIdCard(p.id_card)!==key&&sameDob(p)){seen.add(String(p.id));rows.push({...p,_sameName:true});}});
+        const keys=[key];
+        (q.data||[]).forEach(p=>{
+          if(!live(p)||seen.has(String(p.id))||normaliseIdCard(p.id_card)===key)return;
+          const why=urDuplicateReason(p,keys,dobs);
+          if(why){seen.add(String(p.id));rows.push({...p,_sameName:true,_why:why});keys.push(normaliseIdCard(p.id_card));}
+        });
       }catch(e){}
     }
     return {rows,error:null};
+  }
+  // One digit added, missing or changed (same final letter) — a typing slip.
+  function nearId(a,b){
+    a=normaliseIdCard(a);b=normaliseIdCard(b);
+    const la=a.slice(-1),lb=b.slice(-1);if(!/[A-Z]/.test(la)||la!==lb)return false;
+    const x=a.slice(0,-1),y=b.slice(0,-1);if(x===y)return false;
+    if(Math.abs(x.length-y.length)>1)return false;
+    if(x.length===y.length){let d=0;for(let i=0;i<x.length;i++)if(x[i]!==y[i])d++;return d===1;}
+    const [l,sh]=x.length>y.length?[x,y]:[y,x];
+    for(let i=0;i<l.length;i++)if(l.slice(0,i)+l.slice(i+1)===sh)return true;
+    return false;
+  }
+  function urDuplicateReason(p,keys,dobs){
+    const k=normaliseIdCard(p.id_card);
+    if(k&&keys.includes(k))return 'same ID written differently';
+    if(k&&keys.some(x=>nearId(k,x)))return 'near-identical ID (one digit different)';
+    const d=String(p.date_of_birth||'').slice(0,10);
+    if(d&&dobs.has(d))return 'same name and date of birth';
+    return '';
   }
   async function profile(id){
     flow={id,step:'details'};
