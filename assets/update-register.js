@@ -41,15 +41,16 @@ window.UpdateRegister=(()=>{
       // whether it came from the ID search or a name search.
       const idCount={};data.forEach(p=>{const k=normaliseIdCard(p.id_card);if(k)idCount[k]=(idCount[k]||0)+1;});
       const isDup=p=>!!p._sameName||(normaliseIdCard(p.id_card)&&idCount[normaliseIdCard(p.id_card)]>1);
-      const dupCount=data.filter(isDup).length;
-      if(dupCount>1||data.some(p=>p._sameName))
+      // Every record involved counts — the one searched for and its copies.
+      const dupCount=data.some(p=>p._sameName)?data.length:data.filter(isDup).length;
+      if(dupCount>1)
         dupNote=`<div class="ur-dup-note">⚠ <strong>${dupCount} records look like the same patient.</strong> Open each to check, keep the correct one, and press <strong>🗑 Remove duplicate</strong> on the others (it archives the record — it can be restored — with an option to delete it permanently).</div>`;
       const d=v=>v?fmtShortDate(String(v).slice(0,10)):'';
       host.innerHTML=dupNote+data.map(p=>{
         const extra=[p.date_of_birth?'DOB '+d(p.date_of_birth):'',p.surgery_date?'Surgery '+d(p.surgery_date):'',p.stoma_type||'',
           p.updated_at?'Last edited '+d(p.updated_at):(p.created_at?'Added '+d(p.created_at):'')].filter(Boolean).join(' · ');
         const nm=[p.first_name,p.surname].filter(Boolean).join(' ');
-        const tag=p._sameName?'<span class="ur-dup-tag">Possible duplicate — same name, different ID</span>':isDup(p)?'<span class="ur-dup-tag">Duplicate ID</span>':'';
+        const tag=p._sameName?`<span class="ur-dup-tag">Possible duplicate — same name${p.date_of_birth?' and date of birth':''}, different ID</span>`:isDup(p)?'<span class="ur-dup-tag">Duplicate ID</span>':'';
         return `<div class="ur-row${isDup(p)?' ur-row-dup':''}">
         <div><strong>${htmlSafe(p.id_card||'No ID recorded')}</strong> ${p.id_card?`<button type="button" class="btn-cancel" data-id-number="${htmlSafe(p.id_card)}" onclick="copyPatientId(this)">Copy ID</button>`:''} ${tag}<br>${htmlSafe(nm)}<br><small>${htmlSafe(followupStatusText(p.followup_status))}${extra?' · '+htmlSafe(extra):''}</small></div>
         <div class="ur-row-actions"><button type="button" class="btn-add" onclick="UpdateRegister.profile('${jsSafe(p.id)}')">Open Profile</button>
@@ -80,7 +81,12 @@ window.UpdateRegister=(()=>{
       const[first,sur]=n.split('|');if(!first||!sur)continue;
       try{
         const q=await SB.from('patients').select('*').ilike('first_name',first).ilike('surname',sur).limit(20);
-        (q.data||[]).forEach(p=>{if(live(p)&&!seen.has(String(p.id))&&normaliseIdCard(p.id_card)!==key){seen.add(String(p.id));rows.push({...p,_sameName:true});}});
+        // Same name is only a POSSIBLE duplicate when the date of birth agrees
+        // (or one of them is missing): two different recorded birth dates mean
+        // two different people who happen to share a name.
+        const dobs=new Set(byId.map(p=>String(p.date_of_birth||'').slice(0,10)).filter(Boolean));
+        const sameDob=p=>{const d=String(p.date_of_birth||'').slice(0,10);return !d||!dobs.size||dobs.has(d);};
+        (q.data||[]).forEach(p=>{if(live(p)&&!seen.has(String(p.id))&&normaliseIdCard(p.id_card)!==key&&sameDob(p)){seen.add(String(p.id));rows.push({...p,_sameName:true});}});
       }catch(e){}
     }
     return {rows,error:null};
