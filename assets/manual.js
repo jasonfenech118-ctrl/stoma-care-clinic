@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'21 November 2026 — The patient header’s Surgical details now show the Latest operation and the Latest stoma first, with earlier stomas folded underneath. Duplicate siting bookings are prevented and flagged.'};
+const MANUAL_META={updated:'21 November 2026 — Once anyone sends the Weekly MML, it is marked sent for everyone and the Saturday pop-up no longer opens for other users. The patient header shows the latest operation and latest stoma first.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -641,9 +641,9 @@ const MANUAL_SECTIONS=[
       `Check the header (order date, officer, extension, remarks). ${manBtn('💾 Save draft','#eef0f3','#31474f')} keeps your work so you can come back to it.`,
       `${manBtn('🖨 Print','#eef0f3','#31474f')} opens both forms laid out to print on paper.`,
       `${manBtn('✉ Send email','#0d5c66','#fff')} downloads the <b>two Excel files</b> and opens a ready email to <b>disposablessupplies.mdh@gov.mt</b> (CC <b>stomacare.mdh@gov.mt</b>) with the subject and message filled in.`,
-      `<b>Attach both downloaded files</b> to that email and press send in your mail app — a web page cannot attach them for you. Then come back and press <b>✓ Mark as sent</b>.`
+      `<b>Attach both downloaded files</b> to that email and press send in your mail app — a web page cannot attach them for you. Pressing Send email marks the order <b>sent for everyone</b> at once (use <b>Not actually sent? Undo</b> if it was not sent).`
     ])}
-    ${manNote('auto','📅','<b>On Saturdays only</b>, from 06:30, the app <b>opens this tab by itself</b> when you open the app — so the forms are in front of you — until you <b>Mark as sent</b>. It does not prompt on Sunday or other days; you can still open the tab yourself any time.')}
+    ${manNote('auto','📅','<b>On Saturdays only</b>, from 06:30, the app <b>opens this tab by itself</b> when you open the app — so the forms are in front of you — until anyone sends it — once one nurse sends the order, nobody else gets the pop-up. It does not prompt on Sunday or other days; you can still open the tab yourself any time.')}
     ${manNote('tip','📎','The two forms are entered together but always sent as <b>two separate Excel attachments</b> in one email, matching the official stores forms.')}
     ${manNote('tip','🗂','Some standing items are <b>not shown for input</b> but stay on the printed and emailed forms — a few disposables (lancets, glucose strips, the two self-adhesive fabric rolls, skin-care lotion) and several bulk/domestic cleaning items (soaps, shampoo, sponges, bleach, toilet cleaner, thermos flasks, twine, urine attachment).')}
   `},

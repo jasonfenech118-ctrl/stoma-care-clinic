@@ -252,7 +252,16 @@
       now=now||new Date();
       if(now.getDay()!==6)return false;                                   // Saturday only
       if(now.getHours()<DUE_HOUR||(now.getHours()===DUE_HOUR&&now.getMinutes()<DUE_MIN))return false;
-      const o=await loadOrder(mostRecentDueSaturday(now));                // = this Saturday
+      const week=mostRecentDueSaturday(now);                              // = this Saturday
+      // Decide from the SHARED record only: once anyone has sent the order, nobody
+      // gets the pop-up. If the shared record cannot be read, stay quiet rather
+      // than nag every nurse from their own browser's copy.
+      if(deps.db){
+        const{data,error}=await deps.db.from(TABLE).select('status').eq('week_ending',week).maybeSingle();
+        if(error)return false;
+        return !(data&&data.status==='sent');
+      }
+      const o=await loadOrder(week);
       return !(o&&o.status==='sent');
     }catch(e){return false;}
   }
@@ -338,21 +347,30 @@
     try{
       await downloadWorkbooks(state.order);
       openMail(state.order);
-      state.pendingSend=true;
+      // Sending marks the order SENT for everyone straight away, so no other nurse
+      // gets the Saturday pop-up. Undo is offered if the email was not sent.
+      const shared=await markSent();
       note(`<div class="ord-confirm"><b>Two Excel files were downloaded and an email draft opened.</b>
-        Attach <b>both</b> files to the email and press send. Once it has gone:
-        <div class="ord-confirm-act"><button class="ord-btn ord-btn-primary" id="ord-mark-sent">✓ Mark as sent</button>
-        <button class="ord-btn" id="ord-not-yet">Not yet</button></div></div>`);
+        Attach <b>both</b> files to the email and press send. ${shared?'The order is now marked <b>sent for everyone</b> — the Saturday pop-up will not show to anyone else.':'<span style="color:#9a3412;">⚠ The sent status could not be saved to the shared record, so other nurses may still see the pop-up — check the connection and press Send again.</span>'}
+        <div class="ord-confirm-act"><button class="ord-btn" id="ord-undo-sent">Not actually sent? Undo</button></div></div>`);
       const b=(id,fn)=>{const el=root.document.getElementById(id);if(el)el.addEventListener('click',fn);};
-      b('ord-mark-sent',markSent);b('ord-not-yet',()=>note(''));
+      b('ord-undo-sent',undoSent);
     }catch(e){note('<div class="ord-error">Could not build the Excel files: '+esc(e.message||e)+'</div>');}
   }
   async function markSent(){
     let who='';try{if(deps.getUser){const u=await deps.getUser();who=(u&&(u.name||u.full_name||u.email))||'';}}catch(e){}
     state.order.status='sent';state.order.sent_at=new Date().toISOString();state.order.sent_by=who||null;state.pendingSend=false;
+    let shared=false;try{shared=await saveOrder(state.order);}catch(e){shared=false;}
+    // Re-paint the banner only; the note below it stays on screen.
+    const banner=root.document.querySelector('#ordering-body .ord-banner');
+    if(banner)banner.outerHTML=bannerHTML(state.order);
+    if(typeof root.refreshReminders==='function'){try{root.refreshReminders();}catch(e){}}
+    return shared;
+  }
+  async function undoSent(){
+    state.order.status='draft';state.order.sent_at=null;state.order.sent_by=null;
     try{await saveOrder(state.order);}catch(e){}
     render();
-    if(typeof root.refreshReminders==='function'){try{root.refreshReminders();}catch(e){}}
   }
 
   async function open(){
