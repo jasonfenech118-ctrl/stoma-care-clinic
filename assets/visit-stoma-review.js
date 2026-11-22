@@ -147,9 +147,14 @@
       const hasOpenEpisode=typeof clrState!=='undefined'&&typeof openEpisodeIn==='function'&&!!openEpisodeIn(clrState.rows||[]);
       actions.querySelectorAll('button').forEach(button=>{
         const action=button.getAttribute('onclick')||'';
-        if(action.includes('openInpatientVisit()')||action.includes("patientDashboardOpen('history')")){
-          button.hidden=hasOpenEpisode;
-          button.style.display=hasOpenEpisode?'none':'';
+        if(action.includes('openInpatientVisit()')||action.includes("patientDashboardOpen('history')")||button.dataset.episodeBtn){
+          // Never hide this button: while an episode is open it says the patient is
+          // admitted (on the Handover) and opens that episode; otherwise it admits.
+          button.dataset.episodeBtn='1';button.hidden=false;button.style.display='';
+          const label=hasOpenEpisode?'🛏 Admitted · view episode':'Open episode';
+          if(button.textContent!==label)button.textContent=label;
+          button.setAttribute('onclick',hasOpenEpisode?"patientDashboardOpen('history')":'openInpatientVisit()');
+          button.title=hasOpenEpisode?'This patient has an open inpatient episode, so they are on the Handover. Discharge them from the Handover to close it.':'Admit this patient: opens a new inpatient episode and puts them on the Handover.';
         }
       });
     }
