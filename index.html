@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.21-836"></script>
+<script src="assets/manual.js?v=2026.11.22-837"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.21-836';
+const APP_BUILD='2026.11.22-837';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19442,6 +19442,16 @@ function stomaCareModel(p){
     const target=x.kind==='refashion'?(x.target_uid||x.fromStoma?.uid||list.find(t=>t.slot===x.fromStoma?.slot)?.uid):r?.care_parent_uid;
     if(target&&byUid.has(String(target))&&String(target)!==String(x.uid))parent.set(String(x.uid),String(target));
   });
+  // Stomas formed in the SAME operation (same formation date — e.g. a loop
+  // ileostomy and its mucus fistula) share one care list, under the lowest-
+  // numbered stoma of that operation.
+  list.forEach(x=>{
+    if(x.kind==='refashion'||parent.has(String(x.uid)))return;
+    const d=String(x.formed_date||'').slice(0,10);if(!d)return;
+    const first=list.filter(y=>y.kind!=='refashion'&&String(y.formed_date||'').slice(0,10)===d)
+      .sort((a,b)=>(a.number||0)-(b.number||0))[0];
+    if(first&&String(first.uid)!==String(x.uid))parent.set(String(x.uid),String(first.uid));
+  });
   const root=uid=>{uid=String(uid);const seen=new Set();while(parent.has(uid)&&!seen.has(uid)){seen.add(uid);uid=parent.get(uid);}return uid;};
   const groups=new Map();list.forEach(x=>{const key=root(x.uid);if(!groups.has(key))groups.set(key,{key,stomas:[],rows:[]});groups.get(key).stomas.push(x);});
   return {list,byUid,groups,root,normalize:uid=>{uid=String(uid||'');if(byUid.has(uid))return uid;const alias=typeof applianceStomaUid==='function'?applianceStomaUid({stoma_uid:uid},timeline):'';return byUid.has(alias)?alias:'';}};
@@ -19463,9 +19473,17 @@ function careRecordUids(p,model,key,record,date,allowDate=true){
   // A patient with only one stoma ever: every unlinked record belongs to it
   // (unless dated before that stoma was formed).
   if(model.list.length===1){const only=model.list[0];if(!date||!only.formed_date||only.formed_date<=date)return [String(only.uid)];}
+  // Every stoma shares ONE care list (e.g. formed in the same operation): the
+  // record belongs to that list, so there is nothing to choose.
+  {const roots=[...new Set(model.list.map(x=>model.root(x.uid)))];
+   if(roots.length===1){const first=model.list.filter(x=>x.kind!=='refashion').map(x=>String(x.formed_date||'')).filter(Boolean).sort()[0];
+     if(!date||!first||first<=date)return [roots[0]];}}
   if(!allowDate||!date)return [];
   const candidates=model.list.filter(s=>s.formed_date&&s.formed_date<=date&&(!s.reversal_date||s.reversal_date>=date)&&(!s.superseded_date||s.superseded_date>=date)&&!model.list.some(t=>t.kind==='refashion'&&(t.target_uid===s.uid||t.fromStoma?.uid===s.uid)&&t.formed_date&&t.formed_date<=date));
-  return candidates.length===1?[String(candidates[0].uid)]:[];
+  if(candidates.length===1)return [String(candidates[0].uid)];
+  // Several stomas present that day but all in the same care list → that list.
+  const candRoots=[...new Set(candidates.map(x=>model.root(x.uid)))];
+  return candRoots.length===1?[candRoots[0]]:[];
 }
 function careLinkButton(key,uids,model){
   const label=uids.length?uids.map(uid=>{const s=model.byUid.get(uid);return s?'Stoma '+s.number:'Stoma link';}).join(', '):'Choose stoma';
@@ -19760,11 +19778,19 @@ function patientDashboardHistoryHTML(){
   if(unknown.rows.length)groups.push(unknown);
   groups.forEach(g=>{g.latest=g.rows.reduce((date,r)=>String(r.sortDate||r.date)>date?String(r.sortDate||r.date):date,'');g.latest=g.stomas.reduce((date,s)=>String(s.formed_date||'')>date?String(s.formed_date):date,g.latest);});
   groups.sort((a,b)=>b.latest.localeCompare(a.latest)||b.key.localeCompare(a.key));
+  // A stoma with nothing recorded under it gets no dropdown of its own.
+  const eventsOf=g=>g.stomas.some(s=>s.kind==='refashion'||s.reversal_date||s.reversal_unknown);
+  for(let i=groups.length-1;i>=0;i--)if(!groups[i].rows.length&&!eventsOf(groups[i]))groups.splice(i,1);
   const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
     const latest=g.stomas[g.stomas.length-1];
-    const title=root?'Stoma '+root.number+' · '+prettyStomaType(latest?.type||root.type||'Stoma')+(closed?' · Closed':''):'Records needing a stoma link';
+    // Stomas from the same operation are named together: "Loop ileostomy + Mucus fistula".
+    const sameOp=root?g.stomas.filter(s=>s.kind!=='refashion'&&String(s.formed_date||'').slice(0,10)===String(root.formed_date||'').slice(0,10)):[];
+    const typeLabel=sameOp.length>1&&!g.stomas.some(s=>s.kind==='refashion')
+      ?[...new Set(sameOp.map(s=>prettyStomaType(s.type||'Stoma')))].join(' + ')
+      :prettyStomaType(latest?.type||root?.type||'Stoma');
+    const title=root?'Stoma '+root.number+' · '+typeLabel+(closed?' · Closed':''):'Records needing a stoma link';
     const events=g.stomas.flatMap(s=>{
       const result=[];
       if(s.kind==='refashion')result.push({date:s.formed_date||'',title:'Stoma '+s.number+' refashioned · '+prettyStomaType(s.type||'Stoma')});
