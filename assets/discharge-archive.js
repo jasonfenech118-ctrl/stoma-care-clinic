@@ -87,7 +87,7 @@ async function openDischargeLetterFor(patientId){
 }
 function dischargeArchiveHTML(p,letters){
   const id=jsSafe(String(p.id)),name=[p.first_name,p.surname].filter(Boolean).join(' ');
-  return `<div class="discharge-archive"><button type="button" class="psm-back" onclick="backDischargeLetters()">‹ Back to patient record</button><header class="psm-head"><div><h2>Discharge letters</h2><p>${htmlSafe(name)} · ${htmlSafe(p.id_card||'No ID recorded')}</p></div><button type="button" class="psm-btn psm-btn-primary" onclick="createPatientDischargeLetter('${id}')">Create new discharge letter</button></header><h3>Past discharge letters</h3>${letters.length?`<div class="pd-table-scroll"><table class="pd-history-table"><thead><tr><th>Letter date</th><th>Saved by</th><th>Saved on</th><th></th></tr></thead><tbody>${letters.map(r=>`<tr><td>${htmlSafe(r.letter_date||'Not recorded')}</td><td>${htmlSafe(r.created_by_name||'Clinic nurse')}</td><td>${htmlSafe(new Date(r.created_at).toLocaleString('en-GB',{timeZone:'Europe/Malta'}))}</td><td><button type="button" class="psm-btn" onclick="viewSavedDischargeLetter('${jsSafe(String(r.id))}')">Open letter</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="report-note">No discharge letters have been saved to this patient record yet. Create a new letter, then choose Save to patient record.</p>'}<div id="saved-discharge-letter"></div></div>`;
+  return `<div class="discharge-archive"><button type="button" class="psm-back" onclick="backDischargeLetters()">‹ Back to patient record</button><header class="psm-head"><div><h2>Discharge letters</h2><p>${htmlSafe(name)} · ${htmlSafe(p.id_card||'No ID recorded')}</p></div><button type="button" class="psm-btn psm-btn-primary" onclick="createPatientDischargeLetter('${id}')">Create new discharge letter</button></header><h3>Past discharge letters</h3>${letters.length?`<div class="pd-table-scroll"><table class="pd-history-table"><thead><tr><th>Letter date</th><th>Saved by</th><th>Saved on</th><th></th></tr></thead><tbody>${letters.map(r=>`<tr><td>${htmlSafe(r.letter_date||'Not recorded')}</td><td>${htmlSafe(r.created_by_name||'Clinic nurse')}</td><td>${htmlSafe(new Date(r.created_at).toLocaleString('en-GB',{timeZone:'Europe/Malta'}))}</td><td><div class="dl-row-actions" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button type="button" class="psm-btn" onclick="viewSavedDischargeLetter('${jsSafe(String(r.id))}')">Open letter</button><button type="button" class="psm-btn" onclick="editDischargeLetterFull('${jsSafe(String(r.id))}')">✏️ Edit</button><button type="button" class="psm-btn" style="color:#b91c1c;border-color:#fca5a5" onclick="deleteSavedDischargeLetter('${jsSafe(String(r.id))}',this)">🗑 Delete</button></div></td></tr>`).join('')}</tbody></table></div>`:'<p class="report-note">No discharge letters have been saved to this patient record yet. Create a new letter, then choose Save to patient record.</p>'}<div id="saved-discharge-letter"></div></div>`;
 }
 async function viewSavedDischargeLetter(letterId){
   const ctx=dischargeArchiveContext;if(!ctx)return;
@@ -102,6 +102,23 @@ async function viewSavedDischargeLetter(letterId){
       +'<button class="psm-btn" type="button" onclick="editDischargeLetterFull(\''+jsSafe(String(data.id))+'\')">✏️ Edit letter</button></div>';
     const frame=document.createElement('iframe');frame.id='saved-discharge-letter-frame';frame.title='Saved discharge letter';frame.setAttribute('sandbox','allow-same-origin allow-modals');frame.style.cssText='width:100%;height:85vh;background:white;border:1px solid #d1d9e2;margin-top:12px';{const raw=await dischargeDecompress(data.letter_html);frame.srcdoc=typeof dischargeLetterPrintable==='function'?dischargeLetterPrintable(raw):raw;}host.append(frame);host.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){if(request===dischargeArchiveRequest)host.textContent='Could not open this saved letter. '+e.message;}
+}
+// Delete a saved letter after a confirmation. The delete is checked (a blocked
+// delete returns no rows), logged to the audit trail, and the list reloads.
+async function deleteSavedDischargeLetter(letterId,btn){
+  const ctx=dischargeArchiveContext;const patientId=ctx&&ctx.patientId;
+  if(!patientId)return;
+  const row=btn&&btn.closest('tr');const when=row?row.cells[0].textContent.trim():'';
+  if(!confirm('Delete the discharge letter'+(when?' dated '+when:'')+'? This cannot be undone.'))return;
+  if(btn){btn.disabled=true;btn.textContent='Deleting…';}
+  try{
+    const{data,error}=await SB.from('patient_discharge_letters').delete().eq('id',letterId).eq('patient_id',patientId).select('id');
+    if(error)throw Error(error.message);
+    if(!data||!data.length)throw Error('The database did not allow the delete. Ask Jason to run sql/allow-discharge-letter-delete.sql in Supabase.');
+    try{logAudit({action:'delete',entity:'discharge_letter',entity_id:String(letterId),patient_id:String(patientId),summary:'Deleted a saved discharge letter'+(when?' ('+when+')':''),details:{letter_date:when}});}catch(e){}
+    if(dischargeArchiveEditId===String(letterId))dischargeArchiveEditId=null;
+    await openDischargeLetterFor(patientId);
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='🗑 Delete';}alert('Could not delete the letter. '+(e.message||e));}
 }
 function printSavedDischargeLetter(){document.getElementById('saved-discharge-letter-frame')?.contentWindow?.print();}
 // Re-open a saved letter in the full discharge-letter editor (with its toolbar and
