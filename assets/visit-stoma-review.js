@@ -325,13 +325,21 @@
     const p=clrState.patient;if(!p)return;
     const box=document.getElementById('mb');box.className='mb';
     const reversal=typeof canPlanReversal==='function'&&canPlanReversal(p);
-    box.innerHTML='<h2>Surgery dates</h2><div class="fg"><label for="pd-plan-kind">Date type</label><select id="pd-plan-kind"><option value="surgery">Surgery</option>'+(reversal?'<option value="reversal">Planned reversal</option>':'')+'</select></div><div class="fg"><label for="pd-plan-date">Planned date</label><input type="date" id="pd-plan-date"></div><p>The saved date appears on the patient profile. Leave the date blank to clear the selected plan.</p><div id="pd-plan-error" role="status"></div><div class="mact"><button type="button" class="btn-cancel" id="pd-plan-close">Cancel</button><button type="button" class="btn-save" id="pd-plan-save">Save date</button></div>';
+    box.innerHTML='<h2>Surgery dates</h2><div class="fg"><label for="pd-plan-kind">Date type</label><select id="pd-plan-kind"><option value="surgery">Surgery</option>'+(reversal?'<option value="reversal">Planned reversal</option>':'')+'</select></div><div class="fg"><label for="pd-plan-date">Planned date</label><input type="date" id="pd-plan-date"></div><p>The saved date appears on the patient profile. Added one by mistake? Use <b>🗑 Delete date</b> to remove it.</p><div id="pd-plan-error" role="status"></div><div class="mact"><button type="button" class="btn-cancel" id="pd-plan-close">Cancel</button><button type="button" class="btn-cancel" id="pd-plan-delete" style="color:#b91c1c;border-color:#fca5a5" hidden>🗑 Delete date</button><button type="button" class="btn-save" id="pd-plan-save">Save date</button></div>';
     const kind=document.getElementById('pd-plan-kind'),date=document.getElementById('pd-plan-date'),save=document.getElementById('pd-plan-save');
-    const fill=()=>{date.value=(kind.value==='surgery'?p.upcoming_surgery_date:p.proposed_reversal_date)||'';};
+    const del=document.getElementById('pd-plan-delete');
+    const saved=()=>(kind.value==='surgery'?p.upcoming_surgery_date:p.proposed_reversal_date)||'';
+    // The Delete button only shows when a date is saved for the selected type.
+    const fill=()=>{date.value=saved();del.hidden=!saved();};
     kind.onchange=fill;fill();document.getElementById('pd-plan-close').onclick=()=>closeModal();
+    del.onclick=()=>{
+      const label=kind.value==='reversal'?'planned reversal':'surgery';
+      if(!confirm('Delete the '+label+' date ('+(typeof fmtShortDate==='function'?fmtShortDate(saved()):saved())+') from this patient?'))return;
+      date.value='';save.onclick();
+    };
     save.onclick=async()=>{
       const field=kind.value==='reversal'?'proposed_reversal_date':'upcoming_surgery_date',value=date.value||null;
-      save.disabled=true;
+      save.disabled=true;del.disabled=true;
       try{
         const result=await updatePatientTolerant(p.id,{[field]:value});
         if(result.error)throw result.error;
@@ -340,7 +348,7 @@
         try{await refreshReminders();}catch(_){}
         closeModal();await openPatientRecord(p.id,{fromBack:true});
       }catch(e){document.getElementById('pd-plan-error').textContent='Could not save: '+(e.message||e);}
-      finally{save.disabled=false;}
+      finally{save.disabled=false;del.disabled=false;}
     };
     openMo();
   }
