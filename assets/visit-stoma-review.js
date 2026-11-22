@@ -230,17 +230,24 @@
       if(same){if(!same.text&&ev.operation)same.text=ev.operation;return;}
       ops.push({date:d,what:{new:'Stoma formed',reversal:'Reversal / closure',refashion:'Refashioning'}[ev.kind]||'Operation',text:ev.operation||'',consultant:''});
     });}catch(_){}
-    ops.sort((a,b)=>b.date.localeCompare(a.date));
+    // Newest first; on the SAME day the operation that formed a stoma leads — a
+    // closure that day (e.g. the old stoma taken down while a new one is made)
+    // is part of that same operation, not the operation itself.
+    const rank=o=>/^(Stoma formed|Refashioning)/.test(o.what)?0:1;
+    ops.sort((a,b)=>b.date.localeCompare(a.date)||rank(a)-rank(b));
     const latestOp=ops[0]||null;
-    const stomaBlock=(st,title)=>'<div class="pd-identity-surgery">'+(title?'<div class="pd-surg-title">'+htmlSafe(title)+'</div>':'')+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+field('Current appliance & accessories',st.present===false?'Stoma no longer present':applianceFor(st.uid))+'</div>';
+    const alsoSameDay=latestOp?ops.filter(o=>o!==latestOp&&o.date===latestOp.date).map(o=>[o.what,o.text].filter(Boolean).join(' — ')):[];
+    const stomaBlock=(st,title,extra)=>'<div class="pd-identity-surgery">'+(title?'<div class="pd-surg-title">'+htmlSafe(title)+'</div>':'')+field('Consultant',st.consultant)+field('Surgery date (performed)',st.formed_date?fmtShortDate(st.formed_date):'')+field('Stoma type',st.type)+field('Operation performed',operation(st))+(extra||'')+field('Current appliance & accessories',st.present===false?'Stoma no longer present':applianceFor(st.uid))+'</div>';
     const earlier=sorted.filter(st=>st!==latestStoma);
     const opBlock=latestOp?'<div class="pd-identity-surgery pd-latest-op"><div class="pd-surg-title">Latest operation</div>'
       +field('Date',fmtShortDate(latestOp.date))+field('Operation',[latestOp.what,latestOp.text].filter(Boolean).join(' — '))
-      +(latestOp.consultant?field('Consultant',latestOp.consultant):'')+'</div>':'';
+      +(latestOp.consultant?field('Consultant',latestOp.consultant):'')
+      +(alsoSameDay.length?field('Also in this operation',alsoSameDay.join('; ')):'')+'</div>':'';
     // When the latest operation IS the forming of the latest stoma, one block says both.
     const sameEvent=latestOp&&latestStoma&&latestOp.date===day(latestStoma.formed_date)&&/^(Stoma formed|Refashioning)/.test(latestOp.what);
     const surgical=surgeries.length
-      ? (sameEvent?'':opBlock)+stomaBlock(latestStoma,(sameEvent?'Latest operation & stoma':'Latest stoma')+(latestStoma.present?'':' (no stoma present now)'))
+      ? (sameEvent?'':opBlock)+stomaBlock(latestStoma,(sameEvent?'Latest operation & stoma':'Latest stoma')+(latestStoma.present?'':' (no stoma present now)'),
+          sameEvent&&alsoSameDay.length?field('Also in this operation',alsoSameDay.join('; ')):'')
         +(earlier.length?'<details class="pd-earlier-stomas"><summary>Earlier stomas ('+earlier.length+')</summary>'+earlier.map(st=>stomaBlock(st,'')).join('')+'</details>':'')
       : field('Surgery date (performed)',p.surgery_date?fmtShortDate(p.surgery_date):'')+field('Stoma type',p.stoma_type)+field('Operation performed',p.procedure_performed||p.findings)+field('Current appliance & accessories',latestAppliance());
     const fuSum=window.patientFollowupSummary&&String(window.patientFollowupSummary.patientId)===String(p.id)?window.patientFollowupSummary.items:[];
