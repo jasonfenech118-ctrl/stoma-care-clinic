@@ -25,7 +25,7 @@
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.22-838"></script>
+<script src="assets/manual.js?v=2026.11.22-839"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.22-838';
+const APP_BUILD='2026.11.22-839';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19774,13 +19774,24 @@ function patientDashboardHistoryHTML(){
     rows.push({key:'appliance:'+key,kind:'Appliance change',date:g.date,stamp:g.time||'',time:'',text:plain,html,action:'',uids:[...g.linked]});
   });
   const groups=[...model.groups.values()];const unknown={key:'__unlinked__',stomas:[],rows:[]};
-  rows.forEach(row=>{const keys=[...new Set(row.uids.map(model.root))];if(!keys.length)unknown.rows.push(row);else keys.forEach(key=>model.groups.get(key)?.rows.push(row));});
+  // A record about several stomas (e.g. one visit reviewing both) is shown IN
+  // FULL once — under the newest stoma's list — and as a one-line pointer in
+  // the other lists, so the same visit is not repeated in full.
+  const groupLabel=key=>{const g=model.groups.get(key);const r=model.byUid.get(key)||(g&&g.stomas[0]);return r?'Stoma '+r.number+' · '+prettyStomaType(r.type||'Stoma'):'another stoma';};
+  const groupFormed=key=>{const g=model.groups.get(key);return g?g.stomas.reduce((d,s)=>String(s.formed_date||'')>d?String(s.formed_date):d,''):'';};
+  rows.forEach(row=>{
+    const keys=[...new Set(row.uids.map(model.root))].filter(k=>model.groups.has(k));
+    if(!keys.length){unknown.rows.push(row);return;}
+    const home=keys.slice().sort((a,b)=>groupFormed(b).localeCompare(groupFormed(a)))[0];
+    model.groups.get(home).rows.push(row);
+    keys.filter(k=>k!==home).forEach(k=>model.groups.get(k).refs=(model.groups.get(k).refs||[]).concat([{row,home:groupLabel(home)}]));
+  });
   if(unknown.rows.length)groups.push(unknown);
   groups.forEach(g=>{g.latest=g.rows.reduce((date,r)=>String(r.sortDate||r.date)>date?String(r.sortDate||r.date):date,'');g.latest=g.stomas.reduce((date,s)=>String(s.formed_date||'')>date?String(s.formed_date):date,g.latest);});
   groups.sort((a,b)=>b.latest.localeCompare(a.latest)||b.key.localeCompare(a.key));
   // A stoma with nothing recorded under it gets no dropdown of its own.
   const eventsOf=g=>g.stomas.some(s=>s.kind==='refashion'||s.reversal_date||s.reversal_unknown);
-  for(let i=groups.length-1;i>=0;i--)if(!groups[i].rows.length&&!eventsOf(groups[i]))groups.splice(i,1);
+  for(let i=groups.length-1;i>=0;i--)if(!groups[i].rows.length&&!(groups[i].refs||[]).length&&!eventsOf(groups[i]))groups.splice(i,1);
   const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
@@ -19797,7 +19808,8 @@ function patientDashboardHistoryHTML(){
       if(s.reversal_date||s.reversal_unknown)result.push({date:s.reversal_date||'',title:'Stoma '+s.number+' reversed / closed'+(s.reversal_unknown?' · date not known':'')});
       return result;
     });
-    const items=[...g.rows.map(row=>({date:row.sortDate||row.date,stamp:row.stamp,row})),...events.map(event=>({date:event.date,event}))].sort((a,b)=>b.date.localeCompare(a.date)||(a.event?-1:b.event?1:0)||String(b.stamp||'').localeCompare(String(a.stamp||'')));
+    const refEvents=(g.refs||[]).map(r=>({date:r.row.sortDate||r.row.date||'',title:`${r.row.kind||'Record'} — also concerns this stoma; shown in full under ${r.home}`}));
+    const items=[...g.rows.map(row=>({date:row.sortDate||row.date,stamp:row.stamp,row})),...events.map(event=>({date:event.date,event})),...refEvents.map(event=>({date:event.date,event}))].sort((a,b)=>b.date.localeCompare(a.date)||(a.event?-1:b.event?1:0)||String(b.stamp||'').localeCompare(String(a.stamp||'')));
     const table=items.length?`<div class="pd-table-scroll"><table class="pd-history-table pd-pathway-table"><thead><tr><th>Pathway type</th><th>Information</th><th>Date</th></tr></thead><tbody>${items.map(item=>item.event?`<tr class="pd-care-event"><td colspan="2"><strong>${esc(item.event.title)}</strong></td><td>${esc(item.date?fmtShortDate(item.date):'Not recorded')}</td></tr>`:renderRow(item.row,g)).join('')}</tbody></table></div>`:'<p class="report-note">No records linked to this stoma yet.</p>';
     // With only one stoma care list there is nothing to choose between, so it opens by itself.
     const onlyOne=g.key!=='__unlinked__'&&groups.filter(x=>x.key!=='__unlinked__').length===1;
