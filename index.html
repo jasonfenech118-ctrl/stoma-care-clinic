@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-844"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-845"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-844"></script>
+<script src="assets/manual.js?v=2026.11.23-845"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-844';
+const APP_BUILD='2026.11.23-845';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -24417,7 +24417,16 @@ async function recordAddPostopDischarge(patientId,name){
     .eq('patient_id',patientId).eq('kind','episode').order('record_date',{ascending:false}).limit(1);
   if(error){alert('Could not read this patient’s admissions: '+error.message);return;}
   const ep=(eps||[])[0];
-  if(!ep){alert('This patient has no recorded admission to mark as a postop discharge. Admit them first, or discharge from the handover.');return;}
+  if(!ep){
+    if(!confirm(`${name} has no admission on record. Create one, discharged today as a postop discharge, so they join the Postop Discharges list?`))return;
+    const id=await createPostopEpisode(patientId,TODAY);
+    if(!id){alert('Could not create the admission record. Please try again.');return;}
+    try{await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);}catch(e){}
+    try{await stampPostopDischargeDate(patientId,TODAY);}catch(e){}
+    try{logAudit({action:'update',entity:'patient',entity_id:String(patientId),patient_id:String(patientId),patient_name:name,summary:'Added a postop discharge (no admission on record)',details:{date:TODAY}});}catch(e){}
+    closeModal();try{await loadPostopDischarges();}catch(e){}
+    alert(`✅ ${name} is now on the Postop Discharges list for ${fmtShortDate(TODAY)}.`);return;
+  }
   const already=!!ep.discharge_date;
   const mb=document.getElementById('mb');if(!mb)return;mb.className='mb';
   mb.innerHTML=`<h2>Record postop discharge</h2>
@@ -26243,6 +26252,30 @@ function printPostopDischarges(){
 
 /* Discharging closes the patient's open inpatient episode: it keeps its number
    and stays in Episodes, now stamped with the discharge date. */
+/* A patient can be on the Handover by the ward flag alone, with no admission
+   (episode) on record. A postop discharge then had nothing to stamp, so they
+   never reached the Postop Discharges list. This files a closed admission,
+   discharged on the given date, so they do. Returns the new id or null. */
+async function createPostopEpisode(pid,date){
+  try{
+    const{data:pt}=await SB.from('patients').select('inpatient_ward,inpatient_bed,inpatient_since').eq('id',pid).maybeSingle();
+    const ward=pt&&pt.inpatient_ward||'',bed=pt&&pt.inpatient_bed||'';
+    let since=String(pt&&pt.inpatient_since||'').slice(0,10);if(!since||since>date)since=date;
+    let who=null;try{who=(typeof currentStaffName==='function'?currentStaffName():null)||null;}catch(e){}
+    const body={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:ward?`Ward ${ward}${bed?', Bed '+bed:''}`:'Inpatient visit',
+      status:'Discharged',record_date:since,discharge_date:date,is_current:false,created_by:who};
+    try{body.episode_ref=await nextEpisodeRef();}catch(e){}
+    for(let i=0;i<6;i++){
+      const r=await SB.from('clinical_records').insert(body).select('id').single();
+      if(!r.error)return r.data&&r.data.id||null;
+      if(isDuplicateRefError(r.error)&&('episode_ref' in body)){body.episode_ref=await nextEpisodeRef();continue;}
+      const miss=missingColumnFromError(r.error);
+      if(miss&&miss in body){delete body[miss];continue;}
+      break;
+    }
+  }catch(e){}
+  return null;
+}
 async function closeOpenInpatientEpisode(pid,opts){
   const postop=!opts||opts.postop!==false;
   try{
@@ -26252,6 +26285,7 @@ async function closeOpenInpatientEpisode(pid,opts){
     const{data}=await SB.from('clinical_records').select('id')
       .eq('patient_id',pid).eq('kind','episode').eq('is_current',true)
       .order('record_date',{ascending:false});
+    if(!(data||[]).length){if(postop)await createPostopEpisode(pid,TODAY);return;}
     for(const ep of (data||[])){
       const full=postop
         ? {discharge_date:TODAY,is_current:false,status:'Discharged',updated_at:new Date().toISOString()}
