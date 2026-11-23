@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-847"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-848"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-847"></script>
+<script src="assets/manual.js?v=2026.11.23-848"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-847';
+const APP_BUILD='2026.11.23-848';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25795,6 +25795,13 @@ async function loadStomaPerformed(){
    admission already discharged on/after that day leaves them alone. Quiet when
    the audit trail is not readable. */
 let postopWhy={};
+// Was this appointment booked on or after the given discharge date? Unknown
+// booking time counts as yes (the old behaviour).
+function postopBookedAfter(a,dischargeDate){
+  if(!a||!a.created_at)return true;
+  let d='';try{d=new Date(a.created_at).toLocaleDateString('en-CA',{timeZone:'Europe/Malta'});}catch(e){d=String(a.created_at).slice(0,10);}
+  return d>=String(dischargeDate||'').slice(0,10);
+}
 /* Plain-words reason a postop-discharged patient is not on the worklist, or ''
    when they are on it. */
 function postopNotListedReason(pid){
@@ -25873,7 +25880,7 @@ async function loadPostopDischarges(){
   if(ids.length){
     try{
       const{data:appts}=await SB.from('appointments')
-        .select('patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances')
+        .select('patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances,created_at')
         .in('patient_id',ids);
       (appts||[]).forEach(a=>{
         if(!a||!a.patient_id||!a.appt_date)return;
@@ -25904,7 +25911,10 @@ async function loadPostopDischarges(){
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date));
     if(after.some(a=>String(a.status)==='booked'))return 'booked';
     if(after.some(a=>String(a.status)==='attended'))return 'completed';
-    if(after.some(a=>String(a.status)==='cancelled'))return 'with-nurse';
+    // A cancelled appointment sends the patient to that nurse only when it was
+    // booked after this discharge (i.e. from this list). One booked before the
+    // discharge, then cancelled, means they were never seen: they stay here.
+    if(after.some(a=>String(a.status)==='cancelled'&&postopBookedAfter(a,ep.discharge_date)))return 'with-nurse';
     return 'waiting';
   };
   const episodeStates=discharged.map(ep=>({ep,state:stateFor(ep)}));
@@ -25915,7 +25925,7 @@ async function loadPostopDischarges(){
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date)).sort((a,b)=>String(a.appt_date).localeCompare(String(b.appt_date)));
     // Another record sharing this ID card whose discharge was folded into this row.
     allDischarged.forEach(o=>{const k=String(o.patient_id);if(k!==String(ep.patient_id)&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')===normaliseIdCard((byId[ep.patient_id]||{}).id_card||'')&&!postopWhy[k])postopWhy[k]={state:'dup'};});
-    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled'))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
+    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled')&&(state!=='with-nurse'||postopBookedAfter(a,ep.discharge_date)))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
   });
   const eps=episodeStates.filter(x=>x.state==='waiting').map(x=>x.ep);
   const bookedCount=episodeStates.filter(x=>x.state==='booked').length;
