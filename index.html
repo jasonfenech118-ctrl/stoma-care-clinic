@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-849"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-850"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-849"></script>
+<script src="assets/manual.js?v=2026.11.23-850"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-849';
+const APP_BUILD='2026.11.23-850';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -24444,9 +24444,8 @@ async function confirmAddPostopDischarge(patientId,episodeId,name){
   // A postop discharge is home, not on the ward — take the patient off the handover.
   const{error:pe}=await SB.from('patients').update({is_inpatient:false}).eq('id',patientId);
   if(pe){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+pe.message);return;}
-  const full={discharge_date:date,status:'Discharged',is_current:false,updated_at:new Date().toISOString()};
-  const markEp=async id=>{let r=await SB.from('clinical_records').update(full).eq('id',id);
-    if(r.error&&missingColumnFromError(r.error)){const{discharge_date,...rest}=full;r=await SB.from('clinical_records').update(rest).eq('id',id);}return r;};
+  const full={discharge_date:date,status:'Discharged',is_current:false,updated_at:new Date().toISOString(),postop_discharged_at:new Date().toISOString()};
+  const markEp=id=>updateEpisodeTolerant(id,full);
   const r=await markEp(episodeId);
   if(r.error){if(btn){btn.disabled=false;btn.textContent='Record postop discharge';}alert('Could not record the postop discharge: '+r.error.message);return;}
   // Close any other still-open admission so nothing is left on the ward.
@@ -25795,12 +25794,29 @@ async function loadStomaPerformed(){
    admission already discharged on/after that day leaves them alone. Quiet when
    the audit trail is not readable. */
 let postopWhy={};
+// Update an episode, dropping any column the database does not have yet.
+async function updateEpisodeTolerant(id,patch){
+  let body={...patch},r;
+  for(let i=0;i<6;i++){
+    r=await SB.from('clinical_records').update(body).eq('id',id);
+    const miss=r.error&&missingColumnFromError(r.error);
+    if(miss&&miss in body){delete body[miss];continue;}
+    break;
+  }
+  return r;
+}
 // Was this appointment booked on or after the given discharge date? Unknown
 // booking time counts as yes (the old behaviour).
-function postopBookedAfter(a,dischargeDate){
+function postopBookedAfter(a,ep){
   if(!a||!a.created_at)return true;
-  let d='';try{d=new Date(a.created_at).toLocaleDateString('en-CA',{timeZone:'Europe/Malta'});}catch(e){d=String(a.created_at).slice(0,10);}
-  return d>=String(dischargeDate||'').slice(0,10);
+  const day=String(ep&&ep.discharge_date||'').slice(0,10);
+  // Exact moment the postop discharge was recorded, when known: the dedicated
+  // column, else the episode's last update if that was on the discharge day.
+  const maltaDay=t=>{try{return new Date(t).toLocaleDateString('en-CA',{timeZone:'Europe/Malta'});}catch(e){return String(t).slice(0,10);}};
+  let at=ep&&ep.postop_discharged_at;
+  if(!at&&ep&&ep.updated_at&&maltaDay(ep.updated_at)===day)at=ep.updated_at;
+  if(at)return new Date(a.created_at).getTime()>new Date(at).getTime();
+  return maltaDay(a.created_at)>=day;
 }
 /* Plain-words reason a postop-discharged patient is not on the worklist, or ''
    when they are on it. */
@@ -25853,9 +25869,17 @@ async function loadPostopDischarges(){
   const body=document.getElementById('postop-body');
   if(!body)return;
   try{await healMissingPostopDischarges();}catch(e){}
-  const{data,error}=await SB.from('clinical_records')
-    .select('id,patient_id,detail,record_date,discharge_date,notes,appliances,status')
+  const baseSel='id,patient_id,detail,record_date,discharge_date,notes,appliances,status';
+  let{data,error}=await SB.from('clinical_records')
+    .select(baseSel+',updated_at,postop_comment,postop_discharged_at')
     .eq('kind','episode').order('discharge_date',{ascending:false});
+  // Before sql/add-postop-comment.sql is run, read without the new columns.
+  if(error&&missingColumnFromError(error)){
+    ({data,error}=await SB.from('clinical_records').select(baseSel+',updated_at')
+      .eq('kind','episode').order('discharge_date',{ascending:false}));
+    if(error&&missingColumnFromError(error))({data,error}=await SB.from('clinical_records').select(baseSel)
+      .eq('kind','episode').order('discharge_date',{ascending:false}));
+  }
   if(error){
     const missing=/clinical_records|discharge_date|column|relation|does not exist/i.test(String(error.message||''));
     body.innerHTML=missing
@@ -25912,12 +25936,12 @@ async function loadPostopDischarges(){
     // A postop discharge always lands here: an appointment booked BEFORE the
     // discharge does not take them off. Only one booked after it (from this
     // list), or a follow-up actually attended, does.
-    if(after.some(a=>String(a.status)==='booked'&&postopBookedAfter(a,ep.discharge_date)))return 'booked';
+    if(after.some(a=>String(a.status)==='booked'&&postopBookedAfter(a,ep)))return 'booked';
     if(after.some(a=>String(a.status)==='attended'))return 'completed';
     // A cancelled appointment sends the patient to that nurse only when it was
     // booked after this discharge (i.e. from this list). One booked before the
     // discharge, then cancelled, means they were never seen: they stay here.
-    if(after.some(a=>String(a.status)==='cancelled'&&postopBookedAfter(a,ep.discharge_date)))return 'with-nurse';
+    if(after.some(a=>String(a.status)==='cancelled'&&postopBookedAfter(a,ep)))return 'with-nurse';
     return 'waiting';
   };
   const episodeStates=discharged.map(ep=>({ep,state:stateFor(ep)}));
@@ -25928,7 +25952,7 @@ async function loadPostopDischarges(){
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date)).sort((a,b)=>String(a.appt_date).localeCompare(String(b.appt_date)));
     // Another record sharing this ID card whose discharge was folded into this row.
     allDischarged.forEach(o=>{const k=String(o.patient_id);if(k!==String(ep.patient_id)&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')===normaliseIdCard((byId[ep.patient_id]||{}).id_card||'')&&!postopWhy[k])postopWhy[k]={state:'dup'};});
-    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled')&&(state==='completed'||postopBookedAfter(a,ep.discharge_date)))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
+    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled')&&(state==='completed'||postopBookedAfter(a,ep)))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
   });
   const eps=episodeStates.filter(x=>x.state==='waiting').map(x=>x.ep);
   const bookedCount=episodeStates.filter(x=>x.state==='booked').length;
@@ -25954,7 +25978,7 @@ async function loadPostopDischarges(){
       first_name:pt.first_name||'',consultant:pt.consultant||'',
       sex:pt.sex||null,operated_abroad:!!pt.operated_abroad,followup_status:pt.followup_status,
       deceased_date:pt.deceased_date||null,reversal_date:pt.reversal_date||null,extra_statuses:pt.extra_statuses,
-      appliance:episodeApplianceSummaryLine(ep)};
+      appliance:episodeApplianceSummaryLine(ep),episodeId:ep.id,comment:ep.postop_comment||''};
   });
   postopState.rows=rows;
   const trs=rows.map(r=>`<tr class="postop-row"${r.id?` onclick="openPostopBooking('${r.id}')" title="Book a follow-up for ${htmlSafe(`${r.first_name} ${r.surname}`.trim())}"`:''}>
@@ -25963,7 +25987,7 @@ async function loadPostopDischarges(){
     <td data-label="ID number" style="font-family:monospace;font-size:12px;">${htmlSafe(r.id_card||'—')}</td>
     <td data-label="Surname"><strong>${htmlSafe(r.surname)}</strong></td>
     <td data-label="First name">${htmlSafe(r.first_name)}</td>
-    <td data-label="Appliance + notes"><div class="postop-appl">${htmlSafe(r.appliance)}</div>${r.id?`<button class="postop-revert" onclick="event.stopPropagation();openCommunityFollowup('${jsSafe(String(r.id))}')" title="Follow up by community (Comcare) — book an email follow-up instead of an in-person appointment.">📧 Community follow-up</button><button class="postop-revert" onclick="event.stopPropagation();revertPostopDischarge('${jsSafe(String(r.id))}','${jsSafe(`${r.first_name} ${r.surname}`.trim())}')" title="Discharged by mistake? Reopen the admission and put the patient back on the handover.">↩ Revert postop discharge</button>`:''}</td>
+    <td data-label="Appliance + notes"><div class="postop-appl">${htmlSafe(r.appliance)}</div>${r.comment?`<div class="postop-comment" style="margin:3px 0;font-size:12px;color:#1e3a8a;white-space:pre-wrap;">💬 ${htmlSafe(r.comment)}</div>`:''}${r.id?`<button class="postop-revert" onclick="event.stopPropagation();openCommunityFollowup('${jsSafe(String(r.id))}')" title="Follow up by community (Comcare) — book an email follow-up instead of an in-person appointment.">📧 Community follow-up</button><button class="postop-revert" onclick="event.stopPropagation();revertPostopDischarge('${jsSafe(String(r.id))}','${jsSafe(`${r.first_name} ${r.surname}`.trim())}')" title="Discharged by mistake? Reopen the admission and put the patient back on the handover.">↩ Revert postop discharge</button>${r.episodeId?`<button class="postop-revert" style="color:#1e3a8a" onclick="event.stopPropagation();openPostopComment('${jsSafe(String(r.episodeId))}')" title="Add or edit a comment on this postop discharge.">💬 ${r.comment?'Edit comment':'Comment'}</button>`:''}`:''}</td>
   </tr>`).join('');
   body.innerHTML=`<div class="roster-wrap"><table class="hv-xl" id="postop-table">
     <colgroup>
@@ -25984,6 +26008,28 @@ async function loadPostopDischarges(){
  * it — and you pick a free slot under a nurse. That books the appointment,
  * makes that nurse the patient's follow-up owner, and drops them off the list.
  * ------------------------------------------------------------------------- */
+/* A free-text comment on a postop discharge row, saved on that admission. */
+function openPostopComment(episodeId){
+  const r=(postopState.rows||[]).find(x=>String(x.episodeId)===String(episodeId));if(!r)return;
+  const nm=`${r.first_name} ${r.surname}`.trim();
+  const mb=document.getElementById('mb');mb.className='mb';
+  mb.innerHTML=`<h2>💬 Comment</h2><div class="msub">Postop discharge of <strong>${htmlSafe(nm)}</strong> on ${htmlSafe(fmtShortDate(r.discharge_date))}.</div>
+    <div class="fg"><label for="pc-text">Comment</label><textarea id="pc-text" rows="4" maxlength="1000" placeholder="e.g. Appointment cancelled, patient to be called">${htmlSafe(r.comment||'')}</textarea></div>
+    <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-save" id="pc-save" onclick="savePostopComment('${jsSafe(String(episodeId))}')">Save comment</button></div>`;
+  openMo();setTimeout(()=>document.getElementById('pc-text')?.focus(),50);
+}
+async function savePostopComment(episodeId){
+  const text=(document.getElementById('pc-text')?.value||'').trim();
+  const btn=document.getElementById('pc-save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const r=(postopState.rows||[]).find(x=>String(x.episodeId)===String(episodeId))||{};
+  const res=await SB.from('clinical_records').update({postop_comment:text||null}).eq('id',episodeId);
+  if(res.error){
+    if(btn){btn.disabled=false;btn.textContent='Save comment';}
+    alert(missingColumnFromError(res.error)?'Comments are not switched on in the database yet. Ask Jason to run sql/add-postop-comment.sql once in Supabase.':'Could not save the comment: '+res.error.message);return;
+  }
+  try{logAudit({action:'update',entity:'patient',entity_id:String(r.id||''),patient_id:String(r.id||''),patient_name:`${r.first_name||''} ${r.surname||''}`.trim(),summary:'Postop discharge comment '+(text?'saved':'cleared'),details:{comment:text}});}catch(e){}
+  closeModal();await loadPostopDischarges();
+}
 let postopBookCtx=null;
 async function openPostopBooking(patientId){
   const{data:pat,error}=await fetchPatientById(patientId);
@@ -26343,7 +26389,7 @@ async function createPostopEpisode(pid,date){
     let since=String(pt&&pt.inpatient_since||'').slice(0,10);if(!since||since>date)since=date;
     let who=null;try{who=(typeof currentStaffName==='function'?currentStaffName():null)||null;}catch(e){}
     const body={patient_id:pid,kind:'episode',title:'Inpatient visit',detail:ward?`Ward ${ward}${bed?', Bed '+bed:''}`:'Inpatient visit',
-      status:'Discharged',record_date:since,discharge_date:date,is_current:false,created_by:who};
+      status:'Discharged',record_date:since,discharge_date:date,is_current:false,created_by:who,postop_discharged_at:new Date().toISOString()};
     try{body.episode_ref=await nextEpisodeRef();}catch(e){}
     for(let i=0;i<6;i++){
       const r=await SB.from('clinical_records').insert(body).select('id').single();
@@ -26368,13 +26414,9 @@ async function closeOpenInpatientEpisode(pid,opts){
     if(!(data||[]).length){if(postop)await createPostopEpisode(pid,TODAY);return;}
     for(const ep of (data||[])){
       const full=postop
-        ? {discharge_date:TODAY,is_current:false,status:'Discharged',updated_at:new Date().toISOString()}
+        ? {discharge_date:TODAY,is_current:false,status:'Discharged',updated_at:new Date().toISOString(),postop_discharged_at:new Date().toISOString()}
         : {is_current:false,status:'Closed (old case)',updated_at:new Date().toISOString()};
-      let r=await SB.from('clinical_records').update(full).eq('id',ep.id);
-      if(r.error&&missingColumnFromError(r.error)){
-        const{discharge_date,...rest}=full;
-        await SB.from('clinical_records').update(rest).eq('id',ep.id);
-      }
+      await updateEpisodeTolerant(ep.id,full);
     }
   }catch(e){}
 }
