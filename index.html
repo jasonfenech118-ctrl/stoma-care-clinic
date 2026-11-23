@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-845"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-846"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-845"></script>
+<script src="assets/manual.js?v=2026.11.23-846"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-845';
+const APP_BUILD='2026.11.23-846';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25785,9 +25785,44 @@ async function loadStomaPerformed(){
       <tr><th>Surgery date</th><th>ID number</th><th>Surname</th><th>First name</th><th>Firm</th><th>Stoma</th><th></th></tr>
     </thead><tbody>${trs}</tbody></table></div>`;
 }
+/* Self-heal: a patient postop-discharged from the Handover whose discharge never
+   reached this list (no admission on record to date) gets a closed admission
+   filed automatically, dated the day of that discharge. Read from the audit
+   trail (last 60 days); an Undo logged afterwards, a re-admission, or an
+   admission already discharged on/after that day leaves them alone. Quiet when
+   the audit trail is not readable. */
+async function healMissingPostopDischarges(){
+  try{
+    const since=new Date(Date.now()-60*864e5).toISOString();
+    const{data:logs,error}=await SB.from('audit_log').select('patient_id,at,summary,details')
+      .gte('at',since).or('summary.ilike.Discharged from handover (Postop discharge)%,summary.ilike.Undid a discharge%')
+      .order('at',{ascending:true});
+    if(error||!logs||!logs.length)return 0;
+    const last={};
+    logs.forEach(l=>{if(!l.patient_id)return;
+      if(/^Undid a discharge/i.test(l.summary||''))delete last[l.patient_id];
+      else last[l.patient_id]=(l.details&&l.details.date)||String(l.at).slice(0,10);});
+    const ids=Object.keys(last);if(!ids.length)return 0;
+    const[{data:eps},{data:pats}]=await Promise.all([
+      SB.from('clinical_records').select('patient_id,discharge_date,is_current').eq('kind','episode').in('patient_id',ids),
+      SB.from('patients').select('id,is_inpatient').in('id',ids)]);
+    const inpt=new Set((pats||[]).filter(p=>p.is_inpatient===true).map(p=>String(p.id)));
+    let made=0;
+    for(const pid of ids){
+      const d=String(last[pid]).slice(0,10);
+      if(inpt.has(String(pid)))continue;
+      const mine=(eps||[]).filter(e=>String(e.patient_id)===String(pid));
+      if(mine.some(e=>e.is_current&&!e.discharge_date))continue;
+      if(mine.some(e=>e.discharge_date&&String(e.discharge_date).slice(0,10)>=d))continue;
+      if(await createPostopEpisode(pid,d))made++;
+    }
+    return made;
+  }catch(e){return 0;}
+}
 async function loadPostopDischarges(){
   const body=document.getElementById('postop-body');
   if(!body)return;
+  try{await healMissingPostopDischarges();}catch(e){}
   const{data,error}=await SB.from('clinical_records')
     .select('id,patient_id,detail,record_date,discharge_date,notes,appliances,status')
     .eq('kind','episode').order('discharge_date',{ascending:false});
