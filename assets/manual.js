@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'22 November 2026 — The Surgery dates box has a 🗑 Delete date button to remove a planned surgery or reversal date added by mistake. Saved discharge letters have ✏️ Edit and 🗑 Delete buttons.'};
+const MANUAL_META={updated:'23 November 2026 — Postop discharge is now always offered in the Discharge patient box, with a warning when no new operation is recorded for the admission. Surgery dates has a 🗑 Delete date button.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -508,7 +508,7 @@ const MANUAL_SECTIONS=[
     ${manH2('🏷️','One "Discharge patient" button')}
     <p class="man-lede">Press ${manBtn('🏷️ Discharge patient','#e0e7ff','#3730a3')} on the patient’s row. Discharging is a <b>layered safety check</b>: ① pick the outcome, ② check the patient (name, ID and ward are shown back to you), then a <b>final confirm</b> with a tick. A <b>going-home discharge</b> (Postop / old case) adds a <b>community-nurse referral</b> question in between (see below). Every step has a <b>← Back</b>, so a mistake can be corrected before it is done.</p>
     <ul class="man-ul">
-      <li>${manBtn('🏥 Postop discharge','#fdecea','#c0392b')} — joins the Postop Discharges list for follow-up booking. Offered only while an operation is still open for discharge this admission.</li>
+      <li>${manBtn('🏥 Postop discharge','#fdecea','#c0392b')} — joins the Postop Discharges list for follow-up booking. Always offered; if no new operation is recorded for this admission it shows an amber warning, so choose it only if the patient had surgery during this stay.</li>
       <li>${manBtn('📁 Discharge (old case)','#eef0f3','#4b5563')} — off the ward, but not a post-op discharge.</li>
       <li>${manBtn('⛴️ Discharged to Gozo','#dbeafe','#1e3a8a')} — care continues in Gozo; sets the status.</li>
       <li>${manBtn('✈️ Relocated overseas','#fef9c3','#713f12')} — patient left the country and is paused; sets the status.</li>
