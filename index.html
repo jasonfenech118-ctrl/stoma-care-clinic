@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-848"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-849"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-848"></script>
+<script src="assets/manual.js?v=2026.11.23-849"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4048,7 +4048,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-848';
+const APP_BUILD='2026.11.23-849';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -25909,7 +25909,10 @@ async function loadPostopDischarges(){
     // Relocated overseas, discharged to Gozo or deceased — no follow-up to book.
     if(POSTOP_LEFT_STATUSES.has(String(pt.followup_status||'').toLowerCase()))return 'left';
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date));
-    if(after.some(a=>String(a.status)==='booked'))return 'booked';
+    // A postop discharge always lands here: an appointment booked BEFORE the
+    // discharge does not take them off. Only one booked after it (from this
+    // list), or a follow-up actually attended, does.
+    if(after.some(a=>String(a.status)==='booked'&&postopBookedAfter(a,ep.discharge_date)))return 'booked';
     if(after.some(a=>String(a.status)==='attended'))return 'completed';
     // A cancelled appointment sends the patient to that nurse only when it was
     // booked after this discharge (i.e. from this list). One booked before the
@@ -25925,7 +25928,7 @@ async function loadPostopDischarges(){
     const after=(followups[ep.patient_id]||[]).filter(a=>String(a.appt_date)>=String(ep.discharge_date)).sort((a,b)=>String(a.appt_date).localeCompare(String(b.appt_date)));
     // Another record sharing this ID card whose discharge was folded into this row.
     allDischarged.forEach(o=>{const k=String(o.patient_id);if(k!==String(ep.patient_id)&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')&&normaliseIdCard((byId[o.patient_id]||{}).id_card||'')===normaliseIdCard((byId[ep.patient_id]||{}).id_card||'')&&!postopWhy[k])postopWhy[k]={state:'dup'};});
-    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled')&&(state!=='with-nurse'||postopBookedAfter(a,ep.discharge_date)))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
+    postopWhy[String(ep.patient_id)]={state,discharge:ep.discharge_date,appt:after.find(a=>String(a.status)===(state==='booked'?'booked':state==='completed'?'attended':'cancelled')&&(state==='completed'||postopBookedAfter(a,ep.discharge_date)))||null,status:(byId[ep.patient_id]||{}).followup_status||''};
   });
   const eps=episodeStates.filter(x=>x.state==='waiting').map(x=>x.ep);
   const bookedCount=episodeStates.filter(x=>x.state==='booked').length;
