@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'23 November 2026 — Postop Discharges comments (e.g. transport needed) now stand out highlighted in bright green, on that list only.'};
+const MANUAL_META={updated:'23 November 2026 — Typed Handover notes are now highlighted orange. Postop Discharges comments are highlighted bright green.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -413,7 +413,7 @@ const MANUAL_SECTIONS=[
     ${manH2('📋','What each part of the Appliance + notes cell means')}
     <ul class="man-ul">
       <li><b>Appliance line</b> — only the latest appliance &amp; accessories for each present stoma (e.g. "Colo: Lentell 100mm"). Older unlinked entries and appliances belonging to closed stomas remain in history and do not appear beside the current selection.</li>
-      <li><b>Notes</b> — free text you can type straight onto the sheet.</li>
+      <li><b>Notes</b> — free text you can type straight onto the sheet; once something is typed the box is highlighted <b>orange</b> so it stands out.</li>
       <li><b>Flange due</b> chip — colours by urgency; overdue turns red.</li>
       <li><b>Schedule V permit</b> — the button cycles <b>Not done → Left in ward → Signed → Collected → black box</b>. “Left in ward” records today's date and starts green; the handover colour then changes every calendar day through yellow and orange, red on day six and dark red from day seven (from the saved Left in ward date). “Signed” and the new “<b>Collected</b>” (the patient collected the controlled-drugs items from pharmacy) each stamp their own date and clear the waiting warning. A step's date is <b>recorded once and never reset</b> by cycling the button, so clicking through does not mix up the dates; the black box keeps every date (previous-admission permit). To correct a date, tap <b>Open permit</b> in the bell and edit the Left in ward / Signed / Collected boxes. Each step is also <b>recorded in the patient's encounters</b> — on the open admission if there is one, otherwise on its own — so Left in ward / Signed / Collected show in the patient profile history.</li>
       <li><b>⚠️ Complication line</b> — open complications, named, with the latest trend.</li>
