@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'23 November 2026 — Typed Handover notes are highlighted orange on every row, including red infection rows. Postop Discharges comments are highlighted bright green.'};
+const MANUAL_META={updated:'24 November 2026 — Booking a siting now checks the ID card against the Registry (leading zeros ignored, near-identical IDs flagged) and fills an existing patient’s details. This stops duplicate patients being created.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -374,9 +374,11 @@ const MANUAL_SECTIONS=[
     ${manSteps([
       `Open ${manBtn('📍 Siting','#efe7fb','#5b3aa8')} → ${manBtn('📍 Siting Session','#efe7fb','#5b3aa8')} → ${manBtn('＋ Book siting session','#e7f7ef','#1c8f5f')}.`,
       `Enter the patient, the firm/consultant, what they are sited for and the planned surgery date.`,
+      `Type the <b>ID card</b> first. If the patient is already in the Registry the box turns green and fills their name and firm from the record, so no duplicate patient is made (<b>Open profile</b> shows their details).`,
       `On the day, mark the site and complete the assessment (you can add a photograph).`
     ])}
     ${manNote('tip','📍','The assessment and printed form use a <b>black-and-white, unlabelled abdomen diagram</b> with the abdominal grid and the lower genital area cropped off. Tap the diagram to add sites, drag a marker to move it, or tap a marker to remove it. Older saved sites keep their original diagram so their positions remain accurate; <b>Clear all</b> removes those sites and starts a fresh map on the current diagram.')}
+    ${manNote('auto','🪪','The ID is matched the forgiving way: spaces, letter case and <b>leading zeros</b> are ignored (0235390M = 235390M). A <b>near-identical ID</b> (one digit added, missing or changed) or the <b>same name under another ID</b> is flagged in amber with <b>Use this patient</b>, and booking a new ID that is one digit away asks you to confirm first.')}
     ${manNote('auto','⚙️','When the planned <b>surgery day arrives</b>, the sited patient appears at the top of the Handover as <b>"Awaiting surgery"</b> automatically — nobody has to add them.')}
     ${manNote('tip','🚫','To <b>cancel</b> a siting session, press <b>Cancel</b> on its row and choose <b>why</b> — <b>Due to the patient</b> or a <b>Hospital complication</b> — with an optional note. It is the same patient / hospital split the clinic records on a cancelled appointment. The cancelled session, with its reason, is kept in the patient’s <b>Siting sessions</b> history (greyed out) so nothing is lost. Needs <b>sql/add-siting-cancellation.sql</b> run once in Supabase to store the reason; until then the session still cancels and the app says the reason could not be saved yet.')}
     ${manNote('tip','📝','In the <b>Pre-operative Assessment</b> each item has <b>Met / Unmet / Notes</b>, a date and initials, plus a <b>Notes</b> box that is now <b>always visible</b> — so a written note shows and can be added under any choice, not only when “Notes” is picked.')}
@@ -705,6 +707,7 @@ const MANUAL_SECTIONS=[
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
         ['🔪','Upcoming surgery shows up','The planned date appears on the patient’s Overview and Stomas tabs, alongside any earlier siting assessment. On the day, the patient appears highlighted at the top of the handover; the planned date clears when they are admitted.','Handover'],
         ['📍','Awaiting surgery / reversal','A sited patient (surgery day) or a planned reversal (reversal day) appears at the top of the handover automatically.','Handover'],
+        ['🪪','Siting checks the Registry for duplicates','Typing an ID when booking a siting looks the patient up in the Registry (leading zeros, spaces and letter case ignored). An existing patient’s name and firm are filled and locked; a near-identical ID or same name under another ID is flagged before a new patient is booked.','Siting › Book siting session'],
         ['📍','Siting diagram stays with its sites','New assessments and printed forms use the cropped black-and-white abdomen. Saved sites retain the diagram on which they were marked, so their positions do not shift. Clear all starts a fresh map on the current diagram.','Siting › Pre-operative Assessment'],
         ['↩','Closure keeps the stoma history','Saving reversal / closure closes only the selected stoma, retains its history and clears the planned reversal date. Other present stomas remain open; follow-up is updated from the remaining stomas.','Registry › Outcome'],
         ['↺','Outcome recalculated after reversion','After Yes, revert, the outcome is recalculated from the remaining record. Reverting Reversed reopens the latest closure and keeps earlier stoma history; other recorded outcome dates are retained.','Registry › Outcome'],

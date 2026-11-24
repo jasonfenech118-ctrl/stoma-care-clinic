@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.10.28-656"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.23-854"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.24-855"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.23-854"></script>
+<script src="assets/manual.js?v=2026.11.24-855"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4053,7 +4053,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.23-854';
+const APP_BUILD='2026.11.24-855';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -24906,9 +24906,10 @@ function openSitingBooking(presetDate,presetSlot,edit){
   mb.innerHTML=`<h2>📍 ${sitingEditId?'Edit siting session':'Book siting session'}</h2>
     <div class="msub">A pre-operative stoma siting — one hour long, booked as a single session.</div>
     <div class="edit-seen-grid">
-      <div class="fg"><label>ID card *</label><input type="text" id="sit-idcard" placeholder="e.g. 404261M" value="${htmlSafe(e.id_card||'')}"/></div>
+      <div class="fg"><label>ID card *</label><input type="text" id="sit-idcard" placeholder="e.g. 404261M" value="${htmlSafe(e.id_card||'')}" oninput="sitingIdLookupSoon()" onblur="sitingIdLookup()" autocomplete="off"/></div>
       <div class="fg"><label>First name *</label><input type="text" id="sit-first" placeholder="Given name" value="${htmlSafe(e.first_name||'')}"/></div>
-      <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name" value="${htmlSafe(e.surname||'')}"/></div>
+      <div class="fg"><label>Surname *</label><input type="text" id="sit-surname" placeholder="Family name" value="${htmlSafe(e.surname||'')}" onblur="sitingNameCheck()" autocomplete="off"/></div>
+      <div id="sit-registry" style="grid-column:1 / -1;"></div>
       <div class="fg"><label>Firm <span style="font-weight:400;color:var(--muted);">(consultant / team)</span></label><select id="sit-consultant" onchange="firmAdd(this)">${firmOptions(e.consultant||'')}</select></div>
       <div class="fg"><label>Surgery date <span style="font-weight:400;color:var(--muted);">(if known)</span></label><input type="date" id="sit-surgdate" value="${htmlSafe(e.surgery_date||'')}"/></div>
       <div class="fg" style="grid-column:1 / -1;"><label>Being sited for * <span style="font-weight:400;color:var(--muted);">(tick all that apply)</span></label>
@@ -24921,7 +24922,109 @@ function openSitingBooking(presetDate,presetSlot,edit){
     <div class="mact"><button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-save" onclick="saveSitingSession()">${sitingEditId?'Save changes':'Book session'}</button></div>`;
   openMo();
+  sitingRegistry={rows:null,match:null,near:[],id:''};
+  if(e.id_card)sitingIdLookup();
   refreshSitingSlotAvail();
+}
+/* Registry check while booking a siting. The ID is matched the forgiving way
+   (spaces, letter case and leading zeros ignored: 0066541A = 66541A), so a
+   patient already in the Registry is recognised and their details are filled
+   from the record instead of being typed again. A near-identical ID (one digit
+   added, missing or changed, same letter) or the same name under another ID is
+   flagged as a possible duplicate. The registry is read once per booking. */
+let sitingRegistry={rows:null,match:null,near:[],id:''},sitingIdTimer=null;
+async function sitingRegistryRows(){
+  if(sitingRegistry.rows)return sitingRegistry.rows;
+  const r=await fetchAllRows(()=>SB.from('patients').select('id,first_name,surname,id_card,consultant,archived,date_of_birth,followup_status'));
+  sitingRegistry.rows=(r.rows||[]).filter(p=>p.archived!==true);
+  return sitingRegistry.rows;
+}
+function sitingIdLookupSoon(){clearTimeout(sitingIdTimer);sitingIdTimer=setTimeout(sitingIdLookup,450);}
+function sitingNearId(a,b){
+  a=normaliseIdCard(a);b=normaliseIdCard(b);
+  const la=a.slice(-1),lb=b.slice(-1);if(!/[A-Z]/.test(la)||la!==lb)return false;
+  const x=a.slice(0,-1),y=b.slice(0,-1);if(x===y||x.length<3||y.length<3)return false;
+  if(Math.abs(x.length-y.length)>1)return false;
+  if(x.length===y.length){let d=0;for(let i=0;i<x.length;i++)if(x[i]!==y[i])d++;return d===1;}
+  const[l,sh]=x.length>y.length?[x,y]:[y,x];
+  for(let i=0;i<l.length;i++)if(l.slice(0,i)+l.slice(i+1)===sh)return true;
+  return false;
+}
+function sitingPersonLine(p){
+  const nm=[p.first_name,p.surname].filter(Boolean).join(' ')||'Unnamed';
+  return `<strong>${htmlSafe(nm)}</strong> · ID ${htmlSafe(p.id_card||'—')}${p.date_of_birth?' · born '+htmlSafe(fmtShortDate(p.date_of_birth)):''}${p.consultant?' · '+htmlSafe(p.consultant):''}`;
+}
+// Leaving a matched patient (ID changed): clear the names that were filled from
+// their record so they are not booked under the new ID by mistake.
+function sitingClearMatch(){
+  const m=sitingRegistry.match;if(!m)return;
+  sitingRegistry.match=null;sitingSetNamesLocked(false);
+  const f=document.getElementById('sit-first'),sn=document.getElementById('sit-surname');
+  if(f&&f.value===(m.first_name||''))f.value='';
+  if(sn&&sn.value===(m.surname||''))sn.value='';
+}
+function sitingSetNamesLocked(lock){
+  ['sit-first','sit-surname'].forEach(id=>{const el=document.getElementById(id);if(!el)return;el.readOnly=!!lock;el.style.background=lock?'#eef6f4':'';});
+}
+async function sitingIdLookup(){
+  clearTimeout(sitingIdTimer);
+  const box=document.getElementById('sit-registry'),el=document.getElementById('sit-idcard');
+  if(!box||!el)return;
+  const key=normaliseIdCard(el.value);
+  if(!/^\d{3,}[A-Z]$/.test(key)){
+    sitingClearMatch();
+    box.innerHTML='';sitingRegistry.near=[];return;
+  }
+  if(key===sitingRegistry.id&&box.innerHTML)return;
+  sitingRegistry.id=key;
+  box.innerHTML='<div class="registry-lookup-note">Checking the Registry…</div>';
+  let rows;try{rows=await sitingRegistryRows();}catch(e){box.innerHTML='';return;}
+  if(normaliseIdCard(document.getElementById('sit-idcard')?.value)!==key)return;   // typed on
+  const exact=rows.filter(p=>normaliseIdCard(p.id_card)===key);
+  const near=exact.length?[]:rows.filter(p=>sitingNearId(p.id_card,key));
+  sitingRegistry.near=near;
+  if(exact.length===1){
+    const p=exact[0];sitingRegistry.match=p;
+    const f=document.getElementById('sit-first'),sn=document.getElementById('sit-surname'),c=document.getElementById('sit-consultant');
+    if(f)f.value=p.first_name||'';if(sn)sn.value=p.surname||'';
+    if(c&&!c.value&&p.consultant){if(![...c.options].some(o=>o.value===p.consultant))c.add(new Option(p.consultant,p.consultant),0);c.value=p.consultant;}
+    sitingSetNamesLocked(true);
+    box.innerHTML=`<div class="registry-lookup-note" style="background:#e8f7ef;border:1px solid #34a36b;color:#14532d;padding:8px 10px;border-radius:8px;">✓ <strong>Already in the Registry</strong> — ${sitingPersonLine(p)}. Details are filled from their record; no new patient will be created.
+      <button type="button" class="ncb-btn" style="margin-left:6px;background:#0d7377;color:#fff;" onclick="closeModal();openPatientRecord('${jsSafe(String(p.id))}')">Open profile</button></div>`;
+    return;
+  }
+  sitingClearMatch();
+  if(exact.length>1){
+    box.innerHTML=`<div class="registry-lookup-note error">⚠️ <strong>${htmlSafe(key)} has ${exact.length} records in the Registry</strong> (a duplicate). Remove the extra one in the Update Register first:<br>${exact.map(sitingPersonLine).join('<br>')}</div>`;
+    return;
+  }
+  if(near.length){
+    box.innerHTML=`<div class="registry-lookup-note" style="background:#fff7e6;border:1px solid #e0a83a;color:#7a4a00;padding:8px 10px;border-radius:8px;">⚠️ <strong>Not in the Registry under ${htmlSafe(key)}</strong>, but a near-identical ID (one digit different) is — is it the same patient?
+      ${near.slice(0,5).map(p=>`<div style="margin-top:6px;">${sitingPersonLine(p)} <button type="button" class="ncb-btn" style="background:#0d7377;color:#fff;" onclick="sitingUsePatient('${jsSafe(String(p.id))}')">Use this patient</button></div>`).join('')}</div>`;
+    return;
+  }
+  box.innerHTML=`<div class="registry-lookup-note">New patient — ${htmlSafe(key)} is not in the Registry yet.</div>`;
+  sitingNameCheck();
+}
+function sitingUsePatient(id){
+  const p=(sitingRegistry.rows||[]).find(r=>String(r.id)===String(id));if(!p)return;
+  const el=document.getElementById('sit-idcard');if(el)el.value=normaliseIdCard(p.id_card);
+  sitingRegistry.id='';sitingIdLookup();
+}
+// Same first name and surname under a different ID: shown as a hint to check,
+// never blocking (common names belong to many people).
+async function sitingNameCheck(){
+  const box=document.getElementById('sit-registry');if(!box||sitingRegistry.match)return;
+  const f=String(document.getElementById('sit-first')?.value||'').trim().toLowerCase(),sn=String(document.getElementById('sit-surname')?.value||'').trim().toLowerCase();
+  if(!f||!sn)return;
+  let rows;try{rows=await sitingRegistryRows();}catch(e){return;}
+  const key=normaliseIdCard(document.getElementById('sit-idcard')?.value);
+  const same=rows.filter(p=>String(p.first_name||'').trim().toLowerCase()===f&&String(p.surname||'').trim().toLowerCase()===sn&&normaliseIdCard(p.id_card)!==key);
+  box.querySelector('.sit-name-hint')?.remove();
+  if(!same.length)return;
+  const d=document.createElement('div');d.className='registry-lookup-note sit-name-hint';d.style.cssText='background:#f1f5f9;border:1px solid #cbd5e1;padding:8px 10px;border-radius:8px;margin-top:6px;';
+  d.innerHTML=`ℹ️ The Registry has someone with the same name under another ID — check it is not the same person:${same.slice(0,5).map(p=>`<div style="margin-top:6px;">${sitingPersonLine(p)} <button type="button" class="ncb-btn" style="background:#0d7377;color:#fff;" onclick="sitingUsePatient('${jsSafe(String(p.id))}')">Use this patient</button></div>`).join('')}`;
+  box.append(d);
 }
 /* Show the day's 1-hour slots as buttons — free ones are pickable, ones already
    taken by another siting or a Common appointment are greyed. */
@@ -25025,6 +25128,7 @@ async function saveSitingSession(){
   finally{sitingSaveBusy=false;if(saveBtn&&document.body.contains(saveBtn))saveBtn.disabled=false;}
 }
 async function saveSitingSessionInner(){
+  let payload_registry_patient=null;
   const val=id=>String(document.getElementById(id)?.value||'').trim();
   const idcard=normaliseIdCard(val('sit-idcard'));
   const first=val('sit-first'), surname=val('sit-surname');
@@ -25039,6 +25143,18 @@ async function saveSitingSessionInner(){
   if(!date){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">Pick a date.</div>';return;}
   await refreshSitingSlotAvail();
   if(sitingChosenSlot!==slot){if(msg)msg.innerHTML='<div class="registry-lookup-note error">That hour is no longer available. Choose another time.</div>';return;}
+  // Registry duplicate guard: make sure the ID has been checked, refuse an ID
+  // that already has two registry records, and ask before booking a new ID when
+  // a near-identical one is already in the Registry.
+  if(sitingRegistry.id!==idcard){sitingRegistry.id='';await sitingIdLookup();}
+  {const rows=sitingRegistry.rows||[];
+   const exact=rows.filter(p=>normaliseIdCard(p.id_card)===idcard);
+   if(exact.length>1){if(msg)msg.innerHTML='<div class="registry-lookup-note error" style="margin:6px 0;">This ID has more than one record in the Registry. Remove the duplicate in the Update Register before booking.</div>';return;}
+   if(!exact.length&&sitingRegistry.near.length){
+     const n=sitingRegistry.near[0];
+     if(!confirm(`${idcard} is not in the Registry, but ${[n.first_name,n.surname].filter(Boolean).join(' ')} (${n.id_card}) has a near-identical ID.\n\nPress Cancel and choose "Use this patient" if it is the same person, or OK to book ${idcard} as a different patient.`))return;
+   }
+   if(exact.length===1){payload_registry_patient=exact[0];}}
   // A NEW booking for a patient who already has an active siting is usually the
   // same booking entered twice — ask before creating a second one.
   if(!sitingEditId){
@@ -25060,9 +25176,12 @@ async function saveSitingSessionInner(){
   if(!sitingEditId)payload.status='booked';
   else payload.updated_at=new Date().toISOString();
   // If this ID already belongs to a registry patient, stamp the link so the
-  // patient's Siting view finds it even before any surgery/stoma outcome.
-  try{const{matches}=await findRegistryPatientsByIdCard(idcard);
-    if(matches.length===1)payload.patient_id=matches[0].id;}catch(e){}
+  // patient's Siting view finds it even before any surgery/stoma outcome, and
+  // keep the ID and names exactly as the Registry has them.
+  if(payload_registry_patient){const rp=payload_registry_patient;payload.patient_id=rp.id;
+    payload.id_card=normaliseIdCard(rp.id_card)||idcard;if(rp.first_name)payload.first_name=rp.first_name;if(rp.surname)payload.surname=rp.surname;}
+  else{try{const{matches}=await findRegistryPatientsByIdCard(idcard);
+    if(matches.length===1)payload.patient_id=matches[0].id;}catch(e){}}
   try{const u=await getCurrentUserForAudit();if(!sitingEditId)payload.created_by=u?.name||null;}catch(e){}
   const run=b=>sitingEditId
     ? SB.from('siting_sessions').update(b).eq('id',sitingEditId)
