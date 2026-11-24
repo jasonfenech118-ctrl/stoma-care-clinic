@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'24 November 2026 — Booking a siting now checks the ID card against the Registry (leading zeros ignored, near-identical IDs flagged) and fills an existing patient’s details. This stops duplicate patients being created.'};
+const MANUAL_META={updated:'24 November 2026 — 🗑 Remove this stoma now also deletes older-style refashioning and new-stoma records, which used to reappear after deleting. Siting bookings check the Registry for an existing patient first.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
