@@ -42,6 +42,9 @@ only). Nothing is saved and no email is sent until this plan is carried out.
    A **reply can carry attachments too**:
    - photos (camera or gallery on a phone) and files;
    - any picture received in the conversation, sent back as it is;
+   - a received picture marked up **with one click**: its **✏️ Mark up & reply**
+     button, or a tap on the picture, in the email itself opens it in the marker;
+     the marked-up copy goes straight onto the reply;
    - a received picture **marked up in the app**: a marker in seven colours,
      thin / medium / thick, with Undo and Start over. It is saved as
      "marked-up <name>.jpg", with the longest side at most 1600 px.

@@ -268,16 +268,22 @@
   function show(list){
     const msgs=(list||[]).slice().reverse();   // oldest first
     if(!msgs.length){say('Nothing could be read from that email.');return;}
+    dropDraftFiles();st.draft=null;
     st.msgs=msgs;st.check=patientCheck(msgs,st.patient);st.codes=codesFor(msgs,st.kind,st.patient.id);
     render();
   }
-  function attHTML(m){
+  function attHTML(m,mi){
     if(!m.attachments||!m.attachments.length)return '';
-    return '<div class="ec-atts"><span class="ec-label">Attachments</span>'+m.attachments.map(a=>{
-      let thumb='';
-      if(a.bytes&&/^image\//.test(a.type)){try{const u=URL.createObjectURL(new Blob([a.bytes],{type:a.type}));st.urls.push(u);thumb='<img src="'+u+'" alt="">';}catch(e){}}
-      return '<span class="ec-att">'+thumb+'📎 '+esc(a.name)+(a.size?' <small>'+Math.max(1,Math.round(a.size/1024))+' KB</small>':'')+'</span>';
-    }).join('')+'<span class="ec-note">Will be saved automatically with the message once switched on.</span></div>';
+    const pics=m.attachments.map((a,ai)=>({a,ai})).filter(x=>x.a.bytes&&/^image\//.test(x.a.type));
+    const others=m.attachments.filter(a=>!(a.bytes&&/^image\//.test(a.type)));
+    return '<div class="ec-atts"><span class="ec-label">Attachments</span>'
+      // A picture that came in: one click opens it in the marker, and the
+      // marked-up copy goes straight onto the reply.
+      +pics.map(({a,ai})=>'<span class="ec-pic"><button type="button" class="ec-pic-img" title="Mark up this picture" aria-label="Mark up '+esc(a.name)+'" onclick="EmailCorrespondence.markUp('+mi+','+ai+')"><img src="'+imgUrl(a)+'" alt=""></button>'
+        +'<span class="ec-pic-name">'+esc(a.name)+' <small>'+kb(a.size)+'</small></span>'
+        +'<button type="button" class="ec-pic-edit" onclick="EmailCorrespondence.markUp('+mi+','+ai+')">✏️ Mark up &amp; reply</button></span>').join('')
+      +others.map(a=>'<span class="ec-att">📎 '+esc(a.name)+(a.size?' <small>'+kb(a.size)+'</small>':'')+'</span>').join('')
+      +'<span class="ec-note">Will be saved automatically with the message once switched on.</span></div>';
   }
   function msgHTML(m,i){
     const dir=direction(m),who=senderType(m,st.kind),code=st.codes[i]||'';
@@ -289,7 +295,7 @@
       +'<dl class="ec-fields"><dt>From</dt><dd>'+esc(personText(m.from)||'Not in the pasted text — the top of the email was not copied')+'</dd>'
         +'<dt>To</dt><dd>'+esc(listText(m.to)||'—')+'</dd>'+(m.cc.length?'<dt>CC</dt><dd>'+esc(listText(m.cc))+'</dd>':'')
         +'<dt>Subject</dt><dd>'+esc(m.subject||'—')+'</dd></dl>'
-      +'<div class="ec-body">'+esc(m.body||'(no text)')+'</div>'+attHTML(m)
+      +'<div class="ec-body">'+esc(m.body||'(no text)')+'</div>'+attHTML(m,i)
       +'<details class="ch-raw"><summary>Original email as received</summary><pre>'+esc(m.original)+'</pre></details>'
       +'</article>';
   }
@@ -312,15 +318,22 @@
   // else on it — the nurse can remove any of those or add others. LOCKED:
   // stomacare.mdh@gov.mt is always copied in and the subject is always the
   // patient's name, surname and ID card — neither can be changed.
-  function reply(){
+  function newDraft(){
     const last=st.msgs.slice().reverse().find(m=>direction(m)==='received')||st.msgs[st.msgs.length-1]||{};
     const me=[CLINIC(),myEmail()];
     const to=last.from&&last.from.email?[last.from]:[];
     const seen=new Set(to.map(p=>p.email).concat(me));
     const cc=(last.to||[]).concat(last.cc||[]).filter(p=>p.email&&!seen.has(p.email)&&(seen.add(p.email),true));
-    dropDraftFiles();
-    st.draft={to,toText:listText(to),cc,subject:subjectFor(st.patient),replyTo:last,body:'',atts:[]};
-    composer();
+    return {to,toText:listText(to),cc,subject:subjectFor(st.patient),replyTo:last,body:'',atts:[]};
+  }
+  // The reply keeps what was written and attached until another email is opened.
+  function reply(){if(!st.draft)st.draft=newDraft();composer();}
+  // One click on a picture that came in: open it in the marker; the marked-up
+  // copy is attached to the reply.
+  function markUp(mi,ai){
+    const m=st.msgs[mi],a=m&&m.attachments&&m.attachments[ai];if(!a||!a.bytes)return;
+    const fresh=!st.draft;if(fresh)st.draft=newDraft();
+    openEditor(imgUrl(a),{kind:'new',name:a.name,from:'thread',fresh});
   }
   // The reply screen, drawn from the draft (so what was typed survives the
   // picture editor).
@@ -432,7 +445,12 @@
   function edSize(z){ed.size=z;document.querySelectorAll('.ec-size').forEach(b=>b.classList.toggle('is-on',+b.dataset.z===z));}
   function edUndo(){ed.strokes.pop();redraw();}
   function edClear(){if(ed.strokes.length&&!confirm('Remove all the drawing and start over?'))return;ed.strokes=[];redraw();}
-  function edCancel(){ed.img=null;composer();}
+  function edCancel(){
+    const t=ed.target||{};ed.img=null;
+    // Opened straight from the email and nothing written yet: back to the email.
+    if(t.from==='thread'&&t.fresh&&st.draft&&!st.draft.body&&!st.draft.atts.length){st.draft=null;render();return;}
+    if(t.from==='thread')render();else composer();
+  }
   function edDone(){
     if(!ed.canvas)return;
     const t=ed.target;
@@ -514,7 +532,7 @@
       +st.msgs.map(emailPrintHTML).join(''));
   }
 
-  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,composer,draft:setDraft,back,send,printOne,report,ccAdd,ccRemove,
+  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,markUp,composer,draft:setDraft,back,send,printOne,report,ccAdd,ccRemove,
     addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_state:st};
 })(window);

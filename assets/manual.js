@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — Email preview: a reply can now carry photos and files, and a picture from the conversation can be marked up with a coloured marker before attaching. Still a preview, switched on with Dataverse.'};
+const MANUAL_META={updated:'26 November 2026 — Email preview: a picture someone sent has a one-click ✏️ Mark up & reply button that opens it with the marker and attaches the marked-up copy to your reply. Still a preview, switched on with Dataverse.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -196,7 +196,7 @@ const MANUAL_SECTIONS=[
       `<b>Organise ›</b> splits the thread into one message each, oldest first: who sent it (<b>From</b>), <b>To</b>, <b>CC</b>, date and time, subject, its own text and its attachments (pictures shown small), plus the <b>original email</b> word for word. Each shows the <b>encounter code</b> it would get (e.g. EP03-123456M-02-DC), whether it was sent by the clinic or received, and from a doctor, community nurse or patient. The ID card in the email is checked against the patient.`,
       `<b>🖨</b> prints one email laid out like Outlook; <b>📄 Correspondence report</b> prints all the messages one by one.`,
       `<b>✉️ Write a reply</b>: To is the last sender and CC is everyone else on the email — remove anyone with <b>✕</b> or add an address with <b>＋ Add</b>. <b>🔒 stomacare.mdh@gov.mt is always copied in</b> and the subject is <b>always the patient’s name, surname and ID card</b>: neither can be changed or removed. The reply goes as <b>Reply all</b> to the latest email, in the same Outlook conversation, so the doctor’s first email and every reply stay together.`,
-      `<b>Attachments on a reply:</b> <b>🖼 Add photos</b> (on a phone this offers the camera or gallery) and <b>📎 Add files</b>. A picture that came in the conversation can be sent back with <b>＋ Attach</b>, or marked up with <b>✏️ Mark up</b>: draw on it with a marker in red, orange, yellow, green, blue, black or white, thin / medium / thick, with <b>Undo</b> and <b>Start over</b>, then attach it. Each attachment shows its size, can be marked up again (✏️) or removed (✕); the total must stay under 20 MB.`
+      `<b>Attachments on a reply:</b> <b>🖼 Add photos</b> (on a phone this offers the camera or gallery) and <b>📎 Add files</b>. A picture a doctor (or anyone) sent shows in their email with a <b>✏️ Mark up &amp; reply</b> button — one click (or a tap on the picture) opens it for marking up, and the marked-up copy goes straight onto your reply. On the reply screen, pictures from the conversation can also be sent back with <b>＋ Attach</b> or marked up with <b>✏️ Mark up</b>: draw on it with a marker in red, orange, yellow, green, blue, black or white, thin / medium / thick, with <b>Undo</b> and <b>Start over</b>, then attach it. Each attachment shows its size, can be marked up again (✏️) or removed (✕); the total must stay under 20 MB.`
     ])}
     ${manNote('auto','🔮','With Dataverse: every email to or from stomacare.mdh@gov.mt is filed to the patient automatically (matched by the ID card in the subject), each message gets its encounter code, and its pictures and files are saved with it. The full plan is in <code>docs/dataverse/email-correspondence.md</code>.')}
   `},
