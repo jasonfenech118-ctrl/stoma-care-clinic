@@ -403,7 +403,7 @@
 
     return '<div class="da-sheet-wrap"><table class="da-sheet">' +
       '<thead><tr><th>Staff member</th><th>Role</th><th>Planned duty</th>' +
-      '<th>Attendance</th><th>Time in</th><th>Time out</th><th>Remarks</th><th>Save</th></tr></thead>' +
+      '<th>Attendance</th><th>Save</th></tr></thead>' +
       '<tbody>' + rows.map(row => {
         const plannedDetail = [row.planned_source, row.planned_hours].filter(Boolean).join(' · ');
         return '<tr id="da-row-' + safeKey(row.person_key) + '" data-attendance-key="' +
@@ -416,12 +416,6 @@
           '<td data-label="Attendance"><select data-field="attendance_status" ' +
           'onchange="DailyAttendance.queueSave(this)">' +
           statusOptions(row.planned_code === 'sick_leave' && row.attendance_status === 'off_leave' ? 'sick' : row.attendance_status) + '</select></td>' +
-          '<td data-label="Time in"><input type="time" data-field="time_in" value="' +
-          escape(row.time_in) + '" onchange="DailyAttendance.queueSave(this)"></td>' +
-          '<td data-label="Time out"><input type="time" data-field="time_out" value="' +
-          escape(row.time_out) + '" onchange="DailyAttendance.queueSave(this)"></td>' +
-          '<td data-label="Remarks"><input type="text" maxlength="500" data-field="remarks" value="' +
-          escape(row.remarks) + '" placeholder="Optional" oninput="DailyAttendance.queueSave(this)"></td>' +
           '<td data-label="Save"><span class="da-row-save" data-save-state>' +
           (row.is_new ? 'Preparing…' : 'Saved') + '</span></td></tr>';
       }).join('') + '</tbody></table></div>';
@@ -495,12 +489,11 @@
     const base = rowsByKey.get(key);
     if (!base) return null;
     const read = field => rowElement.querySelector('[data-field="' + field + '"]')?.value || '';
+    // Time in / out and remarks are no longer on the sheet; anything saved
+    // earlier is kept as it was rather than wiped on the next save.
     return {
       ...base,
-      attendance_status: read('attendance_status') || 'not_recorded',
-      time_in: read('time_in'),
-      time_out: read('time_out'),
-      remarks: read('remarks').trim()
+      attendance_status: read('attendance_status') || 'not_recorded'
     };
   }
 
@@ -666,8 +659,7 @@
         row.working = false;
         row.time_in = '';
         row.time_out = '';
-        rowElement.querySelector('[data-field="time_in"]').value = '';
-        rowElement.querySelector('[data-field="time_out"]').value = '';
+
         const duty = rowElement.querySelector('.da-duty');
         if (duty) { duty.textContent = 'Sick leave'; duty.className = 'da-duty da-duty-sick_leave'; }
         rowsByKey.set(row.person_key, row);
