@@ -306,21 +306,26 @@
       +'<button class="btn-cancel" onclick="EmailCorrespondence.reply()">✉️ Write a reply</button>'
       +'<button class="btn-save" disabled title="Switched on with Dataverse">Save (with Dataverse)</button></div>';
   }
-  // The reply: To the last person who wrote, CC everyone else on it plus the
-  // clinic mailbox, subject = patient name, surname and ID card.
+  // The reply continues the conversation: it is sent as "Reply all" to the
+  // latest email (so the doctor's first email and every reply stay underneath it
+  // in one Outlook conversation). To = the last person who wrote, CC = everyone
+  // else on it. LOCKED: stomacare.mdh@gov.mt is always copied in and the subject
+  // is always the patient's name, surname and ID card — neither can be changed.
   function reply(){
     const last=st.msgs.slice().reverse().find(m=>direction(m)==='received')||st.msgs[st.msgs.length-1]||{};
     const me=[CLINIC(),myEmail()];
     const to=last.from&&last.from.email?[last.from]:[];
     const seen=new Set(to.map(p=>p.email).concat(me));
     const cc=(last.to||[]).concat(last.cc||[]).filter(p=>p.email&&!seen.has(p.email)&&(seen.add(p.email),true));
-    cc.push({name:'Stoma Care Clinic',email:CLINIC()});
-    st.draft={to,cc,subject:subjectFor(st.patient)};
+    st.draft={to,cc,subject:subjectFor(st.patient),replyTo:last};
     const m=mb();if(!m)return;
     m.innerHTML='<h2>✉️ Reply <span class="ec-tag">Preview</span></h2>'+BANNER_HTML
+      +(last.from?'<div class="ec-replyto">↩ Replying to <strong>'+esc(personText(last.from))+'</strong> · '+esc(showWhen(last.when))+(last.subject?' · '+esc(last.subject):'')
+        +'<span>Sent as a reply in the same Outlook conversation, with the earlier emails underneath it.</span></div>':'')
       +'<div class="ec-compose"><label>To<input id="ec-to" value="'+esc(listText(to))+'"></label>'
-      +'<label>CC <small>(stomacare.mdh@gov.mt is always copied in)</small><input id="ec-cc" value="'+esc(listText(cc))+'"></label>'
-      +'<label>Subject <small>(always the patient’s name, surname and ID card)</small><input value="'+esc(st.draft.subject)+'" readonly></label>'
+      +'<div class="ec-ccbox"><span class="ec-cc-label">CC</span><span class="ec-lock" title="Always copied in — cannot be removed">🔒 Stoma Care Clinic &lt;'+esc(CLINIC())+'&gt;</span>'
+        +'<input id="ec-cc" value="'+esc(listText(cc))+'" placeholder="Others copied in" aria-label="Others copied in"></div>'
+      +'<label>Subject <small>🔒 always the patient’s name, surname and ID card — cannot be changed</small><input value="'+esc(st.draft.subject)+'" readonly aria-readonly="true"></label>'
       +'<label>Message<textarea id="ec-body" rows="9" placeholder="Write the reply here…"></textarea></label></div>'
       +'<div id="ec-msg"></div>'
       +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back</button><button class="btn-save" onclick="EmailCorrespondence.send()">Send reply (preview)</button></div>';
@@ -329,18 +334,24 @@
   function send(){
     const body=(document.getElementById('ec-body')||{}).value||'';
     if(!body.trim()){say('Write the reply first.');return;}
-    let cc=people((document.getElementById('ec-cc')||{}).value);
-    if(!cc.some(p=>p.email===CLINIC()))cc.push({name:'Stoma Care Clinic',email:CLINIC()});
+    // The clinic mailbox is added back whatever was typed — it cannot be removed.
+    const cc=people((document.getElementById('ec-cc')||{}).value).filter(p=>p.email!==CLINIC());
+    cc.push({name:'Stoma Care Clinic',email:CLINIC()});
     const to=people((document.getElementById('ec-to')||{}).value);
     const now=new Date(),p2=n=>String(n).padStart(2,'0');
+    const last=st.draft&&st.draft.replyTo||{};
     const msg={from:{name:'Stoma Care Clinic',email:CLINIC()},to,cc,subject:st.draft.subject,body,attachments:[],original:'',
       when:{date:now.getFullYear()+'-'+p2(now.getMonth()+1)+'-'+p2(now.getDate()),time:p2(now.getHours())+':'+p2(now.getMinutes())}};
     const codes=codesFor(st.msgs.concat([msg]),st.kind,st.patient.id),code=codes[codes.length-1]||'';
+    const quoted=last.from?'<div class="ec-quoted"><div class="ec-quoted-head">From: '+esc(personText(last.from))+'<br>Sent: '+esc(showWhen(last.when))+'<br>To: '+esc(listText(last.to))
+      +(last.cc&&last.cc.length?'<br>Cc: '+esc(listText(last.cc)):'')+'<br>Subject: '+esc(last.subject||'')+'</div>'+esc(last.body||'')+(st.msgs.length>1?'\n\n… and the '+(st.msgs.length-1)+' earlier email'+(st.msgs.length>2?'s':'')+' of the conversation below it':'')+'</div>':'';
     const m=mb();if(!m)return;
     m.innerHTML='<h2>✉️ The reply that would be sent <span class="ec-tag">Preview</span></h2>'+BANNER_HTML
-      +'<div class="msub">When switched on, this opens in Outlook ready to send, and is saved here at the same time'+(code?' as <strong>'+esc(code)+'</strong>':'')+'.</div>'
-      +'<div class="ec-list">'+'<article class="ec-msg ec-sent"><dl class="ec-fields"><dt>To</dt><dd>'+esc(listText(to))+'</dd><dt>CC</dt><dd>'+esc(listText(cc))+'</dd><dt>Subject</dt><dd>'+esc(msg.subject)+'</dd></dl><div class="ec-body">'+esc(body)+'</div></article></div>'
-      +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back to the email</button><button class="btn-save" disabled>Open in Outlook (with Dataverse)</button></div>';
+      +'<div class="msub">When switched on, this is sent as <strong>Reply all</strong> to '+(last.from?esc(personText(last.from))+'’s email of '+esc(showWhen(last.when)):'the latest email')
+      +', in the same Outlook conversation, and saved here at the same time'+(code?' as <strong>'+esc(code)+'</strong>':'')+'.</div>'
+      +'<div class="ec-list"><article class="ec-msg ec-sent"><dl class="ec-fields"><dt>To</dt><dd>'+esc(listText(to))+'</dd><dt>CC</dt><dd>'+esc(listText(cc))+'</dd><dt>Subject</dt><dd>'+esc((last.from?'RE: ':'')+msg.subject)+'</dd></dl>'
+      +'<div class="ec-body">'+esc(body)+'</div>'+quoted+'</article></div>'
+      +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back to the email</button><button class="btn-save" disabled>Send (with Dataverse)</button></div>';
   }
 
   /* ------------------------------------------------------------------ *

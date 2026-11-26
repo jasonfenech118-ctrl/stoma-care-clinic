@@ -28,8 +28,16 @@ only). Nothing is saved and no email is sent until this plan is carried out.
      nothing else**, e.g. `Jane Testpatient 123456M`.
    - **stomacare.mdh@gov.mt is always copied in**, so every reply comes back to the
      clinic mailbox.
-6. **Attachments** (pictures and files) are **saved automatically** with their message.
-7. **Report:** every message of a conversation, or all of a patient's
+6. **Locked:** nobody using the app can change the subject or take
+   stomacare.mdh@gov.mt out of CC. The app never offers them as editable; the
+   reply flow sets them itself.
+7. **One continuous conversation.** A reply written in the app is sent as
+   **Reply all** to the latest email of that conversation, using its stored
+   message ID. The doctor's first email and every reply stay underneath it, in one
+   Outlook conversation. Each email, sent or received, is saved as the next
+   encounter of the same episode: 01, 02, 03 …
+8. **Attachments** (pictures and files) are **saved automatically** with their message.
+9. **Report:** every message of a conversation, or all of a patient's
    correspondence, **one by one**, printable or saved as PDF.
 
 ## Data model (Dataverse)
@@ -67,7 +75,11 @@ They need hospital IT and data-protection approval.
 1. **Incoming / sent mail → patient record**
    - **Trigger:** "When a new email arrives in a shared mailbox (V2)" on
      stomacare.mdh@gov.mt, including Sent Items.
-   - **Match the patient:** take the ID card from the subject. Strip `RE:` and `FW:`,
+   - **Match the conversation first:** if the email's Conversation ID belongs to a
+     saved episode, file it there, even if someone outside changed the subject or
+     dropped the clinic from CC. Their reply still reaches the clinic when it is
+     sent to it.
+   - **Otherwise match the patient:** take the ID card from the subject. Strip `RE:` and `FW:`,
      ignore leading zeros, spaces and letter case (the app's `normaliseIdCard`),
      then check the name.
    - **No match, or a different name:** put the email in an "Unfiled emails" list
@@ -81,11 +93,15 @@ They need hospital IT and data-protection approval.
      already saved.
    - **Save each attachment** to the Email attachment table.
 2. **Reply from the app**
-   - "Send an email (V2)" from the shared mailbox.
+   - "Reply to email (V3)" with Reply all, from the shared mailbox, on the latest
+     message of the conversation. Its message ID is stored when it is filed.
    - **To:** the last sender.
    - **CC:** everyone else on the email, plus stomacare.mdh@gov.mt.
-   - **Subject:** the patient's name, surname and ID card.
+   - **Subject:** the patient's name, surname and ID card. Outlook puts "RE:" in
+     front of a reply; the name and ID part never change.
    - The reply is saved straight away as the next encounter.
+   - People outside the clinic can still edit a subject or CC in their own
+     Outlook. The Conversation ID match above keeps those emails filed.
 3. **Reminders:** an open episode with a reminder date shows in the bell, as today.
 
 ## What the app preview already does
@@ -102,7 +118,10 @@ They need hospital IT and data-protection approval.
   episodes (`EpisodeCodes.preview`).
 - Checks the ID card or name against the open patient.
 - Prints one email laid out like Outlook, or the whole conversation as a report.
-- Builds the reply with the agreed To, CC and subject rule.
+- Builds the reply with the agreed To, CC and subject rule:
+  - the clinic CC and the subject are locked;
+  - the reply is shown as Reply all to the latest email, with the earlier
+    conversation underneath.
 
 ## To switch it on
 
