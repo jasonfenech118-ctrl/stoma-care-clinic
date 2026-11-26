@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — Attended follow-up visits are now coded F (e.g. EP04-12345M-01-F) and grouped into episodes like correspondence. The code shows on each Follow-up and Inpatient row in the patient’s care history.'};
+const MANUAL_META={updated:'26 November 2026 — Quick Look is no longer a Registry sub-tab; it still opens from its phone link and home-screen icon. Attended follow-up visits are coded F.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -255,9 +255,9 @@ const MANUAL_SECTIONS=[
   `},
   {id:'quicklook',title:'Quick Look, New Patients & Operated Outside MDH',keywords:'quick look phone shortcut icon install browser automatic home screen separate lookup new patients recent register refashioning refashioned nested first stoma month abroad operated outside mdh overseas another hospital tab add print pdf year search',html:`
     ${manMap('patients')}
-    <p>Quick Look has its own <b>Quick Look</b> phone icon, separate from <b>Surgical Rotation</b>. Open Quick Look and tap <b>Add to phone</b>. The browser is detected automatically. An available native installation prompt opens directly; confirm <b>Add</b> or <b>Install</b>. If the browser requires its own home-screen menu, only the detected browser’s steps appear. There is no browser selector. Installing one shortcut does not replace or hide the other. Quick Look continues to use its secure sign-in gateway.</p>
+    <p>Quick Look has its own <b>Quick Look</b> phone icon, separate from <b>Surgical Rotation</b>. Quick Look is no longer a Registry sub-tab: open it on your phone from its own link (…/stoma-care-clinic/quick-look/) and tap <b>Add to phone</b>. The browser is detected automatically. An available native installation prompt opens directly; confirm <b>Add</b> or <b>Install</b>. If the browser requires its own home-screen menu, only the detected browser’s steps appear. There is no browser selector. Installing one shortcut does not replace or hide the other. Quick Look continues to use its secure sign-in gateway.</p>
     ${manSteps([
-      `${manBtn('📱 Quick Look','#e7e6fb','#3a34a0')} — a fast phone-friendly lookup to check a patient at the bedside.`,
+      `<b>📱 Quick Look</b> — a fast phone-friendly lookup to check a patient at the bedside; opened from its phone link or home-screen icon (not a Registry sub-tab).`,
       `${manBtn('🆕 New Patients','#e7f7ef','#1c8f5f')} — the register of stomas formed <b>at MDH</b>, grouped by month (newest first). <b>Locality</b> appears beside <b>Address</b>, using the saved patient locality. Every <i>new</i> stoma is a line of its own, in the month it was formed.`
     ])}
     ${manNote('auto','⚙️','A <b>refashioning is not a new stoma</b>, so it is never a line of its own. Each stoma keeps a <b>single register row</b>, in the month it was <i>first</i> formed, and any refashioning is <b>folded into that same row</b>: the refashioning’s operation, date and type stack <b>above</b> the first-performed ones (latest at the very top, the original “first stoma” at the foot). When <b>one operation remade more than one stoma</b> (e.g. an ileostomy and its mucus fistula together) it shows as a <b>single line</b>, naming the stoma types it produced — not a duplicate. A patient whose only recent operation was a refashioning of an older stoma therefore does <b>not</b> appear as a fresh entry — the refashioning shows on the one row of their first formation.')}
