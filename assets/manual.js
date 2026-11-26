@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — Daily Attendance no longer has Time in, Time out or Remarks columns; only the Attendance choice is recorded.'};
+const MANUAL_META={updated:'26 November 2026 — The Encounters page header shows the episode number on its own (e.g. EP-2026-0085), without the word “Episode”. Daily Attendance records only the Attendance choice.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
