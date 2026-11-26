@@ -71,7 +71,7 @@
     return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`
       // Email linking: being tested by the administrators only until Dataverse.
       + (global.EmailCorrespondence && global.EmailCorrespondence.enabled()
-        ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Testing</span></button>` : '');
+        ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Testing</span></button><button type="button" class="psm-btn pc-add" onclick="EmailCorrespondence.patientReport()">📄 All emails report</button>` : '');
   }
   function detailHTML(record) {
     return `<div class="pc-detail">

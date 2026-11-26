@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — Pictures and email linking now work for testing by the administrators only (other nurses do not see them until Dataverse). Emails are saved into Patient correspondence and replies open in Outlook.'};
+const MANUAL_META={updated:'26 November 2026 — Email testing: a new 📄 All emails report prints every saved email for the patient, conversation by conversation. Pictures and email linking are still for the administrators only until Dataverse.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -205,7 +205,7 @@ const MANUAL_SECTIONS=[
       `On the patient’s Episodes, press <b>📧 Add an email</b> and choose <b>Doctors (DC)</b>, <b>Community (CC)</b> or <b>Patient (PC)</b> — or, inside a correspondence issue, press <b>📧 Add email</b> to add to that issue. Drop the email file downloaded from Outlook (⋯ › Download / Save as .eml — it brings its pictures and documents), or paste the whole email (tip: press Forward, select all, copy, close the draft).`,
       `<b>Organise ›</b> shows each message, oldest first: From, To, CC, date, subject, its own text, its attachments and the original email, with the encounter code it will get. The ID card in the email is checked against the patient.`,
       `<b>Save</b>: each email becomes a contact of the correspondence issue (a new issue for a new conversation), with its code; pictures and documents are kept with it under <b>📷 Images</b>. An email already saved is recognised and skipped.`,
-      `In the issue: <b>📨 Emails</b> shows them all, <b>📄 Email report</b> prints them one by one, and each email contact shows From / To / CC with <b>🖨 Print email</b> and the original email.`,
+      `<b>📄 All emails report</b> (next to 📧 Add an email) prints every email saved for the patient, conversation by conversation, oldest first, with their codes. In the issue: <b>📨 Emails</b> shows them all, <b>📄 Email report</b> prints that conversation one by one, and each email contact shows From / To / CC with <b>🖨 Print email</b> and the original email.`,
       `<b>✉️ Reply by email</b>: To is the last sender, CC everyone else (remove with ✕, add with ＋ Add); <b>🔒 stomacare.mdh@gov.mt</b> is always copied in and the subject is always the patient’s name, surname and ID card. Add photos or files, or <b>✏️ Mark up</b> a picture the doctor sent (coloured marker, Undo, Start over). <b>Save &amp; open in Outlook</b> saves the reply as the next encounter and opens it in Outlook; the attachments are downloaded for you to attach — then press Send in Outlook.`
     ])}
     ${manNote('auto','🔮','With Dataverse: emails to or from stomacare.mdh@gov.mt are filed by themselves, replies are sent straight from the app with their attachments, and everyone gets these buttons. The plan is in <code>docs/dataverse/email-correspondence.md</code>.')}

@@ -508,6 +508,27 @@
   async function viewIssue(issueId){if(!(await fromIssue(issueId)))return;if(!st.msgs.length){alert('No emails are saved in this issue yet. Use 📧 Add email.');return;}render();if(typeof global.openMo==='function')global.openMo();}
   async function replyToIssue(issueId){if(!(await fromIssue(issueId)))return;if(!st.msgs.length){alert('No emails are saved in this issue yet. Use 📧 Add email first.');return;}reply();if(typeof global.openMo==='function')global.openMo();}
   async function issueReport(issueId){if(!(await fromIssue(issueId)))return;if(!st.msgs.length){alert('No emails are saved in this issue yet.');return;}report();}
+  // Every email saved for the patient, conversation by conversation, oldest
+  // first — one printable report.
+  async function patientReport(){
+    const p=patientNow();if(!p)return;st.patient=p;
+    await loadFor(p.id);
+    const rows=st.db.rows.slice();
+    if(!rows.length){alert('No emails are saved for this patient yet.');return;}
+    try{if(global.EpisodeCodes)await EpisodeCodes.load(p.id,{force:true});}catch(e){}
+    const c=global.EpisodeCodes&&EpisodeCodes.cached(p.id);
+    const all=issues(),groups=new Map();
+    rows.forEach(r=>{const k=String(r.issue_id||'');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+    const first=list=>list.reduce((a,r)=>!a||String(r.sent_at||'')<a?String(r.sent_at||''):a,'');
+    const parts=[...groups.entries()].sort((a,b)=>first(a[1]).localeCompare(first(b[1]))).map(([id,list])=>{
+      const iss=all.find(x=>String(x.id)===id);
+      const label=iss?KINDS[kindOfIssue(iss)].label+' · '+(iss.subject||''):'Correspondence';
+      const msgs=list.sort((a,b)=>String(a.sent_at||'').localeCompare(String(b.sent_at||''))).map(savedMsg);
+      return '<h2 class="grp">'+esc(label)+(iss&&iss.status==='Completed'?' · Resolved':'')+'</h2>'
+        +msgs.map(m=>emailPrintHTML(m,-1,c?c.commCode({id:m.commId}):'')).join('');
+    });
+    printWin('Correspondence report — '+subjectFor(p),'<h1>Correspondence report — all emails</h1><div class="sub">'+esc(subjectFor(p))+' · '+rows.length+' email'+(rows.length===1?'':'s')+' in '+groups.size+' conversation'+(groups.size===1?'':'s')+', oldest first</div>'+parts.join(''));
+  }
   function printSaved(commId){
     const r=st.db.byComm.get(String(commId));if(!r)return;
     const m=savedMsg(r);const c=global.EpisodeCodes&&EpisodeCodes.cached(st.db.pid);
@@ -755,7 +776,7 @@
     const w=global.open('','_blank');if(!w){alert('Please allow pop-ups to print.');return;}
     w.document.write('<html><head><title>'+esc(title)+'</title><style>body{font-family:Arial,sans-serif;color:#111;margin:18px;font-size:12.5px}h1{font-size:17px;margin:0 0 2px}.sub{color:#555;font-size:11px;margin-bottom:12px}'
       +'.em{border-top:2px solid #0d7377;padding:10px 0 14px;page-break-inside:avoid}.code{font-weight:bold;color:#0d7377;margin-bottom:6px}.hd{border-collapse:collapse;margin-bottom:10px}.hd th{text-align:left;padding:2px 12px 2px 0;color:#444;vertical-align:top;white-space:nowrap}.hd td{padding:2px 0}'
-      +'.bd{white-space:pre-wrap;line-height:1.45}.pv{border:1px dashed #b45309;color:#92400e;padding:6px 8px;margin-bottom:10px;font-size:11px}@page{size:A4 portrait;margin:14mm}</style></head><body>'
+      +'.bd{white-space:pre-wrap;line-height:1.45}h2.grp{font-size:14px;color:#0d7377;margin:18px 0 4px;page-break-after:avoid}.pv{border:1px dashed #b45309;color:#92400e;padding:6px 8px;margin-bottom:10px;font-size:11px}@page{size:A4 portrait;margin:14mm}</style></head><body>'
       +inner+'</body></html>');
     w.document.close();setTimeout(()=>{w.focus();w.print();},350);
   }
@@ -768,6 +789,6 @@
 
   global.EmailCorrespondence={enabled,open,kind:setKind,drop,file,organise,saveThread,reply,markUp,composer,draft:setDraft,back,send,printOne,printSaved,report,ccAdd,ccRemove,
     addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
-    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,
+    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_keyOf:keyOf,_state:st};
 })(window);
