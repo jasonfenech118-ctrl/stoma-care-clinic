@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-875"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-876"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-875"></script>
+<script src="assets/manual.js?v=2026.11.26-876"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4067,7 +4067,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-875';
+const APP_BUILD='2026.11.26-876';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20026,7 +20026,15 @@ function openPatientEducation(){
 const TREATMENT_GROUPS=[
   {key:'antihypertensive',label:'Anti-hypertensives'},
   {key:'oha',label:'Oral hypoglycaemic agents (OHAs)'},
-  {key:'insulin',label:'Insulin'}
+  {key:'insulin',label:'Insulin'},
+  {key:'anticoagulant',label:'Anticoagulants'},
+  {key:'steroid',label:'Steroids'},
+  {key:'laxative',label:'Laxatives'},
+  {key:'opioid',label:'Opioid analgesia'},
+  {key:'iron',label:'Iron supplements'},
+  {key:'lipid',label:'Anti-hyperlipidaemics (e.g. statins)'},
+  {key:'chemo',label:'Chemotherapy'},
+  {key:'radiotherapy',label:'Radiotherapy'}
 ];
 function patientTreatment(p){
   let t=p&&p.treatment;if(typeof t==='string'){try{t=JSON.parse(t);}catch(e){t=null;}}
@@ -20036,7 +20044,7 @@ function patientTreatment(p){
 function patientTreatmentSummary(p){
   const t=patientTreatment(p),items=Array.isArray(t.items)?t.items:[];
   const parts=TREATMENT_GROUPS.map(g=>{const it=items.find(x=>x&&x.key===g.key);if(!it||!it.on)return '';
-    return g.label.replace(/ \(OHAs\)$/,'').replace('Oral hypoglycaemic agents','OHAs')+(String(it.details||'').trim()?' ('+String(it.details).trim()+')':'');}).filter(Boolean);
+    return g.label.replace(/ \(OHAs\)$/,'').replace('Oral hypoglycaemic agents','OHAs').replace(/ \(e\.g\. statins\)$/,'')+(String(it.details||'').trim()?' ('+String(it.details).trim()+')':'');}).filter(Boolean);
   if(String(t.other||'').trim())parts.push('Other: '+String(t.other).trim());
   return parts.join(' · ');
 }
@@ -20046,7 +20054,7 @@ function openPatientTreatment(){
   const mb=document.getElementById('mb');if(!mb)return;mb.className='mb'+(typeof sexModalClass==='function'?sexModalClass(p):'');
   const row=g=>{const it=items.find(x=>x&&x.key===g.key)||{};return `<div class="tx-row" style="display:grid;grid-template-columns:minmax(200px,1fr) 2fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
       <label style="display:flex;gap:8px;align-items:center;font-weight:700;"><input type="checkbox" class="tx-on" data-key="${g.key}" ${it.on?'checked':''} onchange="this.closest('.tx-row').querySelector('.tx-det').disabled=!this.checked"/> ${htmlSafe(g.label)}</label>
-      <input type="text" class="tx-det" data-key="${g.key}" maxlength="300" value="${htmlSafe(it.details||'')}" placeholder="Drug and dose (optional)" ${it.on?'':'disabled'} style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;"/></div>`;};
+      <input type="text" class="tx-det" data-key="${g.key}" maxlength="300" value="${htmlSafe(it.details||'')}" placeholder="Drug, dose or details (optional)" ${it.on?'':'disabled'} style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;"/></div>`;};
   mb.innerHTML=`<h2>💊 Treatment</h2>
     <div class="msub"><strong>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}</strong> · ${htmlSafe(p.id_card||'')}. Tick what the patient is on; add the drug and dose if useful.</div>
     <div>${TREATMENT_GROUPS.map(row).join('')}</div>
