@@ -13,7 +13,8 @@
    Episodes:
    • Every admission is an episode. Anything recorded while the patient is
      admitted (inpatient encounters and any correspondence) is an encounter of
-     that admission — correspondence never opens a separate episode then.
+     that admission — unless the nurse chose to open that correspondence as an
+     episode of its own (communication_episode_choices).
    • Correspondence or a follow-up visit while the patient is NOT admitted
      opens an episode (or joins one still open). It stays open until every correspondence in it is
      Resolved or the patient is admitted; further correspondence meanwhile (and
@@ -87,7 +88,9 @@
     roots.forEach(c=>{
       const d=day(c.communication_date)||maltaDay(c.created_at);
       const a=admissionOn(d);
-      if(a){placed.set(String(c.id),a);return;}
+      // While admitted, correspondence joins the admission — unless the nurse
+      // chose to open it as an episode of its own.
+      if(a&&!c.separate_episode){placed.set(String(c.id),a);return;}
       if(open){
         // Closed by an admission that started since it opened, or by every
         // correspondence in it being resolved before this one.
@@ -149,14 +152,17 @@
     const db=(typeof SB!=='undefined'&&SB)||global.SB;if(!db)return Promise.resolve(null);
     const safe=p=>p.catch(()=>[]);
     const job=(async()=>{
-      const [pat,episodes,encounters,comms,appts]=await Promise.all([
+      const [pat,episodes,encounters,rawComms,choices,appts]=await Promise.all([
         db.from('patients').select('id,id_card').eq('id',pid).maybeSingle().then(r=>r.data||null).catch(()=>null),
         safe(fetchAll(db,()=>db.from('clinical_records').select('id,record_date,discharge_date,is_current,created_at,updated_at').eq('patient_id',pid).eq('kind','episode').order('id'))),
         safe(fetchAll(db,()=>db.from('encounters').select('id,episode_id,encounter_date,created_at').eq('patient_id',pid).order('id'))),
         safe(fetchAll(db,()=>db.from('patient_communications').select('id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status,resolved_at').eq('patient_id',pid).order('id')))
           .then(r=>r.length?r:safe(fetchAll(db,()=>db.from('patient_communications').select('id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status').eq('patient_id',pid).order('id')))),
+        safe(fetchAll(db,()=>db.from('communication_episode_choices').select('communication_id,separate_episode').eq('patient_id',pid).order('communication_id'))),
         safe(fetchAll(db,()=>db.from('appointments').select('id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances').eq('patient_id',pid).eq('status','attended').order('id')))
       ]);
+      const separate=new Set((choices||[]).filter(x=>x&&x.separate_episode).map(x=>String(x.communication_id)));
+      const comms=(rawComms||[]).map(c=>separate.has(String(c.id))?{...c,separate_episode:true}:c);
       const res=compute(pat,episodes,encounters,comms,appts);
       res._in={pat,episodes,encounters,comms,appts};
       cache.set(pid,res);

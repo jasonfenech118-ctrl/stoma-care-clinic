@@ -50,7 +50,7 @@
   async function load(patientId, config) {
     const request = ++generation;
     if (state.patientId !== String(patientId)) expanded.clear();
-    state = {patientId: String(patientId), patient: config.patient, rows: [], error: '', actionError: '', config};
+    state = {patientId: String(patientId), patient: config.patient, rows: [], error: '', actionError: '', config, choices: new Map()};
     try {
       const result = await config.fetchRows(() => config.db.from('patient_communications').select('*').eq('patient_id', patientId)
         .order('communication_date', {ascending: false}).order('communication_time', {ascending: false, nullsFirst: false}).order('created_at', {ascending: false}));
@@ -58,6 +58,11 @@
       if (result.error) throw result.error;
       state.rows = sorted((result.rows || []).filter(r => String(r.patient_id) === String(patientId)));
       try { if (global.EmailCorrespondence && global.EmailCorrespondence.enabled()) global.EmailCorrespondence.loadFor(patientId); } catch (_) {}
+      // Correspondence the nurse opened as an episode of its own during an admission.
+      try {
+        const ch = await config.db.from('communication_episode_choices').select('communication_id,separate_episode').eq('patient_id', patientId);
+        if (request === generation) state.choices = new Map((ch.data || []).map(x => [String(x.communication_id), !!x.separate_episode]));
+      } catch (_) {}
       // Fresh episode / encounter codes so a just-saved record shows its own.
       try { if (global.EpisodeCodes) await global.EpisodeCodes.load(patientId, {force: true}); } catch (_) {}
     } catch (error) {
@@ -116,6 +121,8 @@
         ${done ? `<div class="pc-hint">Resolved${issue.resolved_by_name ? ' by ' + esc(issue.resolved_by_name) : ''}${issue.resolved_at ? ' · ' + esc(savedTime(issue.resolved_at)) : ''}</div>` : ''}
         ${isActiveReminder(issue) ? `<div class="pc-followup pc-issue-reminder${dueLabel(issue.followup_date) === 'Overdue' ? ' overdue' : ''}"><strong>Reminder · ${esc(dueLabel(issue.followup_date))} · ${esc(date(issue.followup_date))}</strong><div>${esc(issue.followup_action)}</div></div>` : ''}
         ${global.EmailCorrespondence && global.EmailCorrespondence.enabled() ? `<div class="pc-issue-actions ec-issue-actions"><button type="button" class="psm-btn" onclick="EmailCorrespondence.open(null,'${esc(issue.id)}')">📧 Add email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.viewIssue('${esc(issue.id)}')">📨 Emails</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.replyToIssue('${esc(issue.id)}')">✉️ Reply by email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.issueReport('${esc(issue.id)}')">📄 Email report</button></div>` : ''}
+        ${(() => {const a = admissionAt(String(issue.communication_date || '').slice(0, 10));if (!a) return '';const sep = isSeparate(issue.id);
+          return `<div class="pc-episode-line${sep ? ' is-separate' : ''}">${sep ? '📁 An episode of its own — the patient was admitted then' + (a.code ? ' (' + esc(a.code) + ')' : '') : '🛏 Filed under the admission' + (a.code ? ' ' + esc(a.code) : '') + ' as an encounter of it'}<button type="button" class="psm-btn" onclick="PatientCommunications.setEpisodeMode('${esc(issue.id)}',${!sep})">${sep ? 'File under the admission' : 'Make it an episode of its own'}</button></div>`;})()}
         <div class="pc-issue-actions">${global.PatientImages ? global.PatientImages.slotHTML('correspondence:' + issue.id, [date(issue.communication_date), issue.subject, codeOf(issue)].filter(Boolean).join(' · '), issue.communication_date) : ''}${done ? '' : `<button type="button" class="psm-btn psm-btn-primary" onclick="PatientCommunications.open('${esc(issue.kind)}',null,'${esc(issue.id)}')"${disabled}>${icon('plus')} Add update / contact</button>`}<button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(issue.kind)}','${esc(issue.id)}')"${disabled}>${icon('pencil')} Edit issue / reminder</button><button type="button" class="psm-btn ${done ? '' : 'pc-resolve'}" onclick="PatientCommunications.setResolved('${esc(issue.id)}',${!done})"${disabled}>${done ? '↺ Reopen correspondence' : '✓ Close correspondence'}</button></div>
         <div class="pc-contact-heading">Communication history</div>${sorted(contacts).map(r => recordHTML(r, false)).join('')}${recordHTML(issue, true)}
       </div></details>`;
@@ -188,6 +195,46 @@
     const go = () => doctors ? openDoctors() : open(kind);
     if (!remindOpen(go, issue => open(issue.kind, null, issue.id), 'this new contact')) go();
   }
+  /* During an admission a new correspondence either joins the admission (as
+     an encounter of it — the usual way) or is opened as an episode of its own. */
+  function admissionAt(d) {
+    const c = global.EpisodeCodes && global.EpisodeCodes.cached(state.patientId);
+    if (!c || !Array.isArray(c.episodes) || !d) return null;
+    let hit = null;
+    c.episodes.forEach(e => {if (e.kind === 'admission' && e.start <= d && (!e.end || d <= e.end)) hit = e;});
+    return hit ? {code: hit.code, start: hit.start, end: hit.end, open: !hit.end} : null;
+  }
+  const isSeparate = id => !!(state.choices && state.choices.get(String(id)));
+  async function saveEpisodeChoice(id, separate) {
+    const db = state.config && state.config.db;if (!db) return {error: 'No database'};
+    let r = await db.from('communication_episode_choices').delete().eq('communication_id', id);
+    if (!r.error && separate) r = await db.from('communication_episode_choices').insert([{communication_id: id, patient_id: state.patientId, separate_episode: true}]);
+    if (r.error) return {error: /communication_episode_choices|does not exist|relation|schema cache/i.test(String(r.error.message || r.error)) ? 'Run sql/add-communication-episode-choice.sql once in Supabase first.' : String(r.error.message || r.error)};
+    state.choices.set(String(id), !!separate);
+    return {ok: true};
+  }
+  async function setEpisodeMode(id, separate) {
+    if (!global.confirm(separate ? 'Open this correspondence as an episode of its own, instead of an encounter of the admission? Its codes change accordingly.' : 'File this correspondence under the admission, as an encounter of it? Its codes change accordingly.')) return;
+    const r = await saveEpisodeChoice(id, separate);
+    if (r.error) {state.actionError = r.error;state.config.onChange();return;}
+    try {if (global.EpisodeCodes) await global.EpisodeCodes.load(state.patientId, {force: true});} catch (_) {}
+    state.actionError = '';state.config.onChange();
+  }
+  function episodeChoiceHTML(d) {
+    const a = admissionAt(d);
+    if (!a) return '';
+    return `<legend>🛏 The patient is admitted on this date${a.code ? ' · ' + esc(a.code) : ''}</legend>
+      <label class="pc-check"><input type="radio" name="episode_mode" value="admission" checked> File it under the admission (an encounter of ${esc(a.code || 'the admission')})</label>
+      <label class="pc-check"><input type="radio" name="episode_mode" value="separate"> Open it as a new episode of its own</label>`;
+  }
+  function syncEpisodeChoice() {
+    const box = global.document.getElementById('pc-episode-choice'), form = global.document.getElementById('pc-form');
+    if (!box || !form) return;
+    const keep = form.querySelector('input[name="episode_mode"]:checked')?.value;
+    const html = episodeChoiceHTML(form.elements.namedItem('communication_date')?.value || '');
+    box.innerHTML = html;box.hidden = !html;
+    if (keep) {const r = box.querySelector('input[value="' + keep + '"]');if (r) r.checked = true;}
+  }
   function toggleIssue(id, open) { if (open) expanded.add(id); else expanded.delete(id); }
   function focus(id) {
     const el = global.document.getElementById('pc-issue-' + id);
@@ -232,9 +279,10 @@
     mb.innerHTML = `<h2>${parentId ? 'Add update · ' : record ? 'Edit ' : ''}${meta.label}</h2><div class="msub"><strong>${esc([patient.first_name, patient.surname].filter(Boolean).join(' '))}</strong>${patient.id_card ? ' · ' + esc(patient.id_card) : ''}${record ? ' · V' + record.version : ''}</div>
       ${parentId || correction ? `<p class="pc-issue-context"><strong>Issue:</strong> ${esc(issue.subject)}</p>` : ''}
       <form id="pc-form" class="clr-form pc-form" onsubmit="PatientCommunications.save();return false;">
-        <div class="row2"><label>Date<input type="date" name="communication_date" value="${esc(values.communication_date)}" required></label><label>Time (Malta)<input type="time" name="communication_time" value="${esc(values.communication_time.slice(0, 5))}"></label></div>
+        <div class="row2"><label>Date<input type="date" name="communication_date" value="${esc(values.communication_date)}" required${!record && !parentId ? ' onchange="PatientCommunications.syncEpisodeChoice()"' : ''}></label><label>Time (Malta)<input type="time" name="communication_time" value="${esc(values.communication_time.slice(0, 5))}"></label></div>
         <div class="row2"><label>Contact method<select name="method">${optionHTML(methods, values.method)}</select></label><input type="hidden" name="direction" value="${esc(values.direction)}"></div>
         <div class="row2"><label>${meta.contact}<input name="contact_name" value="${esc(values.contact_name)}" maxlength="200" required></label>${meta.service ? `<label>Community service / organisation<input name="service" value="${esc(values.service)}" placeholder="e.g. Community nursing, GP, care home" maxlength="200" required></label>` : '<input type="hidden" name="service" value="">'}</div>
+        ${!record && !parentId ? `<fieldset class="pc-episode-choice" id="pc-episode-choice"${episodeChoiceHTML(values.communication_date) ? '' : ' hidden'}>${episodeChoiceHTML(values.communication_date)}</fieldset>` : ''}
         <label>Subject<input name="subject" value="${esc(values.subject)}" maxlength="200" required></label>
         <label>Communication / advice / outcome<textarea name="notes" rows="4" maxlength="20000" required>${esc(values.notes)}</textarea></label>
         <label>Issue status<select name="status" onchange="PatientCommunications.syncReminder()"${correction ? ' disabled' : ''}>${optionHTML(statuses, values.status, statusLabel)}</select></label>
@@ -293,9 +341,15 @@
     const buttons = [...form.querySelectorAll('button')];buttons.forEach(b => b.disabled = true);
     global.document.getElementById('pc-save').textContent = 'Saving…';
     try {
+      const separate = !current.recordId && !current.parentId && form.querySelector('input[name="episode_mode"]:checked')?.value === 'separate';
       const {data, error} = await current.config.db.rpc('save_patient_communication', {p_patient_id: current.patientId, p_record_id: current.requestId, p_expected_version: current.version, p_kind: current.kind, p_payload: payload});
       if (error) throw error;
       accept(data, current.patientId, current.kind);
+      if (separate && data && data.id) {
+        const r = await saveEpisodeChoice(data.id, true);
+        if (r.error) state.actionError = 'Saved, but it could not be made an episode of its own: ' + r.error;
+      }
+      try {if (global.EpisodeCodes) await global.EpisodeCodes.load(current.patientId, {force: true});} catch (_) {}
       if (state.patientId === current.patientId) afterSaved(current.config);
       current.config.setGuard(null);editor = null;current.config.closeModal();
     } catch (error) {
@@ -342,5 +396,5 @@
     const rows = (result.items || []).filter(r => !kind || r.kind === kind);
     return rows.length ? rows.map(r => `<div class="rem-row clinical-reminder-row pc-bell-reminder"><div class="clinical-reminder-copy"><div class="clinical-reminder-heading">${esc([r.patient?.first_name, r.patient?.surname].filter(Boolean).join(' ') || 'Patient')} · ${esc(r.patient?.id_card)}</div><div class="clinical-reminder-meta">${esc(kinds[r.kind].label)} · ${esc(r.followup_date < (result.today || localNow().communication_date) ? 'Overdue' : 'Due today')} · ${esc(date(r.followup_date))}</div><strong>${esc(r.subject)}</strong><div class="pc-notes">${esc(r.followup_action)}</div></div><div class="clinical-reminder-actions"><button type="button" class="ncb-btn" onclick="openCommunicationReminder('${esc(r.patient_id)}','${esc(r.id)}')">Open issue</button></div></div>`).join('') : '<div class="rem-empty">No due communication reminders.</div>';
   }
-  global.PatientCommunications = {historyRows:()=>state.rows.map(r=>({...r})),startNew,remindOpen,addToOpen,closeOpen,newAnyway,cancelNew,load, retry, actionsHTML, historyHTML, openDoctors, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
+  global.PatientCommunications = {historyRows:()=>state.rows.map(r=>({...r})),admissionAt,saveEpisodeChoice,setEpisodeMode,syncEpisodeChoice,startNew,remindOpen,addToOpen,closeOpen,newAnyway,cancelNew,load, retry, actionsHTML, historyHTML, openDoctors, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
 })(window);

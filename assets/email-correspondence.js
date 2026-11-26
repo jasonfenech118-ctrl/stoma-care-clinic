@@ -226,7 +226,7 @@
   function codesFor(msgs,kind,pid,issue){
     if(!global.EpisodeCodes||typeof EpisodeCodes.preview!=='function')return [];
     const k=KINDS[kind].comm;
-    const items=msgs.map((m,i)=>({id:'preview-'+i,parent_id:issue?String(issue.id):(i?'preview-0':null),kind:issue?issue.kind:k.kind,service:issue?issue.service:k.service,
+    const items=msgs.map((m,i)=>({id:'preview-'+i,parent_id:issue?String(issue.id):(i?'preview-0':null),kind:issue?issue.kind:k.kind,service:issue?issue.service:k.service,separate_episode:!issue&&!i&&!!st.separate,
       communication_date:m.when?m.when.date:(new Date().toISOString().slice(0,10)),communication_time:m.when?m.when.time+':00':null,
       created_at:(m.when?m.when.date+'T'+m.when.time:new Date().toISOString().slice(0,16))+':00',status:'Recorded'}));
     const res=EpisodeCodes.preview(pid,items);
@@ -335,7 +335,7 @@
   async function show(list,source){
     const msgs=(list||[]).slice().reverse();   // oldest first
     if(!msgs.length){say('Nothing could be read from that email.');return;}
-    dropDraftFiles();st.draft=null;
+    dropDraftFiles();st.draft=null;st.separate=false;
     if(!st.db.loaded||st.db.pid!==String(st.patient.id))await loadFor(st.patient.id);
     msgs.forEach(m=>{m.source=source||'paste';m.key=keyOf(m);m.saved=st.db.keys.has(m.key);if(m.saved){const r=st.db.rows.find(x=>x.message_id===m.key);if(r)m.commId=String(r.communication_id);}});
     // Part of a conversation already saved: new messages join the same issue.
@@ -387,6 +387,7 @@
       +(c&&unsaved?'<div class="'+(c.ok===false?'ch-idbad':c.ok?'ec-ok':'ec-warn')+'">'+c.text+'</div>':'')
       +'<div class="msub">'+st.msgs.length+' message'+(st.msgs.length===1?'':'s')+', oldest first'+(st.issue?' · in <strong>'+esc(st.issue.subject)+'</strong>':'')+'. '
         +(unsaved?'Each is saved as its own encounter in Patient correspondence, with the original email kept for printing.':'All of them are saved.')+'</div>'
+      +admissionChoiceHTML()
       +'<div id="ec-msg"></div>'
       +'<div class="ec-list">'+st.msgs.map(msgHTML).join('')+'</div>'
       +'<div class="mact"><button class="btn-cancel" onclick="'+(st.fromIssue?'closeModal()':'EmailCorrespondence.open(null,'+(st.issue?'\''+esc(st.issue.id)+'\'':'null')+',{force:true})')+'">'+(st.fromIssue?'Close':'‹ Back')+'</button>'
@@ -395,6 +396,18 @@
       +'<button class="btn-cancel" onclick="EmailCorrespondence.reply()">✉️ Write a reply</button>'
       +(unsaved?'<button class="btn-save" id="ec-save" onclick="EmailCorrespondence.saveThread()">Save '+unsaved+' email'+(unsaved===1?'':'s')+'</button>':'')+'</div>';
   }
+
+  // A new conversation while the patient is admitted: an encounter of the
+  // admission (the usual way) or an episode of its own.
+  function admissionChoiceHTML(){
+    if(st.issue||!st.msgs.length||st.msgs.every(m=>m.saved)||!global.PatientCommunications||!PatientCommunications.admissionAt)return '';
+    const first=st.msgs.find(m=>!m.saved),d=first&&first.when?first.when.date:nowWhen().date;
+    const a=PatientCommunications.admissionAt(d);if(!a)return '';
+    return '<fieldset class="ec-admission"><legend>🛏 The patient is admitted on '+esc(showWhen({date:d,time:''}).trim())+(a.code?' · '+esc(a.code):'')+'</legend>'
+      +'<label><input type="radio" name="ec-episode" value="admission"'+(st.separate?'':' checked')+' onchange="EmailCorrespondence.setSeparate(false)"> File these emails under the admission (encounters of '+esc(a.code||'the admission')+')</label>'
+      +'<label><input type="radio" name="ec-episode" value="separate"'+(st.separate?' checked':'')+' onchange="EmailCorrespondence.setSeparate(true)"> Open them as a new episode of their own</label></fieldset>';
+  }
+  function setSeparate(v){st.separate=!!v;refreshCodes();render();}
 
   /* ---------- saving: each email becomes a contact of a correspondence issue ---------- */
   function nowWhen(){const n=new Date(),p2=x=>String(x).padStart(2,'0');return {date:n.getFullYear()+'-'+p2(n.getMonth()+1)+'-'+p2(n.getDate()),time:p2(n.getHours())+':'+p2(n.getMinutes())};}
@@ -463,7 +476,9 @@
         if(btn)btn.textContent='Saving '+(saved+1)+' of '+todo.length+'…';
         const data=await saveRecord(m,issue);
         const commId=String(data.id);
-        if(!issue){issue=data;st.issue=data;}else if(data.issue)issue=data.issue;
+        if(!issue){issue=data;st.issue=data;
+          if(st.separate&&PatientCommunications.saveEpisodeChoice){const r=await PatientCommunications.saveEpisodeChoice(String(data.id),true);if(r&&r.error)problems.push('Not made an episode of its own: '+r.error);}}
+        else if(data.issue)issue=data.issue;
         await saveEmailRow(m,commId,String(issue.id),who);
         problems.push(...await saveAttachments(m,commId,who));
         m.saved=true;m.commId=commId;saved++;
@@ -804,6 +819,6 @@
 
   global.EmailCorrespondence={enabled,open,kind:setKind,drop,file,organise,saveThread,reply,markUp,composer,draft:setDraft,back,send,printOne,printSaved,report,ccAdd,ccRemove,
     addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
-    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,closeIssue,
+    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,closeIssue,setSeparate,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_keyOf:keyOf,_state:st};
 })(window);
