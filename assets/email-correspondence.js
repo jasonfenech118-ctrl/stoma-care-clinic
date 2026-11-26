@@ -309,8 +309,9 @@
   // The reply continues the conversation: it is sent as "Reply all" to the
   // latest email (so the doctor's first email and every reply stay underneath it
   // in one Outlook conversation). To = the last person who wrote, CC = everyone
-  // else on it. LOCKED: stomacare.mdh@gov.mt is always copied in and the subject
-  // is always the patient's name, surname and ID card — neither can be changed.
+  // else on it — the nurse can remove any of those or add others. LOCKED:
+  // stomacare.mdh@gov.mt is always copied in and the subject is always the
+  // patient's name, surname and ID card — neither can be changed.
   function reply(){
     const last=st.msgs.slice().reverse().find(m=>direction(m)==='received')||st.msgs[st.msgs.length-1]||{};
     const me=[CLINIC(),myEmail()];
@@ -323,19 +324,33 @@
       +(last.from?'<div class="ec-replyto">↩ Replying to <strong>'+esc(personText(last.from))+'</strong> · '+esc(showWhen(last.when))+(last.subject?' · '+esc(last.subject):'')
         +'<span>Sent as a reply in the same Outlook conversation, with the earlier emails underneath it.</span></div>':'')
       +'<div class="ec-compose"><label>To<input id="ec-to" value="'+esc(listText(to))+'"></label>'
-      +'<div class="ec-ccbox"><span class="ec-cc-label">CC</span><span class="ec-lock" title="Always copied in — cannot be removed">🔒 Stoma Care Clinic &lt;'+esc(CLINIC())+'&gt;</span>'
-        +'<input id="ec-cc" value="'+esc(listText(cc))+'" placeholder="Others copied in" aria-label="Others copied in"></div>'
+      +'<div class="ec-ccbox"><span class="ec-cc-label">CC <small>— remove anyone with ✕, or add an address</small></span><span class="ec-lock" title="Always copied in — cannot be removed">🔒 Stoma Care Clinic &lt;'+esc(CLINIC())+'&gt;</span>'
+        +'<span id="ec-cc-chips" class="ec-chips">'+ccChipsHTML()+'</span>'
+        +'<span class="ec-cc-add"><input id="ec-cc-add" type="email" placeholder="Add CC, e.g. name@gov.mt" aria-label="Add an address to CC" onkeydown="if(event.key===\'Enter\'){event.preventDefault();EmailCorrespondence.ccAdd();}"><button type="button" class="btn-cancel" onclick="EmailCorrespondence.ccAdd()">＋ Add</button></span></div>'
       +'<label>Subject <small>🔒 always the patient’s name, surname and ID card — cannot be changed</small><input value="'+esc(st.draft.subject)+'" readonly aria-readonly="true"></label>'
       +'<label>Message<textarea id="ec-body" rows="9" placeholder="Write the reply here…"></textarea></label></div>'
       +'<div id="ec-msg"></div>'
       +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back</button><button class="btn-save" onclick="EmailCorrespondence.send()">Send reply (preview)</button></div>';
+  }
+  // Full control of the other CC addresses: remove any of them, add new ones.
+  function ccChipsHTML(){
+    const cc=st.draft&&st.draft.cc||[];
+    return cc.map((p,i)=>'<span class="ec-chip">'+esc(personText(p))+'<button type="button" title="Remove from CC" aria-label="Remove '+esc(p.email||p.name)+' from CC" onclick="EmailCorrespondence.ccRemove('+i+')">✕</button></span>').join('');
+  }
+  function paintCc(){const h=document.getElementById('ec-cc-chips');if(h)h.innerHTML=ccChipsHTML();}
+  function ccRemove(i){if(!st.draft)return;st.draft.cc.splice(i,1);paintCc();}
+  function ccAdd(){
+    const el=document.getElementById('ec-cc-add');if(!el||!st.draft)return;
+    const add=people(el.value).filter(p=>p.email&&p.email!==CLINIC()&&!st.draft.cc.some(x=>x.email===p.email));
+    if(!add.length){say(el.value.trim()?'That address is already copied in, or is not an email address.':'Type an email address to add.');return;}
+    st.draft.cc.push(...add);el.value='';say('');paintCc();
   }
   function back(){render();}
   function send(){
     const body=(document.getElementById('ec-body')||{}).value||'';
     if(!body.trim()){say('Write the reply first.');return;}
     // The clinic mailbox is added back whatever was typed — it cannot be removed.
-    const cc=people((document.getElementById('ec-cc')||{}).value).filter(p=>p.email!==CLINIC());
+    const cc=(st.draft&&st.draft.cc||[]).filter(p=>p.email!==CLINIC());
     cc.push({name:'Stoma Care Clinic',email:CLINIC()});
     const to=people((document.getElementById('ec-to')||{}).value);
     const now=new Date(),p2=n=>String(n).padStart(2,'0');
@@ -380,6 +395,6 @@
       +st.msgs.map(emailPrintHTML).join(''));
   }
 
-  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,back,send,printOne,report,
+  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,back,send,printOne,report,ccAdd,ccRemove,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_state:st};
 })(window);

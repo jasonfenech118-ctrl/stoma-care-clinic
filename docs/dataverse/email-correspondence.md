@@ -28,7 +28,9 @@ only). Nothing is saved and no email is sent until this plan is carried out.
      nothing else**, e.g. `Jane Testpatient 123456M`.
    - **stomacare.mdh@gov.mt is always copied in**, so every reply comes back to the
      clinic mailbox.
-6. **Locked:** nobody using the app can change the subject or take
+6. **Full control of the other CCs:** the nurse can remove any CC address, or
+   add one, before sending.
+   **Locked:** nobody using the app can change the subject or take
    stomacare.mdh@gov.mt out of CC. The app never offers them as editable; the
    reply flow sets them itself.
 7. **One continuous conversation.** A reply written in the app is sent as
