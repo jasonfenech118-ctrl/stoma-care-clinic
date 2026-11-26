@@ -19,20 +19,22 @@
 <link rel="stylesheet" href="assets/clinical-history.css?v=2026.11.26-884"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-889"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-890"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-889"></script>
+<script src="assets/manual.js?v=2026.11.26-890"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
 <script src="assets/episode-codes.js?v=2026.11.26-885"></script>
 <script defer src="assets/clinical-history.js?v=2026.11.26-884"></script>
-<script defer src="assets/patient-communications.js?v=2026.11.26-885"></script>
+<script defer src="assets/patient-communications.js?v=2026.11.26-890"></script>
+<link rel="stylesheet" href="assets/patient-images.css?v=2026.11.26-890"/>
+<script defer src="assets/patient-images.js?v=2026.11.26-890"></script>
 <link rel="stylesheet" href="assets/email-correspondence.css?v=2026.11.26-889"/>
 <script defer src="assets/email-correspondence.js?v=2026.11.26-889"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
@@ -4083,7 +4085,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-889';
+const APP_BUILD='2026.11.26-890';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -18118,7 +18120,7 @@ function patientStomaSummaryHTML(pat){
         ${stomaBadgesHTML(x)}
       </span>
       <span class="sm-row-go">${psmIc('chevron')}</span>
-    </button>${clrState.available?stomaApplianceHistoryHTML(history.get(x.uid)||[]):''}</div>`;
+    </button>${window.PatientImages?PatientImages.slotHTML('stoma:'+x.slot,[stomaTitle(x),x.type?prettyStomaType(x.type):'',x.code].filter(Boolean).join(' · '),x.formed_date):''}${clrState.available?stomaApplianceHistoryHTML(history.get(x.uid)||[]):''}</div>`;
   }).join('');
   const present=list.filter(x=>x.present).length;
   const closed=list.length-present;
@@ -19887,7 +19889,11 @@ function patientDashboardHistoryHTML(){
   const codes=window.EpisodeCodes&&EpisodeCodes.cached(p&&p.id);
   const rowCode=row=>{if(!codes)return '';const[k,id]=String(row.key||'').split(':');
     return k==='appointment'?codes.followupCode(id):k==='encounter'?codes.encounterCode(id):'';};
-  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}${rowCode(row)?`<div><span class="clr-code" style="margin-left:0">${esc(rowCode(row))}</span></div>`:''}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
+  // 📷 on each episode, encounter, follow-up visit and correspondence row: add a
+  // picture linked to it (and 🖼 n once it has some).
+  const imgSlot=row=>window.PatientImages&&/^(episode|encounter|appointment|correspondence):/.test(row.key)
+    ?PatientImages.slotHTML(row.key,[row.date?fmtShortDate(row.date):'',rowCode(row)].filter(Boolean).join(' · '),row.date):'';
+  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}${rowCode(row)?`<div><span class="clr-code" style="margin-left:0">${esc(rowCode(row))}</span></div>`:''}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${imgSlot(row)}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
     const latest=g.stomas[g.stomas.length-1];
@@ -20570,6 +20576,8 @@ function arrangePatientDashboard(){
   const current=openEpisodeIn(clrState.rows||[]);
   actions.innerHTML=`<button type="button" class="psm-btn psm-btn-primary" onclick="${current?"patientDashboardOpen('history')":"openInpatientVisit()"}">Open episode${current?' · current':''}</button><button type="button" class="psm-btn" onclick="openSurgeryDateModal('${pid}')">Surgery date${pat.upcoming_surgery_date?' · '+htmlSafe(fmtShortDate(pat.upcoming_surgery_date)):''}</button>${canPlanReversal(pat)?`<button type="button" class="psm-btn" onclick="patientDashboardOpen('outcomes')">Proposed reversal date${pat.proposed_reversal_date?' · '+htmlSafe(fmtShortDate(pat.proposed_reversal_date)):''}</button>`:''}<button type="button" class="psm-btn" onclick="openPatientEducation()">📚 Education</button><button type="button" class="psm-btn" onclick="openPatientLiterature()">📄 Informative literature</button><button type="button" class="psm-btn" onclick="openPatientScheduleFive()">📋 Schedule 5</button><button type="button" class="psm-btn" onclick="openPatientTreatment()">💊 Treatment</button>${(!isFistulaPatient(pat)&&!['deceased','reversed','relocated_overseas','discharged_gozo'].includes(normaliseFollowupStatus(pat.followup_status)))?(normaliseFollowupType(pat.followup_type)==='tele'?`<button type="button" class="psm-btn" onclick="revertTeleFollowup('${pid}')" title="Switch this patient back to an in-person follow-up">↩ In-person follow-up</button>`:`<button type="button" class="psm-btn" onclick="switchToTeleFollowup('${pid}')" title="Follow this patient up by telecommunication (Comcare email) instead of in person — e.g. if they can no longer attend clinic">📧 Switch to tele follow-up</button>`):''}${clrState.siting?`<button type="button" class="psm-btn" onclick="openPatientSitingSessions()">📍 Siting</button>`:''}`;
   root.querySelector('.pd-patient-details')?.after(actions);
+  // 📷 Images: appears with these actions once the patient has a saved picture.
+  if(window.PatientImages)PatientImages.mount(actions,pat);
   const doc=root.querySelector('.doc-status-card'); // Existing record-completeness information is retained below the details.
   const home=patientDashboardSection(overview,'Patient overview',false);
   patientDashboardSection(document.getElementById('psm-stomas'),'Stomas & surgery',false);
