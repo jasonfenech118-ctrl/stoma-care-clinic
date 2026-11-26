@@ -18,18 +18,18 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-865"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-866"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-865"></script>
+<script src="assets/manual.js?v=2026.11.26-866"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
-<script src="assets/episode-codes.js?v=2026.11.26-865"></script>
+<script src="assets/episode-codes.js?v=2026.11.26-866"></script>
 <script defer src="assets/patient-communications.js?v=2026.11.26-865"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
 <script src="assets/deceased-registry.js?v=2026.11.01-719"></script>
@@ -4063,7 +4063,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-865';
+const APP_BUILD='2026.11.26-866';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -19849,7 +19849,11 @@ function patientDashboardHistoryHTML(){
   // A stoma with nothing recorded under it gets no dropdown of its own.
   const eventsOf=g=>g.stomas.some(s=>s.kind==='refashion'||s.reversal_date||s.reversal_unknown);
   for(let i=groups.length-1;i>=0;i--)if(!groups[i].rows.length&&!(groups[i].refs||[]).length&&!eventsOf(groups[i]))groups.splice(i,1);
-  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
+  // EP03-12345M-02-F / -I — the record's place in the patient's episodes.
+  const codes=window.EpisodeCodes&&EpisodeCodes.cached(p&&p.id);
+  const rowCode=row=>{if(!codes)return '';const[k,id]=String(row.key||'').split(':');
+    return k==='appointment'?codes.followupCode(id):k==='encounter'?codes.encounterCode(id):'';};
+  const renderRow=(row,g)=>`<tr><td>${esc(row.kind)}${rowCode(row)?`<div><span class="clr-code" style="margin-left:0">${esc(rowCode(row))}</span></div>`:''}</td><td><div class="pd-record-text">${row.html!=null?row.html:fmtText(row.text)}</div>${row.action}${row.uids.length?'':careLinkButton(row.key,row.uids,model)}</td><td>${esc(row.date?fmtShortDate(row.date):'Not recorded')}${row.time?'<br>'+esc(String(row.time).slice(0,5)):''}</td></tr>`;
   return groups.map(g=>{
     const root=model.byUid.get(g.key)||g.stomas[0],closed=g.stomas.length&&g.stomas.every(s=>!s.present);
     const latest=g.stomas[g.stomas.length-1];
@@ -27286,7 +27290,7 @@ async function loadFistulaPatients(){
   if(res.error){body.innerHTML=`<div class="report-note">Could not load fistula patients: ${htmlSafe(res.error.message||'')}</div>`;return;}
   const rows=(res.rows||[]).filter(isFistulaPatient);
   // Each patient's admissions (episodes) and the encounters recorded in them.
-  const ids=rows.map(p=>String(p.id)),episodes={},encounters={},comms={};
+  const ids=rows.map(p=>String(p.id)),episodes={},encounters={},comms={},visits={};
   for(let i=0;i<ids.length;i+=100){
     const chunk=ids.slice(i,i+100);
     try{const r=await fetchAllRows(()=>SB.from('clinical_records').select('id,patient_id,episode_ref,record_date,discharge_date,is_current').eq('kind','episode').in('patient_id',chunk));
@@ -27297,11 +27301,13 @@ async function loadFistulaPatients(){
     // changes the episode numbers (EP01, EP02 …).
     try{const r=await fetchAllRows(()=>SB.from('patient_communications').select('id,patient_id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status,resolved_at').in('patient_id',chunk));
       (r.rows||[]).forEach(c=>(comms[String(c.patient_id)]=comms[String(c.patient_id)]||[]).push(c));}catch(e){}
+    try{const r=await fetchAllRows(()=>SB.from('appointments').select('id,patient_id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances').eq('status','attended').in('patient_id',chunk));
+      (r.rows||[]).forEach(a=>(visits[String(a.patient_id)]=visits[String(a.patient_id)]||[]).push(a));}catch(e){}
   }
   if(version!==fistulaLoadVersion)return;
   fistulaRows=rows;fistulaEpisodes=episodes;fistulaEncounters=encounters;
   fistulaCodes={};
-  if(window.EpisodeCodes)rows.forEach(p=>{try{fistulaCodes[String(p.id)]=EpisodeCodes.compute(p,episodes[String(p.id)]||[],encounters[String(p.id)]||[],comms[String(p.id)]||[]);}catch(e){}});
+  if(window.EpisodeCodes)rows.forEach(p=>{try{fistulaCodes[String(p.id)]=EpisodeCodes.compute(p,episodes[String(p.id)]||[],encounters[String(p.id)]||[],comms[String(p.id)]||[],visits[String(p.id)]||[]);}catch(e){}});
   fistulaIdCache={at:Date.now(),ids:new Set(ids)};
   renderFistulaPatients();
 }

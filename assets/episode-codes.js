@@ -7,14 +7,15 @@
              CC = community correspondence
              PC = patient correspondence
              DC = doctors correspondence
+             F  = follow-up visit (an attended clinic / tele appointment)
    Numbers have at least two digits and grow as needed (09, 10 … 99, 100).
 
    Episodes:
    • Every admission is an episode. Anything recorded while the patient is
      admitted (inpatient encounters and any correspondence) is an encounter of
      that admission — correspondence never opens a separate episode then.
-   • Correspondence recorded while the patient is NOT admitted opens a
-     correspondence episode. It stays open until every correspondence in it is
+   • Correspondence or a follow-up visit while the patient is NOT admitted
+     opens an episode (or joins one still open). It stays open until every correspondence in it is
      Resolved or the patient is admitted; further correspondence meanwhile (and
      every follow-up update) is added to it as the next encounter.
 
@@ -33,6 +34,7 @@
   }
   function idPart(patient){return String(patient&&patient.id_card||'').replace(/\s+/g,'').toUpperCase()||'NOID';}
   function commType(c){
+    if(c.kind==='followup')return 'F';
     if(c.kind==='patient')return 'PC';
     return /doctor/i.test(String(c.service||''))?'DC':'CC';
   }
@@ -41,7 +43,7 @@
   function encMoment(e){return day(e.encounter_date||maltaDay(e.created_at))+'T'+String(e.created_at||'').slice(11,19)+'|'+String(e.created_at||'');}
 
   /* Pure: build every code for one patient. */
-  function compute(patient,episodes,encounters,comms){
+  function compute(patient,episodes,encounters,comms,appointments){
     const id=idPart(patient);
     // Admissions as dated intervals [start, end] (end '' = still open).
     const adm=(episodes||[]).filter(e=>e&&e.id).map(e=>{
@@ -68,7 +70,16 @@
       if(a)a.items.push({type:'I',id:'enc:'+e.id,moment:encMoment(e)});
     });
     // Correspondence: roots first decide their episode; updates follow their root.
-    const all=(comms||[]).filter(c=>c&&c.id);
+    // Follow-up visits behave like correspondence that is finished at the end
+    // of its day: it opens (or joins) an episode outside an admission, and
+    // anything recorded later that day still joins it.
+    const visits=(appointments||[]).filter(a=>a&&a.id&&String(a.status||'')==='attended'&&day(a.appt_date)
+      &&!(typeof global.isLegacyAdminAppliancePlaceholder==='function'&&global.isLegacyAdminAppliancePlaceholder(a)))
+      .map(a=>({id:'appt-'+a.id,_appt:a,kind:'followup',communication_date:day(a.appt_date),
+        communication_time:a.appt_slot?String(a.appt_slot).slice(0,5)+':00':null,
+        created_at:day(a.appt_date)+'T'+(a.appt_slot?String(a.appt_slot).slice(0,5):'00:00')+':00',
+        status:'Completed',resolved_at:day(a.appt_date)+'T23:59:59'}));
+    const all=(comms||[]).filter(c=>c&&c.id).concat(visits);
     const roots=all.filter(c=>!c.parent_id).sort((a,b)=>commMoment(a).localeCompare(commMoment(b)));
     const corr=[];let open=null;const placed=new Map();   // root id -> episode
     const resolvedDay=c=>c.status==='Completed'?(maltaDay(c.resolved_at)||maltaDay(c.updated_at)||day(c.communication_date)):'';
@@ -112,6 +123,7 @@
       episodeNumber:ep=>{const e=episodeById.get(String(ep&&ep.id||ep));return e?e.number:0;},
       encounterCode:enc=>itemCode.get('enc:'+String(enc&&enc.id||enc))||'',
       commCode:c=>itemCode.get('comm:'+String(c&&c.id||c))||'',
+      followupCode:a=>itemCode.get('comm:appt-'+String(a&&a.id||a))||'',
       commEpisodeNumber:c=>{const e=episodeOfItem.get('comm:'+String(c&&c.id||c));return e?e.number:0;}
     };
   }
@@ -135,14 +147,15 @@
     const db=global.SB;if(!db)return Promise.resolve(null);
     const safe=p=>p.catch(()=>[]);
     const job=(async()=>{
-      const [pat,episodes,encounters,comms]=await Promise.all([
+      const [pat,episodes,encounters,comms,appts]=await Promise.all([
         db.from('patients').select('id,id_card').eq('id',pid).maybeSingle().then(r=>r.data||null).catch(()=>null),
         safe(fetchAll(db,()=>db.from('clinical_records').select('id,record_date,discharge_date,is_current,created_at,updated_at').eq('patient_id',pid).eq('kind','episode').order('id'))),
         safe(fetchAll(db,()=>db.from('encounters').select('id,episode_id,encounter_date,created_at').eq('patient_id',pid).order('id'))),
         safe(fetchAll(db,()=>db.from('patient_communications').select('id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status,resolved_at').eq('patient_id',pid).order('id')))
-          .then(r=>r.length?r:safe(fetchAll(db,()=>db.from('patient_communications').select('id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status').eq('patient_id',pid).order('id'))))
+          .then(r=>r.length?r:safe(fetchAll(db,()=>db.from('patient_communications').select('id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status').eq('patient_id',pid).order('id')))),
+        safe(fetchAll(db,()=>db.from('appointments').select('id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances').eq('patient_id',pid).eq('status','attended').order('id')))
       ]);
-      const res=compute(pat,episodes,encounters,comms);
+      const res=compute(pat,episodes,encounters,comms,appts);
       cache.set(pid,res);
       return res;
     })().finally(()=>pending.delete(pid));
