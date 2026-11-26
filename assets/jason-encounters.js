@@ -287,6 +287,14 @@
   }
   function canLeave(){if(ctx?.saving)return false;return !dirty()||window.confirm('Discard the unsaved encounter changes?');}
   function dismiss(force=false){if(!force&&!canLeave())return false;request++;ctx=null;document.body.classList.remove('jenc-open');document.getElementById('page-jason-encounters')?.classList.remove('active');return true;}
+  // The app's top-left Back while an encounter page is open: leave a plan or
+  // summary page for the encounter, else leave the encounter.
+  function topBack(){
+    const page=document.getElementById('page-jason-encounters');
+    const inner=page&&(page.querySelector('[data-action="plan-back"]')||page.querySelector('[data-action="summary-back"]'));
+    if(inner){inner.click();return;}
+    back();
+  }
   async function back(){if(!canLeave())return;const pos=ctx?.returnScroll||0,pid=ctx?.patient.id,origin=ctx?.returnPage||'page-handover';dismiss(true);document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     if(origin==='page-care-episode'&&typeof openCareEpisode==='function'&&careEpisodeView?.episodeId)await openCareEpisode(careEpisodeView.episodeId);
     else if(origin==='page-patient-record'&&typeof openPatientRecord==='function')await openPatientRecord(pid);
@@ -519,7 +527,8 @@
     // encounter already carries one (so saved work is never hidden).
     const firstEpisode=episodeNumberOf(ctx.episode)<=1;
     const topPlanBtns=ctx.mode==='form'?(((firstEpisode&&ctx.editable)||ctx.draft?.teaching_plan?'<button class="jenc-btn" data-action="add-teaching">'+(ctx.draft?.teaching_plan?'Teaching plan':'+ Add teaching plan')+'</button>':'')+((firstEpisode&&ctx.editable)||ctx.draft?.discharge_plan?'<button class="jenc-btn" data-action="add-discharge">'+(ctx.draft?.discharge_plan?'Discharge preparation':'+ Add discharge preparation')+'</button>':'')):'';
-    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="'+(planPage?'plan-back':'back')+'">← Back to '+(planPage?'encounter':ctx.returnPage==='page-care-episode'?'admission':ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta jenc-header-meta"><span>'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+'</span><span class="jenc-episode">'+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar jenc-toolbar-right"><button class="jenc-btn '+(ctx.mode==='summary'?'primary':'')+'" data-action="summary">Encounter summary</button><button class="jenc-btn" data-action="complications" title="Record a complication outcome — Improving / Unchanged / Worsening / Resolved — saved against this encounter">⚠️ Complications</button>'+topPlanBtns+'</div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
+    // Back is the top-left Back button of the app (see navBack), not a button here.
+    const top='<div class="jenc-head"><div><div class="jenc-toolbar"><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta jenc-header-meta"><span>'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+'</span><span class="jenc-episode">'+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar jenc-toolbar-right"><button class="jenc-btn '+(ctx.mode==='summary'?'primary':'')+'" data-action="summary">Encounter summary</button><button class="jenc-btn" data-action="complications" title="Record a complication outcome — Improving / Unchanged / Worsening / Resolved — saved against this encounter">⚠️ Complications</button>'+topPlanBtns+'</div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(planPage){
       const teaching=ctx.mode==='teaching',title=teaching?'Teaching plan':'Discharge preparation';
       const content=teaching?teachingPlanSectionHTML(ctx.draft.teaching_plan):dischargePlanSectionHTML(ctx.draft.discharge_plan);
@@ -883,7 +892,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,applianceHistoryHTML:episodeApplianceHistoryHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,back,topBack,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,applianceHistoryHTML:episodeApplianceHistoryHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
