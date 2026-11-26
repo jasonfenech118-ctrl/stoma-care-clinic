@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-858"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-859"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.10.28-656"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-858"></script>
+<script src="assets/manual.js?v=2026.11.26-859"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2405,6 +2405,11 @@ details.annual-collapse>summary:hover{background:#f5f8fa;}
 /* The encounter is a focused full-screen task with its own Back (and unsaved-
    changes guard), so the global Back steps aside while it is open. */
 body.jenc-open #nav-back{display:none!important;}
+.nav-refresh-btn{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:11px 18px;border:none;border-radius:11px;background:#0d7377;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap;}
+.nav-refresh-btn:hover{background:#0a5c5f;}
+@media screen and (max-width:860px){.nav-refresh-btn{margin-left:6px;padding:9px 13px;font-size:14.5px;}}
+@media print{.nav-refresh-btn{display:none!important;}}
+@media screen and (max-width:600px){.nav-refresh-txt{display:none;}.nav-refresh-btn{padding:9px 11px;}}
 @media screen and (max-width:860px){.nav-back-btn{margin-left:6px;padding:9px 15px;font-size:14.5px;}}
 /* On a small phone the hamburger + current-page label already name the app, so
    the brand text gives way to keep the Back button and controls on one line. */
@@ -2667,6 +2672,7 @@ tr.siting-dup-row td{background:#fffbeb;}
       </div>
       <button class="mob-ham" onclick="openMobileNav()" aria-label="Open navigation menu"><span></span><span></span><span></span></button>
       <button class="nav-back-btn" id="nav-back" onclick="navBack()" style="display:none;" aria-label="Go back to the previous page" title="Back to the previous page">‹ Back</button>
+      <button class="nav-refresh-btn" id="nav-refresh" type="button" onclick="clinicRefreshPage()" aria-label="Refresh the app" title="Reload the latest data and the newest app version, then come back to this page">↻<span class="nav-refresh-txt"> Refresh</span></button>
       <div class="tb-logo" style="margin-left:10px;">MDH <span>Stoma Care</span> Clinic</div>
       <div class="tb-date" id="tb-date"></div>
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
@@ -4053,7 +4059,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-858';
+const APP_BUILD='2026.11.26-859';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -4111,7 +4117,13 @@ async function startApp(){
   startHandoverSnapshotScheduler();
   // Quick Look was already activated before the awaited startup work above.
   // Handle the other direct routes now that their supporting data is ready.
-  if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
+  const refreshReturn=takeRefreshReturn();
+  if(refreshReturn&&!quickLookStart&&!surgicalPhoneStart&&!deepPatient&&!/^#handover$/.test(initialHash)){
+    // Back from the top-bar Refresh: the same patient or tab, no reminder popup.
+    if(refreshReturn.patient)openPatientRecord(refreshReturn.patient);
+    else if(refreshReturn.tab&&refreshReturn.tab!=='roster'&&document.getElementById('page-'+refreshReturn.tab))switchTab(refreshReturn.tab);
+  }
+  else if(/^#handover$/.test(initialHash)){openHandoverStandalone();}
   // Opened from a worklist in its own tab: go straight to that record, and no
   // reminder popup over the top of it.
   else if(deepPatient){openPatientRecord(decodeURIComponent(deepPatient[1]));}
@@ -4371,6 +4383,26 @@ function switchTabMobile(name){
   switchTab(name);
 }
 function refreshActivePage(){switchTab(currentTabName());}
+/* Top-bar Refresh: reload the whole app (latest data and newest build) and come
+   back to the same place — the same tab, or the same patient's record. An open
+   encounter with unsaved changes asks first. */
+function clinicRefreshPage(){
+  const active=document.querySelector('.page.active')?.id||'';
+  const inEncounter=document.body.classList.contains('jenc-open');
+  let ret={tab:currentTabName()};
+  try{
+    const pid=typeof clrState!=='undefined'&&clrState.patientId;
+    if(pid&&/^page-(patient-record|care-episode|discharge-letters)$/.test(active))ret={patient:String(pid)};
+    else if(inEncounter||active==='page-jason-encounters')ret={tab:'handover'};
+  }catch(e){}
+  try{if(inEncounter&&window.JasonEncounters&&!window.JasonEncounters.dismiss(false))return;}catch(e){}
+  try{sessionStorage.setItem('clinic-refresh-return',JSON.stringify(ret));}catch(e){}
+  location.reload();
+}
+// After a Refresh, the tab or patient to return to (read once).
+function takeRefreshReturn(){
+  try{const raw=sessionStorage.getItem('clinic-refresh-return');sessionStorage.removeItem('clinic-refresh-return');return raw?JSON.parse(raw):null;}catch(e){return null;}
+}
 
 /* Database broadcasts carry only a table name, never patient details. The
    existing loaders remain the source of truth. Coalesce bursts of edits and
