@@ -8,8 +8,9 @@
 --
 -- The pictures themselves go in a PRIVATE storage bucket, patient-images. Only
 -- signed-in staff, not anonymous sessions, can see, add or delete them, through
--- links that expire. Files are limited to 5 MB and to JPEG, PNG or WebP; the app
--- shrinks every picture to a JPEG of about 200 to 400 KB before saving.
+-- links that expire. Pictures are shrunk by the app to a JPEG of about 100 to
+-- 400 KB. Documents attached to an email, such as PDF, Word, Excel or text, are
+-- kept as they are, up to 10 MB each.
 -- =============================================================================
 
 create table if not exists public.patient_images (id uuid primary key default gen_random_uuid(), patient_id uuid not null references public.patients(id) on delete cascade, link_kind text not null default '' check (link_kind in ('','episode','encounter','appointment','correspondence','stoma','email')), link_id text not null default '', link_label text not null default '', taken_on date, caption text not null default '', storage_path text not null unique, file_name text not null default '', mime text not null default 'image/jpeg', size_bytes integer not null default 0, width integer, height integer, created_by uuid default auth.uid(), created_by_name text not null default '', created_at timestamptz not null default now(), check (length(caption) <= 1000));
@@ -23,7 +24,7 @@ drop policy if exists patient_images_rw on public.patient_images;
 create policy patient_images_rw on public.patient_images for all to authenticated using ((select auth.uid()) is not null and not coalesce(((select auth.jwt())->>'is_anonymous')::boolean, false)) with check ((select auth.uid()) is not null and not coalesce(((select auth.jwt())->>'is_anonymous')::boolean, false) and exists (select 1 from public.patients p where p.id = patient_id));
 
 -- The private picture store.
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('patient-images', 'patient-images', false, 5242880, array['image/jpeg','image/png','image/webp']) on conflict (id) do update set public = false, file_size_limit = 5242880, allowed_mime_types = array['image/jpeg','image/png','image/webp'];
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('patient-images', 'patient-images', false, 10485760, array['image/jpeg','image/png','image/webp','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain']) on conflict (id) do update set public = false, file_size_limit = 10485760, allowed_mime_types = array['image/jpeg','image/png','image/webp','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain'];
 drop policy if exists patient_images_read on storage.objects;
 create policy patient_images_read on storage.objects for select to authenticated using (bucket_id = 'patient-images' and (select auth.uid()) is not null and not coalesce(((select auth.jwt())->>'is_anonymous')::boolean, false));
 drop policy if exists patient_images_add on storage.objects;

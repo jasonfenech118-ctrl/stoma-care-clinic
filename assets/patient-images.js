@@ -28,6 +28,11 @@
   };
   const st={pid:null,patient:null,rows:[],loaded:false,available:true,error:'',links:new Map(),urls:new Map(),host:null,seq:0,
     pick:null,view:null};
+  // TESTING: only the administrators (Jason, Jacqueline) see pictures until the
+  // move to Dataverse. Set FOR_EVERYONE to true to open them to all nurses.
+  const FOR_EVERYONE=false;
+  const enabled=()=>FOR_EVERYONE||!!(global.ClinicAccount&&typeof global.ClinicAccount.isAdmin==='function'&&global.ClinicAccount.isAdmin());
+  const isImage=r=>/^image\//.test(String(r&&(r.mime||r.type)||''));
   const splitKey=k=>{const s=String(k||''),i=s.indexOf(':');return i<0?{kind:s,id:''}:{kind:s.slice(0,i),id:s.slice(i+1)};};
   const keyOf=r=>r.link_kind+':'+r.link_id;
   const sorted=list=>list.slice().sort((a,b)=>String(b.taken_on||'').localeCompare(String(a.taken_on||''))||String(b.created_at||'').localeCompare(String(a.created_at||'')));
@@ -42,6 +47,7 @@
     // (The places' names in st.links are kept: they are drawn just before this.)
     if(st.pid!==pid){st.pid=pid;st.rows=[];st.loaded=false;st.urls=new Map();}
     st.patient=patient;st.host=host||st.host;
+    if(!enabled())return;
     paint();load();
   }
   async function load(){
@@ -69,10 +75,12 @@
   // Called while a record is drawn: remembers what the place is called and
   // returns its buttons (refreshed in place once the pictures are loaded).
   function slotHTML(key,label,date){
+    if(!enabled())return '';
     st.links.set(key,{label:String(label||''),date:String(date||'').slice(0,10)});
     return '<span class="pi-slot" data-pi-key="'+esc(key)+'">'+slotInner(key)+'</span>';
   }
   function paint(){
+    if(!enabled()){const b=document.getElementById('pi-profile-btn');if(b)b.remove();return;}
     document.querySelectorAll('.pi-slot').forEach(el=>{el.innerHTML=slotInner(el.dataset.piKey);});
     // The patient's 📷 Images button: only there once a picture is saved.
     const actions=document.querySelector('#page-patient-record .pd-home-actions')||st.host;
@@ -159,6 +167,30 @@
     if(typeof global.showToast==='function')global.showToast('📷 '+saved+' picture'+(saved===1?'':'s')+' saved');
   }
 
+  /* ---------- saved from elsewhere (an email's attachments) ---------- */
+  // A picture is shrunk like any other; a file (PDF, Word …) is kept as it is,
+  // up to 10 MB. Returns {ok} or {error}.
+  const FILE_TYPES=/^(?:image\/(?:jpeg|png|webp)|application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|application\/vnd\.ms-excel|text\/plain)$/;
+  async function saveBlob(blob,o){
+    o=o||{};if(!st.pid||!db())return {error:'No patient open.'};
+    const {kind,id}=splitKey(o.key||'');const name=String(o.name||'attachment');
+    let body=blob,type=String(o.type||blob.type||'application/octet-stream').toLowerCase(),w=null,h=null,fileName=name;
+    try{
+      if(/^image\//.test(type)){const out=await shrink(blob);body=out.blob;type='image/jpeg';w=out.width;h=out.height;fileName=name.replace(/\.[a-z0-9]+$/i,'')+'.jpg';}
+      else if(!FILE_TYPES.test(type))return {error:name+': this kind of file is not kept.'};
+      else if(blob.size>10*1024*1024)return {error:name+': larger than 10 MB.'};
+    }catch(e){return {error:name+': '+e.message};}
+    const ext=(fileName.match(/\.([a-z0-9]{1,5})$/i)||[,'bin'])[1].toLowerCase();
+    const path=st.pid+'/'+uuid()+'.'+ext;
+    const up=await db().storage.from(BUCKET).upload(path,body,{contentType:type,upsert:false});
+    if(up.error)return {error:missing(up.error)?'Pictures are not set up yet (run sql/add-patient-images.sql).':String(up.error.message||up.error)};
+    const row={patient_id:st.pid,link_kind:kind,link_id:id,link_label:String(o.label||''),taken_on:o.taken||today(),caption:String(o.caption||'').slice(0,300),storage_path:path,
+      file_name:fileName,mime:type,size_bytes:body.size,width:w,height:h,created_by_name:o.who||await who()};
+    const ins=await db().from(TABLE).insert([row]);
+    if(ins.error){try{await db().storage.from(BUCKET).remove([path]);}catch(e){}return {error:String(ins.error.message||ins.error)};}
+    return {ok:true};
+  }
+
   /* ---------- seeing them ---------- */
   async function signed(paths){
     const need=paths.filter(p=>{const c=st.urls.get(p);return !c||c.exp<Date.now();});
@@ -187,7 +219,8 @@
     let url;try{url=await signed(list.map(r=>r.storage_path));}catch(e){url=()=>'';}
     if(!st.view||st.view.list!==list)return;
     mb.innerHTML=head
-      +'<div class="pi-grid">'+list.map((r,i)=>'<figure class="pi-tile"><button type="button" class="pi-tile-img" onclick="PatientImages.show('+i+')" aria-label="Open picture">'+(url(r.storage_path)?'<img src="'+esc(url(r.storage_path))+'" alt="'+esc(r.caption||'Patient picture')+'" loading="lazy">':'<span>Picture unavailable</span>')+'</button>'
+      +'<div class="pi-grid">'+list.map((r,i)=>'<figure class="pi-tile"><button type="button" class="pi-tile-img" onclick="PatientImages.show('+i+')" aria-label="Open '+(isImage(r)?'picture':'file')+'">'
+        +(!isImage(r)?'<span class="pi-file">📄<small>'+esc(r.file_name||'File')+'</small></span>':url(r.storage_path)?'<img src="'+esc(url(r.storage_path))+'" alt="'+esc(r.caption||'Patient picture')+'" loading="lazy">':'<span>Picture unavailable</span>')+'</button>'
         +'<figcaption><span class="pi-date">'+esc(fmt(r.taken_on||r.created_at))+'</span>'+(r.caption?'<span class="pi-cap">'+esc(r.caption)+'</span>':'')+sourceChip(r)+'</figcaption></figure>').join('')+'</div>'
       +'<div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';
   }
@@ -198,8 +231,9 @@
     let dl='';try{const d=await db().storage.from(BUCKET).createSignedUrl(r.storage_path,600,{download:r.file_name||'picture.jpg'});dl=d&&d.data&&d.data.signedUrl||'';}catch(e){}
     if(!st.view||st.view.index!==i)return;
     mb.className='mb mb-wide pi-modal';
-    mb.innerHTML='<h2>📷 '+esc(fmt(r.taken_on||r.created_at))+(r.caption?' · '+esc(r.caption):'')+'</h2>'
-      +'<div class="pi-big"><img src="'+esc(url(r.storage_path))+'" alt="'+esc(r.caption||'Patient picture')+'"></div>'
+    mb.innerHTML='<h2>'+(isImage(r)?'📷 ':'📄 ')+esc(fmt(r.taken_on||r.created_at))+(r.caption?' · '+esc(r.caption):'')+'</h2>'
+      +(isImage(r)?'<div class="pi-big"><img src="'+esc(url(r.storage_path))+'" alt="'+esc(r.caption||'Patient picture')+'"></div>'
+        :'<div class="pi-big pi-big-file"><span class="pi-file">📄<small>'+esc(r.file_name||'File')+' · '+Math.max(1,Math.round((r.size_bytes||0)/1024))+' KB</small></span>'+(dl?'<a class="btn-save" href="'+esc(dl)+'" download>⬇ Open / download</a>':'')+'</div>')
       +'<div class="pi-meta">'+sourceChip(r)+'<span>Added by '+esc(r.created_by_name||'—')+' · '+esc(fmt(r.created_at))+'</span></div>'
       +'<div id="pi-msg"></div>'
       +'<div class="mact pi-acts"><button class="btn-cancel" onclick="PatientImages.gallery(PatientImages._state.view&&PatientImages._state.view.filter)">‹ All pictures</button>'
@@ -244,5 +278,5 @@
     },250);
   }
 
-  global.PatientImages={mount,reload:load,slotHTML,paint,add,picked,unpick,cancelPick,savePicked,gallery,show,caption,remove,go,_state:st};
+  global.PatientImages={enabled,mount,reload:load,slotHTML,paint,saveBlob,add,picked,unpick,cancelPick,savePicked,gallery,show,caption,remove,go,_state:st};
 })(window);

@@ -1,8 +1,28 @@
 # Email correspondence: plan for the move to Dataverse
 
-Status: **designed and built as a preview, not switched on.** The preview is in
-`assets/email-correspondence.js` (button **📧 Add an email · Preview**, administrators
-only). Nothing is saved and no email is sent until this plan is carried out.
+Status: **working for testing by the administrators only**, before the move to
+Dataverse. The code is in `assets/email-correspondence.js` and pictures and files
+in `assets/patient-images.js`. Both have `FOR_EVERYONE=false`, so only Jason and
+Jacqueline see them.
+
+How the testing version works (Supabase):
+- An email (a dropped .eml or a pasted email) is saved as a contact of a Patient
+  correspondence issue, through the existing `save_patient_communication`
+  function. It therefore gets its DC/CC/PC encounter code like any contact.
+- Its email details go in `public.patient_emails` (`sql/add-patient-emails.sql`):
+  From, To, CC, when it was sent, text, original email, attachment names, and the
+  Message-ID or a fingerprint, used to skip an email already saved.
+- Pictures and documents go to the private `patient-images` store
+  (`sql/add-patient-images.sql`), linked to that contact.
+- A reply is saved as the next contact, then opens in Outlook through a mailto
+  link. Outlook cannot take attachments that way, so they are downloaded for the
+  nurse to attach.
+
+Moving to Dataverse means:
+- copying `patient_emails`, the correspondence contacts and the stored files into
+  the tables below;
+- replacing the mailto step with the Power Automate reply flow, which sends the
+  attachments too.
 
 ## What the clinic wants
 

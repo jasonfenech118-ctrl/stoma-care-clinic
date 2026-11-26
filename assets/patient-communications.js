@@ -55,6 +55,7 @@
       if (request !== generation) return;
       if (result.error) throw result.error;
       state.rows = sorted((result.rows || []).filter(r => String(r.patient_id) === String(patientId)));
+      try { if (global.EmailCorrespondence && global.EmailCorrespondence.enabled()) global.EmailCorrespondence.loadFor(patientId); } catch (_) {}
       // Fresh episode / encounter codes so a just-saved record shows its own.
       try { if (global.EpisodeCodes) await global.EpisodeCodes.load(patientId, {force: true}); } catch (_) {}
     } catch (error) {
@@ -68,9 +69,9 @@
   }
   function actionsHTML() {
     return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`
-      // Email linking, built ahead of Dataverse: a preview for the administrators only.
-      + (global.EmailCorrespondence && global.ClinicAccount && typeof global.ClinicAccount.isAdmin === 'function' && global.ClinicAccount.isAdmin()
-        ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Preview</span></button>` : '');
+      // Email linking: being tested by the administrators only until Dataverse.
+      + (global.EmailCorrespondence && global.EmailCorrespondence.enabled()
+        ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Testing</span></button>` : '');
   }
   function detailHTML(record) {
     return `<div class="pc-detail">
@@ -95,6 +96,7 @@
     return `<details class="pc-record">
       <summary><span class="pc-record-title"><strong>${first ? 'Initial communication' : esc(record.subject)}${codeChip(record)}</strong><span>${esc(date(record.communication_date))}${record.communication_time ? ' · ' + esc(record.communication_time.slice(0, 5)) : ''} · ${esc(record.method)} · ${esc(record.direction)}</span></span><span class="pc-version">V${record.version}</span></summary>
       ${detailHTML(record)}
+      ${record.method === 'Email' && global.EmailCorrespondence && global.EmailCorrespondence.enabled() ? global.EmailCorrespondence.recordSlotHTML(record.id) : ''}
       <div class="pc-record-foot"><span class="psm-audit">Recorded by ${esc(record.created_by_name)} · ${esc(savedTime(record.created_at))}${record.version > 1 ? '<br>Updated by ' + esc(record.updated_by_name) + ' · ' + esc(savedTime(record.updated_at)) : ''}</span><button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(record.kind)}','${esc(record.id)}')">${icon('pencil')} Edit record</button></div>
       ${previous.length ? `<details class="pc-versions"><summary>Previous versions (${previous.length})</summary>${previous.slice().reverse().map(v => `<div class="pc-old-version"><strong>V${v.version} · ${esc(v.author_name)} · ${esc(savedTime(v.saved_at))}</strong><div>${esc(date(v.snapshot.communication_date))} · ${esc(v.snapshot.method)} · ${esc(v.snapshot.direction)} · ${esc(statusLabel(v.snapshot.status))}</div>${detailHTML(v.snapshot)}</div>`).join('')}</details>` : ''}
     </details>`;
@@ -111,6 +113,7 @@
       <div class="pc-issue-body">
         ${done ? `<div class="pc-hint">Resolved${issue.resolved_by_name ? ' by ' + esc(issue.resolved_by_name) : ''}${issue.resolved_at ? ' · ' + esc(savedTime(issue.resolved_at)) : ''}</div>` : ''}
         ${isActiveReminder(issue) ? `<div class="pc-followup pc-issue-reminder${dueLabel(issue.followup_date) === 'Overdue' ? ' overdue' : ''}"><strong>Reminder · ${esc(dueLabel(issue.followup_date))} · ${esc(date(issue.followup_date))}</strong><div>${esc(issue.followup_action)}</div></div>` : ''}
+        ${global.EmailCorrespondence && global.EmailCorrespondence.enabled() ? `<div class="pc-issue-actions ec-issue-actions"><button type="button" class="psm-btn" onclick="EmailCorrespondence.open(null,'${esc(issue.id)}')">📧 Add email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.viewIssue('${esc(issue.id)}')">📨 Emails</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.replyToIssue('${esc(issue.id)}')">✉️ Reply by email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.issueReport('${esc(issue.id)}')">📄 Email report</button></div>` : ''}
         <div class="pc-issue-actions">${global.PatientImages ? global.PatientImages.slotHTML('correspondence:' + issue.id, [date(issue.communication_date), issue.subject, codeOf(issue)].filter(Boolean).join(' · '), issue.communication_date) : ''}${done ? '' : `<button type="button" class="psm-btn psm-btn-primary" onclick="PatientCommunications.open('${esc(issue.kind)}',null,'${esc(issue.id)}')"${disabled}>${icon('plus')} Add update / contact</button>`}<button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(issue.kind)}','${esc(issue.id)}')"${disabled}>${icon('pencil')} Edit issue / reminder</button><button type="button" class="psm-btn ${done ? '' : 'pc-resolve'}" onclick="PatientCommunications.setResolved('${esc(issue.id)}',${!done})"${disabled}>${done ? 'Reopen issue' : '✓ Resolve issue'}</button></div>
         <div class="pc-contact-heading">Communication history</div>${sorted(contacts).map(r => recordHTML(r, false)).join('')}${recordHTML(issue, true)}
       </div></details>`;
