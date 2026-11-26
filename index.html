@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-877"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-878"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-877"></script>
+<script src="assets/manual.js?v=2026.11.26-878"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4071,7 +4071,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-877';
+const APP_BUILD='2026.11.26-878';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -17437,10 +17437,14 @@ function stomaModalCanLeave(){
   if(!stomaModalCtx||stomaModalSnapshot()===stomaModalCtx.opened)return true;
   return confirm('This stoma has unsaved changes. Leave this page and discard those changes?');
 }
-function switchStomaModalTab(patientId,slot){
-  if(!stomaModalCanLeave())return;
-  modalCloseGuard=null;
-  openStomaModal(patientId,slot);
+/* Switching to another stoma saves this one first (no prompt). Nothing changed
+   → it simply switches. A check that stops the save (e.g. a missing date)
+   shows its message and keeps this stoma open so it can be corrected. */
+async function switchStomaModalTab(patientId,slot){
+  if(!stomaModalCtx||stomaModalSnapshot()===stomaModalCtx.opened){
+    modalCloseGuard=null;openStomaModal(patientId,slot);return;
+  }
+  await saveStomaModal({next:slot});
 }
 function stomaModalCloseAction(){
   const state=document.querySelector('input[name="sm-present"]:checked')?.value;
@@ -17546,7 +17550,8 @@ function readStomaModal(){
     present:state===undefined?null:state==='yes',
     same_admission:same===undefined?null:same==='yes'};
 }
-async function saveStomaModal(){
+async function saveStomaModal(opts){
+  opts=opts&&typeof opts==='object'&&!(opts instanceof Event)?opts:{};
   const ctx=stomaModalCtx; if(!ctx)return;
   const err=document.getElementById('sm-err');
   const say=m=>{if(err){err.hidden=false;err.textContent=m;err.scrollIntoView({block:'center',behavior:'smooth'});}};
@@ -17653,6 +17658,12 @@ async function saveStomaModal(){
   modalCloseGuard=null;                       // saved, so there is nothing to lose
   closeModal();
   refreshReminders();
+  if(opts.next){
+    // Saved on switching tabs: refresh the record, then open the chosen stoma.
+    await afterStomaSaved(ctx.patientId,{promptOutcome:false,switching:true});
+    await openStomaModal(ctx.patientId,opts.next);
+    return;
+  }
   await afterStomaSaved(ctx.patientId,{promptOutcome:true});
 }
 // Write edited "Operation and findings" text back into the field it was read
@@ -18052,7 +18063,8 @@ async function afterStomaSaved(patientId,options={}){
     const key=!error&&missingSavedOutcomeDate(patient);
     if(key)await promptSavedOutcomeDate(patientId,key);
   }
-  if(typeof UpdateRegister!=='undefined')UpdateRegister.stomaSaved(patientId);
+  // Moving between stomas is not the end of the stoma step in Update Register.
+  if(typeof UpdateRegister!=='undefined'&&!options.switching)UpdateRegister.stomaSaved(patientId);
 }
 /* The clickable list of every stoma, for the patient record. */
 /* The rod line shown on the stoma its rod is tied to (rod_stoma_uid). Shows the
