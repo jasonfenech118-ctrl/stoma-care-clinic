@@ -107,14 +107,35 @@
     if(!two&&r.appliances.length)return '<span class="jenc-ah-daily">Daily</span>';
     return esc(r.flange_due?(typeof fmtShortDate==='function'?fmtShortDate(r.flange_due):r.flange_due):'—');
   }
-  function episodeApplianceHistoryHTML(ep){
+  // The episode's appliance history, grouped by stoma — each under its full
+  // name (Loop Ileostomy, End Colostomy, Urostomy …), newest first.
+  const FULL_TYPE={ileo:'Ileostomy',colo:'Colostomy',uro:'Urostomy',jejuno:'Jejunostomy',mf:'Mucous Fistula',fistula:'Fistula'};
+  function fullStomaName(r){
+    const t=String(r.stoma_type||'').replace(/\s*-\s*/g,' ').trim();
+    if(t)return titleCase(t.toLowerCase());
+    const k=String(r.stoma_short||'').trim().toLowerCase().replace(/[^a-z]/g,'');
+    return FULL_TYPE[k]||titleCase(r.stoma_short||'Stoma');
+  }
+  function episodeApplianceHistoryHTML(ep,stomas){
     let rows=[];try{rows=typeof parseEpisodeApplianceRows==='function'?parseEpisodeApplianceRows(ep):[];}catch(_){rows=[];}
     rows=rows.filter(r=>r.appliances.length||r.accessories.length)
       .sort((a,b)=>String(b.changed_at||b.changed_on||'').localeCompare(String(a.changed_at||a.changed_on||'')));
     const when=r=>{const d=String(r.changed_on||r.changed_at||'').slice(0,10);return d&&typeof fmtShortDate==='function'?fmtShortDate(d):d||'—';};
-    const body=rows.length?'<div class="jenc-ah-wrap"><table class="jenc-ah"><thead><tr><th>Date</th><th>Stoma</th><th>Appliance</th><th>Accessories</th><th>Flange due</th><th>Ward / bed</th><th>By</th></tr></thead><tbody>'+
-      rows.map((r,i)=>'<tr'+(i===0?' class="jenc-ah-latest"':'')+'><td>'+esc(when(r))+(i===0?' <span class="jenc-ah-tag">Latest</span>':'')+'</td><td>'+esc(r.stoma_short||titleCase(r.stoma_type)||'—')+'</td><td>'+esc(r.appliances.join(', ')||'—')+'</td><td>'+esc(r.accessories.join(', ')||'None')+'</td><td>'+flangeDueCell(r)+'</td><td>'+esc([r.ward,r.bed].filter(Boolean).join(' · ')||'—')+'</td><td>'+esc(r.changed_by||'—')+'</td></tr>').join('')+
-      '</tbody></table></div>':'<p class="jenc-meta">No appliance has been recorded for this episode yet.</p>';
+    const all=list(stomas);
+    const kindOf=x=>String(x||'').toLowerCase().replace(/end|loop|double[\s-]*barrel(l)?ed|\(.*\)|[^a-z]/g,'');
+    // Which stoma a row belongs to: its own id, else the only stoma of that type.
+    const stomaOf=r=>{
+      const byId=r.stoma_uid&&all.find(x=>String(x.uid)===String(r.stoma_uid));if(byId)return byId;
+      const k=kindOf(fullStomaName(r)),same=all.filter(x=>kindOf(x.type)===k);return same.length===1?same[0]:null;
+    };
+    const groups=new Map();
+    rows.forEach(r=>{const st=stomaOf(r),key=st?'uid:'+st.uid:'type:'+fullStomaName(r).toLowerCase();
+      if(!groups.has(key))groups.set(key,{name:st?stomaName(st,all):fullStomaName(r),order:st?all.indexOf(st):99,rows:[]});groups.get(key).rows.push(r);});
+    const ordered=[...groups.values()].sort((a,b)=>a.order-b.order||String(b.rows[0].changed_at||b.rows[0].changed_on||'').localeCompare(String(a.rows[0].changed_at||a.rows[0].changed_on||'')));
+    const rowHTML=(r,i)=>'<tr'+(i===0?' class="jenc-ah-latest"':'')+'><td>'+esc(when(r))+(i===0?' <span class="jenc-ah-tag">Latest</span>':'')+'</td><td>'+esc(r.appliances.join(', ')||'—')+'</td><td>'+esc(r.accessories.join(', ')||'None')+'</td><td>'+flangeDueCell(r)+'</td><td>'+esc([r.ward,r.bed].filter(Boolean).join(' · ')||'—')+'</td><td>'+esc(r.changed_by||'—')+'</td></tr>';
+    const body=rows.length?'<div class="jenc-ah-wrap"><table class="jenc-ah"><thead><tr><th>Date</th><th>Appliance</th><th>Accessories</th><th>Flange due</th><th>Ward / bed</th><th>By</th></tr></thead>'+
+      ordered.map(g=>'<tbody class="jenc-ah-group"><tr class="jenc-ah-group-head"><th colspan="6">'+esc(g.name)+' <span class="jenc-ah-count">'+g.rows.length+'</span></th></tr>'+g.rows.map(rowHTML).join('')+'</tbody>').join('')+
+      '</table></div>':'<p class="jenc-meta">No appliance has been recorded for this episode yet.</p>';
     return '<details class="jenc-ah-box"'+(rows.length?'':' ')+'><summary>Appliance history · this episode <span class="jenc-ah-count">'+rows.length+'</span></summary>'+body+'</details>';
   }
   // EP02-12345M for an admission, and its number (1 = the first episode).
@@ -573,7 +594,7 @@
       '<div class="jenc-general-notes">'+noteBox('','Report (all stomas)',d.notes,'jenc-notes')+'</div>';
     const heading=(number,title,id,badge='')=>'<h3 class="jenc-step-heading" id="'+id+'"><span class="jenc-step-number" aria-hidden="true">'+number+'</span>'+title+(badge?'<span class="jenc-state">'+badge+'</span>':'')+'</h3>';
     const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,panels.length&&panels.every(x=>isFistulaCol(x.stoma))?'Fistula review':'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
-    const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+episodeApplianceHistoryHTML(ctx.episode)+'</section>';
+    const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+episodeApplianceHistoryHTML(ctx.episode,d.stomas)+'</section>';
     const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading',esc(episodeLabel))+notesHTML+'<div class="jenc-meta">One report covers every stoma; it is saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','Patient · every episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
@@ -862,7 +883,7 @@
       '<div class="jenc-handover-summary">'+(comp?'<div><strong>Complication:</strong> <span class="hv-cmp-line">'+esc(comp)+'</span></div>':'')+(rod?'<div><strong>Rod:</strong> '+esc(rod)+'</div>':'')+(text?'<div>'+esc(text)+'</div>':'')+'</div><input type="hidden" class="hv-note hv-nnote" value="'+esc(text)+'">'+
       '<button type="button" class="ncb-btn hv-enc-btn'+(hvEncounteredToday.has(String(p.id))?' is-done':'')+'" onclick="openEncounter(\''+String(p.id).replace(/[^a-z0-9-]/gi,'')+'\')">📝 Encounter'+(hvEncounteredToday.has(String(p.id))?' ✓':'')+'</button>';
   }
-  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
+  window.JasonEncounters={open,save,back,dismiss,attach,handoverCell,isJason,signedIn,versions,report,diffHTML,applianceHistoryHTML:episodeApplianceHistoryHTML,nilExclusive,changedAppliances,code:encounterCode,stomaName,patientReferrals,referralChipsHTML,normReferral,mergedReferrals,setupFields,isFistulaCol,professions:PROFESSIONS,
     get state(){return ctx;},colours:COLOURS,outputs:OUTPUTS,skinProblems:SKIN,healthySkin:HEALTHY_SKIN,rodCapable,options,addOption,loadOptions,isSkinProblem,skinName};
   window.openEncounter=open;
   const priorSwitch=window.switchTab;
