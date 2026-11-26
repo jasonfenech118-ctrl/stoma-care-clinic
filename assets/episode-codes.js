@@ -144,7 +144,8 @@
     const pid=String(patientId||'');if(!pid)return Promise.resolve(null);
     if(!(opts&&opts.force)&&cache.has(pid))return Promise.resolve(cache.get(pid));
     if(pending.has(pid)&&!(opts&&opts.force))return pending.get(pid);
-    const db=global.SB;if(!db)return Promise.resolve(null);
+    // The app's client is a script-level `const SB` (not a window property).
+    const db=(typeof SB!=='undefined'&&SB)||global.SB;if(!db)return Promise.resolve(null);
     const safe=p=>p.catch(()=>[]);
     const job=(async()=>{
       const [pat,episodes,encounters,comms,appts]=await Promise.all([
