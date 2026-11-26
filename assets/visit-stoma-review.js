@@ -201,6 +201,20 @@
     const tele=page.querySelector('.pd-home-actions button[onclick*="switchToTeleFollowup"],.pd-home-actions button[onclick*="revertTeleFollowup"]');
     const idRow=head&&head.querySelector('.psm-identity-row');
     if(tele&&idRow){tele.classList.add('psm-btn');idRow.append(tele);}
+    // Support referrals (psychologist, dietitian …) made in an encounter show in
+    // red in the header, beside Edit details, so they are seen straight away.
+    if(idRow&&currentPatient){
+      let refs=[];try{refs=window.JasonEncounters&&JasonEncounters.patientReferrals?JasonEncounters.patientReferrals(currentPatient):[];}catch(_){refs=[];}
+      const fmt=d=>d&&typeof fmtShortDate==='function'?fmtShortDate(String(d).slice(0,10)):'';
+      const html=refs.map(r=>'<span class="pd-referral-chip'+(r.seen?' is-seen':'')+'" title="'+(r.referred_by?'Referred by '+r.referred_by:'Support referral')+'">⚑ '+
+        String(r.profession).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))+' referral'+(r.referred_on?' · '+fmt(r.referred_on):'')+(r.seen?' · seen'+(r.seen_on?' '+fmt(r.seen_on):''):'')+'</span>').join('');
+      let box=idRow.querySelector('.pd-referral-chips');
+      if(html&&!box){box=document.createElement('span');box.className='pd-referral-chips';idRow.append(box);}
+      // Sit right after Edit details.
+      const ed=idRow.querySelector('button[onclick*="openPatientDatesModal"]');if(box&&ed&&box.previousElementSibling!==ed)ed.after(box);
+      if(box&&box.innerHTML!==html)box.innerHTML=html;
+      if(box)box.hidden=!html;
+    }
     const historyGroup=page.querySelector('#pd-history')?.closest('details.pd-section');
     if(historyGroup){const sync=()=>page.classList.toggle('pd-history-focused',historyGroup.open);if(!historyGroup.dataset.compactHeader){historyGroup.dataset.compactHeader='1';historyGroup.addEventListener('toggle',sync);}sync();}
     if(!head||!details||details.dataset.twoColumns)return;
