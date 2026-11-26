@@ -1,4 +1,4 @@
-/* Clinical history — surgeries (not stoma-related), medical imaging, patient
+/* Clinical history — performed procedures (not stoma-related), medical imaging, patient
    notes and treatment history, pasted in one lump per list and organised into
    dated rows by the rules below. Everything runs in the browser: the pasted
    text never leaves the app or the clinic's own database (no AI, no outside
@@ -11,9 +11,9 @@
    * Categories (the four tabs)
    * ------------------------------------------------------------------ */
   const CATS={
-    surgery:{label:'Surgeries',icon:'🏥',title:'Operation / procedure',result:'Outcome / findings',
-      hint:'Operations that are not stoma-related (stoma operations belong under Stomas & surgery).',
-      placeholder:'Paste the whole list of surgeries in one go, e.g.\n12/03/2019  Laparoscopic cholecystectomy – uneventful recovery (Mr Borg, MDH)\nMarch 2015  Open appendicectomy\n2008  Right inguinal hernia repair'},
+    surgery:{label:'Performed procedures',icon:'🏥',title:'Operation / procedure',result:'Outcome / findings',
+      hint:'Operations and procedures that are not stoma-related, e.g. the hospital system’s Performed Procedures list (stoma operations belong under Stomas & surgery).',
+      placeholder:'Paste the whole list of performed procedures in one go, e.g.\n12/03/2019  Laparoscopic cholecystectomy – uneventful recovery (Mr Borg, MDH)\nMarch 2015  Open appendicectomy\n2008  Right inguinal hernia repair'},
     imaging:{label:'Medical imaging',icon:'📷',title:'Scan / test',result:'Result / report',
       hint:'CT, MRI, ultrasound, X-ray, PET, contrast studies, endoscopy and their results.',
       placeholder:'Paste the whole list of scans and results in one go, e.g.\n05/01/2024  CT abdomen and pelvis: no evidence of recurrence.\n14 Feb 2023  MRI pelvis – Impression: 2 cm collection in the presacral space'},
@@ -584,11 +584,11 @@
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const st={pid:null,patient:null,host:null,entries:[],tab:'surgery',q:'',available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',
     main:null,sub:{surgeries:'surgery',notes:'all',documentation:'doc_icm'}};
-  // Three tabs, each with its own sub-tabs: Surgeries holds the operations and
+  // Three tabs, each with its own sub-tabs: Performed procedures holds the operations and
   // the medical imaging; Patient notes are split by who wrote them; Patient documentation
   // holds the pasted treatment history and the patient's medication groups.
   const MAIN={
-    surgeries:{label:'Surgeries',icon:'🏥',subs:[['surgery','Surgeries','🏥'],['imaging','Medical imaging','📷']]},
+    surgeries:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['imaging','Medical imaging','📷']]},
     notes:{label:'Patient notes',icon:'📝',subs:[['all','All notes',''],['nurse','Nurses',''],['doctor','Doctors',''],['other','Other professionals','']]},
     // Patient documentation follows the hospital system's Patient Documentation
     // section, so each list is pasted where it was copied from.
@@ -684,7 +684,7 @@
   function render(){
     const h=st.host;if(!h||!document.body.contains(h))return;
     const c=counts();
-    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Surgeries, patient notes and treatment">'+Object.keys(MAIN).map(k=>{
+    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Performed procedures, patient notes and patient documentation">'+Object.keys(MAIN).map(k=>{
       const on=st.main===k,n=k==='surgeries'?c.surgeries:k==='notes'?c.notes:c.documentation;
       return '<button type="button" role="tab" class="ch-main ch-main-'+k+(on?' is-on':'')+'" aria-selected="'+on+'" aria-expanded="'+on+'" onclick="ClinicalHistory.main(\''+k+'\')">'
         +'<span class="ch-main-ic" aria-hidden="true">'+MAIN[k].icon+'</span>'+esc(MAIN[k].label)+'<span class="ch-count">'+n+'</span><span class="ch-caret" aria-hidden="true">'+(on?'▴':'▾')+'</span></button>';
