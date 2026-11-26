@@ -139,7 +139,8 @@ window.UpdateRegister=(()=>{
   function renderFlowControls(id){
     document.getElementById('ur-continue-outcome')?.remove();
     if(!flow||flow.id!==id||flow.step!=='stoma')return;
-    const bar=document.querySelector('#page-patient-record .psm-page-bar');if(!bar)return;
+    // The profile layout removes the old page bar; use the home-actions row then.
+    const bar=document.querySelector('#page-patient-record .psm-page-bar')||document.querySelector('#page-patient-record .pd-home-actions');if(!bar)return;
     const next=document.createElement('button');next.id='ur-continue-outcome';next.type='button';next.className='psm-btn psm-btn-primary';
     next.textContent='Continue to Outcome ›';next.onclick=()=>stomaSaved(id);bar.append(next);
   }

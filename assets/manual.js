@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — The 💊 Treatment button now records anti-hypertensives, OHAs, insulin and other treatment, shown under Patient details. Support referrals show as red tags in the profile header.'};
+const MANUAL_META={updated:'26 November 2026 — Fixed: in Update Register the Outcome section opens again after the stoma is saved, and Continue to Outcome shows when needed. 💊 Treatment records anti-hypertensives, OHAs and insulin.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
