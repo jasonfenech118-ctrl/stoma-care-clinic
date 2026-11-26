@@ -1,7 +1,7 @@
 -- =============================================================================
--- Patient profile › Clinical history
--- Surgeries (not stoma-related), medical imaging, patient notes and treatment
--- history, pasted as one list and organised into dated rows inside the app.
+-- Patient profile › Surgeries (with Medical imaging), Patient notes and
+-- Patient documentation tabs: lists pasted in one go and organised into dated
+-- rows inside the app.
 --
 -- HOW TO RUN: Supabase Dashboard -> SQL Editor -> New query -> paste ALL of
 -- this -> Run. Safe to re-run. No existing patient data is read or changed.
@@ -10,7 +10,7 @@
 create table if not exists public.patient_history_entries (
   id              uuid primary key default gen_random_uuid(),
   patient_id      uuid not null references public.patients(id) on delete cascade,
-  category        text not null check (category in ('surgery','imaging','notes','treatment')),
+  category        text not null,
   entry_date      date,                                   -- null when no date was given
   date_precision  text not null default '' check (date_precision in ('','day','month','year')),
   entry_time      text not null default '',               -- HH:MM when the source gave a time
@@ -29,6 +29,12 @@ create table if not exists public.patient_history_entries (
   updated_at      timestamptz not null default now(),
   check (length(title) <= 2000 and length(result) <= 20000 and length(raw_text) <= 40000)
 );
+-- Which tab an entry belongs to. Re-created each run so a database set up with
+-- the first version of this script also accepts the Patient documentation tabs.
+alter table public.patient_history_entries drop constraint if exists patient_history_entries_category_check;
+alter table public.patient_history_entries add constraint patient_history_entries_category_check
+  check (category in ('surgery','imaging','notes','treatment','doc_icm','doc_onco','doc_ccp'));
+
 create index if not exists patient_history_entries_patient
   on public.patient_history_entries (patient_id, category, entry_date desc);
 
