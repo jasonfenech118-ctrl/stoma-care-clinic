@@ -55,6 +55,8 @@
       if (request !== generation) return;
       if (result.error) throw result.error;
       state.rows = sorted((result.rows || []).filter(r => String(r.patient_id) === String(patientId)));
+      // Fresh episode / encounter codes so a just-saved record shows its own.
+      try { if (global.EpisodeCodes) await global.EpisodeCodes.load(patientId, {force: true}); } catch (_) {}
     } catch (error) {
       if (request === generation) state.error = error.message || 'Please try again.';
     }
@@ -76,10 +78,19 @@
       ${record.followup_action || record.followup_date ? `<div class="pc-followup"><strong>Follow-up:</strong> ${esc(record.followup_action)}${record.followup_date ? ' · ' + esc(date(record.followup_date)) : ''}</div>` : ''}
     </div>`;
   }
+  // EP03-12345M-02-DC — this record's place in the patient's episodes.
+  function codeOf(record) {
+    const c = global.EpisodeCodes && global.EpisodeCodes.cached(state.patientId);
+    return c ? c.commCode(record) : '';
+  }
+  function codeChip(record) {
+    const code = codeOf(record);
+    return code ? `<span class="clr-code pc-code" title="Episode · ID card · encounter · type">${esc(code)}</span>` : '';
+  }
   function recordHTML(record, first) {
     const previous = (Array.isArray(record.versions) ? record.versions : []).filter(v => v.version < record.version);
     return `<details class="pc-record">
-      <summary><span class="pc-record-title"><strong>${first ? 'Initial communication' : esc(record.subject)}</strong><span>${esc(date(record.communication_date))}${record.communication_time ? ' · ' + esc(record.communication_time.slice(0, 5)) : ''} · ${esc(record.method)} · ${esc(record.direction)}</span></span><span class="pc-version">V${record.version}</span></summary>
+      <summary><span class="pc-record-title"><strong>${first ? 'Initial communication' : esc(record.subject)}${codeChip(record)}</strong><span>${esc(date(record.communication_date))}${record.communication_time ? ' · ' + esc(record.communication_time.slice(0, 5)) : ''} · ${esc(record.method)} · ${esc(record.direction)}</span></span><span class="pc-version">V${record.version}</span></summary>
       ${detailHTML(record)}
       <div class="pc-record-foot"><span class="psm-audit">Recorded by ${esc(record.created_by_name)} · ${esc(savedTime(record.created_at))}${record.version > 1 ? '<br>Updated by ' + esc(record.updated_by_name) + ' · ' + esc(savedTime(record.updated_at)) : ''}</span><button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(record.kind)}','${esc(record.id)}')">${icon('pencil')} Edit record</button></div>
       ${previous.length ? `<details class="pc-versions"><summary>Previous versions (${previous.length})</summary>${previous.slice().reverse().map(v => `<div class="pc-old-version"><strong>V${v.version} · ${esc(v.author_name)} · ${esc(savedTime(v.saved_at))}</strong><div>${esc(date(v.snapshot.communication_date))} · ${esc(v.snapshot.method)} · ${esc(v.snapshot.direction)} · ${esc(statusLabel(v.snapshot.status))}</div>${detailHTML(v.snapshot)}</div>`).join('')}</details>` : ''}
@@ -93,7 +104,7 @@
     const done = issue.status === 'Completed', contacts = state.rows.filter(r => r.parent_id === issue.id);
     const disabled = busy.has(issue.id) ? ' disabled' : '';
     return `<details class="pc-issue${done ? ' pc-issue-done' : ''}" id="pc-issue-${esc(issue.id)}"${expanded.has(issue.id) ? ' open' : ''} ontoggle="PatientCommunications.toggleIssue('${esc(issue.id)}',this.open)">
-      <summary><span class="pc-record-title"><strong>${esc(issue.subject)}</strong><span>Opened ${esc(date(issue.communication_date))} · ${esc(issue.service || issue.contact_name)} · ${contacts.length + 1} contact${contacts.length ? 's' : ''}</span></span><span class="pc-status${done ? ' done' : ' pending'}">${esc(statusLabel(issue.status))}</span></summary>
+      <summary><span class="pc-record-title"><strong>${esc(issue.subject)}${codeChip(issue)}</strong><span>Opened ${esc(date(issue.communication_date))} · ${esc(issue.service || issue.contact_name)} · ${contacts.length + 1} contact${contacts.length ? 's' : ''}</span></span><span class="pc-status${done ? ' done' : ' pending'}">${esc(statusLabel(issue.status))}</span></summary>
       <div class="pc-issue-body">
         ${done ? `<div class="pc-hint">Resolved${issue.resolved_by_name ? ' by ' + esc(issue.resolved_by_name) : ''}${issue.resolved_at ? ' · ' + esc(savedTime(issue.resolved_at)) : ''}</div>` : ''}
         ${isActiveReminder(issue) ? `<div class="pc-followup pc-issue-reminder${dueLabel(issue.followup_date) === 'Overdue' ? ' overdue' : ''}"><strong>Reminder · ${esc(dueLabel(issue.followup_date))} · ${esc(date(issue.followup_date))}</strong><div>${esc(issue.followup_action)}</div></div>` : ''}

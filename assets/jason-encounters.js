@@ -99,6 +99,10 @@
       report:e.nursing_report||'',legacy_assessment:copy(a)}];
   }
   function currentVersion(e){return versions(e).slice(-1)[0];}
+  // EP02-12345M for an admission, and its number (1 = the first episode).
+  function codesFor(ep){try{return window.EpisodeCodes&&EpisodeCodes.cached(ep?.patient_id||ctx?.patient?.id);}catch(_){return null;}}
+  function episodeCodeOf(ep){const c=codesFor(ep);return (c&&c.episodeCode(ep))||ep?.episode_ref||String(ep?.id||'').slice(0,8);}
+  function episodeNumberOf(ep){const c=codesFor(ep);const n=c?c.episodeNumber(ep):0;return n||1;}
   // Stomas are shown by type ("End Ileostomy"), never by S-number; two of the
   // same type are told apart as (1) and (2).
   const titleCase=x=>String(x||'Stoma').replace(/(^|[\s\-\/(])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
@@ -106,6 +110,8 @@
   // changes that day become V2, V3 of the same code. Two same-day records saved
   // before that rule are told apart with -2.
   function encounterCode(rec,patient,rows){
+    // EP02-12345M-03-I (assets/episode-codes.js) once the codes are loaded.
+    try{const c=window.EpisodeCodes&&EpisodeCodes.cached(patient?.id||rec?.patient_id);const k=c&&rec?.id?c.encounterCode(rec):'';if(k)return k;}catch(_){}
     const id=String(patient?.id_card||'').replace(/\s+/g,'').toUpperCase()||'NOID';
     const day=String(rec?.encounter_date||rec?.created_at||'').slice(0,10),[y,m,d]=day.split('-');
     const twins=list(rows).filter(r=>String(r.encounter_date||r.created_at||'').slice(0,10)===day)
@@ -268,6 +274,8 @@
         const made=await createInpatientEpisodeFor(pid,p.inpatient_since||TODAY);if(token!==request)return;
         if(made?.data)episodes=[made.data].concat(episodes);
       }
+      try{if(window.EpisodeCodes)await EpisodeCodes.load(pid,{force:true});}catch(_){}
+      if(token!==request)return;
       const openEpisode=episodes.find(e=>e.is_current&&!e.discharge_date);
       const ep=openEpisode||episodes.find(e=>rows.some(r=>String(r.episode_id)===String(e.id)));
       if(!ep)throw new Error('There are no saved encounters or open inpatient episodes. Open an inpatient visit from the patient record first.');
@@ -465,9 +473,13 @@
   }
   function render(){
     if(!ctx)return;const page=parentPage(),p=ctx.patient,rec=ctx.record,ver=ctx.viewVersion;
-    const episodeLabel=ctx.episode.episode_ref||String(ctx.episode.id).slice(0,8);
+    const episodeLabel=episodeCodeOf(ctx.episode);
     const planPage=ctx.mode==='teaching'||ctx.mode==='discharge';
-    const topPlanBtns=ctx.mode==='form'?((ctx.editable||ctx.draft?.teaching_plan?'<button class="jenc-btn" data-action="add-teaching">'+(ctx.draft?.teaching_plan?'Teaching plan':'+ Add teaching plan')+'</button>':'')+(ctx.editable||ctx.draft?.discharge_plan?'<button class="jenc-btn" data-action="add-discharge">'+(ctx.draft?.discharge_plan?'Discharge preparation':'+ Add discharge preparation')+'</button>':'')):'';
+    // Teaching plan and Discharge preparation (Schedule V) belong to the first
+    // episode — the new case (EP01). From EP02 they are hidden, unless this
+    // encounter already carries one (so saved work is never hidden).
+    const firstEpisode=episodeNumberOf(ctx.episode)<=1;
+    const topPlanBtns=ctx.mode==='form'?(((firstEpisode&&ctx.editable)||ctx.draft?.teaching_plan?'<button class="jenc-btn" data-action="add-teaching">'+(ctx.draft?.teaching_plan?'Teaching plan':'+ Add teaching plan')+'</button>':'')+((firstEpisode&&ctx.editable)||ctx.draft?.discharge_plan?'<button class="jenc-btn" data-action="add-discharge">'+(ctx.draft?.discharge_plan?'Discharge preparation':'+ Add discharge preparation')+'</button>':'')):'';
     const top='<div class="jenc-head"><div><div class="jenc-toolbar"><button class="jenc-btn" data-action="'+(planPage?'plan-back':'back')+'">← Back to '+(planPage?'encounter':ctx.returnPage==='page-care-episode'?'admission':ctx.returnPage==='page-patient-record'?'patient record':'handover')+'</button><h2>Encounters</h2></div><div class="jenc-identity" style="margin-top:14px">'+esc((p.first_name||'')+' '+(p.surname||''))+' <span class="jenc-id">ID: '+esc(p.id_card||'—')+'</span></div><div class="jenc-meta jenc-header-meta"><span>'+esc([p.inpatient_ward,p.inpatient_bed].filter(Boolean).join(' · '))+'</span><span class="jenc-episode">'+esc(episodeLabel)+'</span></div>'+referralChipsHTML(ctx.mode==='form'&&ctx.editable?ctx.draft?.referrals:patientReferrals(p))+'</div><div><div class="jenc-toolbar jenc-toolbar-right"><button class="jenc-btn '+(ctx.mode==='summary'?'primary':'')+'" data-action="summary">Encounter summary</button><button class="jenc-btn" data-action="complications" title="Record a complication outcome — Improving / Unchanged / Worsening / Resolved — saved against this encounter">⚠️ Complications</button>'+topPlanBtns+'</div><div class="jenc-meta">Recorded automatically from '+esc(ctx.who.name)+'</div></div></div><div id="jenc-message">'+(ctx.message?'<div class="jenc-success" role="status">'+esc(ctx.message)+'</div>':'')+'</div>';
     if(planPage){
       const teaching=ctx.mode==='teaching',title=teaching?'Teaching plan':'Discharge preparation';
@@ -477,7 +489,7 @@
       return;
     }
     if(ctx.mode==='history'){
-      const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),'Episode '+(e.episode_ref||String(e.id).slice(0,8))+' · '+e.record_date])];
+      const choices=[['all','All episodes'],...ctx.episodes.map(e=>[String(e.id),episodeCodeOf(e)+' · '+e.record_date])];
       const rows=ctx.rows.filter(r=>ctx.historyFilter==='all'||String(r.episode_id)===ctx.historyFilter);
       page.innerHTML=top+'<div class="jenc-card">'+select('Episode',ctx.historyFilter,choices,'history','filter')+'</div>'+rows.map(e=>{const v=currentVersion(e),prior=versions(e).slice(-2,-1)[0];return '<article class="jenc-history-card"><h3>'+esc(encounterCode(e,p,ctx.rows))+' · V'+v.version+'</h3><div class="jenc-meta">'+esc(stamp(e.created_at))+' · '+esc(e.created_by_name||e.created_by_email||'')+' · Episode '+esc(e.episode_ref||String(e.episode_id).slice(0,8))+'</div><div class="jenc-history-report">'+documentReport({...v.snapshot,legacy_assessment:v.legacy_assessment},v.report,prior&&prior!==v?prior.snapshot:null,prior?.report)+'</div><button class="jenc-btn" data-action="view" data-id="'+esc(e.id)+'">Open encounter</button></article>';}).join('')+(rows.length?'':'<div class="jenc-card">No encounters saved for this episode.</div>');return;
     }
@@ -784,6 +796,8 @@
       const currentIndex=ctx.rows.findIndex(r=>r.id===data.id);if(currentIndex<0)ctx.rows.unshift(data);else ctx.rows[currentIndex]=data;
       const localDraft=copy(ctx.draft),hasLaterChanges=!same(localDraft,pending.draft);
       ctx.pendingSave=null;ctx.editable=false;ctx.compare=false;ctx.baseline=copy(ctx.draft);ctx.saving=false;
+      try{if(window.EpisodeCodes)await EpisodeCodes.load(ctx.patient.id,{force:true});}catch(_){}
+      if(ctx!==savedCtx)return;
       selectRecord(data.id,null,hasLaterChanges);
       if(hasLaterChanges)ctx.draft=localDraft;
       const success='Encounter '+encounterCode(data,ctx.patient,ctx.rows)+' saved · V'+currentVersion(data).version+'.';

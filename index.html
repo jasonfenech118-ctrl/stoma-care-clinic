@@ -18,24 +18,25 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-864"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-865"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-864"></script>
+<script src="assets/manual.js?v=2026.11.26-865"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
-<script defer src="assets/patient-communications.js?v=2026.11.26-864"></script>
+<script src="assets/episode-codes.js?v=2026.11.26-865"></script>
+<script defer src="assets/patient-communications.js?v=2026.11.26-865"></script>
 <link rel="stylesheet" href="assets/deceased-registry.css?v=2026.10.09-497"/>
 <script src="assets/deceased-registry.js?v=2026.11.01-719"></script>
 <link rel="stylesheet" href="assets/jason-encounters.css?v=2026.10.10-517"/>
 <link rel="stylesheet" href="assets/documentation-status.css?v=2026.10.10-507"/>
 <script src="assets/documentation-status.js?v=2026.10.18-579"></script>
-<script defer src="assets/jason-encounters.js?v=2026.11.26-858"></script>
+<script defer src="assets/jason-encounters.js?v=2026.11.26-865"></script>
 <script defer src="assets/proofread.js?v=2026.11.08-754"></script>
 <script defer src="assets/visit-stoma-review.js?v=843"></script>
 <style>
@@ -4062,7 +4063,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-864';
+const APP_BUILD='2026.11.26-865';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20532,6 +20533,10 @@ function recCode(rec){
   if(!rec||!rec.id)return '';
   if(rec.kind==='stoma')return stomaCode(rec);
   // Admissions opened before references existed still show their derived code.
+  if(rec.kind==='episode'){
+    const c=window.EpisodeCodes&&EpisodeCodes.cached(rec.patient_id||clrState.patientId);
+    const code=c&&c.episodeCode(rec);if(code)return code;
+  }
   if(rec.kind==='episode')return rec.episode_ref||('EPI-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase());
   return '';
 }
@@ -20589,6 +20594,8 @@ async function loadClinicalRecords(patientId){
     clrState.available=!(m.includes('clinical_records')||m.includes('does not exist')||m.includes('relation')||m.includes('schema cache'));
     clrState.rows=[];
   }else{clrState.available=true;clrState.rows=data||[];}
+  // Fresh episode / encounter codes (EP01-12345M-01-I) for this patient.
+  try{if(window.EpisodeCodes)await EpisodeCodes.load(patientId,{force:true});}catch(e){}
 }
 /* The patient's open inpatient episode, if any: the one marked current that has
    not been discharged. This is what "the patient is admitted" means on the
@@ -27279,19 +27286,26 @@ async function loadFistulaPatients(){
   if(res.error){body.innerHTML=`<div class="report-note">Could not load fistula patients: ${htmlSafe(res.error.message||'')}</div>`;return;}
   const rows=(res.rows||[]).filter(isFistulaPatient);
   // Each patient's admissions (episodes) and the encounters recorded in them.
-  const ids=rows.map(p=>String(p.id)),episodes={},encounters={};
+  const ids=rows.map(p=>String(p.id)),episodes={},encounters={},comms={};
   for(let i=0;i<ids.length;i+=100){
     const chunk=ids.slice(i,i+100);
     try{const r=await fetchAllRows(()=>SB.from('clinical_records').select('id,patient_id,episode_ref,record_date,discharge_date,is_current').eq('kind','episode').in('patient_id',chunk));
       (r.rows||[]).forEach(e=>(episodes[String(e.patient_id)]=episodes[String(e.patient_id)]||[]).push(e));}catch(e){}
     try{const r=await fetchAllRows(()=>SB.from('encounters').select('id,patient_id,episode_id').in('patient_id',chunk));
       (r.rows||[]).forEach(e=>(encounters[String(e.patient_id)]=encounters[String(e.patient_id)]||[]).push(e));}catch(e){}
+    // Correspondence too: outside an admission it opens its own episode, so it
+    // changes the episode numbers (EP01, EP02 …).
+    try{const r=await fetchAllRows(()=>SB.from('patient_communications').select('id,patient_id,parent_id,kind,service,communication_date,communication_time,created_at,updated_at,status,resolved_at').in('patient_id',chunk));
+      (r.rows||[]).forEach(c=>(comms[String(c.patient_id)]=comms[String(c.patient_id)]||[]).push(c));}catch(e){}
   }
   if(version!==fistulaLoadVersion)return;
   fistulaRows=rows;fistulaEpisodes=episodes;fistulaEncounters=encounters;
+  fistulaCodes={};
+  if(window.EpisodeCodes)rows.forEach(p=>{try{fistulaCodes[String(p.id)]=EpisodeCodes.compute(p,episodes[String(p.id)]||[],encounters[String(p.id)]||[],comms[String(p.id)]||[]);}catch(e){}});
   fistulaIdCache={at:Date.now(),ids:new Set(ids)};
   renderFistulaPatients();
 }
+let fistulaCodes={};
 function setFistulaView(v){fistulaView=v;renderFistulaPatients();}
 function fistulaEpisodesHTML(p){
   const eps=(fistulaEpisodes[String(p.id)]||[]).slice().sort((a,b)=>String(b.record_date||'').localeCompare(String(a.record_date||'')));
@@ -27300,7 +27314,7 @@ function fistulaEpisodesHTML(p){
   const open=last.is_current&&!last.discharge_date;
   const when=open?`on the ward since ${fmtShortDate(last.record_date)}`:(last.discharge_date?`discharged ${fmtShortDate(last.discharge_date)}`:`admitted ${fmtShortDate(last.record_date)}`);
   return `<div><strong>${eps.length} episode${eps.length===1?'':'s'}</strong> · ${encs} encounter${encs===1?'':'s'}</div>
-    <div class="fis-sub">Latest: ${htmlSafe(last.episode_ref||'episode')} · ${htmlSafe(when)}</div>
+    <div class="fis-sub">Latest: ${htmlSafe((fistulaCodes[String(p.id)]&&fistulaCodes[String(p.id)].episodeCode(last))||last.episode_ref||'episode')} · ${htmlSafe(when)}</div>
     <button class="ncb-btn" style="background:#e8f1fb;color:#0b5aa2;margin-top:4px;" onclick="openFistulaEpisodes('${jsSafe(String(p.id))}')">📂 Episodes &amp; encounters</button>`;
 }
 function fistulaCaseHTML(p){
