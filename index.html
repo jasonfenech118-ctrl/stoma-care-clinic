@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-867"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-868"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.21-836"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-867"></script>
+<script src="assets/manual.js?v=2026.11.26-868"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -4063,7 +4063,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-867';
+const APP_BUILD='2026.11.26-868';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -22083,7 +22083,29 @@ function viewDeceasedArchive(patientId){
 }
 let patientRecordOrigin='patients';
 let patientRecordTargetId=null,patientRecordLoading=false,patientRecordLoadSequence=0,patientRecordLoadQueue=Promise.resolve();
+/* A redraw of the SAME patient (a live update from another nurse, or a save)
+   keeps the nurse's place: the sections and dropdowns that were open and the
+   scroll position come back, instead of everything closing and jumping. */
+function capturePatientRecordView(patientId){
+  const page=document.getElementById('page-patient-record');
+  if(!page||!page.classList.contains('active')||String(clrState.patient?.id||'')!==String(patientId))return null;
+  const all=[...page.querySelectorAll('details')];
+  return {sections:[...page.querySelectorAll('details.pd-section')].filter(d=>d.open).map(d=>d.dataset.panel||''),
+    inner:all.map(d=>d.open),count:all.length,scroll:window.scrollY};
+}
+function restorePatientRecordView(view){
+  if(!view)return;
+  const page=document.getElementById('page-patient-record');if(!page)return;
+  const apply=()=>{
+    page.querySelectorAll('details.pd-section').forEach(d=>{const want=view.sections.includes(d.dataset.panel||'');if(d.open!==want)d.open=want;});
+    const all=[...page.querySelectorAll('details')];
+    if(all.length===view.count)all.forEach((d,i)=>{if(!d.classList.contains('pd-section')&&d.open!==view.inner[i])d.open=view.inner[i];});
+    window.scrollTo(0,view.scroll);
+  };
+  apply();setTimeout(apply,60);setTimeout(apply,250);
+}
 function openPatientRecord(patientId,opts){
+  const keepView=capturePatientRecordView(patientId);
   // Claim the requested patient before the first await. Realtime must not use
   // the previous profile while this profile's patient/appointments are loading.
   patientRecordTargetId=patientId;
@@ -22092,7 +22114,8 @@ function openPatientRecord(patientId,opts){
   const task=patientRecordLoadQueue.catch(()=>{}).then(async()=>{
     if(sequence!==patientRecordLoadSequence)return null;
     return renderPatientRecord(patientId,opts,sequence);
-  }).finally(()=>{if(sequence===patientRecordLoadSequence)patientRecordLoading=false;});
+  }).then(r=>{if(keepView&&sequence===patientRecordLoadSequence)restorePatientRecordView(keepView);return r;})
+    .finally(()=>{if(sequence===patientRecordLoadSequence)patientRecordLoading=false;});
   // Serialize the helpers that populate shared clinical state. Superseded
   // requests finish before the newest request starts and cannot overwrite it.
   patientRecordLoadQueue=task;

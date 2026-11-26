@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — Quick Look is no longer a Registry sub-tab; it still opens from its phone link and home-screen icon. Attended follow-up visits are coded F.'};
+const MANUAL_META={updated:'26 November 2026 — The patient record no longer closes Stomas & surgery or jumps to the top when it refreshes with another nurse’s changes. Quick Look is no longer a Registry sub-tab.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -713,6 +713,7 @@ const MANUAL_SECTIONS=[
         ['🌍','Overseas / Gozo discharge dates','These buttons set the follow-up status and stamp today as the outcome date and effective date.','Handover'],
         ['🔪','Upcoming surgery shows up','The planned date appears on the patient’s Overview and Stomas tabs, alongside any earlier siting assessment. On the day, the patient appears highlighted at the top of the handover; the planned date clears when they are admitted.','Handover'],
         ['🔢','Episode & encounter codes','Every episode and encounter is coded like EP02-12345M-03-DC (episode, ID card, encounter, type I/CC/PC/DC/F) from its dates; attended follow-up visits are F. Correspondence while admitted joins that admission; outside an admission it opens its own episode until resolved or admitted. Teaching plan and Discharge preparation show on EP01 only.','Handover › Encounter · Patient record › Episodes'],
+        ['🔄','Patient record keeps your place on live updates','When another nurse saves a change, the open patient record refreshes in the background but keeps the sections and dropdowns you had open (e.g. Stomas & surgery, Current / Closed) and your scroll position.','Registry › Patient record'],
         ['📍','Awaiting surgery / reversal','A sited patient (surgery day) or a planned reversal (reversal day) appears at the top of the handover automatically.','Handover'],
         ['🪪','Siting checks the Registry for duplicates','Typing an ID when booking a siting looks the patient up in the Registry (leading zeros, spaces and letter case ignored). An existing patient’s name and firm are filled and locked; a near-identical ID or same name under another ID is flagged before a new patient is booked.','Siting › Book siting session'],
         ['📍','Siting diagram stays with its sites','New assessments and printed forms use the cropped black-and-white abdomen. Saved sites retain the diagram on which they were marked, so their positions do not shift. Clear all starts a fresh map on the current diagram.','Siting › Pre-operative Assessment'],
