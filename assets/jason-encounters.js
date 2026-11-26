@@ -101,13 +101,19 @@
   function currentVersion(e){return versions(e).slice(-1)[0];}
   /* Every appliance set or changed during THIS episode (admission), newest
      first: date, stoma, appliance, accessories, flange due, ward/bed and who. */
+  // A one-piece is changed every day, so it has no flange date: it reads "Daily".
+  function flangeDueCell(r){
+    let two=false;try{two=(typeof applianceRowIsTwoPiece==='function'&&applianceRowIsTwoPiece(r))||(typeof applianceLineIsTwoPiece==='function'&&applianceLineIsTwoPiece(r.appliances.join(', ')));}catch(_){}
+    if(!two&&r.appliances.length)return '<span class="jenc-ah-daily">Daily</span>';
+    return esc(r.flange_due?(typeof fmtShortDate==='function'?fmtShortDate(r.flange_due):r.flange_due):'—');
+  }
   function episodeApplianceHistoryHTML(ep){
     let rows=[];try{rows=typeof parseEpisodeApplianceRows==='function'?parseEpisodeApplianceRows(ep):[];}catch(_){rows=[];}
     rows=rows.filter(r=>r.appliances.length||r.accessories.length)
       .sort((a,b)=>String(b.changed_at||b.changed_on||'').localeCompare(String(a.changed_at||a.changed_on||'')));
     const when=r=>{const d=String(r.changed_on||r.changed_at||'').slice(0,10);return d&&typeof fmtShortDate==='function'?fmtShortDate(d):d||'—';};
     const body=rows.length?'<div class="jenc-ah-wrap"><table class="jenc-ah"><thead><tr><th>Date</th><th>Stoma</th><th>Appliance</th><th>Accessories</th><th>Flange due</th><th>Ward / bed</th><th>By</th></tr></thead><tbody>'+
-      rows.map((r,i)=>'<tr'+(i===0?' class="jenc-ah-latest"':'')+'><td>'+esc(when(r))+(i===0?' <span class="jenc-ah-tag">Latest</span>':'')+'</td><td>'+esc(r.stoma_short||titleCase(r.stoma_type)||'—')+'</td><td>'+esc(r.appliances.join(', ')||'—')+'</td><td>'+esc(r.accessories.join(', ')||'None')+'</td><td>'+esc(r.flange_due&&typeof fmtShortDate==='function'?fmtShortDate(r.flange_due):(r.flange_due||'—'))+'</td><td>'+esc([r.ward,r.bed].filter(Boolean).join(' · ')||'—')+'</td><td>'+esc(r.changed_by||'—')+'</td></tr>').join('')+
+      rows.map((r,i)=>'<tr'+(i===0?' class="jenc-ah-latest"':'')+'><td>'+esc(when(r))+(i===0?' <span class="jenc-ah-tag">Latest</span>':'')+'</td><td>'+esc(r.stoma_short||titleCase(r.stoma_type)||'—')+'</td><td>'+esc(r.appliances.join(', ')||'—')+'</td><td>'+esc(r.accessories.join(', ')||'None')+'</td><td>'+flangeDueCell(r)+'</td><td>'+esc([r.ward,r.bed].filter(Boolean).join(' · ')||'—')+'</td><td>'+esc(r.changed_by||'—')+'</td></tr>').join('')+
       '</tbody></table></div>':'<p class="jenc-meta">No appliance has been recorded for this episode yet.</p>';
     return '<details class="jenc-ah-box"'+(rows.length?'':' ')+'><summary>Appliance history · this episode <span class="jenc-ah-count">'+rows.length+'</span></summary>'+body+'</details>';
   }
