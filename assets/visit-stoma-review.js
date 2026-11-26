@@ -280,6 +280,7 @@
         +'<div class="pd-identity-field"><dt>Locality</dt>'+localityDd+'</div>'
         +field('Telephone',p.phone_number)
         +field('Date of birth',dob)
+        +(typeof patientTreatmentSummary==='function'&&patientTreatmentSummary(p)?'<div class="pd-identity-field pd-treatment-field"><dt>Treatment</dt><dd>'+htmlSafe(patientTreatmentSummary(p))+'</dd></div>':'')
         +followupFields
       +'</dl></div>'
       +'<div class="pd-identity-clinical"><h4 class="pd-identity-heading">Surgical details</h4><dl>'+surgical+'</dl></div>'
