@@ -4,7 +4,7 @@
   'use strict';
   const kinds = {
     community: {label: 'Community correspondence', icon: 'mail', contact: 'Contact person', service: true},
-    patient: {label: 'Patient communication', icon: 'message', contact: 'Patient / relative / carer', service: false}
+    patient: {label: 'Patient correspondence', icon: 'message', contact: 'Patient / relative / carer', service: false}
   };
   const methods = ['Telephone', 'Email', 'In person', 'Letter', 'Other'];
   const statuses = ['Recorded', 'Awaiting response', 'Follow-up required', 'Completed'];
