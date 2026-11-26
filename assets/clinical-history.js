@@ -546,7 +546,35 @@
   const db=()=>(typeof SB!=='undefined'&&SB)||global.SB;
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const st={pid:null,patient:null,host:null,entries:[],tab:'surgery',q:'',available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:''};
+  const st={pid:null,patient:null,host:null,entries:[],tab:'surgery',q:'',available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',
+    main:null,sub:{surgeries:'surgery',notes:'all',treatment:'history'}};
+  // Three tabs, each with its own sub-tabs: Surgeries holds the operations and
+  // the medical imaging; Patient notes are split by who wrote them; Treatment
+  // holds the pasted treatment history and the patient's medication groups.
+  const MAIN={
+    surgeries:{label:'Surgeries',icon:'🏥',subs:[['surgery','Surgeries','🏥'],['imaging','Medical imaging','📷']]},
+    notes:{label:'Patient notes',icon:'📝',subs:[['all','All notes',''],['nurse','Nurses',''],['doctor','Doctors',''],['other','Other professionals','']]},
+    treatment:{label:'Treatment',icon:'💊',subs:[['history','Treatment history',''],['groups','Medication groups','']]}
+  };
+  // Who wrote a note, from its type and author: nurse, doctor or other.
+  function noteRole(e){
+    const t=String(e.entry_type||'')+' '+String(e.source||'');
+    if(/nurse|sister\b|stoma care|comcare/i.test(t)||/\bSN\b/.test(t))return 'nurse';
+    if(/doctor|consultant|registrar|surgeon|physician/i.test(t)||/\b(?:Dr|Mr|Ms|Mrs|Prof)\b/.test(t))return 'doctor';
+    return 'other';
+  }
+  function currentCategory(){
+    if(st.main==='surgeries')return st.sub.surgeries;
+    if(st.main==='notes')return 'notes';
+    if(st.main==='treatment')return 'treatment';
+    return null;
+  }
+  // Point the tabs at the place a category lives (after saving or editing).
+  function goToCategory(cat){
+    if(cat==='surgery'||cat==='imaging'){st.main='surgeries';st.sub.surgeries=cat;}
+    else if(cat==='notes'){st.main='notes';}
+    else if(cat==='treatment'){st.main='treatment';st.sub.treatment='history';}
+  }
   let loadSeq=0;
 
   function showDate(e){
@@ -556,7 +584,28 @@
     if(e.date_precision==='month')return MONTHS[+m-1]+' '+y;
     return typeof global.fmtShortDate==='function'?global.fmtShortDate(String(e.entry_date).slice(0,10)):d+'/'+m+'/'+y;
   }
-  function counts(){const c={};CH.CAT_KEYS.forEach(k=>c[k]=0);st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});return c;}
+  function counts(){
+    const c={surgery:0,imaging:0,notes:0,treatment:0,nurse:0,doctor:0,other:0};
+    st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;if(e.category==='notes')c[noteRole(e)]++;});
+    c.surgeries=c.surgery+c.imaging;c.all=c.notes;c.history=c.treatment;return c;
+  }
+  function medGroups(){
+    const p=st.patient||{};
+    let t={items:[],other:''};try{if(typeof patientTreatment==='function')t=patientTreatment(p);}catch(e){}
+    const groups=typeof TREATMENT_GROUPS!=='undefined'?TREATMENT_GROUPS:[];
+    const items=Array.isArray(t.items)?t.items:[];
+    const on=groups.map(g=>({g,it:items.find(x=>x&&x.key===g.key&&x.on)})).filter(x=>x.it);
+    return {t,on};
+  }
+  function groupsHTML(){
+    const {t,on}=medGroups();
+    const rows=on.map(x=>'<div class="ch-group"><strong>'+esc(x.g.label)+'</strong>'+(String(x.it.details||'').trim()?'<span>'+esc(x.it.details)+'</span>':'')+'</div>').join('')
+      +(String(t.other||'').trim()?'<div class="ch-group"><strong>Other treatment</strong><span>'+esc(t.other)+'</span></div>':'');
+    return '<p class="ch-hint">The medication groups the patient is on. When <b>OHAs</b> is ticked, the ID badge turns red.</p>'
+      +(rows?'<div class="ch-groups">'+rows+'</div>':'<p class="ch-empty">No medication groups recorded.</p>')
+      +(t.updated_by?'<p class="ch-by">Last updated by '+esc(t.updated_by)+'</p>':'')
+      +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="openPatientTreatment()">💊 Edit medication groups</button></div>';
+  }
   function sorted(list){
     return list.slice().sort((a,b)=>{
       const ad=String(a.entry_date||''),bd=String(b.entry_date||'');
@@ -570,7 +619,7 @@
   function mount(host,patient){
     if(!host||!patient)return;
     const pid=String(patient.id);
-    if(st.pid!==pid){st.pid=pid;st.entries=[];st.q='';st.tab='surgery';st.loaded=false;st.note='';st.pasteText='';}
+    if(st.pid!==pid){st.pid=pid;st.entries=[];st.q='';st.tab='surgery';st.loaded=false;st.note='';st.pasteText='';st.main=null;st.sub={surgeries:'surgery',notes:'all',treatment:'history'};}
     st.host=host;st.patient=patient;
     render();load();
   }
@@ -594,27 +643,44 @@
   }
   function render(){
     const h=st.host;if(!h||!document.body.contains(h))return;
-    const c=counts(),total=st.entries.length,meta=CH.CATS[st.tab];
-    const sum=h.closest('details.pd-section')&&h.closest('details.pd-section').querySelector(':scope > summary');
-    if(sum)sum.textContent='Clinical history'+(total?' · '+total:'');
-    const tabs='<div class="ch-tabs" role="tablist" aria-label="Clinical history">'+CH.CAT_KEYS.map(k=>'<button type="button" role="tab" class="ch-tab'+(k===st.tab?' is-on':'')+'" aria-selected="'+(k===st.tab)+'" onclick="ClinicalHistory.tab(\''+k+'\')">'+CH.CATS[k].icon+' '+esc(CH.CATS[k].label)+'<span class="ch-count">'+c[k]+'</span></button>').join('')+'</div>';
+    const c=counts();
+    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Surgeries, patient notes and treatment">'+Object.keys(MAIN).map(k=>{
+      const on=st.main===k,n=k==='surgeries'?c.surgeries:k==='notes'?c.notes:c.treatment;
+      return '<button type="button" role="tab" class="ch-main ch-main-'+k+(on?' is-on':'')+'" aria-selected="'+on+'" aria-expanded="'+on+'" onclick="ClinicalHistory.main(\''+k+'\')">'
+        +'<span class="ch-main-ic" aria-hidden="true">'+MAIN[k].icon+'</span>'+esc(MAIN[k].label)+'<span class="ch-count">'+n+'</span><span class="ch-caret" aria-hidden="true">'+(on?'▴':'▾')+'</span></button>';
+    }).join('')+'</div>';
+    if(!st.main){h.innerHTML=mainTabs;return;}
     if(!st.available){
-      h.innerHTML=tabs+'<div class="ch-missing">Clinical history needs its database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div>';
+      h.innerHTML=mainTabs+'<div class="ch-pane ch-pane-'+st.main+'"><div class="ch-missing">These tabs need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
       return;
     }
-    const tools='<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste()">📋 Paste a list</button>'
-      +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit()">＋ Add one</button>'
-      +'<input type="search" class="ch-search" placeholder="Search '+esc(meta.label.toLowerCase())+'…" aria-label="Search '+esc(meta.label.toLowerCase())+'" value="'+esc(st.q)+'" oninput="ClinicalHistory.search(this.value)"></div>'
-      +'<p class="ch-hint">'+esc(meta.hint)+'</p>'+(st.note?'<div class="ch-note">'+st.note+'</div>':'');
-    const meds=st.tab==='treatment'&&typeof global.patientTreatmentSummary==='function'
-      ?'<div class="ch-medgroups"><span><strong>Medication groups:</strong> '+esc(global.patientTreatmentSummary(st.patient)||'none recorded')+'</span><button type="button" class="psm-btn" onclick="openPatientTreatment()">💊 Edit groups</button></div>':'';
-    h.innerHTML=tabs+tools+meds+'<div id="ch-list" class="ch-list">'+listHTML()+'</div>';
+    const sub=st.sub[st.main],groups=medGroups().on.length;
+    const subTabs='<div class="ch-sub-tabs" role="tablist">'+MAIN[st.main].subs.map(([k,l,ic])=>{
+      const on=sub===k,n=k==='groups'?groups:c[k];
+      return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+k+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+n+'</span></button>';
+    }).join('')+'</div>';
+    let body;
+    if(st.main==='treatment'&&sub==='groups')body=groupsHTML();
+    else{
+      const cat=currentCategory();st.tab=cat;
+      const meta=CH.CATS[cat],what=st.main==='notes'&&sub!=='all'?MAIN.notes.subs.find(x=>x[0]===sub)[1].toLowerCase()+' notes':meta.label.toLowerCase();
+      const hint=st.main==='notes'
+        ?'Notes from other nurses, doctors and therapists. Each note goes under Nurses or Doctors by who wrote it; a note whose author is not recognised is under Other professionals (set its Type to Nurse or Doctor to move it).'
+        :meta.hint;
+      body='<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste()">📋 Paste a list</button>'
+        +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit()">＋ Add one</button>'
+        +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.q)+'" oninput="ClinicalHistory.search(this.value)"></div>'
+        +'<p class="ch-hint">'+esc(hint)+'</p>'+(st.note?'<div class="ch-note">'+st.note+'</div>':'')
+        +'<div id="ch-list" class="ch-list">'+listHTML()+'</div>';
+    }
+    h.innerHTML=mainTabs+'<div class="ch-pane ch-pane-'+st.main+'">'+subTabs+body+'</div>';
   }
   function listHTML(){
     if(st.loading)return '<p class="ch-empty">Loading…</p>';
     if(st.error)return '<p class="ch-empty" role="alert">Could not load the clinical history: '+esc(st.error)+' <button type="button" class="psm-btn" onclick="ClinicalHistory.reload()">Retry</button></p>';
     const q=st.q.trim().toLowerCase();
-    const rows=sorted(st.entries.filter(e=>e.category===st.tab&&(!q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e)].join(' ').toLowerCase().includes(q))));
+    const cat=currentCategory()||st.tab,sub=st.main==='notes'?st.sub.notes:'';
+    const rows=sorted(st.entries.filter(e=>e.category===cat&&(!sub||sub==='all'||noteRole(e)===sub)&&(!q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e)].join(' ').toLowerCase().includes(q))));
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>📋 Paste a list</strong> to add the whole list in one go.')+'</p>';
     return rows.map(e=>'<article class="ch-row ch-cat-'+esc(e.category)+'">'
       +'<div class="ch-when"><strong>'+esc(showDate(e))+'</strong>'+(e.entry_time?'<span>'+esc(e.entry_time)+'</span>':'')+'</div>'
@@ -626,7 +692,10 @@
       +'<div class="ch-act"><button type="button" class="ch-ic" title="Edit this entry" aria-label="Edit this entry" onclick="ClinicalHistory.openEdit(\''+esc(e.id)+'\')">✏️</button>'
       +'<button type="button" class="ch-ic" title="Delete this entry" aria-label="Delete this entry" onclick="ClinicalHistory.remove(\''+esc(e.id)+'\')">🗑</button></div></article>').join('');
   }
-  function tab(k){if(!CH.CATS[k])return;st.tab=k;st.q='';st.note='';render();}
+  function tab(k){if(!CH.CATS[k])return;goToCategory(k);st.tab=k;st.q='';st.note='';render();}
+  // A main tab opens its pane; pressing the open tab again folds it away.
+  function main(k){if(!MAIN[k])return;st.main=st.main===k?null:k;st.q='';st.note='';render();}
+  function sub(k){if(!st.main||!MAIN[st.main].subs.some(x=>x[0]===k))return;st.sub[st.main]=k;st.q='';st.note='';render();}
   function search(v){st.q=String(v||'');const l=document.getElementById('ch-list');if(l)l.innerHTML=listHTML();}
 
   /* ---------- paste → organise → check → save ---------- */
@@ -646,6 +715,12 @@
     if(!text.trim()){msg('Paste the list first.');return;}
     const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:new Set(st.entries.map(e=>e.fingerprint).filter(Boolean))});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
+    // Pasted under Nurses or Doctors: a note whose author was not recognised is
+    // taken to be from that group.
+    if(st.main==='notes'&&(st.sub.notes==='nurse'||st.sub.notes==='doctor')){
+      const role=st.sub.notes==='nurse'?'Nurse':'Doctor';
+      res.rows.forEach(r=>{if(r.category==='notes'&&noteRole(r)==='other')r.entry_type=r.entry_type?r.entry_type+' · '+role:role;});
+    }
     st.preview=res;st.edit=null;renderPreview();
   }
   function includedCount(){return st.preview?st.preview.rows.filter(r=>r.include).length:0;}
@@ -767,7 +842,7 @@
     }else res=await writeTolerant(b=>db().from(TABLE).insert(b),[dbRow(r,fp,null,who,now)]);
     if(res.error){if(btn){btn.disabled=false;btn.textContent='Save';}msg(writeError(res.error));return;}
     try{global.logAudit&&global.logAudit({action:st.edit.id?'update':'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:(st.edit.id?'Edited':'Added')+' a clinical history entry ('+CH.CATS[r.category].label+')'});}catch(e){}
-    st.edit=null;st.preview=null;st.note='';st.tab=CH.CATS[r.category]?r.category:st.tab;
+    st.edit=null;st.preview=null;st.note='';if(CH.CATS[r.category]){st.tab=r.category;goToCategory(r.category);}
     if(typeof global.closeModal==='function')global.closeModal();
     await load();
   }
@@ -780,5 +855,5 @@
     st.note='';await load();
   }
 
-  Object.assign(CH,{mount,tab,search,reload:load,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,_state:st});
+  Object.assign(CH,{mount,tab,main,sub,noteRole,search,reload:load,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,_state:st});
 })(window);
