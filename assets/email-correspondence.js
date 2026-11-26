@@ -292,8 +292,12 @@
       messageId:r.message_id||'',saved:true,commId:String(r.communication_id),direction:r.direction};
   }
 
-  function open(kind,issueId){
+  function open(kind,issueId,opts){
     const p=patientNow();if(!p){alert('Open the patient record first.');return;}
+    // A new conversation: first remind about correspondence still open — the
+    // email may belong to one of those.
+    if(!issueId&&!(opts&&opts.force)&&global.PatientCommunications&&PatientCommunications.remindOpen
+      &&PatientCommunications.remindOpen(()=>open(kind,null,{force:true}),issue=>open(null,issue.id),'this email'))return;
     st.patient=p;freeUrls();st.issue=null;
     if(issueId){st.issue=issues().find(r=>String(r.id)===String(issueId))||null;if(st.issue)st.kind=kindOfIssue(st.issue);}
     else if(KINDS[kind])st.kind=kind;
@@ -385,7 +389,8 @@
         +(unsaved?'Each is saved as its own encounter in Patient correspondence, with the original email kept for printing.':'All of them are saved.')+'</div>'
       +'<div id="ec-msg"></div>'
       +'<div class="ec-list">'+st.msgs.map(msgHTML).join('')+'</div>'
-      +'<div class="mact"><button class="btn-cancel" onclick="'+(st.fromIssue?'closeModal()':'EmailCorrespondence.open(null,'+(st.issue?'\''+esc(st.issue.id)+'\'':'null')+')')+'">'+(st.fromIssue?'Close':'‹ Back')+'</button>'
+      +'<div class="mact"><button class="btn-cancel" onclick="'+(st.fromIssue?'closeModal()':'EmailCorrespondence.open(null,'+(st.issue?'\''+esc(st.issue.id)+'\'':'null')+',{force:true})')+'">'+(st.fromIssue?'Close':'‹ Back')+'</button>'
+      +(st.issue&&!unsaved?(st.issue.status==='Completed'?'<span class="ec-closed">✓ Correspondence closed</span>':'<button class="btn-cancel" onclick="EmailCorrespondence.closeIssue()">✓ Close correspondence</button>'):'')
       +'<button class="btn-cancel" onclick="EmailCorrespondence.report()">📄 Correspondence report</button>'
       +'<button class="btn-cancel" onclick="EmailCorrespondence.reply()">✉️ Write a reply</button>'
       +(unsaved?'<button class="btn-save" id="ec-save" onclick="EmailCorrespondence.saveThread()">Save '+unsaved+' email'+(unsaved===1?'':'s')+'</button>':'')+'</div>';
@@ -528,6 +533,16 @@
         +msgs.map(m=>emailPrintHTML(m,-1,c?c.commCode({id:m.commId}):'')).join('');
     });
     printWin('Correspondence report — '+subjectFor(p),'<h1>Correspondence report — all emails</h1><div class="sub">'+esc(subjectFor(p))+' · '+rows.length+' email'+(rows.length===1?'':'s')+' in '+groups.size+' conversation'+(groups.size===1?'':'s')+', oldest first</div>'+parts.join(''));
+  }
+  // Close the conversation's correspondence from the email screen.
+  async function closeIssue(){
+    if(!st.issue||!global.PatientCommunications||!PatientCommunications.setResolved)return;
+    const ok=await PatientCommunications.setResolved(String(st.issue.id),true);
+    if(!ok)return;
+    st.issue=issues().find(r=>String(r.id)===String(st.issue.id))||st.issue;
+    try{if(global.EpisodeCodes)await EpisodeCodes.load(st.patient.id,{force:true});}catch(e){}
+    if(typeof global.openMo==='function')global.openMo();
+    render('✓ Correspondence closed. Everything in it is kept; it can be reopened from Patient correspondence.');
   }
   function printSaved(commId){
     const r=st.db.byComm.get(String(commId));if(!r)return;
@@ -789,6 +804,6 @@
 
   global.EmailCorrespondence={enabled,open,kind:setKind,drop,file,organise,saveThread,reply,markUp,composer,draft:setDraft,back,send,printOne,printSaved,report,ccAdd,ccRemove,
     addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
-    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,
+    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,closeIssue,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_keyOf:keyOf,_state:st};
 })(window);

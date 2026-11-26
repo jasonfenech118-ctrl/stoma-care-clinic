@@ -69,8 +69,8 @@
   /* ---------- the buttons: 📷 on each linked place, 📷 Images on the profile ---------- */
   function slotInner(key){
     const n=countFor(key);
-    return '<button type="button" class="pi-add" data-pi-key="'+esc(key)+'" title="Add a picture here" aria-label="Add a picture to this '+esc((KIND[splitKey(key).kind]||{}).name||'record')+'" onclick="PatientImages.add(this.dataset.piKey)">📷</button>'
-      +(n?'<button type="button" class="pi-view" data-pi-key="'+esc(key)+'" title="See the pictures saved here" onclick="PatientImages.gallery(this.dataset.piKey)">🖼 '+n+'</button>':'');
+    return '<button type="button" class="pi-add" data-pi-key="'+esc(key)+'" title="Add a picture here" aria-label="Add a picture to this '+esc((KIND[splitKey(key).kind]||{}).name||'record')+'" onclick="PatientImages.add(this.dataset.piKey)">📷 Add picture</button>'
+      +(n?'<button type="button" class="pi-view" data-pi-key="'+esc(key)+'" title="See the pictures saved here" onclick="PatientImages.gallery(this.dataset.piKey)">🖼 '+n+' picture'+(n===1?'':'s')+'</button>':'');
   }
   // Called while a record is drawn: remembers what the place is called and
   // returns its buttons (refreshed in place once the pictures are loaded).

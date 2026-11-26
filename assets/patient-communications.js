@@ -8,7 +8,7 @@
   };
   const methods = ['Telephone', 'Email', 'In person', 'Letter', 'Other'];
   const statuses = ['Recorded', 'Awaiting response', 'Follow-up required', 'Completed'];
-  const statusLabel = value => value === 'Recorded' ? 'Open' : value === 'Completed' ? 'Resolved' : value;
+  const statusLabel = value => value === 'Recorded' ? 'Open' : value === 'Completed' ? 'Closed' : value;
   const fields = ['communication_date', 'communication_time', 'method', 'direction', 'contact_name', 'service', 'subject', 'notes', 'status', 'followup_action', 'followup_date', 'reminder_enabled'];
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
   const icon = name => typeof global.psmIc === 'function' ? global.psmIc(name) : '';
@@ -20,12 +20,14 @@
   // Which collapsible section groups the nurse has manually collapsed (remembered
   // across re-renders so a group stays shut once closed).
   const sectionCollapsed = new Set();
-  function sectionToggle(key, open) { if (open) sectionCollapsed.delete(key); else sectionCollapsed.add(key); }
+  // Groups that start closed (e.g. Closed correspondence) remember being opened.
+  const sectionOpened = new Set();
+  function sectionToggle(key, open) { if (open) {sectionCollapsed.delete(key);sectionOpened.add(key);} else {sectionCollapsed.add(key);sectionOpened.delete(key);} }
   // A section rendered as a collapsible dropdown. It opens by default when it has
   // content (so nothing a nurse added is hidden) and collapses when empty, unless
   // the nurse has chosen otherwise.
-  function groupHTML(key, cls, titleHTML, badgeHTML, bodyHTML, hasContent) {
-    const open = hasContent && !sectionCollapsed.has(key);
+  function groupHTML(key, cls, titleHTML, badgeHTML, bodyHTML, hasContent, startClosed) {
+    const open = startClosed ? sectionOpened.has(key) : hasContent && !sectionCollapsed.has(key);
     return `<details class="${cls} pc-group"${open ? ' open' : ''} ontoggle="PatientCommunications.sectionToggle('${esc(key)}',this.open)">
       <summary class="psm-sec-head pc-group-head"><h3>${titleHTML}</h3>${badgeHTML}</summary>
       <div class="psm-card">${bodyHTML}</div></details>`;
@@ -68,7 +70,7 @@
     if (state.patientId === patientId) config.onChange();
   }
   function actionsHTML() {
-    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`
+    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.startNew('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.startNew('community',true)"${state.error?' disabled':''}>Doctors correspondence</button>`
       // Email linking: being tested by the administrators only until Dataverse.
       + (global.EmailCorrespondence && global.EmailCorrespondence.enabled()
         ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Testing</span></button><button type="button" class="psm-btn pc-add" onclick="EmailCorrespondence.patientReport()">📄 All emails report</button>` : '');
@@ -114,7 +116,7 @@
         ${done ? `<div class="pc-hint">Resolved${issue.resolved_by_name ? ' by ' + esc(issue.resolved_by_name) : ''}${issue.resolved_at ? ' · ' + esc(savedTime(issue.resolved_at)) : ''}</div>` : ''}
         ${isActiveReminder(issue) ? `<div class="pc-followup pc-issue-reminder${dueLabel(issue.followup_date) === 'Overdue' ? ' overdue' : ''}"><strong>Reminder · ${esc(dueLabel(issue.followup_date))} · ${esc(date(issue.followup_date))}</strong><div>${esc(issue.followup_action)}</div></div>` : ''}
         ${global.EmailCorrespondence && global.EmailCorrespondence.enabled() ? `<div class="pc-issue-actions ec-issue-actions"><button type="button" class="psm-btn" onclick="EmailCorrespondence.open(null,'${esc(issue.id)}')">📧 Add email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.viewIssue('${esc(issue.id)}')">📨 Emails</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.replyToIssue('${esc(issue.id)}')">✉️ Reply by email</button><button type="button" class="psm-btn" onclick="EmailCorrespondence.issueReport('${esc(issue.id)}')">📄 Email report</button></div>` : ''}
-        <div class="pc-issue-actions">${global.PatientImages ? global.PatientImages.slotHTML('correspondence:' + issue.id, [date(issue.communication_date), issue.subject, codeOf(issue)].filter(Boolean).join(' · '), issue.communication_date) : ''}${done ? '' : `<button type="button" class="psm-btn psm-btn-primary" onclick="PatientCommunications.open('${esc(issue.kind)}',null,'${esc(issue.id)}')"${disabled}>${icon('plus')} Add update / contact</button>`}<button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(issue.kind)}','${esc(issue.id)}')"${disabled}>${icon('pencil')} Edit issue / reminder</button><button type="button" class="psm-btn ${done ? '' : 'pc-resolve'}" onclick="PatientCommunications.setResolved('${esc(issue.id)}',${!done})"${disabled}>${done ? 'Reopen issue' : '✓ Resolve issue'}</button></div>
+        <div class="pc-issue-actions">${global.PatientImages ? global.PatientImages.slotHTML('correspondence:' + issue.id, [date(issue.communication_date), issue.subject, codeOf(issue)].filter(Boolean).join(' · '), issue.communication_date) : ''}${done ? '' : `<button type="button" class="psm-btn psm-btn-primary" onclick="PatientCommunications.open('${esc(issue.kind)}',null,'${esc(issue.id)}')"${disabled}>${icon('plus')} Add update / contact</button>`}<button type="button" class="psm-btn" onclick="PatientCommunications.open('${esc(issue.kind)}','${esc(issue.id)}')"${disabled}>${icon('pencil')} Edit issue / reminder</button><button type="button" class="psm-btn ${done ? '' : 'pc-resolve'}" onclick="PatientCommunications.setResolved('${esc(issue.id)}',${!done})"${disabled}>${done ? '↺ Reopen correspondence' : '✓ Close correspondence'}</button></div>
         <div class="pc-contact-heading">Communication history</div>${sorted(contacts).map(r => recordHTML(r, false)).join('')}${recordHTML(issue, true)}
       </div></details>`;
   }
@@ -126,8 +128,15 @@
   function historyHTML() {
     if(state.error)return '<div class="pc-error" role="alert">Could not load correspondence. <button type="button" onclick="PatientCommunications.retry()">Retry</button></div>';
     const rows=roots().sort((a,b)=>String(b.updated_at||b.created_at||'').localeCompare(String(a.updated_at||a.created_at||'')));
+    // Open correspondence on top; closed (resolved) ones fold away underneath.
+    const open=rows.filter(r=>r.status!=='Completed'),closed=rows.filter(r=>r.status==='Completed');
     return (state.actionError?'<p role="alert">'+esc(state.actionError)+'</p>':'')+patientRemindersHTML()+
-      (rows.length?rows.map(issueHTML).join(''):'<p class="pc-empty">No correspondence recorded.</p>');
+      (rows.length
+        ?groupHTML('open','pc-open-section',icon('message')+' Open correspondence',`<span class="psm-badge${open.length?' pc-badge-open':''}">${open.length}</span>`,
+            open.length?open.map(issueHTML).join(''):'<p class="pc-empty">No open correspondence.</p>',open.length>0)
+         +groupHTML('closed','pc-closed-section','✓ Closed correspondence',`<span class="psm-badge">${closed.length}</span>`,
+            closed.length?closed.map(issueHTML).join(''):'<p class="pc-empty">No closed correspondence.</p>',closed.length>0,true)
+        :'<p class="pc-empty">No correspondence recorded.</p>');
   }
   function openDoctors(){
     open('community');
@@ -136,6 +145,48 @@
     const label=service.closest('label');if(label&&label.firstChild?.nodeType===3)label.firstChild.textContent='Correspondence category';
     const heading=global.document.querySelector('#mb h2');if(heading)heading.textContent='Doctors correspondence';
     editor.baseline=JSON.stringify(formValues());
+  }
+  /* Before a NEW correspondence: if the patient still has correspondence open,
+     list it first — add to one of those, close it, or open a new one anyway. */
+  let pendingNew = null;
+  const openIssues = () => roots().filter(r => r.status !== 'Completed').sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  function remindOpen(onNew, onAdd, what) {
+    const list = openIssues();
+    if (!list.length) return false;
+    pendingNew = {onNew, onAdd};
+    const patient = state.patient || {}, mb = global.document.getElementById('mb');
+    const kindLabel = r => r.kind === 'patient' ? 'Patient correspondence' : /doctor/i.test(String(r.service || '')) ? 'Doctors correspondence' : 'Community correspondence';
+    mb.className = 'mb mb-wide';
+    mb.innerHTML = `<h2>⚠️ Correspondence still open</h2>
+      <div class="msub"><strong>${esc([patient.first_name, patient.surname].filter(Boolean).join(' '))}</strong>${patient.id_card ? ' · ' + esc(patient.id_card) : ''} has <strong>${list.length}</strong> correspondence${list.length === 1 ? '' : 's'} still open. Before opening a new one, check whether ${what || 'it'} belongs to one of these.</div>
+      <div class="pc-open-list">${list.map(r => {
+        const n = state.rows.filter(x => x.parent_id === r.id).length + 1;
+        return `<div class="pc-open-item"><div class="pc-open-main"><strong>${esc(r.subject)}</strong>${codeChip(r)}<span>${esc(kindLabel(r))} · opened ${esc(date(r.communication_date))} · ${n} contact${n === 1 ? '' : 's'}${r.reminder_enabled && r.followup_date ? ' · reminder ' + esc(date(r.followup_date)) : ''}</span></div>
+          <div class="pc-open-acts"><button type="button" class="psm-btn psm-btn-primary" onclick="PatientCommunications.addToOpen('${esc(r.id)}')">＋ Add to this one</button><button type="button" class="psm-btn" onclick="PatientCommunications.closeOpen('${esc(r.id)}')">✓ Close it</button></div></div>`;
+      }).join('')}</div>
+      <div class="mact"><button type="button" class="btn-cancel" onclick="PatientCommunications.cancelNew()">Cancel</button><button type="button" class="btn-save" onclick="PatientCommunications.newAnyway()">Open a new correspondence anyway</button></div>`;
+    state.config.openModal();
+    return true;
+  }
+  function addToOpen(id) {
+    const p = pendingNew, issue = roots().find(r => r.id === id);pendingNew = null;
+    if (!p || !issue) return;
+    state.config.closeModal();
+    setTimeout(() => p.onAdd(issue), 30);
+  }
+  async function closeOpen(id) {
+    const p = pendingNew;
+    const done = await setResolved(id, true);
+    if (!done || !p) return;
+    // Anything else still open is listed again; otherwise straight to the new one.
+    if (!remindOpen(p.onNew, p.onAdd)) {pendingNew = null;state.config.closeModal();setTimeout(p.onNew, 30);}
+  }
+  function newAnyway() {const p = pendingNew;pendingNew = null;state.config.closeModal();if (p) setTimeout(p.onNew, 30);}
+  function cancelNew() {pendingNew = null;state.config.closeModal();}
+  function startNew(kind, doctors) {
+    if (!kinds[kind] || !state.patientId || state.error) return;
+    const go = () => doctors ? openDoctors() : open(kind);
+    if (!remindOpen(go, issue => open(issue.kind, null, issue.id), 'this new contact')) go();
   }
   function toggleIssue(id, open) { if (open) expanded.add(id); else expanded.delete(id); }
   function focus(id) {
@@ -261,7 +312,7 @@
   }
   async function setResolved(id, done) {
     const issue = roots().find(r => r.id === id);
-    if (!issue || busy.has(id) || editor || !global.confirm(done ? 'Resolve this issue and clear its active reminder? The history will be kept.' : 'Reopen this issue? Set a new reminder if follow-up is needed.')) return;
+    if (!issue || busy.has(id) || editor || !global.confirm(done ? 'Close this correspondence and clear its reminder? Everything in it is kept and it can be reopened.' : 'Reopen this correspondence? Set a new reminder if follow-up is needed.')) return false;
     const {patientId, config} = state;
     busy.add(id);state.actionError = '';config.onChange();
     try {
@@ -270,9 +321,11 @@
       if (error) throw error;
       accept(data, patientId, issue.kind);
       if (state.patientId === patientId) afterSaved(config);
+      return true;
     } catch (error) {
       if (error.code === '40001' && state.patientId === patientId) await load(patientId, config);
-      if (state.patientId === patientId) state.actionError = error.message || 'The issue status could not be saved. Please try again.';
+      if (state.patientId === patientId) state.actionError = error.message || 'The correspondence status could not be saved. Please try again.';
+      return false;
     } finally {busy.delete(id);if (state.patientId === patientId) config.onChange();}
   }
   async function loadReminders(config) {
@@ -289,5 +342,5 @@
     const rows = (result.items || []).filter(r => !kind || r.kind === kind);
     return rows.length ? rows.map(r => `<div class="rem-row clinical-reminder-row pc-bell-reminder"><div class="clinical-reminder-copy"><div class="clinical-reminder-heading">${esc([r.patient?.first_name, r.patient?.surname].filter(Boolean).join(' ') || 'Patient')} · ${esc(r.patient?.id_card)}</div><div class="clinical-reminder-meta">${esc(kinds[r.kind].label)} · ${esc(r.followup_date < (result.today || localNow().communication_date) ? 'Overdue' : 'Due today')} · ${esc(date(r.followup_date))}</div><strong>${esc(r.subject)}</strong><div class="pc-notes">${esc(r.followup_action)}</div></div><div class="clinical-reminder-actions"><button type="button" class="ncb-btn" onclick="openCommunicationReminder('${esc(r.patient_id)}','${esc(r.id)}')">Open issue</button></div></div>`).join('') : '<div class="rem-empty">No due communication reminders.</div>';
   }
-  global.PatientCommunications = {historyRows:()=>state.rows.map(r=>({...r})),load, retry, actionsHTML, historyHTML, openDoctors, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
+  global.PatientCommunications = {historyRows:()=>state.rows.map(r=>({...r})),startNew,remindOpen,addToOpen,closeOpen,newAnyway,cancelNew,load, retry, actionsHTML, historyHTML, openDoctors, open, cancel, save, syncReminder, setResolved, focus, toggleIssue, sectionToggle, loadReminders, remindersHTML};
 })(window);
