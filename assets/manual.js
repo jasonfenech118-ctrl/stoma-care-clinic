@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — The profile tabs now match the hospital system: Performed procedures (with Patient consultation notes), Medical imaging results and iCM notes, each keeping only the columns you chose. A consultation note is checked against the patient’s ID and linked to its procedure and stoma.'};
+const MANUAL_META={updated:'26 November 2026 — Linking emails to the patient is built as a preview for the administrators (nothing is saved or sent) and will be switched on with Dataverse. See “Linking emails (preview)”.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -187,6 +187,17 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','✍️','Every record and correction is signed automatically with the logged-in nurse’s name and saving time. A correction keeps the original version. If another nurse or device saves first, your text remains in the form and the app asks you to reopen the latest record before saving over it.')}
     ${manNote('tip','💾','An unsuccessful save keeps the form open with your wording. Cancel asks before discarding changes. The reminder date must be on or after the communication date. Due and overdue reminders appear in the bell under <b>Community</b> or <b>Patient</b>; <b>Open issue</b> takes you directly to that patient’s saved issue. Future reminders remain visible in the patient record.')}
+  `},
+  {id:'email-preview',title:'Linking emails (preview — switched on with Dataverse)',keywords:'email outlook link emails thread reply replies cc from to sent subject attachments eml download forward print email report correspondence doctors community patient dc cc pc encounter code dataverse preview stomacare',html:`
+    ${manWhen('You want to see how emails with doctors, community nurses or patients will be linked to the patient once the app moves to Dataverse.')}
+    <p class="man-lede">Built ahead of time and <b>not switched on yet</b>: <b>nothing is saved and no email is sent</b>. Only the administrators see the <b>📧 Add an email · Preview</b> button, next to the correspondence buttons on the patient’s Episodes.</p>
+    ${manSteps([
+      `Choose <b>Doctors (DC)</b>, <b>Community (CC)</b> or <b>Patient (PC)</b> correspondence, then drop the email file downloaded from Outlook (⋯ › Download / Save as .eml), or paste the whole email (tip: press Forward, select all, copy, then close the draft).`,
+      `<b>Organise ›</b> splits the thread into one message each, oldest first: who sent it (<b>From</b>), <b>To</b>, <b>CC</b>, date and time, subject, its own text and its attachments (pictures shown small), plus the <b>original email</b> word for word. Each shows the <b>encounter code</b> it would get (e.g. EP03-123456M-02-DC), whether it was sent by the clinic or received, and from a doctor, community nurse or patient. The ID card in the email is checked against the patient.`,
+      `<b>🖨</b> prints one email laid out like Outlook; <b>📄 Correspondence report</b> prints all the messages one by one.`,
+      `<b>✉️ Write a reply</b>: To is the last sender, CC is everyone else on the email <b>plus stomacare.mdh@gov.mt (always)</b>, and the subject is <b>always the patient’s name, surname and ID card</b> — nothing else.`
+    ])}
+    ${manNote('auto','🔮','With Dataverse: every email to or from stomacare.mdh@gov.mt is filed to the patient automatically (matched by the ID card in the subject), each message gets its encounter code, and its pictures and files are saved with it. The full plan is in <code>docs/dataverse/email-correspondence.md</code>.')}
   `},
   {id:'operation',title:'Record a new stoma, refashioning or reversal',keywords:'operation new stoma refashioning refashion reversal closure outcome revert status undo deceased gozo overseas undated button supersede record surgery confirm yes no cancel date unknown comments replacement',html:`
     ${manMap('patients')}

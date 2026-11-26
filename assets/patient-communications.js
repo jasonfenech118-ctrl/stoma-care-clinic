@@ -67,7 +67,10 @@
     if (state.patientId === patientId) config.onChange();
   }
   function actionsHTML() {
-    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`;
+    return Object.entries(kinds).map(([kind, meta]) => `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.open('${kind}')"${state.error ? ' disabled' : ''}>${icon(meta.icon)} ${meta.label}</button>`).join('') + `<button type="button" class="psm-btn pc-add" onclick="PatientCommunications.openDoctors()"${state.error?' disabled':''}>Doctors correspondence</button>`
+      // Email linking, built ahead of Dataverse: a preview for the administrators only.
+      + (global.EmailCorrespondence && global.ClinicAccount && typeof global.ClinicAccount.isAdmin === 'function' && global.ClinicAccount.isAdmin()
+        ? `<button type="button" class="psm-btn pc-add ec-open" onclick="EmailCorrespondence.open()">📧 Add an email <span class="ec-tag">Preview</span></button>` : '');
   }
   function detailHTML(record) {
     return `<div class="pc-detail">

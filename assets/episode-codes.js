@@ -35,6 +35,7 @@
   function idPart(patient){return String(patient&&patient.id_card||'').replace(/\s+/g,'').toUpperCase()||'NOID';}
   function commType(c){
     if(c.kind==='followup')return 'F';
+    if(c.kind==='doctor')return 'DC';   // a Doctors correspondence kind of its own (with Dataverse)
     if(c.kind==='patient')return 'PC';
     return /doctor/i.test(String(c.service||''))?'DC':'CC';
   }
@@ -157,6 +158,7 @@
         safe(fetchAll(db,()=>db.from('appointments').select('id,appt_date,appt_slot,status,assigned_to,bank_staff_id,outcome_recorded_at,appliances,accessories,stoma_appliances').eq('patient_id',pid).eq('status','attended').order('id')))
       ]);
       const res=compute(pat,episodes,encounters,comms,appts);
+      res._in={pat,episodes,encounters,comms,appts};
       cache.set(pid,res);
       return res;
     })().finally(()=>pending.delete(pid));
@@ -164,6 +166,12 @@
     return job;
   }
   function cached(patientId){return cache.get(String(patientId||''))||null;}
+  /* The codes the patient's records WOULD have with some extra correspondence
+     added (e.g. an email being previewed). Nothing is saved. */
+  function preview(patientId,extra){
+    const c=cache.get(String(patientId||''));if(!c||!c._in)return null;
+    const i=c._in;return compute(i.pat,i.episodes,i.encounters,(i.comms||[]).concat(extra||[]),i.appts);
+  }
   function invalidate(patientId){cache.delete(String(patientId||''));}
-  global.EpisodeCodes={compute,load,cached,invalidate,pad};
+  global.EpisodeCodes={compute,load,cached,preview,invalidate,pad};
 })(window);
