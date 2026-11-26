@@ -1,7 +1,7 @@
 -- =============================================================================
--- Patient profile: Performed procedures with Medical imaging, Patient notes and
--- Patient documentation tabs. Lists pasted in one go are organised into dated
--- rows inside the app.
+-- Patient profile tabs copied from the hospital system: Performed procedures
+-- with Patient consultation notes, Medical imaging results and iCM notes. Lists
+-- and notes pasted in one go are organised into dated rows inside the app.
 --
 -- HOW TO RUN: Supabase Dashboard -> SQL Editor -> New query -> paste ALL of
 -- this -> Run. Safe to re-run. No existing patient data is read or changed.
@@ -17,15 +17,20 @@
 -- title is the operation, scan or treatment; result is the outcome, report or
 -- the note itself; source is who or where; raw_text is the pasted lines the
 -- row came from; fingerprint skips the same entry pasted twice; batch_id is
--- shared by the rows saved from one paste.
+-- shared by the rows saved from one paste; linked_stoma is a stoma chosen by
+-- hand for a procedure or consultation note.
 -- =============================================================================
 
 create table if not exists public.patient_history_entries (id uuid primary key default gen_random_uuid(), patient_id uuid not null references public.patients(id) on delete cascade, category text not null, entry_date date, date_precision text not null default '' check (date_precision in ('','day','month','year')), entry_time text not null default '', date_text text not null default '', entry_type text not null default '', title text not null default '', result text not null default '', source text not null default '', raw_text text not null default '', fingerprint text not null default '', batch_id uuid, created_by uuid default auth.uid(), created_by_name text not null default '', created_at timestamptz not null default now(), updated_by_name text not null default '', updated_at timestamptz not null default now(), check (length(title) <= 2000 and length(result) <= 20000 and length(raw_text) <= 40000));
 
+-- Added later; safe on a database set up with an earlier version of this script.
+alter table public.patient_history_entries add column if not exists linked_stoma text not null default '';
+
 -- Which tab an entry belongs to. Re-created each run so a database set up with
--- the first version of this script also accepts the Patient documentation tabs.
+-- an earlier version of this script also accepts Patient consultation, consult.
+-- Older tab names stay allowed so nothing saved before is rejected.
 alter table public.patient_history_entries drop constraint if exists patient_history_entries_category_check;
-alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','imaging','notes','treatment','doc_icm','doc_onco','doc_ccp'));
+alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','doc_icm','notes','treatment','doc_onco','doc_ccp'));
 
 create index if not exists patient_history_entries_patient on public.patient_history_entries (patient_id, category, entry_date desc);
 
