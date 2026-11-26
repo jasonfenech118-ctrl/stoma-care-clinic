@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'26 November 2026 — New ↻ Refresh button in the top bar reloads the latest data and app version, then returns to the same page or patient. The Encounters header shows the episode number without the word “Episode”.'};
+const MANUAL_META={updated:'26 November 2026 — The Saved by column on Discharge letters is wider, so the full name or email shows on one line. New ↻ Refresh button in the top bar.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
