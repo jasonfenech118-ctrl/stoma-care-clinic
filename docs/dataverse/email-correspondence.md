@@ -118,6 +118,28 @@ They need hospital IT and data-protection approval.
      Outlook. The Conversation ID match above keeps those emails filed.
 3. **Reminders:** an open episode with a reminder date shows in the bell, as today.
 
+## Idea: paste the Outlook link of an email
+
+The nurse opens an email in Outlook on the web, copies the page address and pastes
+it into the patient's correspondence. The app saves that email with its pictures
+and files, with no download.
+
+- Needs: the app registered in the hospital's Microsoft 365 (Entra ID / Azure),
+  with Microsoft Graph mail permission approved by hospital IT and the data
+  protection officer. That is either `Mail.Read` on the nurse's own mailbox,
+  signing in with the hospital account, or `Mail.Read.Shared` on
+  stomacare.mdh@gov.mt.
+- How: the link holds the message ID, after `/id/` in
+  `outlook.office.com/mail/.../id/AAMk...`. The app reads the message with Graph,
+  `GET /me/messages/{id}?$expand=attachments` or the shared-mailbox equivalent.
+  It then files the message like a dropped email file: From, To, CC, date,
+  subject, text, original email, attachments, the patient check and the encounter
+  code.
+- Use: the manual fallback for an email the automatic flow did not file, e.g. one
+  sent to a nurse's own mailbox without the clinic in CC.
+- Until then, the nearest thing is Outlook ⋯ › Download (.eml), then drop the file
+  in the app. That brings the email, pictures and files in one go.
+
 ## What the app preview already does
 
 - Reads the email file downloaded from Outlook (`.eml`):
