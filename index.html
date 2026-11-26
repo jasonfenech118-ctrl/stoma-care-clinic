@@ -18,14 +18,14 @@
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-876"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.26-877"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.26-876"></script>
+<script src="assets/manual.js?v=2026.11.26-877"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.10.16-550"/>
@@ -2411,6 +2411,10 @@ body.jenc-open #nav-back{display:none!important;}
 .pd-referral-chips{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}.pd-referral-chips[hidden]{display:none}
 .pd-referral-chip{display:inline-flex;align-items:center;padding:7px 12px;border-radius:9px;background:#dc2626;color:#fff;font-weight:800;font-size:13px;border:1px solid #b91c1c;box-shadow:0 1px 3px rgba(185,28,28,.35)}
 .pd-referral-chip.is-seen{background:#fee2e2;color:#b91c1c}
+/* On OHAs: the ID badge turns red with a small capsule tag beside it. */
+.psm-id.is-oha{background:#dc2626!important;border-color:#b91c1c!important;color:#fff!important}
+.psm-id.is-oha .psm-id-label,.psm-id.is-oha strong{color:#fff!important}
+.psm-oha-tag{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-weight:800;font-size:13px;white-space:nowrap}
 #page-patient-record .psm-status .jenc-ref-chips{display:none}
 @media screen and (max-width:860px){.nav-refresh-btn{margin-left:6px;padding:9px 13px;font-size:14.5px;}}
 @media print{.nav-refresh-btn{display:none!important;}}
@@ -4067,7 +4071,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.26-876';
+const APP_BUILD='2026.11.26-877';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
 
 // AUTH
@@ -20041,6 +20045,8 @@ function patientTreatment(p){
   return t&&typeof t==='object'?t:{items:[],other:''};
 }
 // "Anti-hypertensives (Amlodipine 5 mg) · Insulin · Other: …" — '' when none.
+// Is this treatment group ticked for the patient (e.g. 'oha')?
+function patientOnTreatment(p,key){const t=patientTreatment(p);return (Array.isArray(t.items)?t.items:[]).some(x=>x&&x.key===key&&x.on);}
 function patientTreatmentSummary(p){
   const t=patientTreatment(p),items=Array.isArray(t.items)?t.items:[];
   const parts=TREATMENT_GROUPS.map(g=>{const it=items.find(x=>x&&x.key===g.key);if(!it||!it.on)return '';
@@ -22313,7 +22319,7 @@ async function renderPatientRecord(patientId,opts,sequence){
         <div class="psm-head-copy">
           <div class="psm-identity-row">
             <span class="psm-name">${htmlSafe(nm)}</span>${fistulaTagHTML(pat)}
-            <span class="psm-id${pat.id_card?'':' is-missing'}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>
+            <span class="psm-id${pat.id_card?'':' is-missing'}${patientOnTreatment(pat,'oha')?' is-oha':''}" aria-label="ID card number"><span class="psm-id-label">ID</span><strong>${htmlSafe(pat.id_card||'Not recorded')}</strong></span>${patientOnTreatment(pat,'oha')?'<span class="psm-oha-tag" title="On oral hypoglycaemic agents (OHAs)">💊 OHAs</span>':''}
           </div>
           ${demo?`<span class="psm-sub">${demo}</span>`:''}
           ${eventYearText?`<span class="psm-sub" style="font-size:12px;font-weight:600;opacity:.9;">${eventYearText}</span>`:''}
