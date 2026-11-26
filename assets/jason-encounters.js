@@ -177,7 +177,7 @@
     });
     if(s.infection?.status&&s.infection.status!=='Not recorded')lines.push('Infection status: '+[s.infection.organism,s.infection.status].filter(Boolean).join(' · ')+'.');
     list(s.referrals).map(normReferral).filter(Boolean).forEach(r=>lines.push(r.seen?'Seen by '+r.profession+(r.seen_on?' on '+r.seen_on:'')+'.':'Referred to '+r.profession+(r.referred_on?' on '+r.referred_on:'')+'.'));
-    if(String(s.notes||'').trim())lines.push('General notes: '+s.notes);
+    if(String(s.notes||'').trim())lines.push('Written report: '+s.notes);
     return lines.join('\n');
   }
   // The system, baseplate and pouch follow from the appliances themselves.
@@ -527,7 +527,7 @@
         '<section class="jenc-summary-sec"><h4>'+(allFistula?'Fistula assessment':'Stoma assessment')+'</h4>'+stomaAssessmentTableHTML(stomas)+'</section>'+
         (perNotes?'<section class="jenc-summary-sec"><h4>Stoma clinical notes</h4>'+perNotes+'</section>':'')+
         '<section class="jenc-summary-sec"><h4>Appliances &amp; accessories</h4>'+applianceSummaryTableHTML(stomas)+'</section>'+
-        '<section class="jenc-summary-sec"><h4>General notes</h4><p class="jenc-document-notes">'+esc(String(snap?.notes||'').trim()||'No written notes recorded.')+'</p></section>'+
+        '<section class="jenc-summary-sec"><h4>Written report</h4><p class="jenc-document-notes">'+esc(String(snap?.notes||'').trim()||'No written notes recorded.')+'</p></section>'+
         infHTML+refHTML+
         (snap?.teaching_plan?'<section class="jenc-summary-sec">'+teachingDocHTML(snap.teaching_plan)+'</section>':'')+
         (snap?.discharge_plan?'<section class="jenc-summary-sec">'+dischargeDocHTML(snap.discharge_plan)+'</section>':'')+
@@ -565,12 +565,16 @@
     const noteBox=(key,label,value,id)=>'<div class="jenc-note-col"><label class="jenc-notes-label" for="'+id+'">'+esc(label)+'</label><div class="jenc-notebox"><div class="jenc-note-mirror" aria-hidden="true"></div><textarea id="'+id+'" data-note="'+esc(key)+'" aria-label="'+esc(label)+'" placeholder="Write your observations, care provided or patient concerns…"'+(ctx.editable?'':' readonly')+'>'+esc(value||'')+'</textarea></div><div class="jenc-note-diff jenc-previous"></div></div>';
     // Patient-wide observations have their own box on every encounter. Reuse
     // the versioned notes field so older episode notes are preserved as well.
-    const notesHTML=(panels.length?grid(panels.map((x,i)=>noteBox(x.stoma.uid,x.name+' — clinical notes',x.stoma.notes,'jenc-notes-'+i)).join('')):'')+
-      '<div class="jenc-general-notes">'+noteBox('','General notes',d.notes,'jenc-notes')+'</div>';
+    // ONE written report for the whole encounter, however many stomas there
+    // are. A per-stoma box shows only on an older encounter that already holds
+    // notes for that stoma, so nothing saved is hidden.
+    const legacyNotes=panels.filter(x=>String(x.stoma.notes||'').trim());
+    const notesHTML=(legacyNotes.length?grid(legacyNotes.map((x,i)=>noteBox(x.stoma.uid,x.name+' — earlier clinical notes',x.stoma.notes,'jenc-notes-'+i)).join('')):'')+
+      '<div class="jenc-general-notes">'+noteBox('','Report (all stomas)',d.notes,'jenc-notes')+'</div>';
     const heading=(number,title,id,badge='')=>'<h3 class="jenc-step-heading" id="'+id+'"><span class="jenc-step-number" aria-hidden="true">'+number+'</span>'+title+(badge?'<span class="jenc-state">'+badge+'</span>':'')+'</h3>';
     const review='<section class="jenc-card jenc-step" data-step="review" aria-labelledby="jenc-review-heading">'+heading(1,panels.length&&panels.every(x=>isFistulaCol(x.stoma))?'Fistula review':'Stoma review','jenc-review-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.review)).join('')):'<p>No stoma is recorded for this episode. Add its details in the patient record first.</p>')+'</section>';
     const appliances='<section class="jenc-card jenc-step" data-step="appliances" aria-labelledby="jenc-appliances-heading">'+heading(2,'Appliances &amp; accessories','jenc-appliances-heading')+(panels.length?grid(panels.map(x=>column(x.name,x.appliances)).join('')):'<p>Record the stoma details before choosing its appliance setup.</p>')+episodeApplianceHistoryHTML(ctx.episode)+'</section>';
-    const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading',esc(episodeLabel))+notesHTML+'<div class="jenc-meta">Each stoma’s notes are saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
+    const writtenReport='<section class="jenc-card jenc-step" data-step="report" aria-labelledby="jenc-report-heading"><div class="jenc-form-content">'+heading(3,'Written report','jenc-report-heading',esc(episodeLabel))+notesHTML+'<div class="jenc-meta">One report covers every stoma; it is saved with this episode.</div></div><div class="jenc-preview"><h4>Report'+(ctx.editable?' preview':'')+'</h4><div id="jenc-report" class="jenc-report"></div><div class="jenc-signature">'+(ctx.editable?'Signature will be recorded automatically: ':'Signed by: ')+esc(ctx.editable?ctx.who.name:(ver.author_name||ver.author_email||''))+(ctx.editable?'':' · '+esc(stamp(ver.saved_at)))+'</div></div></section>';
     const infection='<section class="jenc-card jenc-step" data-step="infection" aria-labelledby="jenc-infection-heading">'+heading(4,'Infection status','jenc-infection-heading','Patient')+accordion('infection','Recorded status',infectionSummary,infBody)+'</section>';
     const support='<section class="jenc-card jenc-step" data-step="support" aria-labelledby="jenc-support-heading">'+heading(5,'Support / referrals','jenc-support-heading','Patient · every episode')+referrals+(ctx.editable?'<button class="jenc-btn" data-action="add-referral">+ Add referral</button>':'')+'</section>';
     page.innerHTML=top+versionBar+'<div class="jenc-form-content">'+review+appliances+'</div>'+writtenReport+'<div class="jenc-form-content">'+infection+support+'</div><div class="jenc-actions jenc-no-print">'+(ctx.editable?'<button class="jenc-btn primary" id="jenc-save" data-action="save">'+(rec?'Save as V'+(n+1):'Save encounter')+'</button><button class="jenc-btn muted" data-action="cancel">Cancel'+(rec?' edit':'')+'</button>':(!editableToday(rec)?'<span class="jenc-locked">🔒 Recorded '+esc(recordDay(rec))+' — an encounter can be edited only on the day it was recorded.</span>':'')+'<button class="jenc-btn" data-action="print">Print / PDF</button>')+'<button class="jenc-btn muted" data-action="history">Version / encounter history</button></div>';
@@ -593,7 +597,7 @@
       if(x.rod_asked!==false&&['In place','Removed'].includes(x.rod?.status))review+=field('Rod',x.rod.status==='In place'?'Present'+(x.rod.due?' — planned removal '+showDay(x.rod.due):''):'Removed'+(x.rod.removed?' — '+showDay(x.rod.removed):''));
       return '<section data-stoma-uid="'+esc(x.uid)+'" class="jenc-document-stoma jenc-document-tone-'+(i%3)+'"><h4>'+esc(stomaName(x,stomas))+'</h4><dl>'+review+'</dl>'+notes(x.notes)+'<h5 class="jenc-document-appliances-title">Appliances &amp; accessories</h5><dl>'+field('Appliances',list(x.appliances).join(', '),'No appliance recorded')+field('Accessories',list(x.accessories).join(', '),'No accessories recorded')+(x.flange_due?field('Flange change due',showDay(x.flange_due)):'')+'</dl></section>';
     }).join('');
-    const general='<section class="jenc-document-general"><h4>General notes</h4><p class="jenc-document-notes">'+esc(String(snapshot?.notes||'').trim()||'No written notes recorded.')+'</p></section>';
+    const general='<section class="jenc-document-general"><h4>Written report</h4><p class="jenc-document-notes">'+esc(String(snapshot?.notes||'').trim()||'No written notes recorded.')+'</p></section>';
     const infection=snapshot?.infection;
     const infectionHTML=infection?.status&&infection.status!=='Not recorded'?'<section class="jenc-document-support"><h4>Infection status</h4><p><strong>'+esc([infection.organism,infection.status].filter(Boolean).join(' · '))+'</strong></p></section>':'';
     const refs=list(snapshot?.referrals).map(normReferral).filter(Boolean);
