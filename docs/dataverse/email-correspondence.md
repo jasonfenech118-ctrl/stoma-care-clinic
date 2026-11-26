@@ -39,6 +39,15 @@ only). Nothing is saved and no email is sent until this plan is carried out.
    Outlook conversation. Each email, sent or received, is saved as the next
    encounter of the same episode: 01, 02, 03 …
 8. **Attachments** (pictures and files) are **saved automatically** with their message.
+   A **reply can carry attachments too**:
+   - photos (camera or gallery on a phone) and files;
+   - any picture received in the conversation, sent back as it is;
+   - a received picture **marked up in the app**: a marker in seven colours,
+     thin / medium / thick, with Undo and Start over. It is saved as
+     "marked-up <name>.jpg", with the longest side at most 1600 px.
+
+   The total per email is kept under 20 MB. Reply attachments are sent with the
+   reply and saved with that message like any other attachment.
 9. **Report:** every message of a conversation, or all of a patient's
    correspondence, **one by one**, printable or saved as PDF.
 
@@ -120,6 +129,8 @@ They need hospital IT and data-protection approval.
   episodes (`EpisodeCodes.preview`).
 - Checks the ID card or name against the open patient.
 - Prints one email laid out like Outlook, or the whole conversation as a report.
+- Lets you add photos and files to a reply, re-attach received pictures, and mark
+  them up with the coloured marker. The send preview lists them.
 - Builds the reply with the agreed To, CC and subject rule:
   - the clinic CC and the subject are locked;
   - the reply is shown as Reply all to the latest email, with the earlier

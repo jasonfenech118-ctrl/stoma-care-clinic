@@ -318,20 +318,135 @@
     const to=last.from&&last.from.email?[last.from]:[];
     const seen=new Set(to.map(p=>p.email).concat(me));
     const cc=(last.to||[]).concat(last.cc||[]).filter(p=>p.email&&!seen.has(p.email)&&(seen.add(p.email),true));
-    st.draft={to,cc,subject:subjectFor(st.patient),replyTo:last};
-    const m=mb();if(!m)return;
+    dropDraftFiles();
+    st.draft={to,toText:listText(to),cc,subject:subjectFor(st.patient),replyTo:last,body:'',atts:[]};
+    composer();
+  }
+  // The reply screen, drawn from the draft (so what was typed survives the
+  // picture editor).
+  function composer(){
+    const d=st.draft,last=d.replyTo||{};const m=mb();if(!m)return;
+    m.className='mb mb-wide ec-modal';
     m.innerHTML='<h2>✉️ Reply <span class="ec-tag">Preview</span></h2>'+BANNER_HTML
       +(last.from?'<div class="ec-replyto">↩ Replying to <strong>'+esc(personText(last.from))+'</strong> · '+esc(showWhen(last.when))+(last.subject?' · '+esc(last.subject):'')
         +'<span>Sent as a reply in the same Outlook conversation, with the earlier emails underneath it.</span></div>':'')
-      +'<div class="ec-compose"><label>To<input id="ec-to" value="'+esc(listText(to))+'"></label>'
+      +'<div class="ec-compose"><label>To<input id="ec-to" value="'+esc(d.toText)+'" oninput="EmailCorrespondence.draft(\'toText\',this.value)"></label>'
       +'<div class="ec-ccbox"><span class="ec-cc-label">CC <small>— remove anyone with ✕, or add an address</small></span><span class="ec-lock" title="Always copied in — cannot be removed">🔒 Stoma Care Clinic &lt;'+esc(CLINIC())+'&gt;</span>'
         +'<span id="ec-cc-chips" class="ec-chips">'+ccChipsHTML()+'</span>'
         +'<span class="ec-cc-add"><input id="ec-cc-add" type="email" placeholder="Add CC, e.g. name@gov.mt" aria-label="Add an address to CC" onkeydown="if(event.key===\'Enter\'){event.preventDefault();EmailCorrespondence.ccAdd();}"><button type="button" class="btn-cancel" onclick="EmailCorrespondence.ccAdd()">＋ Add</button></span></div>'
-      +'<label>Subject <small>🔒 always the patient’s name, surname and ID card — cannot be changed</small><input value="'+esc(st.draft.subject)+'" readonly aria-readonly="true"></label>'
-      +'<label>Message<textarea id="ec-body" rows="9" placeholder="Write the reply here…"></textarea></label></div>'
+      +'<label>Subject <small>🔒 always the patient’s name, surname and ID card — cannot be changed</small><input value="'+esc(d.subject)+'" readonly aria-readonly="true"></label>'
+      +'<label>Message<textarea id="ec-body" rows="8" placeholder="Write the reply here…" oninput="EmailCorrespondence.draft(\'body\',this.value)">'+esc(d.body)+'</textarea></label>'
+      +attachBoxHTML()+'</div>'
       +'<div id="ec-msg"></div>'
       +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back</button><button class="btn-save" onclick="EmailCorrespondence.send()">Send reply (preview)</button></div>';
   }
+  function setDraft(k,v){if(st.draft)st.draft[k]=v;}
+
+  /* ---------- attachments on a reply: photos, files, marked-up pictures ---------- */
+  const MAX_TOTAL=20*1024*1024;   // Outlook's usual limit per email
+  let attSeq=0;
+  const kb=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+  function dropDraftFiles(){if(st.draft&&st.draft.atts)st.draft.atts.forEach(x=>{try{URL.revokeObjectURL(x.url);}catch(e){}});}
+  // Pictures that came in this conversation, ready to mark up or send back.
+  function receivedImages(){
+    const out=[];st.msgs.forEach((m,mi)=>(m.attachments||[]).forEach((a,ai)=>{if(a.bytes&&/^image\//.test(a.type))out.push({mi,ai,a});}));return out;
+  }
+  function attachBoxHTML(){
+    const d=st.draft,recv=receivedImages();
+    const total=d.atts.reduce((n,x)=>n+x.size,0);
+    return '<div class="ec-attach"><div class="ec-attach-head"><strong>Attachments</strong>'
+      +'<label class="ec-attach-btn">🖼 Add photos<input type="file" accept="image/*" multiple hidden onchange="EmailCorrespondence.addFiles(this.files);this.value=\'\'"></label>'
+      +'<label class="ec-attach-btn">📎 Add files<input type="file" multiple hidden onchange="EmailCorrespondence.addFiles(this.files);this.value=\'\'"></label></div>'
+      +(recv.length?'<div class="ec-recv"><span class="ec-recv-label">Pictures in this conversation</span>'+recv.map((r,i)=>'<span class="ec-recv-item"><img src="'+imgUrl(r.a)+'" alt=""><span class="ec-recv-name">'+esc(r.a.name)+'</span>'
+          +'<span class="ec-recv-acts"><button type="button" onclick="EmailCorrespondence.editReceived('+i+')">✏️ Mark up</button><button type="button" onclick="EmailCorrespondence.attachReceived('+i+')">＋ Attach</button></span></span>').join('')+'</div>':'')
+      +(d.atts.length?'<div class="ec-att-list">'+d.atts.map(x=>'<span class="ec-att-item">'+(x.url&&/^image\//.test(x.type)?'<img src="'+x.url+'" alt="">':'<span class="ec-file-ic">📄</span>')
+          +'<span class="ec-att-meta"><span class="ec-att-name">'+esc(x.name)+'</span><small>'+kb(x.size)+(x.edited?' · marked up':'')+'</small></span>'
+          +(/^image\//.test(x.type)?'<button type="button" title="Mark up this picture" aria-label="Mark up '+esc(x.name)+'" onclick="EmailCorrespondence.editAttachment('+x.id+')">✏️</button>':'')
+          +'<button type="button" title="Remove" aria-label="Remove '+esc(x.name)+'" onclick="EmailCorrespondence.removeAttachment('+x.id+')">✕</button></span>').join('')+'</div>'
+          +'<div class="ec-att-total'+(total>MAX_TOTAL?' is-over':'')+'">'+d.atts.length+' attachment'+(d.atts.length===1?'':'s')+' · '+kb(total)+(total>MAX_TOTAL?' — over the 20 MB email limit, remove something':'')+'</div>'
+        :'<div class="ec-att-empty">No attachments.</div>')
+      +'</div>';
+  }
+  const recvUrls=new Map();
+  function imgUrl(a){if(!recvUrls.has(a)){const u=URL.createObjectURL(new Blob([a.bytes],{type:a.type}));recvUrls.set(a,u);}return recvUrls.get(a);}
+  function addAtt(blob,name,type,edited){
+    const x={id:++attSeq,name,type:type||blob.type||'application/octet-stream',size:blob.size,blob,url:URL.createObjectURL(blob),edited:!!edited};
+    st.draft.atts.push(x);return x;
+  }
+  function addFiles(list){
+    if(!st.draft||!list)return;
+    Array.from(list).forEach(f=>addAtt(f,f.name,f.type,false));
+    composer();
+  }
+  function attachReceived(i){const r=receivedImages()[i];if(!r||!st.draft)return;addAtt(new Blob([r.a.bytes],{type:r.a.type}),r.a.name,r.a.type,false);composer();}
+  function removeAttachment(id){const d=st.draft;if(!d)return;const i=d.atts.findIndex(x=>x.id===id);if(i<0)return;try{URL.revokeObjectURL(d.atts[i].url);}catch(e){}d.atts.splice(i,1);composer();}
+
+  /* ---------- the picture editor: a marker in colours, on the picture ---------- */
+  const COLOURS=[['#e11d48','Red'],['#f97316','Orange'],['#facc15','Yellow'],['#16a34a','Green'],['#2563eb','Blue'],['#111827','Black'],['#ffffff','White']];
+  const SIZES=[[4,'Thin'],[9,'Medium'],[16,'Thick']];
+  const ed={img:null,canvas:null,ctx:null,strokes:[],cur:null,colour:'#e11d48',size:9,target:null};
+  function editReceived(i){const r=receivedImages()[i];if(!r)return;openEditor(imgUrl(r.a),{kind:'new',name:r.a.name});}
+  function editAttachment(id){const x=st.draft&&st.draft.atts.find(a=>a.id===id);if(!x)return;openEditor(x.url,{kind:'replace',id,name:x.name});}
+  function openEditor(url,target){
+    const img=new Image();
+    img.onload=()=>{
+      ed.img=img;ed.target=target;ed.strokes=[];ed.cur=null;
+      const m=mb();if(!m)return;
+      m.className='mb mb-wide ec-modal';
+      m.innerHTML='<h2>✏️ Mark up the picture <span class="ec-tag">Preview</span></h2>'
+        +'<div class="ec-ed-tools" role="toolbar" aria-label="Marker">'
+          +'<span class="ec-ed-group">'+COLOURS.map(([c,n])=>'<button type="button" class="ec-swatch'+(c===ed.colour?' is-on':'')+'" style="background:'+c+'" title="'+n+'" aria-label="'+n+' marker" data-c="'+c+'" onclick="EmailCorrespondence.edColour(this.dataset.c)"></button>').join('')+'</span>'
+          +'<span class="ec-ed-group">'+SIZES.map(([z,n])=>'<button type="button" class="ec-size'+(z===ed.size?' is-on':'')+'" title="'+n+'" aria-label="'+n+' line" data-z="'+z+'" onclick="EmailCorrespondence.edSize(+this.dataset.z)"><i style="width:'+(z+2)+'px;height:'+(z+2)+'px"></i></button>').join('')+'</span>'
+          +'<span class="ec-ed-group"><button type="button" class="ec-ed-btn" onclick="EmailCorrespondence.edUndo()">↶ Undo</button><button type="button" class="ec-ed-btn" onclick="EmailCorrespondence.edClear()">Start over</button></span>'
+        +'</div>'
+        +'<div class="ec-ed-stage"><canvas id="ec-canvas" aria-label="Picture — draw on it with the marker"></canvas></div>'
+        +'<p class="ec-ed-hint">Draw with your finger, a pen or the mouse.</p>'
+        +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.edCancel()">Cancel</button><button class="btn-save" onclick="EmailCorrespondence.edDone()">'+(target.kind==='replace'?'Save the marked-up picture':'Attach the marked-up picture')+'</button></div>';
+      const cv=document.getElementById('ec-canvas');
+      // Kept to a sensible size for email (longest side 1600 px).
+      const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+      cv.width=Math.max(1,Math.round(img.naturalWidth*k));cv.height=Math.max(1,Math.round(img.naturalHeight*k));
+      ed.canvas=cv;ed.ctx=cv.getContext('2d');redraw();
+      cv.addEventListener('pointerdown',edDown);cv.addEventListener('pointermove',edMove);
+      cv.addEventListener('pointerup',edUp);cv.addEventListener('pointercancel',edUp);cv.addEventListener('pointerleave',edUp);
+    };
+    img.onerror=()=>alert('This picture could not be opened for editing.');
+    img.src=url;
+  }
+  function edPoint(e){const r=ed.canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*ed.canvas.width/r.width,y:(e.clientY-r.top)*ed.canvas.height/r.height};}
+  // The marker keeps the same thickness on screen whatever the picture's size.
+  function edScale(){const r=ed.canvas.getBoundingClientRect();return r.width?ed.canvas.width/r.width:1;}
+  function edDown(e){e.preventDefault();try{ed.canvas.setPointerCapture(e.pointerId);}catch(x){}ed.cur={c:ed.colour,w:ed.size*edScale(),pts:[edPoint(e)]};ed.strokes.push(ed.cur);paintStroke(ed.cur);}
+  function edMove(e){if(!ed.cur)return;e.preventDefault();ed.cur.pts.push(edPoint(e));paintStroke(ed.cur,true);}
+  function edUp(){ed.cur=null;}
+  function paintStroke(s,last){
+    const c=ed.ctx,p=s.pts;c.strokeStyle=s.c;c.fillStyle=s.c;c.lineWidth=s.w;c.lineCap='round';c.lineJoin='round';
+    if(p.length===1){c.beginPath();c.arc(p[0].x,p[0].y,s.w/2,0,Math.PI*2);c.fill();return;}
+    c.beginPath();
+    if(last){c.moveTo(p[p.length-2].x,p[p.length-2].y);c.lineTo(p[p.length-1].x,p[p.length-1].y);}
+    else{c.moveTo(p[0].x,p[0].y);for(let i=1;i<p.length;i++)c.lineTo(p[i].x,p[i].y);}
+    c.stroke();
+  }
+  function redraw(){const c=ed.ctx;c.clearRect(0,0,ed.canvas.width,ed.canvas.height);c.drawImage(ed.img,0,0,ed.canvas.width,ed.canvas.height);ed.strokes.forEach(s=>paintStroke(s));}
+  function edColour(c){ed.colour=c;document.querySelectorAll('.ec-swatch').forEach(b=>b.classList.toggle('is-on',b.dataset.c===c));}
+  function edSize(z){ed.size=z;document.querySelectorAll('.ec-size').forEach(b=>b.classList.toggle('is-on',+b.dataset.z===z));}
+  function edUndo(){ed.strokes.pop();redraw();}
+  function edClear(){if(ed.strokes.length&&!confirm('Remove all the drawing and start over?'))return;ed.strokes=[];redraw();}
+  function edCancel(){ed.img=null;composer();}
+  function edDone(){
+    if(!ed.canvas)return;
+    const t=ed.target;
+    ed.canvas.toBlob(blob=>{
+      if(!blob){alert('The picture could not be saved.');return;}
+      const base=String(t.name||'picture').replace(/\.[a-z0-9]+$/i,'');
+      if(t.kind==='replace'){
+        const x=st.draft.atts.find(a=>a.id===t.id);
+        if(x){try{URL.revokeObjectURL(x.url);}catch(e){}x.blob=blob;x.url=URL.createObjectURL(blob);x.size=blob.size;x.type='image/jpeg';x.edited=true;x.name=(/^marked-up /.test(base)?base:'marked-up '+base)+'.jpg';}
+      }else addAtt(blob,'marked-up '+base+'.jpg','image/jpeg',true);
+      ed.img=null;composer();
+    },'image/jpeg',0.9);
+  }
+
   // Full control of the other CC addresses: remove any of them, add new ones.
   function ccChipsHTML(){
     const cc=st.draft&&st.draft.cc||[];
@@ -347,12 +462,14 @@
   }
   function back(){render();}
   function send(){
-    const body=(document.getElementById('ec-body')||{}).value||'';
+    const body=st.draft&&st.draft.body||'';
     if(!body.trim()){say('Write the reply first.');return;}
+    const atts=st.draft.atts||[],total=atts.reduce((n,x)=>n+x.size,0);
+    if(total>MAX_TOTAL){say('The attachments are over the 20 MB email limit — remove something first.');return;}
     // The clinic mailbox is added back whatever was typed — it cannot be removed.
     const cc=(st.draft&&st.draft.cc||[]).filter(p=>p.email!==CLINIC());
     cc.push({name:'Stoma Care Clinic',email:CLINIC()});
-    const to=people((document.getElementById('ec-to')||{}).value);
+    const to=people(st.draft.toText);
     const now=new Date(),p2=n=>String(n).padStart(2,'0');
     const last=st.draft&&st.draft.replyTo||{};
     const msg={from:{name:'Stoma Care Clinic',email:CLINIC()},to,cc,subject:st.draft.subject,body,attachments:[],original:'',
@@ -365,8 +482,10 @@
       +'<div class="msub">When switched on, this is sent as <strong>Reply all</strong> to '+(last.from?esc(personText(last.from))+'’s email of '+esc(showWhen(last.when)):'the latest email')
       +', in the same Outlook conversation, and saved here at the same time'+(code?' as <strong>'+esc(code)+'</strong>':'')+'.</div>'
       +'<div class="ec-list"><article class="ec-msg ec-sent"><dl class="ec-fields"><dt>To</dt><dd>'+esc(listText(to))+'</dd><dt>CC</dt><dd>'+esc(listText(cc))+'</dd><dt>Subject</dt><dd>'+esc((last.from?'RE: ':'')+msg.subject)+'</dd></dl>'
-      +'<div class="ec-body">'+esc(body)+'</div>'+quoted+'</article></div>'
-      +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.back()">‹ Back to the email</button><button class="btn-save" disabled>Send (with Dataverse)</button></div>';
+      +'<div class="ec-body">'+esc(body)+'</div>'
+      +(atts.length?'<div class="ec-atts"><span class="ec-label">Attached</span>'+atts.map(x=>'<span class="ec-att">'+(/^image\//.test(x.type)?'<img src="'+x.url+'" alt="">':'')+'📎 '+esc(x.name)+' <small>'+kb(x.size)+'</small></span>').join('')+'</div>':'')
+      +quoted+'</article></div>'
+      +'<div class="mact"><button class="btn-cancel" onclick="EmailCorrespondence.composer()">‹ Back to the reply</button><button class="btn-save" disabled>Send (with Dataverse)</button></div>';
   }
 
   /* ------------------------------------------------------------------ *
@@ -395,6 +514,7 @@
       +st.msgs.map(emailPrintHTML).join(''));
   }
 
-  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,back,send,printOne,report,ccAdd,ccRemove,
+  global.EmailCorrespondence={ENABLED,open,kind:setKind,drop,file,organise,reply,composer,draft:setDraft,back,send,printOne,report,ccAdd,ccRemove,
+    addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_state:st};
 })(window);
