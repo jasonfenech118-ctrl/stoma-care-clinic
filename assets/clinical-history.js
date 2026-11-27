@@ -662,9 +662,10 @@
     ['procedures_performed','Procedure\\s*\\/\\s*s\\s+Performed|Procedure\\(s\\)\\s+Performed|Procedures?\\s+Performed|Operations?\\s+Performed','one','Procedure/s performed'],
     ['indications','Indications?','text','Indications'],
     ['operating_surgeons','Operating\\s+Surgeon\\s*(?:\\/\\s*s|\\(s\\)|s)?','list','Operating surgeon/s'],
-    ['assistant_surgeons','Assistant\\s+Surgeon\\s*(?:\\/\\s*s|\\(s\\)|s)?|Assistants?','list','Assistant surgeon/s'],
-    ['anaesthetists','An(?:a)?esthetist\\s*(?:\\/\\s*s|\\(s\\)|s)?|Anaesthesiologists?','list','Anaesthetist/s'],
-    ['nurses','(?:Scrub|Circulating|Theatre)\\s+Nurse\\s*(?:\\/\\s*s|\\(s\\)|s)?','list','Nurse/s'],
+    // Assistant surgeons, anaesthetists and theatre nurses are left out.
+    ['assistant_surgeons','Assistant\\s+Surgeon\\s*(?:\\/\\s*s|\\(s\\)|s)?|Assistants?','skip'],
+    ['anaesthetists','An(?:a)?esthetist\\s*(?:\\/\\s*s|\\(s\\)|s)?|Anaesthesiologists?','skip'],
+    ['nurses','(?:Scrub|Circulating|Theatre|Assisting|Anaesthetic|Recovery)\\s+Nurse\\s*(?:\\/\\s*s|\\(s\\)|s)?|Nurses?','skip'],
     ['findings','Operation\\s+Findings|Operative\\s+Findings|Findings','text','Operation findings'],
     ['procedure','Procedure\\s+Details?|Operative\\s+Procedure|Operation\\s+Details|Procedure','text','Procedure'],
     ['closure','Closure','text','Closure'],
@@ -702,7 +703,9 @@
         if(L.how==='date'&&m[1]&&!findDate(m[1]))return null;
         return {L,value:m[1].trim()};
       }
-      if((generic||L.how==='list'||L.how==='text')&&L.bare.test(cell))return {L,value:''};
+      // A line or cell that is only a known label, with or without its colon
+      // ("Date/Time", "Visit#", "Assisting Nurse/s"); its value follows.
+      if(L.bare.test(cell))return {L,value:''};
       if(nc&&L.bare.test(nc[1])&&(L.how!=='date'||findDate(nc[2])))return {L,value:nc[2].trim()};
     }
     const g=generic?cell.match(GENERIC_LABEL):null;
@@ -722,12 +725,28 @@
     parts.push(line.slice(last));
     return parts.map(x=>x.trim());
   }
+  // "Procedure Report Date/Time 21/11/2026 Visit# 1 External Reference 5182…"
+  // copied as one run of text: split before each label printed without a colon.
+  const INLINE_LABEL=/\s+(?=(?:Date\s*\/\s*Time|Date\s*&\s*Time|Visit\s*#|Case\s*#|External\s+Ref(?:erence)?)(?:\s*:|\s+\d|\s*$)|Consultation\s+By\s*:)/gi;
+  function noteCells(raw){
+    const cells=raw.includes('\t')?cellsOf(raw):splitPairs(raw.trim());
+    return [].concat(...cells.map(c=>c?c.split(INLINE_LABEL):[c]));
+  }
+  // A label the screen wraps onto two lines ("Post-Operative / Instructions:").
+  function joinWrappedLabels(text){
+    return String(text||'')
+      .replace(/(Post[ \t\-]*Op(?:erative)?)[ \t]*\n[ \t]*(Instructions\s*:)/gi,'$1 $2')
+      .replace(/(Operating[ \t]+Theatre)[ \t]*\n[ \t]*(Used\s*:)/gi,'$1 $2')
+      .replace(/(Procedure\s*\/\s*s)[ \t]*\n[ \t]*(Performed\s*:)/gi,'$1 $2');
+  }
+  // Headings written inside a section that belong to it: "PLAN:" inside the
+  // post-operative instructions is part of them, not a Plan section of its own.
+  const INSIDE={postop:new Set(['plan','comments','drains'])};
   const CORE_CONSULT=new Set(['form_type','consultant','procedures_performed','findings','anaesthesia','case_specialty','consultation_by','operating_surgeons','visit_no','case_no','ext_ref','assistant_surgeons','postop']);
   function looksConsultNote(text){
     const keys=new Set();
-    text.split('\n').forEach(l=>{
-      const cells=l.includes('\t')?cellsOf(l):splitPairs(l.trim());
-      cells.forEach(c=>{if(!c)return;const lab=consultLabel(c);if(lab&&CORE_CONSULT.has(lab.L.key))keys.add(lab.L.key);});
+    joinWrappedLabels(text).split('\n').forEach(l=>{
+      noteCells(l).forEach(c=>{if(!c)return;const lab=consultLabel(c);if(lab&&CORE_CONSULT.has(lab.L.key))keys.add(lab.L.key);});
     });
     return keys.size>=3;
   }
@@ -752,14 +771,15 @@
       note.content=true;
       if(sameLine&&f.lines.length)f.lines[f.lines.length-1]+=' '+v;else f.lines.push(v);
     };
-    text.split('\n').forEach(raw=>{
+    joinWrappedLabels(text).split('\n').forEach(raw=>{
       const hasTab=raw.includes('\t');
-      const cells=hasTab?cellsOf(raw):splitPairs(raw.trim());
+      const cells=noteCells(raw);
       if(cells.every(c=>!c)){if(field&&field.how==='text'&&field.lines.length)field.lines.push('');return;}
       let lineField=null;
       cells.forEach(c=>{
         if(!c)return;
         const lab=consultLabel(c,hasTab);
+        if(lab&&field&&INSIDE[field.key]&&INSIDE[field.key].has(lab.L.key)){add(field,c,lineField===field);lineField=field;return;}
         if(lab){const f=open(lab.L);add(f,lab.value,false);lineField=f;return;}
         // Before the first label: the screen's own header (name, ID, age). Never
         // kept — an ID in it is only used for the patient check.
@@ -779,7 +799,10 @@
       const get=k=>val(n.byKey[k]);
       const form=get('form_type'),caseSp=get('case_specialty'),proc=get('procedures_performed');
       const ops=val(n.byKey.operating_surgeons);
-      const consultant=get('consultant')||n.by||(ops?ops.split('\n')[0]:'');
+      // The note's own Consultant; when it is blank the app fills it from the
+      // stoma on the profile (organise), else Consultation By, else the surgeon.
+      const noted=get('consultant');
+      const consultant=noted||n.by||(ops?ops.split('\n')[0]:'');
       const title=proc||(caseSp&&caseSp!==form?caseSp:'')||get('speciality');
       const skipKeys=new Set(['consultant','form_type','procedures_performed']);
       if(caseSp&&(caseSp===form||caseSp===title))skipKeys.add('case_specialty');
@@ -788,9 +811,10 @@
       shown.sort((a,b)=>{const ia=CONSULT_ORDER.indexOf(a.key),ib=CONSULT_ORDER.indexOf(b.key);
         return (ia<0?99:ia)-(ib<0?99:ib)||n.fields.indexOf(a)-n.fields.indexOf(b);});
       const result=shown.map(f=>'§ '+f.name+'\n'+val(f)).join('\n');
-      const raw=[consultant&&'Consultant: '+consultant,form&&'Form type: '+form,title&&'Procedure/s performed: '+title].filter(Boolean)
+      const raw=[noted?'Consultant: '+noted:n.by?'Consultation by: '+n.by:'',form&&'Form type: '+form,title&&'Procedure/s performed: '+title].filter(Boolean)
         .concat(shown.map(f=>f.name+': '+val(f)));
       return {date:n.date,rangeText:'',table:true,hospital:true,category:'consult',typeCell:form,title,result,source:consultant,raw,
+        consultantFrom:noted?'note':consultant?'by':'',
         idSeen:n.idSeen||(i===0?preIds[0]||'':'')};
     });
   }
@@ -878,7 +902,7 @@
       else if(seen.has(fp)){flags.push('duplicate_paste');include=false;}
       seen.add(fp);
       return {include,category,entry_date:d?d.iso:null,date_precision:d?d.precision:'',entry_time:category==='doc_icm'&&d?d.time:'',date_text:d?d.text:(e.badDate||''),
-        entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||''};
+        entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||'',consultant_from:e.consultantFrom||(source?'list':'')};
     }).filter(r=>r.title||r.result);
     return {rows,mode};
   }
@@ -890,7 +914,10 @@
     moved:'Looks like {cat} — will be saved there',stoma:'Involves a stoma — linked to the stoma on the profile',
     no_title:'No procedure / test found',not_done:'Says postponed / cancelled — check it was done',long:'Long entry — check it was split correctly',
     duplicate_saved:'Already saved — not ticked',duplicate_paste:'Repeated in this paste — not ticked',
-    id_mismatch:'The ID in this note ({id}) is not this patient’s — check it is the right patient (not ticked)',id_match:'✓ The ID in the note matches this patient'
+    id_mismatch:'The ID in this note ({id}) is not this patient’s — check it is the right patient (not ticked)',id_match:'✓ The ID in the note matches this patient',
+    consultant_stoma:'Consultant filled in from the stoma on the profile',consultant_proc:'Consultant filled in from the performed procedure on that date',
+    date_stoma:'Date filled in from the stoma’s operation date',date_proc:'Date filled in from the performed procedure',
+    updates_saved:'Same note saved before — saving updates it, no second copy'
   };
   function flagText(code,row){return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
   // Flags that mean "a nurse should look at this row".
@@ -929,7 +956,7 @@
   };
   const HINT={
     surgery:'Copy the Performed Procedures table from the hospital system (Procedures › Performed Procedures) and paste it in one go. Date, Consultant and Procedure are kept; OP Note, Age, Theatre and Source are left out.',
-    consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
+    consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order; a blank date or consultant is filled in from the stoma on the profile. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
     imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
     doc_icm:'Copy the iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it in one go. Type, Note and Created On are kept; Created By is left out.',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
@@ -1003,6 +1030,92 @@
       if(c.length===1)hits.push({x:c[0],what:''});
     }
     return {hits,related,list};
+  }
+  /* ---------- filled in automatically when the note leaves it out ---------- */
+  // The consultant written against a stoma in the registry: a later stoma's own
+  // register row, else the patient's consultant (Firm).
+  function stomaConsultant(x){
+    const p=st.patient||{};
+    if(x&&x.kind==='later'&&typeof global.parseStomas==='function'){
+      try{const s=(global.parseStomas(p)||[]).find(y=>y.uid===x.uid);if(s&&String(s.row_consultant||'').trim())return String(s.row_consultant).trim();}catch(e){}
+    }
+    return String(p.consultant||'').trim();
+  }
+  // Every stoma type an operation names ("reversal of Hartmann's + loop ileostomy").
+  const KINDS=[[/ileostom/i,/ileo/i],[/colostom|hartmann/i,/colo/i],[/urostom|ileal conduit/i,/uro|conduit/i],[/jejunostom/i,/jejun/i],[/mucous fistula|mucus fistula/i,/fistula/i]];
+  const CLOSING=/revers|closure|\bclos(?:e|ed|ing)\b|take\s*down|takedown|restor|re-?anastomos/i;
+  // The surgery date saved on the profile for the stoma type the operation names:
+  // its formation date, or its closure date for a reversal. Only when one date fits.
+  function stomaDateFor(title){
+    const t=String(title||''),kinds=KINDS.filter(k=>k[0].test(t)).map(k=>k[1]);if(!kinds.length)return '';
+    const closing=CLOSING.test(t),dates=new Set();
+    stomaList().forEach(x=>{
+      if(!kinds.some(k=>k.test(String(x.type||''))))return;
+      const d=String((closing?x.reversal_date:x.formed_date)||'').slice(0,10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(d))dates.add(d);
+    });
+    return dates.size===1?[...dates][0]:'';
+  }
+  // A performed procedure saved before that names the same operation.
+  const COMMON=new Set(['procedure','procedures','performed','operation','operations','resection','report','repair','excision','insertion','removal','under','general','local','laparoscopic','converted','formation','refashioning']);
+  const sigWords=t=>new Set(String(t||'').toLowerCase().replace(/[`'’]s\b/g,'').split(/[^a-z]+/).filter(w=>w.length>=5&&!COMMON.has(w)));
+  function procDateFor(title){
+    const w=sigWords(title);if(!w.size)return '';
+    const dates=new Set(st.entries.filter(e=>e.category==='surgery'&&day(e)&&[...sigWords(e.title)].some(x=>w.has(x))).map(day));
+    return dates.size===1?[...dates][0]:'';
+  }
+  // The consultant when the note leaves it blank: the stoma's consultant in the
+  // registry, else the consultant of the performed procedure on that date.
+  function consultantFor(r){
+    const m=stomaMatches(r);
+    const fromStoma=[...new Set(m.hits.map(h=>stomaConsultant(h.x)).filter(Boolean))];
+    if(fromStoma.length===1)return [fromStoma[0],'consultant_stoma'];
+    const d=r.entry_date||'';
+    const fromProc=d?[...new Set(st.entries.filter(e=>e.category==='surgery'&&day(e)===d&&String(e.source||'').trim()).map(e=>String(e.source).trim()))]:[];
+    if(fromProc.length===1)return [fromProc[0],'consultant_proc'];
+    if(m.related&&String((st.patient||{}).consultant||'').trim())return [String(st.patient.consultant).trim(),'consultant_stoma'];
+    return ['',''];
+  }
+  // The same consultation note saved before (e.g. by an earlier version of the
+  // app): same date and operation, and mostly the same words.
+  const wordSet=t=>new Set(String(t||'').toLowerCase().replace(/^§.*$/gm,'').split(/[^a-z0-9]+/).filter(w=>w.length>=4));
+  const normT=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  function sameNote(e,r){
+    if(e.category!=='consult'||!r.entry_date||day(e)!==r.entry_date||normT(e.title)!==normT(r.title))return false;
+    if(e.entry_type&&r.entry_type&&normT(e.entry_type)!==normT(r.entry_type))return false;
+    const a=wordSet(e.result),b=wordSet(r.result);if(Math.min(a.size,b.size)<5)return false;
+    let k=0;b.forEach(w=>{if(a.has(w))k++;});
+    return k/Math.min(a.size,b.size)>=0.7;
+  }
+  function autoFill(rows){
+    const have=CH.savedKeys(st.entries),seen=new Set(rows.filter(r=>r.entry_date).map(r=>r.fingerprint));
+    rows.forEach(r=>{
+      if(r.category!=='surgery'&&r.category!=='consult')return;
+      if(!r.entry_date){
+        let d=stomaDateFor(r.title),why='date_stoma';
+        if(!d){d=procDateFor(r.title);why='date_proc';}
+        if(d){
+          r.entry_date=d;r.date_precision='day';r.flags=r.flags.filter(f=>f!=='no_date');r.flags.push(why);
+          r.fingerprint=CH.fingerprint(r.category,d,r.title,r.result,r.entry_time);
+          r.flags=r.flags.filter(f=>!/^duplicate_/.test(f));r.include=true;
+          if(have.has(r.fingerprint)){r.flags.push('duplicate_saved');r.include=false;}
+          else if(seen.has(r.fingerprint)){r.flags.push('duplicate_paste');r.include=false;}
+          seen.add(r.fingerprint);
+        }
+      }
+      if(r.consultant_from!=='note'&&r.consultant_from!=='list'){
+        const [c,why]=consultantFor(r);
+        if(c){r.source=c;r.flags.push(why);}
+      }
+      if(r.category==='consult'&&!r.flags.some(f=>/^duplicate_/.test(f))){
+        const e=st.entries.find(x=>sameNote(x,r));
+        if(e){
+          r.replaces=e.id;r.flags.push('updates_saved');
+          // Keep a consultant typed in by hand when the note has none.
+          if(r.consultant_from!=='note'&&!r.flags.some(f=>/^consultant_/.test(f))&&String(e.source||'').trim())r.source=String(e.source).trim();
+        }
+      }
+    });
   }
   function stomaChips(e,preview){
     const m=stomaMatches(e);
@@ -1112,12 +1225,16 @@
     }).join('')+'<td class="ch-c-act">'+actHTML(e)+'</td></tr>').join('');
     return '<div class="ch-table-wrap"><table class="ch-table ch-table-'+cat+'">'+head+'<tbody>'+body+'</tbody></table></div>';
   }
+  // Left out of consultation notes (also hides them in notes saved before).
+  const LEFT_OUT=/^(?:Assistant surgeon\/s|Anaesthetist\/s|Nurse\/s|External reference)$/i;
   // A consultation note's sections ("§ Label" lines, written when it was organised).
   function sectionsOf(text){
     const s=String(text||'');
     if(!/^§ /m.test(s))return s.trim()?[{label:'Note',value:s.trim()}]:[];
     return s.split(/^§ /m).filter(x=>x.trim()).map(part=>{const nl=part.indexOf('\n');
-      return nl<0?{label:part.trim(),value:''}:{label:part.slice(0,nl).trim(),value:part.slice(nl+1).trim()};}).filter(x=>x.value);
+      return nl<0?{label:part.trim(),value:''}:{label:part.slice(0,nl).trim(),value:part.slice(nl+1).trim()};}).filter(x=>x.value&&!LEFT_OUT.test(x.label)
+        // An earlier build put "Date/Time … Visit# … External Reference …" here.
+        &&!(/^Case speciality$/i.test(x.label)&&/Visit\s*#|External\s+Ref|Date\s*\/\s*Time/i.test(x.value)));
   }
   function longText(v){
     v=String(v||'');if(v.length<=480)return '<div class="ch-sec-text">'+esc(v)+'</div>';
@@ -1184,6 +1301,7 @@
     if(!text.trim()){msg('Paste the list first.');return;}
     const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:CH.savedKeys(st.entries)});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
+    autoFill(res.rows);
     // The ID in a pasted note is checked against this patient, then dropped.
     const mine=normId(st.patient&&st.patient.id_card);
     res.rows.forEach(r=>{
@@ -1256,8 +1374,9 @@
   function pv(i,key,value){
     const r=st.preview&&st.preview.rows[i];if(!r)return;
     r[key]=value;
-    if(key==='entry_date'){r.flags=r.flags.filter(f=>!['no_date','bad_date','future','before_birth','swapped','two_digit_year'].includes(f));if(value&&!r.date_precision)r.date_precision='day';}
+    if(key==='entry_date'){r.flags=r.flags.filter(f=>!['no_date','bad_date','future','before_birth','swapped','two_digit_year','date_stoma','date_proc'].includes(f));if(value&&!r.date_precision)r.date_precision='day';}
     if(key==='category'){r.flags=r.flags.filter(f=>f!=='moved');}
+    if(key==='source'){r.flags=r.flags.filter(f=>!/^consultant_/.test(f));}
     if(key==='include'||key==='category'){
       const el=document.getElementById('ch-card-'+i);if(el)el.outerHTML=cardHTML(r,i,!!st.edit);
       const b=document.getElementById('ch-save');if(b&&!st.edit)b.textContent=saveLabel(includedCount());
@@ -1304,18 +1423,32 @@
     // Re-check duplicates against what is saved now (another nurse may have pasted meanwhile).
     await load();
     const have=CH.savedKeys(st.entries);
-    const out=[];let skipped=0;
-    rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);if(have.has(fp)){skipped++;return;}have.add(fp);out.push(dbRow(r,fp,batch,who,now));});
-    let removed=0;
+    const out=[],upd=[];let skipped=0;
+    rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);if(have.has(fp)){skipped++;return;}have.add(fp);
+      if(r.replaces&&st.entries.some(e=>String(e.id)===String(r.replaces)))upd.push([r.replaces,dbRow(r,fp,batch,who,now)]);
+      else out.push(dbRow(r,fp,batch,who,now));});
+    let removed=0,updated=0;
+    for(const [id,row] of upd){
+      delete row.created_by_name;delete row.created_at;delete row.patient_id;
+      const u=await writeTolerant(b=>db().from(TABLE).update(b).eq('id',id),row);
+      if(u.error){restore();msg(writeError(u.error));return;}
+      updated++;
+    }
     for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
-    if(!out.length&&!removed){restore();msg('All of these are already saved for this patient.');return;}
+    if(!out.length&&!removed&&!updated){restore();msg('All of these are already saved for this patient.');return;}
     if(out.length){
       const res=await writeTolerant(b=>db().from(TABLE).insert(b),out);
       if(res.error){restore();msg(writeError(res.error));return;}
     }
     if(out.length)try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Added '+out.length+' entr'+(out.length===1?'y':'ies')+' from a pasted hospital list or note'});}catch(e){}
-    const by={};out.forEach(r=>{by[r.category]=(by[r.category]||0)+1;});
-    st.note='✓ Saved '+(Object.keys(by).length?Object.keys(by).map(k=>by[k]+' to '+esc(CH.CATS[k].label)).join(', '):'nothing new')+(skipped?' · '+skipped+' already saved (skipped)':'')+(removed?' · '+removed+' no longer on the list removed':'')+'.';
+    if(updated)try{global.logAudit&&global.logAudit({action:'update',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Updated '+updated+' consultation note'+(updated===1?'':'s')+' from the same note pasted again'});}catch(e){}
+    const by={};out.forEach(r=>{by[r.category]=(by[r.category]||0)+1;});upd.forEach(([,r])=>{by[r.category]=by[r.category]||0;});
+    const said=[];
+    if(out.length)said.push('Saved '+Object.keys(by).filter(k=>by[k]).map(k=>by[k]+' to '+esc(CH.CATS[k].label)).join(', '));
+    if(updated)said.push('Updated '+updated+' note'+(updated===1?'':'s')+' saved before');
+    if(skipped)said.push(skipped+' already saved (skipped)');
+    if(removed)said.push(removed+' no longer on the list removed');
+    st.note='✓ '+said.join(' · ')+'.';
     if(removed)try{global.logAudit&&global.logAudit({action:'delete',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Removed '+removed+' medicine'+(removed===1?'':'s')+' no longer on the POYC list'});}catch(e){}
     const first=Object.keys(by)[0]||(removed?'poyc':'');if(first)goToCategory(first);
     st.preview=null;st.pasteText='';
