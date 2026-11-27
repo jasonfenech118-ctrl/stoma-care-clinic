@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 November 2026 — A bar now tells you when a newer version of the app is ready, with Reload now. Consultation notes read the date and labels as the hospital page copies them, and fill a blank consultant or date from the stoma.'};
+const MANUAL_META={updated:'27 November 2026 — The Siting Session’s Stoma step no longer shows reversal date, reversal notes or superseded, since the stoma has just been formed. These are still recorded later from the patient’s record.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -438,12 +438,13 @@ const MANUAL_SECTIONS=[
     ${manNote('tip','🚫','Cancelling a session keeps its history here and in the patient’s <b>Siting sessions</b> history. <b>DNTU</b> and <b>No Stomas Performed</b> retain their own records. This tab uses the existing siting cancellation fields; it needs no additional SQL.')}
     ${manNote('tip','🗑','Delete permanently removes only that cancelled siting appointment, its saved assessment and photograph. The patient’s registry record, other appointments and surgical records remain. The list and patient’s siting history update after deletion, and the removal is recorded in the Audit Trail. Deletion cannot be undone.')}
   `},
-  {id:'performed',title:'Performed & No-stoma outcomes',keywords:'performed stoma no stomas performed siting outcome result operation done',html:`
+  {id:'performed',title:'Performed & No-stoma outcomes',keywords:'performed stoma no stomas performed siting outcome result operation done reversal superseded stoma step',html:`
     ${manMap('siting')}
     ${manSteps([
       `From the Handover’s awaiting-surgery row, press <b>Stoma performed</b> to carry the patient into the registry as an inpatient, or <b>No stoma performed</b> to file them under ${manBtn('📋 No Stomas Performed','#efe7fb','#5b3aa8')}.`,
       `${manBtn('🩺 Performed Stoma','#efe7fb','#5b3aa8')} lists siting patients whose stoma went ahead.`
     ])}
+    ${manNote('tip','🩺','The <b>Stoma</b> step of a performed stoma asks only about this operation, with no reversal date, reversal notes or superseded date, also for a second stoma or mucus fistula formed with it. A later reversal or replacement is recorded from the patient’s record.')}
   `}
 ]},
 
