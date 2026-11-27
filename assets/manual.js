@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'27 November 2026 — New ECG section in Hospital records: paste the text of an ECG report and the app keeps the cardiograph’s own date, verdict, statements, measurements and axis, with the change since the previous ECG. Run sql/add-patient-history.sql once in Supabase before the first ECG is saved.'};
+const MANUAL_META={updated:'27 November 2026 — An ECG is now recognised by its date and time, to the second, so the same ECG is never saved twice. If its report has changed since (e.g. confirmed), pasting it again updates the saved one.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -52,7 +52,7 @@ const MANUAL_SECTIONS=[
     <ul>
       <li><b>🏥 Performed procedures</b> — sub-tab <b>Performed procedures</b>: a table of <b>Date · Consultant · Procedure</b> (from Procedures › Performed Procedures; OP Note, Age, Theatre and Source are left out). Sub-tab <b>📋 Patient consultation</b>: the consultation / operation notes (Hospital Events › Patient Consultation › Open past visit), each set out as date, consultant, form type, procedure/s performed and every section of the note (operating surgeons, anaesthesia, findings, procedure, drains, biopsy, post-operative instructions …). Assistant surgeons, anaesthetists, assisting nurses and the external reference are left out.</li>
       <li><b>🩻 Medical imaging results</b> — a table of <b>Date · Test · Report</b> (Investigations › Medical Imaging Results).</li>
-      <li><b>🫀 ECG</b> — open the ECG in the hospital system, select all the report’s text (<span class="man-kbd">Ctrl</span>+<span class="man-kbd">A</span>), copy and paste. The app keeps what the cardiograph printed, as printed: <b>date and time, ECG verdict, confirmed or not, its statements, the measurements (HR, RR, PR, QRSD, QT, QTc) and axis</b>, and the previous study it compared with. Beside each measurement is its change since the ECG saved before. The PDF, name and ID are not saved; the app adds no reading of its own.</li>
+      <li><b>🫀 ECG</b> — open the ECG in the hospital system, select all the report’s text (<span class="man-kbd">Ctrl</span>+<span class="man-kbd">A</span>), copy and paste. The app keeps what the cardiograph printed, as printed: <b>date and time, ECG verdict, confirmed or not, its statements, the measurements (HR, RR, PR, QRSD, QT, QTc) and axis</b>, and the previous study it compared with. Beside each measurement is its change since the ECG saved before. The PDF, name and ID are not saved; the app adds no reading of its own. <b>An ECG is recognised by its date and time</b> (to the second, as printed): the same ECG is never saved twice, and if its report has changed since (e.g. now confirmed) saving updates the saved one.</li>
       <li><b>📄 iCM notes</b> — a table of <b>Type · Note · Created On</b> (Patient Documentation › iCM Notes; Created By is left out).</li>
       <li><b>💊 Entitlement CARE (POYC)</b> — the medicines list, <b>Description · Prescription</b>, A–Z (Medications › Entitlement CARE (POYC); ATC Code and Dosage Regimen are left out), with the date the list was copied. Pasting a newer list skips medicines already saved and offers to <b>remove the ones no longer on it</b>.</li>
     </ul>

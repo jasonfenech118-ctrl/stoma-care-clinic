@@ -12,7 +12,7 @@
 -- end of the script and stops it with a syntax error near a closing bracket.
 --
 -- Columns: entry_date is empty when no date was given; date_precision is day,
--- month or year; entry_time is HH:MM when the source gave a time; date_text is
+-- month or year; entry_time is HH:MM when the source gave a time (HH:MM:SS for an ECG); date_text is
 -- the date exactly as written; entry_type is e.g. CT, Laparoscopic, Doctor;
 -- title is the operation, scan or treatment; result is the outcome, report or
 -- the note itself (for an ECG, the measurements, axis and the cardiograph's

@@ -675,6 +675,9 @@
   function ecgOne(seg,pre){
     const stamp=(seg.match(ECG_STAMP)||[])[0]||'';
     const d=stamp?findDate(stamp):null;
+    // Keep the time to the second, as printed: it tells two ECGs apart.
+    const sec=stamp.match(/(\d{1,2}):(\d{2}):(\d{2})$/);
+    if(d&&sec)d.time=sec[1].padStart(2,'0')+':'+sec[2]+':'+sec[3];
     const idm=(pre+'\n'+seg).match(/\b(\d{3,8}[A-Z])\b/);
     const prevM=seg.match(/Previous\s+Study\s*:?\s*(\d{1,2}-[A-Za-z]{3}-\d{4})(?:\s+(\d{1,2}:\d{2})(?::\d{2})?)?\s*-?\s*((?:Otherwise\s+normal|Abnormal|Borderline|Normal)\b)?\s*((?:Un)?confirmed\b)?/i);
     const body=seg.replace(/Previous\s+Study\s*:?[^\n]*/ig,'');
@@ -911,6 +914,9 @@
      copied. */
   function fingerprint(cat,iso,title,result,time){
     if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
+    // An ECG is the same ECG when it has the same date and time (as printed, to
+    // the second), whatever its wording — e.g. the same ECG once confirmed.
+    if(cat==='ecg'&&iso)return 'ecg|'+iso+'|'+String(time||'').slice(0,8);
     if(cat==='doc_icm'||cat==='notes'||cat==='ecg')return cat+'|'+(iso||'')+'|'+String(time||'').slice(0,5)+'|'+norm(title).slice(0,40)+'|'+norm(result).slice(0,200);
     return cat+'|'+(iso||'')+'|'+norm(title).slice(0,80)+'|'+norm(result).slice(0,120);
   }
@@ -919,8 +925,22 @@
   function savedKeys(entries){
     const keys=new Set();
     (entries||[]).forEach(e=>{if(e.fingerprint)keys.add(e.fingerprint);
-      keys.add(fingerprint(e.category,String(e.entry_date||'').slice(0,10),e.title,e.result,e.entry_time));});
+      keysOf(e.category,String(e.entry_date||'').slice(0,10),e.title,e.result,e.entry_time).forEach(k=>keys.add(k));});
     return keys;
+  }
+  // The keys an entry is known by once saved. An ECG is also known by its date
+  // and minute, so one typed in without seconds still matches the pasted report.
+  function keysOf(cat,iso,title,result,time){
+    const out=[fingerprint(cat,iso,title,result,time)];
+    if(cat==='ecg'&&iso){const t=String(time||''),m=t.slice(0,5);out.push('ecg|'+iso+'|'+m+'|any');if(t.length<8)out.push('ecg|'+iso+'|'+m+'|*');}
+    return out;
+  }
+  // Already in the set? For an ECG: the same date and time to the second, or to
+  // the minute when either of the two has no seconds.
+  function isDup(set,cat,iso,title,result,time){
+    if(set.has(fingerprint(cat,iso,title,result,time)))return true;
+    if(cat==='ecg'&&iso){const t=String(time||''),m=t.slice(0,5);return set.has('ecg|'+iso+'|'+m+(t.length>=8?'|*':'|any'));}
+    return false;
   }
   function parse(text,cat,opts){
     opts=opts||{};cat=CAT_KEYS.includes(cat)?cat:'surgery';
@@ -985,9 +1005,10 @@
       const timed=category==='doc_icm'||category==='ecg';
       const fp=fingerprint(category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'');
       let include=true;
-      if(existing.has(fp)){flags.push('duplicate_saved');include=false;}
-      else if(seen.has(fp)){flags.push('duplicate_paste');include=false;}
-      seen.add(fp);
+      const key=[category,d?d.iso:'',f.title,f.result,timed&&d?d.time:''];
+      if(isDup(existing,...key)){flags.push('duplicate_saved');include=false;}
+      else if(isDup(seen,...key)){flags.push('duplicate_paste');include=false;}
+      keysOf(...key).forEach(k=>seen.add(k));
       return {include,category,entry_date:d?d.iso:null,date_precision:d?d.precision:'',entry_time:timed&&d?d.time:'',date_text:d?d.text:(e.badDate||''),
         entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||'',consultant_from:e.consultantFrom||(source?'list':'')};
     }).filter(r=>r.title||r.result);
@@ -1004,13 +1025,16 @@
     id_mismatch:'The ID in this note ({id}) is not this patient’s — check it is the right patient (not ticked)',id_match:'✓ The ID in the note matches this patient',
     consultant_stoma:'Consultant filled in from the stoma on the profile',consultant_proc:'Consultant filled in from the performed procedure on that date',
     date_stoma:'Date filled in from the stoma’s operation date',date_proc:'Date filled in from the performed procedure',
-    updates_saved:'Same note saved before — saving updates it, no second copy'
+    updates_saved:'Same note saved before — saving updates it, no second copy',
+    ecg_duplicate_saved:'An ECG with the same date and time is already saved — not ticked',
+    ecg_duplicate_paste:'Same date and time as another ECG in this paste — not ticked',
+    ecg_updates_saved:'Same date and time as an ECG saved before, now with a changed report — saving updates it, no second copy'
   };
-  function flagText(code,row){return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
+  function flagText(code,row){if(row&&row.category==='ecg'&&FLAG_TEXT['ecg_'+code])code='ecg_'+code;return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
   // Flags that mean "a nurse should look at this row".
   const CHECK_FLAGS=new Set(['ecg_partial','no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
 
-  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
+  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,keysOf,isDup,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
 })(window);
 
 /* ==================================================================== *
@@ -1185,6 +1209,21 @@
     const a=wordSet(e.result),b=wordSet(r.result);if(Math.min(a.size,b.size)<5)return false;
     let k=0;b.forEach(w=>{if(a.has(w))k++;});
     return k/Math.min(a.size,b.size)>=0.7;
+  }
+  // The same ECG (same date and time) saved before: identical → skipped; its
+  // report changed since (e.g. confirmed) → saving updates the saved one.
+  function sameEcgTime(e,r){
+    if(e.category!=='ecg'||!r.entry_date||day(e)!==r.entry_date)return false;
+    const a=String(e.entry_time||''),b=String(r.entry_time||'');
+    return a.length>=8&&b.length>=8?a.slice(0,8)===b.slice(0,8):a.slice(0,5)===b.slice(0,5);
+  }
+  function ecgUpdates(rows){
+    rows.forEach(r=>{
+      if(r.category!=='ecg'||!r.flags.includes('duplicate_saved'))return;
+      const e=st.entries.find(x=>sameEcgTime(x,r));if(!e)return;
+      if(normT(e.title)===normT(r.title)&&normT(e.entry_type)===normT(r.entry_type)&&normT(e.result)===normT(r.result))return;
+      r.flags=r.flags.filter(f=>f!=='duplicate_saved');r.flags.push('updates_saved');r.replaces=e.id;r.include=true;
+    });
   }
   function autoFill(rows){
     const have=CH.savedKeys(st.entries),seen=new Set(rows.filter(r=>r.entry_date).map(r=>r.fingerprint));
@@ -1450,7 +1489,7 @@
     if(!text.trim()){msg('Paste the list first.');return;}
     const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:CH.savedKeys(st.entries)});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
-    autoFill(res.rows);
+    autoFill(res.rows);ecgUpdates(res.rows);
     // The ID in a pasted note is checked against this patient, then dropped.
     const mine=normId(st.patient&&st.patient.id_card);
     res.rows.forEach(r=>{
@@ -1513,7 +1552,7 @@
         +(single?'':'<label class="ch-inc"><input type="checkbox" '+(r.include?'checked':'')+' onchange="ClinicalHistory.pv('+i+',\'include\',this.checked)"> Save</label>')
         +'<label>Under '+catSel+'</label>'
         +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
-        +(cat==='doc_icm'||cat==='ecg'?'<label>Time <input type="time" value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
+        +(cat==='doc_icm'||cat==='ecg'?'<label>Time <input type="time"'+(cat==='ecg'?' step="1"':'')+' value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
         +(r.date_text?'<span class="ch-orig">written as: '+esc(r.date_text)+'</span>':'')
       +'</div>'
       +(r.flags.length?'<div class="ch-flags">'+r.flags.map(f=>'<span class="ch-flag'+(CH.CHECK_FLAGS.has(f)?' is-check':f==='id_match'?' is-ok':'')+'">'+esc(CH.flagText(f,r))+'</span>').join('')+'</div>':'')
@@ -1575,16 +1614,24 @@
     await load();
     const have=CH.savedKeys(st.entries);
     const out=[],upd=[];let skipped=0;
-    rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);if(have.has(fp)){skipped++;return;}have.add(fp);
-      if(r.replaces&&st.entries.some(e=>String(e.id)===String(r.replaces)))upd.push([r.replaces,dbRow(r,fp,batch,who,now)]);
+    const batchKeys=new Set();
+    rows.forEach(r=>{
+      const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time],fp=CH.fingerprint(...key);
+      const rep=r.replaces&&st.entries.some(e=>String(e.id)===String(r.replaces));
+      // An update is checked against every other saved entry, not the one it replaces.
+      const pool=rep?CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(r.replaces))):have;
+      if(CH.isDup(pool,...key)||CH.isDup(batchKeys,...key)){skipped++;return;}
+      CH.keysOf(...key).forEach(k=>{have.add(k);batchKeys.add(k);});
+      if(rep)upd.push([r.replaces,dbRow(r,fp,batch,who,now)]);
       else out.push(dbRow(r,fp,batch,who,now));});
-    let removed=0,updated=0;
+    let removed=0,updated=0;const updBy={};
     for(const [id,row] of upd){
       delete row.created_by_name;delete row.created_at;delete row.patient_id;
       const u=await writeTolerant(b=>db().from(TABLE).update(b).eq('id',id),row);
       if(u.error){restore();msg(writeError(u.error));return;}
-      updated++;
+      updated++;updBy[row.category]=(updBy[row.category]||0)+1;
     }
+    const upName=(k,n)=>k==='ecg'?n+' ECG'+(n===1?'':'s'):k==='consult'?n+' consultation note'+(n===1?'':'s'):n+' entr'+(n===1?'y':'ies');
     for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
     if(!out.length&&!removed&&!updated){restore();msg('All of these are already saved for this patient.');return;}
     if(out.length){
@@ -1592,11 +1639,11 @@
       if(res.error){restore();msg(writeError(res.error));return;}
     }
     if(out.length)try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Added '+out.length+' entr'+(out.length===1?'y':'ies')+' from a pasted hospital list or note'});}catch(e){}
-    if(updated)try{global.logAudit&&global.logAudit({action:'update',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Updated '+updated+' consultation note'+(updated===1?'':'s')+' from the same note pasted again'});}catch(e){}
+    if(updated)try{global.logAudit&&global.logAudit({action:'update',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Updated '+Object.keys(updBy).map(k=>upName(k,updBy[k])).join(', ')+' from the same one pasted again'});}catch(e){}
     const by={};out.forEach(r=>{by[r.category]=(by[r.category]||0)+1;});upd.forEach(([,r])=>{by[r.category]=by[r.category]||0;});
     const said=[];
     if(out.length)said.push('Saved '+Object.keys(by).filter(k=>by[k]).map(k=>by[k]+' to '+esc(CH.CATS[k].label)).join(', '));
-    if(updated)said.push('Updated '+updated+' note'+(updated===1?'':'s')+' saved before');
+    if(updated)said.push('Updated '+Object.keys(updBy).map(k=>upName(k,updBy[k])).join(', ')+' saved before');
     if(skipped)said.push(skipped+' already saved (skipped)');
     if(removed)said.push(removed+' no longer on the list removed');
     st.note='✓ '+said.join(' · ')+'.';
@@ -1625,9 +1672,12 @@
     if(!String(r.title).trim()&&!String(r.result).trim()){msg(r.category==='doc_icm'?'Write the note first.':'Write the procedure, test or note first.');return;}
     const btn=document.getElementById('ch-save-one');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     const who=await whoName(),now=new Date().toISOString();
-    const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);
-    if(!st.edit.id&&CH.savedKeys(st.entries).has(fp)&&!confirm('This entry is already saved for this patient. Save it again anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
-    if(st.edit.id&&CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(st.edit.id))).has(fp)&&!confirm('Another saved entry is the same as this one. Save anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
+    const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time],fp=CH.fingerprint(...key);
+    const others=CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(st.edit.id||'')));
+    // An ECG with the same date and time is never saved twice.
+    if(r.category==='ecg'&&CH.isDup(others,...key)){if(btn){btn.disabled=false;btn.textContent='Save';}msg('An ECG with this date and time is already saved for this patient — it is not saved twice.');return;}
+    if(!st.edit.id&&CH.isDup(others,...key)&&!confirm('This entry is already saved for this patient. Save it again anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
+    if(st.edit.id&&CH.isDup(others,...key)&&!confirm('Another saved entry is the same as this one. Save anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
     let res;
     if(st.edit.id){
       const row=dbRow(r,fp,null,who,now);delete row.created_by_name;delete row.created_at;delete row.batch_id;delete row.patient_id;delete row.raw_text;
