@@ -1069,11 +1069,12 @@
     poyc:[['Description','title'],['Prescription','result']]
   };
   // The help line under each section's buttons. Empty = no help line and no
-  // "Nothing recorded yet" line (Performed procedures, ECG and iCM notes).
+  // "Nothing recorded yet" line (Performed procedures, Medical imaging results,
+  // ECG and iCM notes).
   const HINT={
     surgery:'',
     consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order; a blank date or consultant is filled in from the stoma on the profile. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
-    imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
+    imaging:'',
     ecg:'',
     doc_icm:'',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
