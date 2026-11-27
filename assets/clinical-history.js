@@ -884,7 +884,9 @@
         if(dob&&d.iso<dob)flags.push('before_birth');
       }
       let category=CAT_KEYS.includes(e.category)?e.category:cat;
-      if(category!==cat)flags.push('moved');
+      // A consultation note is recognised for certain, so pasting it in another
+      // tab needs no checking; anything else moved is shown in amber.
+      if(category!==cat)flags.push(e.category==='consult'&&e.hospital?'moved_note':'moved');
       else if(!e.hospital){const sug=suggestCategory(cat,f.title,f.result);if(sug){category=sug;flags.push('moved');}}
       const list=category==='surgery'||category==='imaging';
       if((category==='surgery'||category==='consult')&&STOMA_RE.test(f.title))flags.push('stoma');
@@ -911,7 +913,7 @@
     no_date:'No date found',bad_date:'Date is not a real date (e.g. 31/02) — check it',month_only:'Only the month was given',year_only:'Only the year was given',
     two_digit_year:'Two-digit year — check the century',swapped:'Read as month/day — check the date',
     future:'Date is in the future',before_birth:'Date is before the date of birth',
-    moved:'Looks like {cat} — will be saved there',stoma:'Involves a stoma — linked to the stoma on the profile',
+    moved:'Looks like {cat} — will be saved there',moved_note:'Consultation note — will be saved under Patient consultation',stoma:'Involves a stoma — linked to the stoma on the profile',
     no_title:'No procedure / test found',not_done:'Says postponed / cancelled — check it was done',long:'Long entry — check it was split correctly',
     duplicate_saved:'Already saved — not ticked',duplicate_paste:'Repeated in this paste — not ticked',
     id_mismatch:'The ID in this note ({id}) is not this patient’s — check it is the right patient (not ticked)',id_match:'✓ The ID in the note matches this patient',
@@ -1375,7 +1377,7 @@
     const r=st.preview&&st.preview.rows[i];if(!r)return;
     r[key]=value;
     if(key==='entry_date'){r.flags=r.flags.filter(f=>!['no_date','bad_date','future','before_birth','swapped','two_digit_year','date_stoma','date_proc'].includes(f));if(value&&!r.date_precision)r.date_precision='day';}
-    if(key==='category'){r.flags=r.flags.filter(f=>f!=='moved');}
+    if(key==='category'){r.flags=r.flags.filter(f=>f!=='moved'&&f!=='moved_note');}
     if(key==='source'){r.flags=r.flags.filter(f=>!/^consultant_/.test(f));}
     if(key==='include'||key==='category'){
       const el=document.getElementById('ch-card-'+i);if(el)el.outerHTML=cardHTML(r,i,!!st.edit);

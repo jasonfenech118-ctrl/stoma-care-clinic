@@ -19,19 +19,19 @@
 <link rel="stylesheet" href="assets/clinical-history.css?v=2026.11.27-897"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.27-899"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.27-900"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.27-899"></script>
+<script src="assets/manual.js?v=2026.11.27-900"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.11.26-895"/>
 <script src="assets/episode-codes.js?v=2026.11.26-895"></script>
-<script defer src="assets/clinical-history.js?v=2026.11.27-899"></script>
+<script defer src="assets/clinical-history.js?v=2026.11.27-900"></script>
 <script defer src="assets/patient-communications.js?v=2026.11.26-895"></script>
 <link rel="stylesheet" href="assets/patient-images.css?v=2026.11.26-891"/>
 <script defer src="assets/patient-images.js?v=2026.11.27-898"></script>
@@ -104,6 +104,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 #app{display:none;min-height:100vh;}
 .topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--navy);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.2);}
 .tb-logo{font-size:15px;font-weight:700;color:white;white-space:nowrap;}.tb-logo span{color:var(--gold);}
+#new-build-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:100000;display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;padding:10px 10px 10px 16px;border-radius:14px;background:#12304f;color:#fff;font-size:14px;line-height:1.35;box-shadow:0 8px 24px rgba(0,0,0,.28);}
+#new-build-bar .nbb-go{flex:none;background:#14b8a6;color:#fff;border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap;}
+#new-build-bar .nbb-x{flex:none;background:transparent;color:#fff;border:0;font-size:16px;cursor:pointer;padding:4px 6px;}
 .tb-build{margin-left:8px;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;}
 .tb-date{font-size:12px;color:rgba(255,255,255,.55);margin-left:16px;}
 .btn-so{padding:6px 14px;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);background:none;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;}
@@ -2490,7 +2493,7 @@ body.jenc-open #nav-back{display:inline-flex!important;}
 @media(max-width:640px){
   .mob-ham{display:flex;}
   .mob-current-tab{display:block;}
-  .tb-date{display:none;}
+  .tb-date,.tb-build{display:none;}
   .topbar{padding:0 12px;}
   .tabs{display:none;}
   /* The area row is in the drawer on mobile, but the sub-nav stays on screen
@@ -2734,6 +2737,7 @@ tr.siting-dup-row td{background:#fffbeb;}
       <button class="nav-refresh-btn" id="nav-refresh" type="button" onclick="clinicRefreshPage()" aria-label="Refresh the app" title="Reload the latest data and the newest app version, then come back to this page">↻<span class="nav-refresh-txt"> Refresh</span></button>
       <div class="tb-logo" style="margin-left:10px;">MDH <span>Stoma Care</span> Clinic</div>
       <div class="tb-date" id="tb-date"></div>
+      <span class="tb-build" id="tb-build" title="Build version — if a newer version is out, a bar at the bottom offers Reload now"></span>
       <div class="mob-current-tab" id="mob-current-tab">Monthly Roster</div>
     </div>
     <button class="help-btn" id="help-btn" onclick="toggleManualDock()" title="Help" aria-label="Open the help"><span class="toolbar-icon" aria-hidden="true">❓</span></button>
@@ -4118,8 +4122,37 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.27-899';
+const APP_BUILD='2026.11.27-900';
 (function(){const el=document.getElementById('tb-build');if(el)el.textContent='v'+APP_BUILD;})();
+/* A newer build on the server: a bar offers to reload. The live number is in
+   build.json (set to APP_BUILD at every deploy), a tiny file fetched past every
+   cache, so a page the browser kept from before an update is noticed within
+   minutes: shortly after opening, every 5 minutes, and on coming back to the tab.
+   Only a NEWER build shows the bar, so a build.json left behind never nags. */
+(function(){
+  const num=b=>{const m=String(b||'').match(/^(\d{4})\.(\d{2})\.(\d{2})-(\d+)$/);return m?[+(m[1]+m[2]+m[3]),+m[4]]:null;};
+  const newer=(a,b)=>{const x=num(a),y=num(b);return !!(x&&y)&&(x[0]>y[0]||(x[0]===y[0]&&x[1]>y[1]));};
+  let last=0,shown='';
+  async function check(){
+    if(Date.now()-last<60000)return;last=Date.now();
+    try{
+      const r=await fetch('build.json?t='+Date.now(),{cache:'no-store'});if(!r.ok)return;
+      const live=String((await r.json()).build||'');
+      if(newer(live,APP_BUILD)&&live!==shown)showBar(live);
+    }catch(e){}
+  }
+  function showBar(live){
+    shown=live;let bar=document.getElementById('new-build-bar');
+    if(!bar){bar=document.createElement('div');bar.id='new-build-bar';bar.setAttribute('role','status');document.body.appendChild(bar);}
+    bar.innerHTML='<span>🔄 A newer version of the app is ready <b>(v'+live+')</b>.</span>'
+      +'<button type="button" class="nbb-go" onclick="clinicRefreshPage()">Reload now</button>'
+      +'<button type="button" class="nbb-x" aria-label="Not now" title="Not now" onclick="this.parentNode.remove()">✕</button>';
+  }
+  window.addEventListener('load',()=>setTimeout(check,8000));
+  setInterval(check,5*60*1000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')check();});
+  window.addEventListener('focus',check);
+})();
 
 // AUTH
 async function doLogin(){

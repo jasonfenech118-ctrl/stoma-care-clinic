@@ -12,6 +12,8 @@ helper modules live in `assets/` and are included from `index.html`.
   only on the feature branch is NOT live.
 - Bump `APP_BUILD` in `index.html` (search `const APP_BUILD=`) on every change and
   tell the user the new build number. The number shows in the top-bar version pill.
+  Set the SAME number in `build.json`: open pages compare it with their own build
+  and show a "newer version is ready — Reload now" bar.
 - Verify inline scripts parse before pushing (extract each inline `<script>` and
   `new Function(...)` it), and run any relevant scratchpad harness.
 
