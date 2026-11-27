@@ -940,7 +940,7 @@
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const st={pid:null,patient:null,hosts:{},entries:[],tab:'surgery',qs:{},available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',noteAt:'',
     sub:{procedures:'surgery'},focus:null};
-  // Four sections inside Extracurricular documents, as in the hospital system:
+  // Four sections inside Hospital records, as in the hospital system:
   // Performed procedures (with the Patient consultation notes, linked to their
   // procedure by date), Medical imaging results, iCM notes and Entitlement CARE
   // (POYC).
@@ -969,7 +969,7 @@
   // (index.html wraps each host in a details.pd-section).
   const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',doc_icm:'icm',poyc:'poyc'};
   function catOf(k){return k==='procedures'?st.sub.procedures:MAIN[k].cat;}
-  // Unfold a section and the Extracurricular documents fold-out around it
+  // Unfold a section and the Hospital records fold-out around it
   // (after saving, or when a linked entry is opened).
   function sectionOpen(k){
     const h=st.hosts&&st.hosts[k];
@@ -1179,7 +1179,7 @@
   }
   function render(){
     const c=counts();
-    // The Extracurricular documents fold-out: the total in its title.
+    // The Hospital records fold-out: the total in its title.
     const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
     const osum=outer&&outer.querySelector(':scope > summary');
     if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.procedures+c.imaging+c.icm+c.poyc)+'</span>';}
