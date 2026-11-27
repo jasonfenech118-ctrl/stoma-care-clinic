@@ -1073,7 +1073,8 @@
     consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order; a blank date or consultant is filled in from the stoma on the profile. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
     imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
     ecg:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it. The date and time, measurements, axis, statements and verdict printed by the cardiograph are kept as printed, with any change in a measurement since the ECG before. The PDF, the name and the ID are not saved.',
-    doc_icm:'Copy the iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it in one go. Type, Note and Created On are kept; Created By is left out.',
+    // iCM notes: no help line and no "Nothing recorded yet" line (asked for).
+    doc_icm:'',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
   const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
@@ -1331,7 +1332,7 @@
       +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
       +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.qs[k]||'')+'" oninput="ClinicalHistory.search(this.value,\''+k+'\')"></div>'
-      +'<p class="ch-hint">'+esc(HINT[cat])+'</p>'+(st.note&&st.noteAt===k?'<div class="ch-note">'+st.note+'</div>':'')
+      +(HINT[cat]?'<p class="ch-hint">'+esc(HINT[cat])+'</p>':'')+(st.note&&st.noteAt===k?'<div class="ch-note">'+st.note+'</div>':'')
       +'<div id="ch-list-'+k+'" class="ch-list">'+listHTML(k)+'</div></div>';
   }
   function matches(e,q){return !q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e)].join(' ').toLowerCase().includes(q);}
@@ -1345,6 +1346,7 @@
     if(st.error)return '<p class="ch-empty" role="alert">Could not load these entries: '+esc(st.error)+' <button type="button" class="psm-btn" onclick="ClinicalHistory.reload()">Retry</button></p>';
     const q=String(st.qs[k]||'').trim().toLowerCase(),cat=catOf(k);
     const rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
+    if(!rows.length&&!q&&cat==='doc_icm')return '';
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>'+esc(PASTE_LABEL[cat])+'</strong> to add '+(cat==='consult'?'a note':'the whole list in one go')+'.')+'</p>';
     if(cat==='poyc'){
       rows.sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),undefined,{sensitivity:'base'}));   // medicines A–Z
