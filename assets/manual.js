@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 November 2026 — New Lab results section in Hospital records, with clearer column names and no duplicates. A test never seen before joins the blood investigations list automatically when saved (run sql/add-patient-history.sql once first).'};
+const MANUAL_META={updated:'28 November 2026 — New Holistic summary at the bottom of the patient profile, rebuilt live from the patient’s records with sources and dates. The build number moved from the top bar to the bottom of this Help.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -68,6 +68,15 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','Sorting is done <b>inside the app</b> by fixed rules — no AI and no outside service, so the pasted text never leaves the app. <b>Duplicates are never saved:</b> an entry already saved, or repeated in the same paste, is unticked and skipped — the same procedure, test, note or consultation on the same date (a note also by its time), and a POYC medicine whatever day the list was copied. A consultation note saved before (same date and operation, mostly the same words) is <b>updated</b>, not copied again. The check is made again at the moment of saving, in case another nurse saved it meanwhile, and <b>＋ Add one</b> warns if the entry is already there. Run <code>sql/add-patient-history.sql</code> once in Supabase (again after an update) so Patient consultation notes, ECGs, POYC medicines, lab results, the blood investigations list and stoma links work.')}
     ${manNote('tip','🔄','An open section stays open when the profile refreshes with another nurse’s changes.')}
+  `},{id:'holistic',title:'Holistic summary',keywords:'holistic summary patient summary overview live automatic technical reasons indication findings surgical history admissions encounters appliances complications medicines investigations bloods ecg imaging follow-up copy',html:`
+    ${manWhen('You want one technical overview of everything recorded for the patient, always up to date.')}
+    <p class="man-lede">The last fold-out on the patient profile, below Hospital records. It is put together automatically from the patient’s records and <b>rebuilt whenever they change</b> (a new encounter, an edited stoma, a saved paste) — the top line says when it was last updated.</p>
+    <ul>
+      <li><b>Patient</b> — age, sex, firm, follow-up status, and each stoma present with the day post-op.</li>
+      <li><b>Surgical history</b> — each operation in date order, with the consultant, the <b>indication</b> and <b>findings</b> from the consultation note, and the stoma formed, refashioned, closed or replaced.</li>
+      <li><b>Admissions &amp; encounters</b>, <b>Stoma care</b> (current appliances, the last change, open and resolved complications), <b>Medicines</b> (POYC), <b>Investigations</b> (lab results flagged by the lab, the latest ECG and QTc, imaging conclusions, iCM notes) and <b>Follow-up</b>.</li>
+    </ul>
+    ${manNote('auto','⚙️','Every line names where it came from and its date. Reasons are the ones written in the records; the app adds no clinical conclusions of its own and no AI is used. <b>📋 Copy summary</b> copies it as plain text.')}
   `},{id:'images',title:'Pictures (📷 Images)',keywords:'images pictures photos photo camera gallery wound stoma skin upload add picture attach episode encounter inpatient follow-up visit correspondence email stoma id link shortcut delete caption download',html:`
     ${manWhen('You want to keep a picture (e.g. a wound, peristomal skin or a stoma) with the patient, linked to the admission, encounter, visit, correspondence or stoma it belongs to.')}
     ${manSteps([
@@ -100,7 +109,7 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('tip','📌','On a phone, tap the menu button (top-left) to open the same list as a drawer.')}
     ${manH2('🔢','Which version am I on?')}
-    <p class="man-lede">On a computer, a small grey pill next to the date shows the build, e.g. <span class="man-kbd">v2026.09.29-336</span>. When a newer version is out, a dark bar at the bottom says <b>A newer version of the app is ready</b>: press <b>Reload now</b>. If a new feature is still missing, do a hard refresh: <span class="man-kbd">Ctrl</span>+<span class="man-kbd">Shift</span>+<span class="man-kbd">R</span> (on a phone, pull down to refresh).</p>
+    <p class="man-lede">The bottom of this Help shows the build, e.g. <span class="man-kbd">v2026.09.29-336</span>. When a newer version is out, a dark bar at the bottom says <b>A newer version of the app is ready</b>: press <b>Reload now</b>. If a new feature is still missing, do a hard refresh: <span class="man-kbd">Ctrl</span>+<span class="man-kbd">Shift</span>+<span class="man-kbd">R</span> (on a phone, pull down to refresh).</p>
   `},
   {id:'layout',title:'Page layout and icons',keywords:'icons alignment layout spacing phone mobile page headings buttons navigation tabs patient tiles back return button previous page go back',html:`<p>Navigation pictures sit in matching icon boxes. Page headings and action buttons align consistently, and patient record tiles keep their illustrations and section counts. On a phone, the clinic name and help, task and reminder buttons fit in the compact top bar; use the menu to change work area and the sub-tabs to change page. Controls wrap onto the next row when needed, so their labels remain readable.</p>
     <p><b>‹ Back</b> — once you move off the first screen, a <b>‹ Back</b> button appears in the top-left corner of the bar, before <b>Profile</b>. It takes you to the page you were just on — the list you opened a patient from, the clinic day you drilled into, and so on — so you never have to hunt back through the menu. Press it again to keep stepping back; it disappears when there is nowhere left to return to. Both the top-bar <b>‹ Back</b> and the one on a patient record are <b>yellow</b> so they stand out. A patient record’s own <b>‹ Back</b> button steps back the same way — to wherever you opened the record from (the clinic list, the handover, a search…) — and only returns to the <b>Registry</b> when there is no earlier page to go back to.</p>
@@ -764,6 +773,7 @@ const MANUAL_SECTIONS=[
         ['🔄','New version notice','The app checks for a newer version shortly after opening, every 5 minutes and when you come back to it. If one is out, a bar offers Reload now, which brings you back to the same page.','Everywhere'],
         ['🔄','Patient record keeps your place on live updates','When another nurse saves a change, the open patient record refreshes in the background but keeps the sections and dropdowns you had open (e.g. Stomas & surgery, Current / Closed) and your scroll position.','Registry › Patient record'],
         ['📷','Pictures linked to where they belong','A picture added with 📷 on an episode, encounter, follow-up visit, correspondence or stoma is shrunk, saved privately and linked there. The 📷 Images button appears on the profile only once a picture exists, and each picture’s source label jumps straight back to it.','Patient profile › 📷 buttons · 📷 Images'],
+        ['🩺','Holistic summary rebuilt live','The Holistic summary is put together from the patient’s records and rebuilt whenever they change — an encounter, a stoma edit, a saved paste or another nurse’s change.','Patient profile › Holistic summary'],
         ['🧪','Blood investigations list kept up to date','Every panel and test in a saved lab result is on the blood investigations list for all patients. A test never seen before is marked 🆕 New test on the check screen and joins the list as soon as it is saved — nobody adds it by hand.','Patient profile › Hospital records › Lab results'],
         ['🗂️','Hospital tables and notes sorted into the profile sections','A Performed Procedures, Medical Imaging Results or iCM Notes table, a Patient Consultation note or an ECG report, pasted in one go is split into dated entries with only the columns each tab keeps, by fixed rules inside the app (no AI). A consultation note’s ID is checked against the open patient and never saved; a note is linked to the procedure on the same date and to the stoma it involved. A missing date or consultant is filled in from the stoma on the profile, and a note pasted again updates the saved one.','Patient profile › Hospital records (below Outcome)'],
         ['📍','Awaiting surgery / reversal','A sited patient (surgery day) or a planned reversal (reversal day) appears at the top of the handover automatically.','Handover'],
@@ -901,7 +911,7 @@ function manualRenderMain(){
   main.innerHTML=`<div class="man-crumb" style="color:${s.color};">${s.icon} ${htmlSafe(s.title)}</div>
     <h1 class="man-h1">${htmlSafe(p.title)}</h1>
     ${p.html}
-    <div class="man-foot">MDH Stoma Care Clinic · Help · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
+    <div class="man-foot">MDH Stoma Care Clinic · Help · updated ${htmlSafe(MANUAL_META.updated)}${typeof APP_BUILD!=='undefined'?' · build v'+htmlSafe(APP_BUILD):''}</div>`;
 }
 function manualHome(){
   const cards=MANUAL_SECTIONS.filter(s=>s.id!=='start').map(s=>`
@@ -912,7 +922,7 @@ function manualHome(){
     <p class="man-lede">Everything the app does, in plain steps. Use the <b>search box</b> above, or pick a section. Each page shows <b>where it lives</b> in the app, <b>when to use it</b>, the <b>steps</b>, and any <b>automation</b> done for you.</p>
     ${manNote('tip','👋','New here? Start with <b>Getting Started → Finding your way around</b> on the left.')}
     <div class="man-home-grid">${cards}</div>
-    <div class="man-foot">This manual is part of the app (no Supabase space used) and updates with every change · updated ${htmlSafe(MANUAL_META.updated)}</div>`;
+    <div class="man-foot">This manual is part of the app (no Supabase space used) and updates with every change · updated ${htmlSafe(MANUAL_META.updated)}${typeof APP_BUILD!=='undefined'?' · build v'+htmlSafe(APP_BUILD):''}</div>`;
 }
 
 /* ---- docked split-screen: read Help beside the live app ------------ */

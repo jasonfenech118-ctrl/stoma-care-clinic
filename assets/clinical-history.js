@@ -1378,6 +1378,8 @@
       st.error=st.available?m:'';st.entries=[];
     }else{st.available=true;st.error='';st.entries=res.rows||[];}
     render();
+    // The Holistic summary rebuilds from these.
+    try{document.dispatchEvent(new CustomEvent('clinical-history:changed'));}catch(e){}
   }
   function render(){
     const c=counts();
@@ -1856,5 +1858,7 @@
     st.note='';await load();
   }
 
-  Object.assign(CH,{mount,main,sub,search,reload:load,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
+  // This patient's saved entries (for the Holistic summary).
+  function entries(pid){return !pid||String(pid)===String(st.pid)?st.entries.slice():[];}
+  Object.assign(CH,{mount,main,sub,search,reload:load,entries,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
 })(window);
