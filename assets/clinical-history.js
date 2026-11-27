@@ -23,6 +23,8 @@
       placeholder:'Copy the whole Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it here in one go.\nDescription and Prescription are kept; ATC Code and Dosage Regimen are left out.'},
     ecg:{label:'ECG',icon:'🫀',
       placeholder:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it here.\nThe date and time, measurements, axis, statements and verdict printed by the cardiograph are kept. The name and ID are only used to check it is the right patient, and are never saved.'},
+    lab:{label:'Lab results',icon:'🧪',
+      placeholder:'Open Lab Results in the hospital system (iCM - All Investigations Results), select the whole table, copy it and paste it here — a page at a time is fine.\nDate & time, Panel, Test, Result, Flag, Normal range and Unit are kept.'},
     doc_icm:{label:'iCM notes',icon:'📄',
       placeholder:'Copy the whole iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it here in one go.\nType, Note and Created On are kept; Created By is left out.'},
     // Tabs that were removed. Anything saved under them is kept in the database
@@ -32,7 +34,7 @@
     doc_ccp:{label:'CCP – Practice nurse review notes',icon:'📄',legacy:true,placeholder:''},
     treatment:{label:'Treatment',icon:'💊',legacy:true,placeholder:''}
   };
-  const CAT_KEYS=['surgery','consult','imaging','ecg','doc_icm','poyc'];
+  const CAT_KEYS=['surgery','consult','imaging','ecg','doc_icm','poyc','lab'];
   // Notes keep a whole note together (author + text).
   const isNoteCat=c=>c==='notes'||String(c||'').startsWith('doc_');
 
@@ -720,6 +722,57 @@
     }).filter(r=>r.title||r.result);
   }
 
+  /* Lab results (Lab Results › iCM - All Investigations Results): Date · Profile
+     Name · Item Name · Result · Status · Range & UOM, copied a page at a time.
+     Kept as Date & time · Panel · Test · Result · Flag · Normal range · Unit;
+     the "Profile Name: …" group rows, the header, paging and search lines are
+     left out. A test the system has never seen joins the blood investigations
+     list when it is saved (the lab_test_catalogue view). */
+  const LAB_HEAD={date:/^date(?:\s*(?:&|and)\s*time)?$/i,panel:/^(?:profile(?:\s+name)?|panel|test\s+group)$/i,
+    test:/^(?:item(?:\s+name)?|test(?:\s+name)?|investigation)$/i,result:/^(?:results?|value)$/i,
+    flag:/^(?:status|flag)$/i,range:/^(?:range(?:\s*(?:&|and)\s*uom)?|reference\s+range|normal\s+range)$/i,unit:/^(?:uom|units?)$/i};
+  const LAB_NOISE=/^(?:page\s+\d+\s+of\s+\d+.*|lab\s+results|lis\s*-.*|show\s+lis.*|icm\s*-\s*all\s+investigations\s+results|trend\s+view.*|show more than \d+ months?|search\s*clear|enter text to search\.*|no data to display)$/i;
+  function looksLab(text){
+    const t=String(text||'');
+    return /\bItem\s+Name\b/i.test(t)&&/\bProfile\s+Name\b/i.test(t)||/\bRange\s*&\s*UOM\b/i.test(t);
+  }
+  // "3.90 - 5.40 x10^12/L" → range "3.90 - 5.40", unit "x10^12/L"; "<5 mg/L" → "<5", "mg/L".
+  function splitRange(v){
+    const s=String(v||'').replace(/\s+/g,' ').trim();
+    const m=s.match(/^((?:[<>≤≥]=?\s*)?-?\d+(?:[.,]\d+)?(?:\s*(?:-|–|to)\s*-?\d+(?:[.,]\d+)?)?)\s*(.*)$/i);
+    return m?{range:m[1].replace(/\s*(-|–|to)\s*/i,' - ').trim(),unit:m[2].trim()}:{range:'',unit:s};
+  }
+  function labRows(text){
+    const out=[];let cols=null,panel='';
+    String(text||'').split('\n').forEach(raw=>{
+      const line=raw.replace(/ /g,' ');const t=line.trim();
+      if(!t||LAB_NOISE.test(t))return;
+      const g=t.match(/^Profile\s+Name\s*:\s*(.+)$/i);if(g){panel=g[1].trim();return;}
+      let cells=line.includes('\t')?cellsOf(line):t.split(/\s{2,}/).map(x=>x.trim());
+      // The header row: remember the column order.
+      const hk=cells.map(c=>Object.keys(LAB_HEAD).find(k=>LAB_HEAD[k].test(c))||null);
+      if(hk.filter(Boolean).length>=3){cols=hk;return;}
+      const di=cells.findIndex(c=>cellDate(c));
+      if(di<0)return;
+      cells=cells.slice(di);
+      // Without a header: Date, Panel, Test, Result, then Status and Range & UOM
+      // (an empty Status can be lost when the copy has no tabs).
+      const STATUS=/^(?:H|L|HH|LL|A|AA|\*+|high|low|abnormal|critical|panic|positive|negative)$/i;
+      const key=cols?cols.slice(cols.indexOf('date')>=0?cols.indexOf('date'):0):
+        cells.length>=6?['date','panel','test','result','flag','range']
+        :cells.length===5?(STATUS.test(cells[4])?['date','panel','test','result','flag']:['date','panel','test','result','range'])
+        :['date','panel','test','result'];
+      const get=k=>{const i=key.indexOf(k);return i>=0?String(cells[i]||'').trim():'';};
+      const d=cellDate(cells[0]);
+      const r=splitRange(get('range'));
+      const unit=get('unit')||r.unit;
+      const row={date:d,rangeText:'',table:true,hospital:true,category:'lab',typeCell:get('panel')||panel,title:get('test'),result:get('result'),source:'',
+        labFlag:get('flag'),labRange:r.range,labUnit:unit,raw:[cells.filter(Boolean).join('\t')]};
+      if(row.title||row.result)out.push(row);
+    });
+    return out;
+  }
+
   /* ------------------------------------------------------------------ *
    * A Patient Consultation note (e.g. a Procedure Report), opened with
    * "Open past visit": label : value lines, set out section by section.
@@ -912,7 +965,10 @@
      a note), the same procedure / test / type and the same start of its
      report or note. A POYC medicine is the same whatever day the list was
      copied. */
-  function fingerprint(cat,iso,title,result,time){
+  function fingerprint(cat,iso,title,result,time,type){
+    // A lab result is the same result when it is the same test of the same panel
+    // taken at the same date and time.
+    if(cat==='lab'&&iso)return 'lab|'+iso+'|'+String(time||'').slice(0,5)+'|'+norm(type).slice(0,60)+'|'+norm(title).slice(0,80);
     if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
     // An ECG is the same ECG when it has the same date and time (as printed, to
     // the second), whatever its wording — e.g. the same ECG once confirmed.
@@ -925,20 +981,20 @@
   function savedKeys(entries){
     const keys=new Set();
     (entries||[]).forEach(e=>{if(e.fingerprint)keys.add(e.fingerprint);
-      keysOf(e.category,String(e.entry_date||'').slice(0,10),e.title,e.result,e.entry_time).forEach(k=>keys.add(k));});
+      keysOf(e.category,String(e.entry_date||'').slice(0,10),e.title,e.result,e.entry_time,e.entry_type).forEach(k=>keys.add(k));});
     return keys;
   }
   // The keys an entry is known by once saved. An ECG is also known by its date
   // and minute, so one typed in without seconds still matches the pasted report.
-  function keysOf(cat,iso,title,result,time){
-    const out=[fingerprint(cat,iso,title,result,time)];
+  function keysOf(cat,iso,title,result,time,type){
+    const out=[fingerprint(cat,iso,title,result,time,type)];
     if(cat==='ecg'&&iso){const t=String(time||''),m=t.slice(0,5);out.push('ecg|'+iso+'|'+m+'|any');if(t.length<8)out.push('ecg|'+iso+'|'+m+'|*');}
     return out;
   }
   // Already in the set? For an ECG: the same date and time to the second, or to
   // the minute when either of the two has no seconds.
-  function isDup(set,cat,iso,title,result,time){
-    if(set.has(fingerprint(cat,iso,title,result,time)))return true;
+  function isDup(set,cat,iso,title,result,time,type){
+    if(set.has(fingerprint(cat,iso,title,result,time,type)))return true;
     if(cat==='ecg'&&iso){const t=String(time||''),m=t.slice(0,5);return set.has('ecg|'+iso+'|'+m+(t.length>=8?'|*':'|any'));}
     return false;
   }
@@ -959,6 +1015,7 @@
     let raw=null,mode='text';
     if(cat==='poyc'){raw=poycRows(clean);mode='table';}
     else if(cat==='ecg'||looksEcg(clean)){raw=ecgRows(clean);mode='ecg';}
+    else if(cat==='lab'||looksLab(clean)){raw=labRows(clean);mode='lab';}
     else if(looksConsultNote(clean)){raw=consultNotes(clean);mode='note';}
     else if(clean.includes('\t')){
       if(cat==='doc_icm'){const r=icmRows(clean);if(r.length&&r.some(x=>x.date)){raw=r;mode='table';}}
@@ -989,7 +1046,7 @@
       let category=CAT_KEYS.includes(e.category)?e.category:cat;
       // A consultation note is recognised for certain, so pasting it in another
       // tab needs no checking; anything else moved is shown in amber.
-      if(category!==cat)flags.push((e.category==='consult'||e.category==='ecg')&&e.hospital?'moved_note':'moved');
+      if(category!==cat)flags.push((e.category==='consult'||e.category==='ecg'||e.category==='lab')&&e.hospital?'moved_note':'moved');
       if(e.partial)flags.push('ecg_partial');
       else if(!e.hospital){const sug=suggestCategory(cat,f.title,f.result);if(sug){category=sug;flags.push('moved');}}
       const list=category==='surgery'||category==='imaging';
@@ -999,18 +1056,19 @@
       if(list&&!e.table&&(f.title+f.result).length>1500)flags.push('long');
       // Only the columns each tab keeps: no type for procedures and scans, no
       // author for scans and iCM notes (Created By is left out).
-      const type=category==='doc_icm'?((e.typeCell||'').trim()||noteType(f.source,f.result))
-        :category==='consult'||category==='ecg'?(e.typeCell||'').trim():'';
       const source=category==='surgery'||category==='consult'?f.source:'';
-      const timed=category==='doc_icm'||category==='ecg';
-      const fp=fingerprint(category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'');
+      const timed=category==='doc_icm'||category==='ecg'||category==='lab';
+      const type=category==='doc_icm'?((e.typeCell||'').trim()||noteType(f.source,f.result))
+        :category==='consult'||category==='ecg'||category==='lab'?(e.typeCell||'').trim():'';
+      const fp=fingerprint(category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'',type);
       let include=true;
-      const key=[category,d?d.iso:'',f.title,f.result,timed&&d?d.time:''];
+      const key=[category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'',type];
       if(isDup(existing,...key)){flags.push('duplicate_saved');include=false;}
       else if(isDup(seen,...key)){flags.push('duplicate_paste');include=false;}
       keysOf(...key).forEach(k=>seen.add(k));
       return {include,category,entry_date:d?d.iso:null,date_precision:d?d.precision:'',entry_time:timed&&d?d.time:'',date_text:d?d.text:(e.badDate||''),
-        entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||'',consultant_from:e.consultantFrom||(source?'list':'')};
+        entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||'',consultant_from:e.consultantFrom||(source?'list':''),
+        lab_flag:e.labFlag||'',lab_range:e.labRange||'',lab_unit:e.labUnit||''};
     }).filter(r=>r.title||r.result);
     return {rows,mode};
   }
@@ -1026,15 +1084,19 @@
     consultant_stoma:'Consultant filled in from the stoma on the profile',consultant_proc:'Consultant filled in from the performed procedure on that date',
     date_stoma:'Date filled in from the stoma’s operation date',date_proc:'Date filled in from the performed procedure',
     updates_saved:'Same note saved before — saving updates it, no second copy',
+    lab_new:'New test — joins the blood investigations list when saved',
+    lab_duplicate_saved:'This test at the same date and time is already saved — not ticked',
+    lab_duplicate_paste:'Repeated in this paste — not ticked',
+    lab_updates_saved:'Changed since it was saved — saving updates it, no second copy',
     ecg_duplicate_saved:'An ECG with the same date and time is already saved — not ticked',
     ecg_duplicate_paste:'Same date and time as another ECG in this paste — not ticked',
     ecg_updates_saved:'Same date and time as an ECG saved before, now with a changed report — saving updates it, no second copy'
   };
-  function flagText(code,row){if(row&&row.category==='ecg'&&FLAG_TEXT['ecg_'+code])code='ecg_'+code;return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
+  function flagText(code,row){const c=row&&row.category;if((c==='ecg'||c==='lab')&&FLAG_TEXT[c+'_'+code])code=c+'_'+code;return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
   // Flags that mean "a nurse should look at this row".
   const CHECK_FLAGS=new Set(['ecg_partial','no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
 
-  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,keysOf,isDup,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
+  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,looksLab,keysOf,isDup,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
 })(window);
 
 /* ==================================================================== *
@@ -1058,7 +1120,8 @@
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
     ecg:{label:'ECG',icon:'🫀',cat:'ecg'},
     icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'},
-    poyc:{label:'Entitlement CARE (POYC)',icon:'💊',cat:'poyc'}
+    poyc:{label:'Entitlement CARE (POYC)',icon:'💊',cat:'poyc'},
+    lab:{label:'Lab results',icon:'🧪',cat:'lab'}
   };
   // The columns each table shows: [heading, field].
   const COLS={
@@ -1066,7 +1129,10 @@
     imaging:[['Date','date'],['Test','title'],['Report','result']],
     ecg:[['Date','date'],['ECG','title'],['Interpretation','result'],['Measurements','meas']],
     doc_icm:[['Type','entry_type'],['Note','result'],['Created On','date']],
-    poyc:[['Description','title'],['Prescription','result']]
+    poyc:[['Description','title'],['Prescription','result']],
+    // The hospital's Profile Name, Item Name, Status and Range & UOM, renamed;
+    // Range & UOM is split into the normal range and the unit.
+    lab:[['Date & time','date'],['Panel','entry_type'],['Test','title'],['Result','result'],['Flag','lab_flag'],['Normal range','lab_range'],['Unit','lab_unit']]
   };
   // The help line under each section's buttons. Empty = no help line and no
   // "Nothing recorded yet" line (Performed procedures, Medical imaging results,
@@ -1077,12 +1143,13 @@
     imaging:'',
     ecg:'',
     doc_icm:'',
+    lab:'',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
-  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
+  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',lab:'📋 Paste lab results',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
   // Each tab is a fold-out section of its own on the profile, below Outcome
   // (index.html wraps each host in a details.pd-section).
-  const SECTION_OF={surgery:'procedures',consult:'consult',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc'};
+  const SECTION_OF={surgery:'procedures',consult:'consult',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc',lab:'lab'};
   function catOf(k){return MAIN[k].cat;}
   // Unfold a section and the Hospital records fold-out around it
   // (after saving, or when a linked entry is opened).
@@ -1109,7 +1176,7 @@
     return fmt(e.entry_date);
   }
   function counts(){
-    const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0};
+    const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0,lab:0};
     st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});
     c.procedures=c.surgery;c.icm=c.doc_icm;return c;
   }
@@ -1219,11 +1286,17 @@
     const a=String(e.entry_time||''),b=String(r.entry_time||'');
     return a.length>=8&&b.length>=8?a.slice(0,8)===b.slice(0,8):a.slice(0,5)===b.slice(0,5);
   }
+  // A lab result: the same test of the same panel at the same date and time.
+  function sameLabResult(e,r){
+    return e.category==='lab'&&r.entry_date&&day(e)===r.entry_date&&String(e.entry_time||'').slice(0,5)===String(r.entry_time||'').slice(0,5)
+      &&normT(e.entry_type)===normT(r.entry_type)&&normT(e.title)===normT(r.title);
+  }
   function ecgUpdates(rows){
     rows.forEach(r=>{
-      if(r.category!=='ecg'||!r.flags.includes('duplicate_saved'))return;
-      const e=st.entries.find(x=>sameEcgTime(x,r));if(!e)return;
-      if(normT(e.title)===normT(r.title)&&normT(e.entry_type)===normT(r.entry_type)&&normT(e.result)===normT(r.result))return;
+      if((r.category!=='ecg'&&r.category!=='lab')||!r.flags.includes('duplicate_saved'))return;
+      const e=st.entries.find(x=>r.category==='lab'?sameLabResult(x,r):sameEcgTime(x,r));if(!e)return;
+      if(normT(e.title)===normT(r.title)&&normT(e.entry_type)===normT(r.entry_type)&&normT(e.result)===normT(r.result)
+        &&(r.category!=='lab'||(normT(e.lab_flag)===normT(r.lab_flag)&&normT(e.lab_range)===normT(r.lab_range)&&normT(e.lab_unit)===normT(r.lab_unit))))return;
       r.flags=r.flags.filter(f=>f!=='duplicate_saved');r.flags.push('updates_saved');r.replaces=e.id;r.include=true;
     });
   }
@@ -1311,7 +1384,7 @@
     // The Hospital records fold-out: the total in its title.
     const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
     const osum=outer&&outer.querySelector(':scope > summary');
-    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.surgery+c.consult+c.imaging+c.ecg+c.doc_icm+c.poyc)+'</span>';}
+    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.surgery+c.consult+c.imaging+c.ecg+c.doc_icm+c.poyc+c.lab)+'</span>';}
     Object.keys(MAIN).forEach(k=>{
       const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
       // The fold-out's title carries the count, as the tab button did.
@@ -1324,15 +1397,16 @@
   function paneHTML(k,c){
     if(!st.available)return '<div class="ch-pane ch-pane-'+k+'"><div class="ch-missing">These sections need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
     const cat=catOf(k);
-    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':CH.CATS[cat].label.toLowerCase();
+    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':cat==='lab'?'lab results':CH.CATS[cat].label.toLowerCase();
     return '<div class="ch-pane ch-pane-'+k+'">'
       +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
+      +(cat==='lab'?'<button type="button" class="psm-btn" onclick="ClinicalHistory.labList()">🧪 Blood investigations list</button>':'')
       +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.qs[k]||'')+'" oninput="ClinicalHistory.search(this.value,\''+k+'\')"></div>'
       +(HINT[cat]?'<p class="ch-hint">'+esc(HINT[cat])+'</p>':'')+(st.note&&st.noteAt===k?'<div class="ch-note">'+st.note+'</div>':'')
       +'<div id="ch-list-'+k+'" class="ch-list">'+listHTML(k)+'</div></div>';
   }
-  function matches(e,q){return !q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e)].join(' ').toLowerCase().includes(q);}
+  function matches(e,q){return !q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e),e.lab_flag,e.lab_range,e.lab_unit].join(' ').toLowerCase().includes(q);}
   function actHTML(e){
     const by='Added by '+(e.created_by_name||'—')+(e.updated_by_name&&e.updated_at&&e.updated_at!==e.created_at?' · edited by '+e.updated_by_name:'');
     return '<span class="ch-act" title="'+esc(by)+'"><button type="button" class="ch-ic" title="Edit this entry" aria-label="Edit this entry" onclick="ClinicalHistory.openEdit(\''+esc(e.id)+'\')">✏️</button>'
@@ -1342,7 +1416,9 @@
     if(st.loading)return '<p class="ch-empty">Loading…</p>';
     if(st.error)return '<p class="ch-empty" role="alert">Could not load these entries: '+esc(st.error)+' <button type="button" class="psm-btn" onclick="ClinicalHistory.reload()">Retry</button></p>';
     const q=String(st.qs[k]||'').trim().toLowerCase(),cat=catOf(k);
-    const rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
+    let rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
+    if(cat==='lab')rows=rows.sort((a,b)=>(day(b)+' '+(b.entry_time||'')).localeCompare(day(a)+' '+(a.entry_time||''))
+      ||String(a.entry_type||'').localeCompare(String(b.entry_type||''))||String(a.created_at||'').localeCompare(String(b.created_at||'')));
     if(!rows.length&&!q&&!HINT[cat])return '';
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>'+esc(PASTE_LABEL[cat])+'</strong> to add '+(cat==='consult'?'a note':'the whole list in one go')+'.')+'</p>';
     if(cat==='poyc'){
@@ -1358,8 +1434,11 @@
     const head='<thead><tr>'+cols.map(c=>'<th scope="col">'+esc(c[0])+'</th>').join('')+'<th scope="col" class="ch-c-act"><span class="ch-sr">Edit or delete</span></th></tr></thead>';
     const body=rows.map(e=>'<tr class="'+(isFocus(cat,e)?'is-focus':'')+'">'+cols.map(([label,key])=>{
       let v;
-      if(key==='date')v='<strong>'+esc(showDate(e))+'</strong>'+((cat==='doc_icm'||cat==='ecg')&&e.entry_time?' <span class="ch-time">'+esc(e.entry_time)+'</span>':'');
+      if(key==='date')v='<strong>'+esc(showDate(e))+'</strong>'+((cat==='doc_icm'||cat==='ecg'||cat==='lab')&&e.entry_time?' <span class="ch-time">'+esc(e.entry_time)+'</span>':'');
       else if(cat==='ecg')v=ecgCell(e,key);
+      else if(cat==='lab'&&key==='lab_flag')v=e.lab_flag?'<span class="ch-lab-flag">'+esc(e.lab_flag)+'</span>':'';
+      else if(cat==='lab'&&key==='result')v='<strong class="ch-lab-res">'+esc(e.result||'')+'</strong>';
+      else if(cat==='lab'&&key==='lab_range')v=e.lab_range?'<span class="ch-lab-rl">Normal range </span>'+esc(e.lab_range):'';
       else v='<div class="ch-cell-text">'+esc(e[key]||'')+'</div>';
       if(cat==='surgery'&&key==='title')v+=linksHTML(e,'surgery');
       return '<td data-label="'+esc(label)+'" class="ch-c-'+key+'"><div class="ch-td">'+v+'</div></td>';
@@ -1467,6 +1546,78 @@
     await load();
   }
 
+  /* ---------- the blood investigations list ---------- */
+  // Every panel and test the system has seen, for all patients: the
+  // lab_test_catalogue view (sql/add-patient-history.sql), worked out from the
+  // saved lab results themselves. So a test never seen before is marked "New
+  // test" before saving, and joins the list the moment it is saved.
+  const catalogue={rows:null,error:'',at:0};
+  const labKey=(panel,test)=>normT(panel)+'|'+normT(test);
+  async function loadCatalogue(force){
+    if(catalogue.rows&&!force&&Date.now()-catalogue.at<60000)return catalogue.rows;
+    try{
+      const r=await db().from('lab_test_catalogue').select('*');
+      if(r.error)throw r.error;
+      catalogue.rows=r.data||[];catalogue.error='';catalogue.at=Date.now();
+    }catch(e){catalogue.rows=null;catalogue.error=String(e&&e.message||e);}
+    return catalogue.rows;
+  }
+  async function markNewTests(rows){
+    const list=await loadCatalogue(true);
+    if(!list)return;   // the list is not set up yet: nothing is marked
+    const known=new Set(list.map(x=>labKey(x.panel,x.test)));
+    st.entries.filter(e=>e.category==='lab').forEach(e=>known.add(labKey(e.entry_type,e.title)));
+    rows.forEach(r=>{if(r.category==='lab'&&r.title&&!known.has(labKey(r.entry_type,r.title))&&!r.flags.includes('lab_new'))r.flags.push('lab_new');});
+  }
+  async function labList(){
+    const mb=document.getElementById('mb');if(!mb)return;
+    mb.className='mb mb-wide';
+    mb.innerHTML='<h2>🧪 Blood investigations list</h2><div class="msub">Loading…</div>';
+    if(typeof global.openMo==='function')global.openMo();
+    const list=await loadCatalogue(true);
+    if(!list){
+      mb.innerHTML='<h2>🧪 Blood investigations list</h2><div class="ch-missing">The list needs the updated database set-up. Run <strong>sql/add-patient-history.sql</strong> once in Supabase, then open it again.</div>'
+        +'<div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';
+      return;
+    }
+    const recent=new Date(Date.now()-30*864e5).toISOString();
+    const byPanel=new Map();
+    list.slice().sort((a,b)=>String(a.panel||'').localeCompare(String(b.panel||''))||String(a.test||'').localeCompare(String(b.test||''))).forEach(x=>{
+      const k=x.panel||'Other';if(!byPanel.has(k))byPanel.set(k,[]);byPanel.get(k).push(x);});
+    mb.innerHTML='<h2>🧪 Blood investigations list</h2>'
+      +'<div class="msub">Every panel and test seen in a pasted lab result, for all patients — <strong>'+list.length+'</strong> test'+(list.length===1?'':'s')+' in <strong>'+byPanel.size+'</strong> panel'+(byPanel.size===1?'':'s')+'. A test seen for the first time joins it automatically when it is saved; one added in the last 30 days is marked 🆕.</div>'
+      +'<input type="search" class="ch-search ch-lab-q" placeholder="Search tests…" aria-label="Search tests" oninput="ClinicalHistory.labListFilter(this.value)">'
+      +'<div class="ch-lab-cat">'+[...byPanel].map(([panel,tests])=>'<details class="ch-lab-panel" open><summary>'+esc(panel)+' <span class="ch-sum-count">'+tests.length+'</span></summary><ul>'
+        +tests.map(x=>'<li data-q="'+esc(String((panel||'')+' '+(x.test||'')).toLowerCase())+'"><span>'+esc(x.test||'')+(String(x.first_seen||'')>recent?' <span class="ch-lab-newtag">🆕 new</span>':'')+'</span>'
+          +'<small>first seen '+esc(fmt(x.first_seen))+' · '+esc(String(x.patients||0))+' patient'+(+x.patients===1?'':'s')+'</small></li>').join('')+'</ul></details>').join('')+'</div>'
+      +'<div class="mact"><button class="btn-cancel" onclick="closeModal()">Close</button></div>';
+  }
+  function labListFilter(q){
+    q=String(q||'').trim().toLowerCase();
+    document.querySelectorAll('.ch-lab-cat li').forEach(li=>{li.hidden=!!q&&!li.dataset.q.includes(q);});
+    document.querySelectorAll('.ch-lab-panel').forEach(d=>{const any=[...d.querySelectorAll('li')].some(li=>!li.hidden);d.hidden=!any;if(q&&any)d.open=true;});
+  }
+  // The check screen for lab results: one compact table, as there are often
+  // dozens of results in one paste.
+  const LAB_BADGE={duplicate_saved:'Already saved',duplicate_paste:'Repeated in this paste',updates_saved:'Changed since — updates the saved one',lab_new:'🆕 New test',no_date:'No date',bad_date:'Check the date'};
+  function labPreviewHTML(p){
+    const rows=p.rows,cnt=f=>rows.filter(r=>r.flags.includes(f)).length;
+    const tests=[...new Map(rows.filter(r=>r.flags.includes('lab_new')).map(r=>[labKey(r.entry_type,r.title),(r.entry_type&&normT(r.entry_type)!==normT(r.title)?r.entry_type+' › ':'')+r.title])).values()];
+    const sum=[rows.filter(r=>r.include&&!r.flags.includes('updates_saved')).length+' new',cnt('updates_saved')&&cnt('updates_saved')+' changed since saved (will update)',
+      cnt('duplicate_saved')&&cnt('duplicate_saved')+' already saved',cnt('duplicate_paste')&&cnt('duplicate_paste')+' repeated in this paste'].filter(Boolean).join(' · ');
+    return '<div class="ch-lab-sum">'+esc(sum)+'</div>'
+      +(tests.length?'<div class="ch-lab-newlist">🆕 <strong>'+tests.length+' new test'+(tests.length===1?'':'s')+'</strong> will join the blood investigations list when saved: '+esc(tests.join(', '))+'</div>':'')
+      +(catalogue.error?'<div class="ch-lab-note">New tests could not be checked: the blood investigations list needs <strong>sql/add-patient-history.sql</strong> run once in Supabase.</div>':'')
+      +'<div class="ch-table-wrap"><table class="ch-table ch-lab-pv"><thead><tr><th scope="col">Save</th>'+COLS.lab.map(c=>'<th scope="col">'+esc(c[0])+'</th>').join('')+'<th scope="col"><span class="ch-sr">Notes</span></th></tr></thead><tbody>'
+      +rows.map((r,i)=>'<tr class="'+(r.include?'':'is-off')+(r.flags.some(f=>CH.CHECK_FLAGS.has(f))?' is-warn':'')+'">'
+        +'<td data-label="Save"><input type="checkbox" '+(r.include?'checked':'')+' aria-label="Save this result" onchange="this.closest(\'tr\').classList.toggle(\'is-off\',!this.checked);ClinicalHistory.pv('+i+',\'include\',this.checked)"></td>'
+        +'<td data-label="Date & time">'+esc(r.entry_date?fmt(r.entry_date):'No date')+(r.entry_time?' <span class="ch-time">'+esc(r.entry_time)+'</span>':'')+'</td>'
+        +'<td data-label="Panel">'+esc(r.entry_type)+'</td><td data-label="Test">'+esc(r.title)+'</td><td data-label="Result"><strong>'+esc(r.result)+'</strong></td>'
+        +'<td data-label="Flag">'+(r.lab_flag?'<span class="ch-lab-flag">'+esc(r.lab_flag)+'</span>':'')+'</td><td data-label="Normal range">'+esc(r.lab_range)+'</td><td data-label="Unit">'+esc(r.lab_unit)+'</td>'
+        +'<td data-label="">'+r.flags.filter(f=>LAB_BADGE[f]).map(f=>'<span class="ch-flag'+(CH.CHECK_FLAGS.has(f)?' is-check':f==='lab_new'?' is-new':'')+'">'+esc(LAB_BADGE[f])+'</span>').join(' ')+'</td></tr>').join('')
+      +'</tbody></table></div>';
+  }
+
   /* ---------- paste → organise → check → save ---------- */
   function openPaste(cat){
     if(CH.CATS[cat])st.tab=cat;
@@ -1483,12 +1634,13 @@
     if(typeof global.openMo==='function')global.openMo();
     setTimeout(()=>{const t=document.getElementById('ch-paste');if(t)t.focus();},60);
   }
-  function organise(){
+  async function organise(){
     const ta=document.getElementById('ch-paste');const text=ta?ta.value:'';st.pasteText=text;
     if(!text.trim()){msg('Paste the list first.');return;}
     const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:CH.savedKeys(st.entries)});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
     autoFill(res.rows);ecgUpdates(res.rows);
+    if(res.rows.some(r=>r.category==='lab'))await markNewTests(res.rows);
     // The ID in a pasted note is checked against this patient, then dropped.
     const mine=normId(st.patient&&st.patient.id_card);
     res.rows.forEach(r=>{
@@ -1512,12 +1664,12 @@
     mb.className='mb mb-wide';
     mb.innerHTML='<h2>Check before saving</h2>'
       +(bad?'<div class="ch-idbad" role="alert">⚠️ <strong>This may be another patient’s note.</strong> The ID in the pasted text does not match '+esc(st.patient&&st.patient.id_card||'this patient')+'. It has been unticked — check you copied the right patient.</div>':'')
-      +'<div class="msub">Found <strong>'+p.rows.length+'</strong> entr'+(p.rows.length===1?'y':'ies')+(p.mode==='table'?' (read as a table)':p.mode==='note'?' (read as a consultation note)':p.mode==='ecg'?' (read as an ECG report)':'')+'. '
+      +'<div class="msub">Found <strong>'+p.rows.length+'</strong> '+(p.mode==='lab'?'lab result'+(p.rows.length===1?'':'s'):'entr'+(p.rows.length===1?'y':'ies'))+(p.mode==='table'?' (read as a table)':p.mode==='note'?' (read as a consultation note)':p.mode==='ecg'?' (read as an ECG report)':'')+'. '
       +(check?'<strong class="ch-warn">'+check+' need'+(check===1?'s':'')+' checking</strong> (highlighted in amber). ':'')
       +'Untick anything that should not be saved and correct any field before saving.</div>'
       +(p.stale&&p.stale.length?'<div class="ch-stale"><strong>'+p.stale.length+' medicine'+(p.stale.length===1?'':'s')+' saved before '+(p.stale.length===1?'is':'are')+' not on this list:</strong> '+esc(p.stale.map(e=>e.title).join(', '))
         +'<label><input type="checkbox" '+(p.removeStale?'checked':'')+' onchange="ClinicalHistory._state.preview.removeStale=this.checked"> Remove '+(p.stale.length===1?'it':'them')+' when saving</label></div>':'')
-      +'<div class="ch-preview">'+p.rows.map((r,i)=>cardHTML(r,i,false)).join('')+'</div>'
+      +(p.mode==='lab'?labPreviewHTML(p):'<div class="ch-preview">'+p.rows.map((r,i)=>cardHTML(r,i,false)).join('')+'</div>')
       +'<div id="ch-msg"></div>'
       +'<div class="mact"><button class="btn-cancel" onclick="ClinicalHistory.openPaste()">‹ Back to the pasted text</button>'
       +'<button class="btn-save" id="ch-save" onclick="ClinicalHistory.saveAll()">'+saveLabel(n)+'</button></div>';
@@ -1540,6 +1692,8 @@
     else if(cat==='imaging')grid=field('Test',i,'title',r.title)+field('Report',i,'result',r.result,{wide:true,rows:5});
     else if(cat==='doc_icm')grid=field('Type',i,'entry_type',r.entry_type)+field('Note',i,'result',r.result,{wide:true,rows:6});
     else if(cat==='poyc')grid=field('Description',i,'title',r.title)+field('Prescription',i,'result',r.result);
+    else if(cat==='lab')grid=field('Panel',i,'entry_type',r.entry_type)+field('Test',i,'title',r.title)+field('Result',i,'result',r.result)
+      +field('Flag',i,'lab_flag',r.lab_flag)+field('Normal range',i,'lab_range',r.lab_range)+field('Unit',i,'lab_unit',r.lab_unit);
     else if(cat==='ecg')grid=field('Verdict (as printed)',i,'title',r.title)+field('Confirmed / unconfirmed',i,'entry_type',r.entry_type)
       +field('The report, section by section',i,'result',r.result,{wide:true,rows:10,help:'Each section starts on a line beginning with § and its name: Measurements, Axis, Interpretation, Previous study.'});
     else grid=field('Consultant',i,'source',r.source)+field('Form type',i,'entry_type',r.entry_type)
@@ -1551,7 +1705,7 @@
         +(single?'':'<label class="ch-inc"><input type="checkbox" '+(r.include?'checked':'')+' onchange="ClinicalHistory.pv('+i+',\'include\',this.checked)"> Save</label>')
         +'<label>Under '+catSel+'</label>'
         +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
-        +(cat==='doc_icm'||cat==='ecg'?'<label>Time <input type="time"'+(cat==='ecg'?' step="1"':'')+' value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
+        +(cat==='doc_icm'||cat==='ecg'||cat==='lab'?'<label>Time <input type="time"'+(cat==='ecg'?' step="1"':'')+' value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
         +(r.date_text?'<span class="ch-orig">written as: '+esc(r.date_text)+'</span>':'')
       +'</div>'
       +(r.flags.length?'<div class="ch-flags">'+r.flags.map(f=>'<span class="ch-flag'+(CH.CHECK_FLAGS.has(f)?' is-check':f==='id_match'?' is-ok':'')+'">'+esc(CH.flagText(f,r))+'</span>').join('')+'</div>':'')
@@ -1574,9 +1728,11 @@
   function dbRow(r,fp,batch,who,now){
     const iso=r.entry_date||null,cat=r.category;
     return {patient_id:st.pid,category:cat,entry_date:iso,date_precision:iso?(r.date_precision||'day'):'',
-      entry_time:cat==='doc_icm'||cat==='ecg'?(r.entry_time||''):'',date_text:r.date_text||'',entry_type:String(r.entry_type||'').trim(),
+      entry_time:cat==='doc_icm'||cat==='ecg'||cat==='lab'?(r.entry_time||''):'',date_text:r.date_text||'',entry_type:String(r.entry_type||'').trim(),
       title:String(r.title||'').trim(),result:String(r.result||'').trim(),source:String(r.source||'').trim(),
-      raw_text:r.raw_text||'',fingerprint:fp,batch_id:batch,created_by_name:who,updated_by_name:who,created_at:now,updated_at:now};
+      raw_text:r.raw_text||'',fingerprint:fp,batch_id:batch,created_by_name:who,updated_by_name:who,created_at:now,updated_at:now,
+      // Lab results: the flag, normal range and unit (sql/add-patient-history.sql).
+      lab_flag:String(r.lab_flag||'').trim(),lab_range:String(r.lab_range||'').trim(),lab_unit:String(r.lab_unit||'').trim()};
   }
   // Insert / update, dropping any column the database does not have yet.
   async function writeTolerant(run,body){
@@ -1591,7 +1747,7 @@
   }
   function writeError(error){
     const m=String(error&&error.message||error);
-    if(/category_check|violates check constraint/i.test(m))return 'The database needs the updated set-up for these sections (e.g. ECG). Run <strong>sql/add-patient-history.sql</strong> once in Supabase, then save again.';
+    if(/category_check|violates check constraint/i.test(m))return 'The database needs the updated set-up for these sections (e.g. ECG, Lab results). Run <strong>sql/add-patient-history.sql</strong> once in Supabase, then save again.';
     if(/patient_history_entries|does not exist|relation|schema cache/i.test(m))return 'These tabs are not switched on in the database yet. Run <strong>sql/add-patient-history.sql</strong> once in Supabase.';
     return 'Could not save: '+esc(m);
   }
@@ -1615,14 +1771,15 @@
     const out=[],upd=[];let skipped=0;
     const batchKeys=new Set();
     rows.forEach(r=>{
-      const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time],fp=CH.fingerprint(...key);
+      const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time,r.entry_type],fp=CH.fingerprint(...key);
       const rep=r.replaces&&st.entries.some(e=>String(e.id)===String(r.replaces));
       // An update is checked against every other saved entry, not the one it replaces.
       const pool=rep?CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(r.replaces))):have;
       if(CH.isDup(pool,...key)||CH.isDup(batchKeys,...key)){skipped++;return;}
       CH.keysOf(...key).forEach(k=>{have.add(k);batchKeys.add(k);});
       if(rep)upd.push([r.replaces,dbRow(r,fp,batch,who,now)]);
-      else out.push(dbRow(r,fp,batch,who,now));});
+      // Saved a millisecond apart so lab results keep the hospital's order.
+      else out.push(dbRow(r,fp,batch,who,new Date(Date.parse(now)+out.length).toISOString()));});
     let removed=0,updated=0;const updBy={};
     for(const [id,row] of upd){
       delete row.created_by_name;delete row.created_at;delete row.patient_id;
@@ -1630,7 +1787,7 @@
       if(u.error){restore();msg(writeError(u.error));return;}
       updated++;updBy[row.category]=(updBy[row.category]||0)+1;
     }
-    const upName=(k,n)=>k==='ecg'?n+' ECG'+(n===1?'':'s'):k==='consult'?n+' consultation note'+(n===1?'':'s'):n+' entr'+(n===1?'y':'ies');
+    const upName=(k,n)=>k==='ecg'?n+' ECG'+(n===1?'':'s'):k==='lab'?n+' lab result'+(n===1?'':'s'):k==='consult'?n+' consultation note'+(n===1?'':'s'):n+' entr'+(n===1?'y':'ies');
     for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
     if(!out.length&&!removed&&!updated){restore();msg('All of these are already saved for this patient.');return;}
     if(out.length){
@@ -1648,7 +1805,7 @@
     st.note='✓ '+said.join(' · ')+'.';
     if(removed)try{global.logAudit&&global.logAudit({action:'delete',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Removed '+removed+' medicine'+(removed===1?'':'s')+' no longer on the POYC list'});}catch(e){}
     const first=Object.keys(by)[0]||(removed?'poyc':'');if(first)goToCategory(first);
-    st.preview=null;st.pasteText='';
+    st.preview=null;st.pasteText='';catalogue.at=0;
     if(typeof global.closeModal==='function')global.closeModal();
     await load();
   }
@@ -1658,7 +1815,8 @@
     if(!id&&CH.CATS[cat])st.tab=cat;
     const e=id?st.entries.find(x=>String(x.id)===String(id)):null;if(id&&!e)return;
     const row=e?{category:e.category,entry_date:e.entry_date?String(e.entry_date).slice(0,10):'',date_precision:e.date_precision||'day',entry_time:e.entry_time||'',date_text:e.date_text||'',
-      entry_type:e.entry_type||'',title:e.title||'',result:e.result||'',source:e.source||'',raw_text:e.raw_text||'',flags:[],include:true,linked_stoma:e.linked_stoma||''}
+      entry_type:e.entry_type||'',title:e.title||'',result:e.result||'',source:e.source||'',raw_text:e.raw_text||'',flags:[],include:true,linked_stoma:e.linked_stoma||'',
+      lab_flag:e.lab_flag||'',lab_range:e.lab_range||'',lab_unit:e.lab_unit||''}
       :{category:st.tab,entry_date:'',date_precision:'day',entry_time:'',date_text:'',entry_type:'',title:'',result:'',source:'',raw_text:'',flags:[],include:true};
     st.edit={id:e?e.id:null};st.preview={rows:[row],mode:'edit'};
     const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide';
@@ -1671,10 +1829,11 @@
     if(!String(r.title).trim()&&!String(r.result).trim()){msg(r.category==='doc_icm'?'Write the note first.':'Write the procedure, test or note first.');return;}
     const btn=document.getElementById('ch-save-one');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     const who=await whoName(),now=new Date().toISOString();
-    const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time],fp=CH.fingerprint(...key);
+    const key=[r.category,r.entry_date||'',r.title,r.result,r.entry_time,r.entry_type],fp=CH.fingerprint(...key);
     const others=CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(st.edit.id||'')));
     // An ECG with the same date and time is never saved twice.
     if(r.category==='ecg'&&CH.isDup(others,...key)){if(btn){btn.disabled=false;btn.textContent='Save';}msg('An ECG with this date and time is already saved for this patient — it is not saved twice.');return;}
+    if(r.category==='lab'&&CH.isDup(others,...key)){if(btn){btn.disabled=false;btn.textContent='Save';}msg('This test of this panel, at this date and time, is already saved for this patient — it is not saved twice.');return;}
     if(!st.edit.id&&CH.isDup(others,...key)&&!confirm('This entry is already saved for this patient. Save it again anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
     if(st.edit.id&&CH.isDup(others,...key)&&!confirm('Another saved entry is the same as this one. Save anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
     let res;
@@ -1697,5 +1856,5 @@
     st.note='';await load();
   }
 
-  Object.assign(CH,{mount,main,sub,search,reload:load,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,_state:st});
+  Object.assign(CH,{mount,main,sub,search,reload:load,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
 })(window);

@@ -27,12 +27,18 @@ create table if not exists public.patient_history_entries (id uuid primary key d
 -- Added later; safe on a database set up with an earlier version of this script.
 alter table public.patient_history_entries add column if not exists linked_stoma text not null default '';
 
+-- Lab results: the hospital's Status, and its Range & UOM split into the normal
+-- range and the unit. Empty for every other section.
+alter table public.patient_history_entries add column if not exists lab_flag text not null default '';
+alter table public.patient_history_entries add column if not exists lab_range text not null default '';
+alter table public.patient_history_entries add column if not exists lab_unit text not null default '';
+
 -- Which section an entry belongs to. Re-created each run so a database set up
 -- with an earlier version of this script also accepts Patient consultation,
--- consult; Entitlement CARE, poyc; and ECG, ecg.
+-- consult; Entitlement CARE, poyc; ECG, ecg; and Lab results, lab.
 -- Older tab names stay allowed so nothing saved before is rejected.
 alter table public.patient_history_entries drop constraint if exists patient_history_entries_category_check;
-alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','ecg','doc_icm','poyc','notes','treatment','doc_onco','doc_ccp'));
+alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','ecg','doc_icm','poyc','lab','notes','treatment','doc_onco','doc_ccp'));
 
 create index if not exists patient_history_entries_patient on public.patient_history_entries (patient_id, category, entry_date desc);
 
@@ -42,6 +48,15 @@ revoke all on public.patient_history_entries from public, anon, authenticated;
 grant select, insert, update, delete on public.patient_history_entries to authenticated;
 drop policy if exists patient_history_entries_rw on public.patient_history_entries;
 create policy patient_history_entries_rw on public.patient_history_entries for all to authenticated using ((select auth.uid()) is not null and not coalesce(((select auth.jwt())->>'is_anonymous')::boolean, false)) with check ((select auth.uid()) is not null and not coalesce(((select auth.jwt())->>'is_anonymous')::boolean, false) and exists (select 1 from public.patients p where p.id = patient_id));
+
+-- The blood investigations list: every panel and test seen in a saved lab
+-- result, for all patients, with when it was first seen and for how many
+-- patients. Worked out from the saved results, so a new test joins it the moment
+-- it is saved. Only test names and counts; it reads the table with the signed-in
+-- user's own rights (security_invoker).
+create or replace view public.lab_test_catalogue with (security_invoker = on) as select entry_type as panel, title as test, min(created_at) as first_seen, count(distinct patient_id) as patients from public.patient_history_entries where category = 'lab' and title <> '' group by entry_type, title;
+revoke all on public.lab_test_catalogue from public, anon;
+grant select on public.lab_test_catalogue to authenticated;
 
 notify pgrst, 'reload schema';
 
