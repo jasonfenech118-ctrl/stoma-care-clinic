@@ -1048,13 +1048,13 @@
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const st={pid:null,patient:null,hosts:{},entries:[],tab:'surgery',qs:{},available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',noteAt:'',
-    sub:{procedures:'surgery'},focus:null};
-  // Four sections inside Hospital records, as in the hospital system:
-  // Performed procedures (with the Patient consultation notes, linked to their
-  // procedure by date), Medical imaging results, iCM notes and Entitlement CARE
-  // (POYC).
+    focus:null};
+  // The sections inside Hospital records, as in the hospital system: Performed
+  // procedures, Patient consultation (linked to its procedure by date), Medical
+  // imaging results, ECG, iCM notes and Entitlement CARE (POYC).
   const MAIN={
-    procedures:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['consult','Patient consultation','📋']]},
+    procedures:{label:'Performed procedures',icon:'🏥',cat:'surgery'},
+    consult:{label:'Patient consultation',icon:'📋',cat:'consult'},
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
     ecg:{label:'ECG',icon:'🫀',cat:'ecg'},
     icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'},
@@ -1068,20 +1068,21 @@
     doc_icm:[['Type','entry_type'],['Note','result'],['Created On','date']],
     poyc:[['Description','title'],['Prescription','result']]
   };
+  // The help line under each section's buttons. Empty = no help line and no
+  // "Nothing recorded yet" line (Performed procedures, ECG and iCM notes).
   const HINT={
-    surgery:'Copy the Performed Procedures table from the hospital system (Procedures › Performed Procedures) and paste it in one go. Date, Consultant and Procedure are kept; OP Note, Age, Theatre and Source are left out.',
+    surgery:'',
     consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order; a blank date or consultant is filled in from the stoma on the profile. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
     imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
-    ecg:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it. The date and time, measurements, axis, statements and verdict printed by the cardiograph are kept as printed, with any change in a measurement since the ECG before. The PDF, the name and the ID are not saved.',
-    // iCM notes: no help line and no "Nothing recorded yet" line (asked for).
+    ecg:'',
     doc_icm:'',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
   const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
   // Each tab is a fold-out section of its own on the profile, below Outcome
   // (index.html wraps each host in a details.pd-section).
-  const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc'};
-  function catOf(k){return k==='procedures'?st.sub.procedures:MAIN[k].cat;}
+  const SECTION_OF={surgery:'procedures',consult:'consult',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc'};
+  function catOf(k){return MAIN[k].cat;}
   // Unfold a section and the Hospital records fold-out around it
   // (after saving, or when a linked entry is opened).
   function sectionOpen(k){
@@ -1091,7 +1092,6 @@
   }
   // Point the tabs at the place a category lives (after saving or editing).
   function goToCategory(cat){
-    if(cat==='surgery'||cat==='consult')st.sub.procedures=cat;
     if(SECTION_OF[cat]){st.noteAt=SECTION_OF[cat];sectionOpen(SECTION_OF[cat]);}
   }
   let loadSeq=0;
@@ -1110,7 +1110,7 @@
   function counts(){
     const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0};
     st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});
-    c.procedures=c.surgery+c.consult;c.icm=c.doc_icm;return c;
+    c.procedures=c.surgery;c.icm=c.doc_icm;return c;
   }
   function sorted(list){
     return list.slice().sort((a,b)=>{
@@ -1283,7 +1283,7 @@
   function mount(hosts,patient){
     if(!hosts||!patient)return;
     const pid=String(patient.id);
-    if(st.pid!==pid){st.pid=pid;st.entries=[];st.qs={};st.tab='surgery';st.loaded=false;st.note='';st.noteAt='';st.pasteText='';st.sub={procedures:'surgery'};st.focus=null;}
+    if(st.pid!==pid){st.pid=pid;st.entries=[];st.qs={};st.tab='surgery';st.loaded=false;st.note='';st.noteAt='';st.pasteText='';st.focus=null;}
     st.hosts=hosts;st.patient=patient;
     render();load();
   }
@@ -1310,7 +1310,7 @@
     // The Hospital records fold-out: the total in its title.
     const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
     const osum=outer&&outer.querySelector(':scope > summary');
-    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.procedures+c.imaging+c.ecg+c.icm+c.poyc)+'</span>';}
+    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.surgery+c.consult+c.imaging+c.ecg+c.doc_icm+c.poyc)+'</span>';}
     Object.keys(MAIN).forEach(k=>{
       const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
       // The fold-out's title carries the count, as the tab button did.
@@ -1322,13 +1322,9 @@
   }
   function paneHTML(k,c){
     if(!st.available)return '<div class="ch-pane ch-pane-'+k+'"><div class="ch-missing">These sections need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
-    const cat=catOf(k),subs=MAIN[k].subs;
-    const subTabs=subs?'<div class="ch-sub-tabs" role="tablist">'+subs.map(([x,l,ic])=>{
-      const on=st.sub[k]===x;
-      return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+x+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+c[x]+'</span></button>';
-    }).join('')+'</div>':'';
+    const cat=catOf(k);
     const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':CH.CATS[cat].label.toLowerCase();
-    return '<div class="ch-pane ch-pane-'+k+'">'+subTabs
+    return '<div class="ch-pane ch-pane-'+k+'">'
       +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
       +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.qs[k]||'')+'" oninput="ClinicalHistory.search(this.value,\''+k+'\')"></div>'
@@ -1346,7 +1342,7 @@
     if(st.error)return '<p class="ch-empty" role="alert">Could not load these entries: '+esc(st.error)+' <button type="button" class="psm-btn" onclick="ClinicalHistory.reload()">Retry</button></p>';
     const q=String(st.qs[k]||'').trim().toLowerCase(),cat=catOf(k);
     const rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
-    if(!rows.length&&!q&&cat==='doc_icm')return '';
+    if(!rows.length&&!q&&!HINT[cat])return '';
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>'+esc(PASTE_LABEL[cat])+'</strong> to add '+(cat==='consult'?'a note':'the whole list in one go')+'.')+'</p>';
     if(cat==='poyc'){
       rows.sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),undefined,{sensitivity:'base'}));   // medicines A–Z
@@ -1441,8 +1437,8 @@
   }
   // Open a section and bring it into view.
   function main(k){if(!MAIN[k])return;const h=sectionOpen(k);render();if(h&&h.scrollIntoView)h.scrollIntoView({block:'start',behavior:'smooth'});}
-  // Performed procedures ↔ Patient consultation, inside the Performed procedures section.
-  function sub(x){if(x!=='surgery'&&x!=='consult')return;st.sub.procedures=x;st.qs.procedures='';st.note='';st.focus=null;render();}
+  // Kept for older calls: open the Performed procedures or Patient consultation section.
+  function sub(x){if(SECTION_OF[x])main(SECTION_OF[x]);}
   function search(v,k){k=MAIN[k]?k:'procedures';st.qs[k]=String(v||'');st.focus=null;const l=document.getElementById('ch-list-'+k);if(l)l.innerHTML=listHTML(k);}
   function showLinked(cat,date){goToCategory(cat);st.qs[SECTION_OF[cat]]='';st.note='';st.focus={cat,date};render();}
   function openStoma(slot){if(slot&&typeof global.openStomaModal==='function')global.openStomaModal(st.pid,slot);}
