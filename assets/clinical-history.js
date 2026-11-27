@@ -19,6 +19,8 @@
       placeholder:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), select the whole note, copy it and paste it here.\nThe ID and name are only used to check it is the right patient, and are not saved.'},
     imaging:{label:'Medical imaging results',icon:'🩻',
       placeholder:'Copy the whole Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it here in one go.\nDate, Test and Report are kept.'},
+    poyc:{label:'Entitlement CARE (POYC)',icon:'💊',
+      placeholder:'Copy the whole Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it here in one go.\nDescription and Prescription are kept; ATC Code and Dosage Regimen are left out.'},
     doc_icm:{label:'iCM notes',icon:'📄',
       placeholder:'Copy the whole iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it here in one go.\nType, Note and Created On are kept; Created By is left out.'},
     // Tabs that were removed. Anything saved under them is kept in the database
@@ -28,7 +30,7 @@
     doc_ccp:{label:'CCP – Practice nurse review notes',icon:'📄',legacy:true,placeholder:''},
     treatment:{label:'Treatment',icon:'💊',legacy:true,placeholder:''}
   };
-  const CAT_KEYS=['surgery','consult','imaging','doc_icm'];
+  const CAT_KEYS=['surgery','consult','imaging','doc_icm','poyc'];
   // Notes keep a whole note together (author + text).
   const isNoteCat=c=>c==='notes'||String(c||'').startsWith('doc_');
 
@@ -608,6 +610,31 @@
     }).filter(r=>r.result||r.typeCell);
   }
 
+  /* Entitlement CARE (POYC): Description · Prescription · ATC Code · Dosage
+     Regimen. A medicine has no date; each row is found by its ATC code (or, when
+     only the first columns were copied, by its tab), and only Description and
+     Prescription are kept. Wrapped Dosage Regimen lines are ignored. */
+  const ATC_CELL=/^[A-Z]\d{2}[A-Z]{0,2}\d{0,2}$/;
+  function poycRows(text){
+    const out=[];
+    const lines=text.split('\n').filter(l=>l.trim()&&!NOISE_LINE.test(l.trim()));
+    const tabbed=lines.filter(l=>l.includes('\t'));
+    const withAtc=tabbed.some(l=>cellsOf(l).some(c=>ATC_CELL.test(c)));
+    lines.forEach(raw=>{
+      const cells=cellsOf(raw);
+      if(cells.some(c=>/^description$/i.test(c))&&cells.some(c=>/^prescription$/i.test(c)))return;   // the header row
+      if(!raw.includes('\t')){if(!tabbed.length){const t=raw.trim();if(t)out.push({desc:t,presc:'',raw});}return;}
+      const atc=cells.findIndex(c=>ATC_CELL.test(c));
+      if(withAtc&&atc<0)return;   // the rest of a wrapped Dosage Regimen
+      const before=(atc>=0?cells.slice(0,atc):cells).filter(Boolean);
+      if(!before.length)return;
+      out.push({desc:before[0],presc:before.slice(1).join(' '),raw:before.join('\t')});
+    });
+    const today=(typeof global.TODAY==='string'&&global.TODAY)||new Date().toISOString().slice(0,10);
+    return out.map(r=>({date:{iso:today,precision:'day',time:'',flags:[],text:''},rangeText:'',table:true,hospital:true,category:'poyc',
+      typeCell:'',title:tidy(r.desc),result:tidy(r.presc),source:'',raw:[r.raw]}));
+  }
+
   /* ------------------------------------------------------------------ *
    * A Patient Consultation note (e.g. a Procedure Report), opened with
    * "Open past visit": label : value lines, set out section by section.
@@ -772,7 +799,10 @@
    * parse(): the whole lump → reviewed-ready rows
    * ------------------------------------------------------------------ */
   function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');}
-  function fingerprint(cat,iso,title,result){return cat+'|'+(iso||'')+'|'+(norm(title)||norm(result)).slice(0,60);}
+  function fingerprint(cat,iso,title,result){
+    if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
+    return cat+'|'+(iso||'')+'|'+(norm(title)||norm(result)).slice(0,60);
+  }
   function parse(text,cat,opts){
     opts=opts||{};cat=CAT_KEYS.includes(cat)?cat:'surgery';
     let clean=normalise(text)
@@ -788,7 +818,8 @@
     // The hospital's own layouts first: a consultation note (labels), the iCM
     // notes table, then the date-led tables (procedures, imaging, consultations).
     let raw=null,mode='text';
-    if(looksConsultNote(clean)){raw=consultNotes(clean);mode='note';}
+    if(cat==='poyc'){raw=poycRows(clean);mode='table';}
+    else if(looksConsultNote(clean)){raw=consultNotes(clean);mode='note';}
     else if(clean.includes('\t')){
       if(cat==='doc_icm'){const r=icmRows(clean);if(r.length&&r.some(x=>x.date)){raw=r;mode='table';}}
       if(!raw){const h=hospitalRows(clean,cat);if(h&&h.entries.length){raw=h.entries;mode='table';}}
@@ -873,27 +904,31 @@
   const MAIN={
     procedures:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['consult','Patient consultation','📋']]},
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
-    icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'}
+    icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'},
+    poyc:{label:'Entitlement CARE (POYC)',icon:'💊',cat:'poyc'}
   };
   // The columns each table shows: [heading, field].
   const COLS={
     surgery:[['Date','date'],['Consultant','source'],['Procedure','title']],
     imaging:[['Date','date'],['Test','title'],['Report','result']],
-    doc_icm:[['Type','entry_type'],['Note','result'],['Created On','date']]
+    doc_icm:[['Type','entry_type'],['Note','result'],['Created On','date']],
+    poyc:[['Description','title'],['Prescription','result']]
   };
   const HINT={
     surgery:'Copy the Performed Procedures table from the hospital system (Procedures › Performed Procedures) and paste it in one go. Date, Consultant and Procedure are kept; OP Note, Age, Theatre and Source are left out.',
     consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
     imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
-    doc_icm:'Copy the iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it in one go. Type, Note and Created On are kept; Created By is left out.'
+    doc_icm:'Copy the iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it in one go. Type, Note and Created On are kept; Created By is left out.',
+    poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
-  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',doc_icm:'📋 Paste iCM notes'};
+  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
   function currentCategory(){return !st.main?null:st.main==='procedures'?st.sub.procedures:MAIN[st.main].cat;}
   // Point the tabs at the place a category lives (after saving or editing).
   function goToCategory(cat){
     if(cat==='surgery'||cat==='consult'){st.main='procedures';st.sub.procedures=cat;}
     else if(cat==='imaging')st.main='imaging';
     else if(cat==='doc_icm')st.main='icm';
+    else if(cat==='poyc')st.main='poyc';
   }
   let loadSeq=0;
   const day=e=>String(e&&e.entry_date||'').slice(0,10);
@@ -909,7 +944,7 @@
     return fmt(e.entry_date);
   }
   function counts(){
-    const c={surgery:0,consult:0,imaging:0,doc_icm:0};
+    const c={surgery:0,consult:0,imaging:0,doc_icm:0,poyc:0};
     st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});
     c.procedures=c.surgery+c.consult;c.icm=c.doc_icm;return c;
   }
@@ -1007,7 +1042,7 @@
   function render(){
     const h=st.host;if(!h||!document.body.contains(h))return;
     const c=counts();
-    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Performed procedures, medical imaging results and iCM notes">'+Object.keys(MAIN).map(k=>{
+    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Performed procedures, medical imaging results, iCM notes and Entitlement CARE (POYC)">'+Object.keys(MAIN).map(k=>{
       const on=st.main===k;
       return '<button type="button" role="tab" class="ch-main ch-main-'+k+(on?' is-on':'')+'" aria-selected="'+on+'" aria-expanded="'+on+'" onclick="ClinicalHistory.main(\''+k+'\')">'
         +'<span class="ch-main-ic" aria-hidden="true">'+MAIN[k].icon+'</span>'+esc(MAIN[k].label)+'<span class="ch-count">'+c[k]+'</span><span class="ch-caret" aria-hidden="true">'+(on?'▴':'▾')+'</span></button>';
@@ -1023,7 +1058,7 @@
       const on=st.sub[st.main]===k;
       return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+k+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+c[k]+'</span></button>';
     }).join('')+'</div>':'';
-    const what=cat==='doc_icm'?'iCM notes':CH.CATS[cat].label.toLowerCase();
+    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':CH.CATS[cat].label.toLowerCase();
     const body='<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste()">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit()">＋ Add one</button>'
       +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.q)+'" oninput="ClinicalHistory.search(this.value)"></div>'
@@ -1044,6 +1079,11 @@
     const q=st.q.trim().toLowerCase(),cat=currentCategory();
     const rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>'+esc(PASTE_LABEL[cat])+'</strong> to add '+(cat==='consult'?'a note':'the whole list in one go')+'.')+'</p>';
+    if(cat==='poyc'){
+      rows.sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),undefined,{sensitivity:'base'}));   // medicines A–Z
+      const last=rows.reduce((a,e)=>String(e.created_at||'')>String(a&&a.created_at||'')?e:a,null);
+      return (last?'<p class="ch-asof">Entitlement list copied on <strong>'+esc(fmt(last.created_at||last.entry_date))+'</strong>'+(last.created_by_name?' by '+esc(last.created_by_name):'')+'.</p>':'')+tableHTML(cat,rows);
+    }
     return cat==='consult'?rows.map(consultCardHTML).join(''):tableHTML(cat,rows);
   }
   const isFocus=(cat,e)=>!!(st.focus&&st.focus.cat===cat&&st.focus.date===day(e));
@@ -1138,6 +1178,12 @@
       if(normId(r.id_seen)===mine)r.flags.push('id_match');
       else{r.flags.push('id_mismatch');r.include=false;}
     });
+    // A new POYC list: medicines saved before that are not on it can be removed.
+    if(st.tab==='poyc'){
+      const now=new Set(res.rows.map(r=>r.fingerprint));
+      res.stale=st.entries.filter(e=>e.category==='poyc'&&!now.has(CH.fingerprint('poyc','',e.title,e.result)));
+      res.removeStale=false;
+    }
     st.preview=res;st.edit=null;renderPreview();
   }
   function includedCount(){return st.preview?st.preview.rows.filter(r=>r.include).length:0;}
@@ -1151,6 +1197,8 @@
       +'<div class="msub">Found <strong>'+p.rows.length+'</strong> entr'+(p.rows.length===1?'y':'ies')+(p.mode==='table'?' (read as a table)':p.mode==='note'?' (read as a consultation note)':'')+'. '
       +(check?'<strong class="ch-warn">'+check+' need'+(check===1?'s':'')+' checking</strong> (highlighted in amber). ':'')
       +'Untick anything that should not be saved and correct any field before saving.</div>'
+      +(p.stale&&p.stale.length?'<div class="ch-stale"><strong>'+p.stale.length+' medicine'+(p.stale.length===1?'':'s')+' saved before '+(p.stale.length===1?'is':'are')+' not on this list:</strong> '+esc(p.stale.map(e=>e.title).join(', '))
+        +'<label><input type="checkbox" '+(p.removeStale?'checked':'')+' onchange="ClinicalHistory._state.preview.removeStale=this.checked"> Remove '+(p.stale.length===1?'it':'them')+' when saving</label></div>':'')
       +'<div class="ch-preview">'+p.rows.map((r,i)=>cardHTML(r,i,false)).join('')+'</div>'
       +'<div id="ch-msg"></div>'
       +'<div class="mact"><button class="btn-cancel" onclick="ClinicalHistory.openPaste()">‹ Back to the pasted text</button>'
@@ -1173,6 +1221,7 @@
     if(cat==='surgery')grid=field('Consultant',i,'source',r.source)+field('Procedure',i,'title',r.title,{wide:true,rows:2});
     else if(cat==='imaging')grid=field('Test',i,'title',r.title)+field('Report',i,'result',r.result,{wide:true,rows:5});
     else if(cat==='doc_icm')grid=field('Type',i,'entry_type',r.entry_type)+field('Note',i,'result',r.result,{wide:true,rows:6});
+    else if(cat==='poyc')grid=field('Description',i,'title',r.title)+field('Prescription',i,'result',r.result);
     else grid=field('Consultant',i,'source',r.source)+field('Form type',i,'entry_type',r.entry_type)
       +field('Procedure/s performed',i,'title',r.title,{wide:true,rows:2})
       +field('The note, section by section',i,'result',r.result,{wide:true,rows:12,help:'Each section starts on a line beginning with § and its name.'});
@@ -1181,7 +1230,7 @@
       +'<div class="ch-card-head">'
         +(single?'':'<label class="ch-inc"><input type="checkbox" '+(r.include?'checked':'')+' onchange="ClinicalHistory.pv('+i+',\'include\',this.checked)"> Save</label>')
         +'<label>Under '+catSel+'</label>'
-        +'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec
+        +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
         +(cat==='doc_icm'?'<label>Time <input type="time" value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
         +(r.date_text?'<span class="ch-orig">written as: '+esc(r.date_text)+'</span>':'')
       +'</div>'
@@ -1232,7 +1281,8 @@
   async function saveAll(){
     const p=st.preview;if(!p)return;
     const rows=p.rows.filter(r=>r.include&&(String(r.title).trim()||String(r.result).trim()));
-    if(!rows.length){msg('Nothing is ticked to save.');return;}
+    const drop=p.removeStale&&p.stale?p.stale.slice():[];
+    if(!rows.length&&!drop.length){msg('Nothing is ticked to save.');return;}
     if(!mismatchOK(rows))return;
     const btn=document.getElementById('ch-save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     const restore=()=>{if(btn){btn.disabled=false;btn.textContent=saveLabel(includedCount());}};
@@ -1243,13 +1293,18 @@
     const have=new Set(st.entries.map(e=>e.fingerprint).filter(Boolean));
     const out=[];let skipped=0;
     rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result);if(have.has(fp)){skipped++;return;}have.add(fp);out.push(dbRow(r,fp,batch,who,now));});
-    if(!out.length){restore();msg('All of these are already saved for this patient.');return;}
-    const res=await writeTolerant(b=>db().from(TABLE).insert(b),out);
-    if(res.error){restore();msg(writeError(res.error));return;}
-    try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Added '+out.length+' entr'+(out.length===1?'y':'ies')+' from a pasted hospital list or note'});}catch(e){}
+    let removed=0;
+    for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
+    if(!out.length&&!removed){restore();msg('All of these are already saved for this patient.');return;}
+    if(out.length){
+      const res=await writeTolerant(b=>db().from(TABLE).insert(b),out);
+      if(res.error){restore();msg(writeError(res.error));return;}
+    }
+    if(out.length)try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Added '+out.length+' entr'+(out.length===1?'y':'ies')+' from a pasted hospital list or note'});}catch(e){}
     const by={};out.forEach(r=>{by[r.category]=(by[r.category]||0)+1;});
-    st.note='✓ Saved '+Object.keys(by).map(k=>by[k]+' to '+esc(CH.CATS[k].label)).join(', ')+(skipped?' · '+skipped+' already saved (skipped)':'')+'.';
-    const first=Object.keys(by)[0];if(first)goToCategory(first);
+    st.note='✓ Saved '+(Object.keys(by).length?Object.keys(by).map(k=>by[k]+' to '+esc(CH.CATS[k].label)).join(', '):'nothing new')+(skipped?' · '+skipped+' already saved (skipped)':'')+(removed?' · '+removed+' no longer on the list removed':'')+'.';
+    if(removed)try{global.logAudit&&global.logAudit({action:'delete',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Removed '+removed+' medicine'+(removed===1?'':'s')+' no longer on the POYC list'});}catch(e){}
+    const first=Object.keys(by)[0]||(removed?'poyc':'');if(first)goToCategory(first);
     st.preview=null;st.pasteText='';
     if(typeof global.closeModal==='function')global.closeModal();
     await load();

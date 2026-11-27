@@ -27,10 +27,11 @@ create table if not exists public.patient_history_entries (id uuid primary key d
 alter table public.patient_history_entries add column if not exists linked_stoma text not null default '';
 
 -- Which tab an entry belongs to. Re-created each run so a database set up with
--- an earlier version of this script also accepts Patient consultation, consult.
+-- an earlier version of this script also accepts Patient consultation, consult,
+-- and Entitlement CARE, poyc.
 -- Older tab names stay allowed so nothing saved before is rejected.
 alter table public.patient_history_entries drop constraint if exists patient_history_entries_category_check;
-alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','doc_icm','notes','treatment','doc_onco','doc_ccp'));
+alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','doc_icm','poyc','notes','treatment','doc_onco','doc_ccp'));
 
 create index if not exists patient_history_entries_patient on public.patient_history_entries (patient_id, category, entry_date desc);
 
