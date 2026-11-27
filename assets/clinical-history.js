@@ -940,9 +940,10 @@
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const st={pid:null,patient:null,hosts:{},entries:[],tab:'surgery',qs:{},available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',noteAt:'',
     sub:{procedures:'surgery'},focus:null};
-  // Four sections, as in the hospital system: Performed procedures (with the
-  // Patient consultation notes, linked to their procedure by date), Medical
-  // imaging results, iCM notes and Entitlement CARE (POYC).
+  // Four sections inside Extracurricular documents, as in the hospital system:
+  // Performed procedures (with the Patient consultation notes, linked to their
+  // procedure by date), Medical imaging results, iCM notes and Entitlement CARE
+  // (POYC).
   const MAIN={
     procedures:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['consult','Patient consultation','📋']]},
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
@@ -968,8 +969,13 @@
   // (index.html wraps each host in a details.pd-section).
   const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',doc_icm:'icm',poyc:'poyc'};
   function catOf(k){return k==='procedures'?st.sub.procedures:MAIN[k].cat;}
-  // Unfold a section (after saving, or when a linked entry is opened).
-  function sectionOpen(k){const h=st.hosts&&st.hosts[k];const d=h&&h.closest('details');if(d&&!d.open)d.open=true;return h;}
+  // Unfold a section and the Extracurricular documents fold-out around it
+  // (after saving, or when a linked entry is opened).
+  function sectionOpen(k){
+    const h=st.hosts&&st.hosts[k];
+    for(let d=h&&h.closest('details');d;d=d.parentElement&&d.parentElement.closest('details'))if(!d.open)d.open=true;
+    return h;
+  }
   // Point the tabs at the place a category lives (after saving or editing).
   function goToCategory(cat){
     if(cat==='surgery'||cat==='consult')st.sub.procedures=cat;
@@ -1173,6 +1179,10 @@
   }
   function render(){
     const c=counts();
+    // The Extracurricular documents fold-out: the total in its title.
+    const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
+    const osum=outer&&outer.querySelector(':scope > summary');
+    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.procedures+c.imaging+c.icm+c.poyc)+'</span>';}
     Object.keys(MAIN).forEach(k=>{
       const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
       // The fold-out's title carries the count, as the tab button did.
