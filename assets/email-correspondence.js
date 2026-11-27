@@ -253,6 +253,22 @@
     const t=[m.from&&m.from.email,m.when&&m.when.date,m.when&&m.when.time,bareSubject(m.subject),String(m.body||'').replace(/\s+/g,' ').trim().slice(0,400)].join('|').toLowerCase();
     return 'fp:'+hash(t)+hash(t.split('').reverse().join(''));
   }
+  /* The same email recognised however it came in — pasted, dropped as a file,
+     or a reply saved from the app that later comes back inside the next email:
+     same direction, the same or next day, and the same start of its text. */
+  const normBody=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  const dayNum=d=>{const t=Date.parse(String(d||'').slice(0,10)+'T12:00:00Z');return isNaN(t)?null:Math.round(t/864e5);};
+  function sigOfMsg(m){return {dir:direction(m)==='sent'?'Outgoing':'Incoming',day:dayNum(m.when&&m.when.date),body:normBody(m.body),subj:normBody(bareSubject(m.subject))};}
+  function sigOfRow(r){const at=r.sent_at?new Date(r.sent_at):null,p2=n=>String(n).padStart(2,'0');
+    const d=at&&!isNaN(at)?at.getFullYear()+'-'+p2(at.getMonth()+1)+'-'+p2(at.getDate()):'';
+    return {dir:r.direction,day:dayNum(d),body:normBody(r.body),subj:normBody(bareSubject(r.subject))};}
+  function sameEmail(a,b){
+    if(a.dir!==b.dir||a.day==null||b.day==null||Math.abs(a.day-b.day)>1)return false;
+    const x=a.body,y=b.body;
+    if(x.length<20||y.length<20)return x===y&&a.subj===b.subj;
+    const n=Math.min(x.length,y.length,150);
+    return x.slice(0,n)===y.slice(0,n)||x.includes(y.slice(0,Math.min(y.length,120)))||y.includes(x.slice(0,Math.min(x.length,120)));
+  }
   const kindOfIssue=r=>r.kind==='patient'?'patient':/doctor/i.test(String(r.service||''))?'doctor':'community';
   const issues=()=>(global.PatientCommunications&&PatientCommunications.historyRows?PatientCommunications.historyRows():[]).filter(r=>!r.parent_id);
   const myName=async()=>{try{const u=await global.getCurrentUserForAudit();return String(u&&(u.name||u.email)||'');}catch(e){return '';}};
@@ -337,7 +353,19 @@
     if(!msgs.length){say('Nothing could be read from that email.');return;}
     dropDraftFiles();st.draft=null;st.separate=false;
     if(!st.db.loaded||st.db.pid!==String(st.patient.id))await loadFor(st.patient.id);
-    msgs.forEach(m=>{m.source=source||'paste';m.key=keyOf(m);m.saved=st.db.keys.has(m.key);if(m.saved){const r=st.db.rows.find(x=>x.message_id===m.key);if(r)m.commId=String(r.communication_id);}});
+    const savedSigs=st.db.rows.map(r=>({r,sig:sigOfRow(r)})),seen=[];
+    msgs.forEach(m=>{
+      m.source=source||'paste';m.key=keyOf(m);m.saved=st.db.keys.has(m.key);
+      let r=m.saved?st.db.rows.find(x=>x.message_id===m.key):null;
+      const sig=sigOfMsg(m);
+      // Not the same Message-ID, but the same email (e.g. pasted before, now
+      // dropped as a file; or our own reply quoted back): already saved.
+      if(!r){const hit=savedSigs.find(x=>sameEmail(sig,x.sig));if(hit){r=hit.r;m.saved=true;}}
+      if(r)m.commId=String(r.communication_id);
+      // The same message twice in this one email (quoted again further down).
+      if(!m.saved&&seen.some(x=>sameEmail(sig,x)))m.repeated=true;
+      seen.push(sig);
+    });
     // Part of a conversation already saved: new messages join the same issue.
     if(!st.issue){const r=st.db.rows.find(x=>msgs.some(m=>m.saved&&m.key===x.message_id));if(r&&r.issue_id){st.issue=await getIssue(r.issue_id);if(st.issue)st.kind=kindOfIssue(st.issue);}}
     st.msgs=msgs;st.check=patientCheck(msgs,st.patient);refreshCodes();
@@ -346,9 +374,9 @@
   // Saved messages show their real code; new ones the code they will get.
   function refreshCodes(){
     const c=global.EpisodeCodes&&EpisodeCodes.cached(st.patient&&st.patient.id);
-    const pending=st.msgs.filter(m=>!m.commId);
+    const pending=st.msgs.filter(m=>!m.commId&&!m.repeated);
     const pv=pending.length?codesFor(pending,st.kind,st.patient.id,st.issue):[];
-    let k=0;st.codes=st.msgs.map(m=>m.commId?(c?c.commCode({id:m.commId}):''):(pv[k++]||''));
+    let k=0;st.codes=st.msgs.map(m=>m.commId?(c?c.commCode({id:m.commId}):''):m.repeated?'':(pv[k++]||''));
   }
   function attHTML(m,mi){
     if(!m.attachments||!m.attachments.length)return '';
@@ -367,7 +395,7 @@
     const dir=direction(m),who=senderType(m,st.kind),code=st.codes[i]||'';
     return '<article class="ec-msg ec-'+dir+'">'
       +'<div class="ec-msg-head">'+(code?'<span class="ec-code" title="'+(m.saved?'Encounter code':'Encounter code it will get')+'">'+esc(code)+'</span>':'')
-        +(m.saved?'<span class="ec-saved">✓ Saved</span>':'')
+        +(m.saved?'<span class="ec-saved">✓ Saved</span>':m.repeated?'<span class="ec-repeat">Repeated in this email — skipped</span>':'')
         +'<span class="ec-dir">'+(dir==='sent'?'⬆ Sent by the clinic':'⬇ Received')+'</span><span class="ec-who">'+esc(who)+'</span>'
         +'<span class="ec-when">'+esc(showWhen(m.when))+'</span>'
         +'<button type="button" class="ch-ic" title="Print this email" onclick="EmailCorrespondence.printOne('+i+')">🖨</button></div>'
@@ -380,7 +408,7 @@
   }
   function render(note){
     const m=mb();if(!m)return;freeUrls();
-    const c=st.check,unsaved=st.msgs.filter(x=>!x.saved).length;
+    const c=st.check,unsaved=st.msgs.filter(x=>!x.saved&&!x.repeated).length;
     m.className='mb mb-wide ec-modal';
     m.innerHTML='<h2>📧 '+esc(KINDS[st.kind].label)+' <span class="ec-tag">Testing</span></h2>'+BANNER_HTML
       +(note?'<div class="ec-ok">'+note+'</div>':'')
@@ -394,14 +422,15 @@
       +(st.issue&&!unsaved?(st.issue.status==='Completed'?'<span class="ec-closed">✓ Correspondence closed</span>':'<button class="btn-cancel" onclick="EmailCorrespondence.closeIssue()">✓ Close correspondence</button>'):'')
       +'<button class="btn-cancel" onclick="EmailCorrespondence.report()">📄 Correspondence report</button>'
       +'<button class="btn-cancel" onclick="EmailCorrespondence.reply()">✉️ Write a reply</button>'
-      +(unsaved?'<button class="btn-save" id="ec-save" onclick="EmailCorrespondence.saveThread()">Save '+unsaved+' email'+(unsaved===1?'':'s')+'</button>':'')+'</div>';
+      +(unsaved?'<button class="btn-save" id="ec-save" onclick="EmailCorrespondence.saveThread()">Save '+unsaved+' email'+(unsaved===1?'':'s')+'</button>'
+        :st.msgs.some(m=>m.saved&&m.commId&&!m.attsKept&&(m.attachments||[]).some(a=>a.bytes))?'<button class="btn-save" id="ec-keep" onclick="EmailCorrespondence.keepAttachments()">📎 Keep its attachments</button>':'')+'</div>';
   }
 
   // A new conversation while the patient is admitted: an encounter of the
   // admission (the usual way) or an episode of its own.
   function admissionChoiceHTML(){
-    if(st.issue||!st.msgs.length||st.msgs.every(m=>m.saved)||!global.PatientCommunications||!PatientCommunications.admissionAt)return '';
-    const first=st.msgs.find(m=>!m.saved),d=first&&first.when?first.when.date:nowWhen().date;
+    if(st.issue||!st.msgs.length||st.msgs.every(m=>m.saved||m.repeated)||!global.PatientCommunications||!PatientCommunications.admissionAt)return '';
+    const first=st.msgs.find(m=>!m.saved&&!m.repeated),d=first&&first.when?first.when.date:nowWhen().date;
     const a=PatientCommunications.admissionAt(d);if(!a)return '';
     return '<fieldset class="ec-admission"><legend>🛏 The patient is admitted on '+esc(showWhen({date:d,time:''}).trim())+(a.code?' · '+esc(a.code):'')+'</legend>'
       +'<label><input type="radio" name="ec-episode" value="admission"'+(st.separate?'':' checked')+' onchange="EmailCorrespondence.setSeparate(false)"> File these emails under the admission (encounters of '+esc(a.code||'the admission')+')</label>'
@@ -463,7 +492,7 @@
     if(st.issue)st.issue=issues().find(r=>String(r.id)===String(st.issue.id))||st.issue;
   }
   async function saveThread(quiet){
-    const todo=st.msgs.filter(m=>!m.saved);if(!todo.length)return true;
+    const todo=st.msgs.filter(m=>!m.saved&&!m.repeated);if(!todo.length)return true;
     if(st.check&&st.check.ok===false&&!confirm('The ID card in this email is not this patient’s. Save it on '+subjectFor(st.patient)+' anyway?'))return false;
     const btn=document.getElementById('ec-save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     // Is the email table there? (Nothing is written if not.)
@@ -492,6 +521,24 @@
     if(!quiet)render('✓ Saved '+saved+' email'+(saved===1?'':'s')+' in Patient correspondence'+(st.issue?' · <strong>'+esc(st.issue.subject)+'</strong>':'')+'.'
       +(problems.length?'<br>Not kept: '+esc(problems.join('; ')):''));
     return true;
+  }
+
+  // An email saved before without its pictures (e.g. it was pasted), now dropped
+  // as a file: keep the attachments with it — any already kept are skipped.
+  async function keepAttachments(){
+    const btn=document.getElementById('ec-keep');if(btn){btn.disabled=true;btn.textContent='Keeping…';}
+    const who=await myName();let kept=0,already=0;const problems=[];
+    for(const m of st.msgs.filter(x=>x.saved&&x.commId&&(x.attachments||[]).some(a=>a.bytes))){
+      for(const a of m.attachments.filter(x=>x.bytes)){
+        const w=m.when||nowWhen();
+        const r=global.PatientImages&&PatientImages.saveBlob?await PatientImages.saveBlob(new Blob([a.bytes],{type:a.type}),{key:'correspondence:'+m.commId,name:a.name,type:a.type,
+          label:'Email '+(direction(m)==='sent'?'to ':'from ')+cut(personText(direction(m)==='sent'?m.to[0]:m.from),60)+' · '+showWhen(w),taken:w.date,who}):{error:'Pictures are not available.'};
+        if(r.duplicate)already++;else if(r.ok)kept++;else if(r.error)problems.push(r.error);
+      }
+      m.attsKept=true;
+    }
+    try{if(global.PatientImages&&PatientImages.reload)await PatientImages.reload();}catch(e){}
+    render('📎 '+kept+' attachment'+(kept===1?'':'s')+' kept'+(already?' · '+already+' already kept (skipped)':'')+'.'+(problems.length?'<br>Not kept: '+esc(problems.join('; ')):''));
   }
 
   /* ---------- from a correspondence issue: its emails, reply, report ---------- */
@@ -746,7 +793,7 @@
     const cc=(d.cc||[]).filter(p=>p.email!==CLINIC());cc.push({name:'Stoma Care Clinic',email:CLINIC()});
     const btn=document.querySelector('#mb .mact .btn-save');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     // The conversation is saved first, so the reply joins it.
-    if(st.msgs.some(m=>!m.saved)){const ok=await saveThread(true);if(!ok){composer();say('The email could not be saved, so the reply was not sent.');return;}}
+    if(st.msgs.some(m=>!m.saved&&!m.repeated)){const ok=await saveThread(true);if(!ok){composer();say('The email could not be saved, so the reply was not sent.');return;}}
     const msg={from:{name:'Stoma Care Clinic',email:CLINIC()},to,cc,subject:d.subject,body,when:nowWhen(),source:'reply',
       attachments:atts.map(x=>({name:x.name,type:x.type,size:x.size})),original:''};
     msg.original=['From: Stoma Care Clinic <'+CLINIC()+'>','Sent: '+showWhen(msg.when),'To: '+listText(to),'Cc: '+listText(cc),'Subject: '+msg.subject,
@@ -819,6 +866,6 @@
 
   global.EmailCorrespondence={enabled,open,kind:setKind,drop,file,organise,saveThread,reply,markUp,composer,draft:setDraft,back,send,printOne,printSaved,report,ccAdd,ccRemove,
     addFiles,attachReceived,removeAttachment,editReceived,editAttachment,edColour,edSize,edUndo,edClear,edCancel,edDone,
-    loadFor,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,closeIssue,setSeparate,
+    loadFor,keepAttachments,recordSlotHTML,paintRecords,viewIssue,replyToIssue,issueReport,patientReport,closeIssue,setSeparate,
     _parseThread:parseThread,_parseEml:parseEml,_people:people,_parseWhen:parseWhen,_subjectFor:subjectFor,_patientCheck:patientCheck,_senderType:senderType,_direction:direction,_keyOf:keyOf,_state:st};
 })(window);

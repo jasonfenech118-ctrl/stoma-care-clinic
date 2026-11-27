@@ -799,9 +799,22 @@
    * parse(): the whole lump → reviewed-ready rows
    * ------------------------------------------------------------------ */
   function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');}
-  function fingerprint(cat,iso,title,result){
+  /* The same entry pasted twice is skipped: same tab, same date (and time for
+     a note), the same procedure / test / type and the same start of its
+     report or note. A POYC medicine is the same whatever day the list was
+     copied. */
+  function fingerprint(cat,iso,title,result,time){
     if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
-    return cat+'|'+(iso||'')+'|'+(norm(title)||norm(result)).slice(0,60);
+    if(cat==='doc_icm'||cat==='notes')return cat+'|'+(iso||'')+'|'+String(time||'').slice(0,5)+'|'+norm(title).slice(0,40)+'|'+norm(result).slice(0,200);
+    return cat+'|'+(iso||'')+'|'+norm(title).slice(0,80)+'|'+norm(result).slice(0,120);
+  }
+  // Every way a saved entry could be recognised: its stored fingerprint (from
+  // whichever version of the rules saved it) and today's rules.
+  function savedKeys(entries){
+    const keys=new Set();
+    (entries||[]).forEach(e=>{if(e.fingerprint)keys.add(e.fingerprint);
+      keys.add(fingerprint(e.category,String(e.entry_date||'').slice(0,10),e.title,e.result,e.entry_time));});
+    return keys;
   }
   function parse(text,cat,opts){
     opts=opts||{};cat=CAT_KEYS.includes(cat)?cat:'surgery';
@@ -859,7 +872,7 @@
       const type=category==='doc_icm'?((e.typeCell||'').trim()||noteType(f.source,f.result))
         :category==='consult'?(e.typeCell||'').trim():'';
       const source=category==='surgery'||category==='consult'?f.source:'';
-      const fp=fingerprint(category,d?d.iso:'',f.title,f.result);
+      const fp=fingerprint(category,d?d.iso:'',f.title,f.result,category==='doc_icm'&&d?d.time:'');
       let include=true;
       if(existing.has(fp)){flags.push('duplicate_saved');include=false;}
       else if(seen.has(fp)){flags.push('duplicate_paste');include=false;}
@@ -883,7 +896,7 @@
   // Flags that mean "a nurse should look at this row".
   const CHECK_FLAGS=new Set(['no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
 
-  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,findDate,lineStartDate,fingerprint,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
+  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
 })(window);
 
 /* ==================================================================== *
@@ -1169,7 +1182,7 @@
   function organise(){
     const ta=document.getElementById('ch-paste');const text=ta?ta.value:'';st.pasteText=text;
     if(!text.trim()){msg('Paste the list first.');return;}
-    const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:new Set(st.entries.map(e=>e.fingerprint).filter(Boolean))});
+    const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:CH.savedKeys(st.entries)});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
     // The ID in a pasted note is checked against this patient, then dropped.
     const mine=normId(st.patient&&st.patient.id_card);
@@ -1290,9 +1303,9 @@
     const batch=global.crypto&&global.crypto.randomUUID?global.crypto.randomUUID():null;
     // Re-check duplicates against what is saved now (another nurse may have pasted meanwhile).
     await load();
-    const have=new Set(st.entries.map(e=>e.fingerprint).filter(Boolean));
+    const have=CH.savedKeys(st.entries);
     const out=[];let skipped=0;
-    rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result);if(have.has(fp)){skipped++;return;}have.add(fp);out.push(dbRow(r,fp,batch,who,now));});
+    rows.forEach(r=>{const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);if(have.has(fp)){skipped++;return;}have.add(fp);out.push(dbRow(r,fp,batch,who,now));});
     let removed=0;
     for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
     if(!out.length&&!removed){restore();msg('All of these are already saved for this patient.');return;}
@@ -1327,7 +1340,9 @@
     if(!String(r.title).trim()&&!String(r.result).trim()){msg(r.category==='doc_icm'?'Write the note first.':'Write the procedure, test or note first.');return;}
     const btn=document.getElementById('ch-save-one');if(btn){btn.disabled=true;btn.textContent='Saving…';}
     const who=await whoName(),now=new Date().toISOString();
-    const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result);
+    const fp=CH.fingerprint(r.category,r.entry_date||'',r.title,r.result,r.entry_time);
+    if(!st.edit.id&&CH.savedKeys(st.entries).has(fp)&&!confirm('This entry is already saved for this patient. Save it again anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
+    if(st.edit.id&&CH.savedKeys(st.entries.filter(e=>String(e.id)!==String(st.edit.id))).has(fp)&&!confirm('Another saved entry is the same as this one. Save anyway?')){if(btn){btn.disabled=false;btn.textContent='Save';}return;}
     let res;
     if(st.edit.id){
       const row=dbRow(r,fp,null,who,now);delete row.created_by_name;delete row.created_at;delete row.batch_id;delete row.patient_id;delete row.raw_text;

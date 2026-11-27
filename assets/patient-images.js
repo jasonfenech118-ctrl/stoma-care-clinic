@@ -141,16 +141,26 @@
   }
   const uuid=()=>global.crypto&&global.crypto.randomUUID?global.crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
   async function who(){try{const u=await global.getCurrentUserForAudit();return String(u&&(u.name||u.email)||'');}catch(e){return '';}}
+  /* The same picture is never stored twice for a patient: after shrinking, a
+     picture with exactly the same size and dimensions as one already saved
+     (or chosen twice now) is the same picture. A document is the same when its
+     name and size match. */
+  function isDuplicate(o,extra){
+    const all=st.rows.concat(extra||[]);
+    if(/^image\//.test(o.type))return all.some(r=>/^image\//.test(String(r.mime||''))&&Number(r.size_bytes)===o.size&&Number(r.width)===o.width&&Number(r.height)===o.height);
+    return all.some(r=>Number(r.size_bytes)===o.size&&String(r.file_name||'').toLowerCase()===String(o.name||'').toLowerCase());
+  }
   async function savePicked(){
     const p=st.pick;if(!p||!p.files.length)return;
     if(!st.available){msg(SETUP_MSG);return;}
     const btn=document.getElementById('pi-save');if(btn){btn.disabled=true;}
     const {kind,id}=splitKey(p.key),link=st.links.get(p.key)||{};
     const taken=(document.getElementById('pi-date')||{}).value||today(),caption=((document.getElementById('pi-caption')||{}).value||'').trim();
-    const name=await who();let saved=0;
+    const name=await who();let saved=0,dupes=0;const justSaved=[];
     for(let i=0;i<p.files.length;i++){
       if(btn)btn.textContent='Saving '+(i+1)+' of '+p.files.length+'…';
       let out;try{out=await shrink(p.files[i]);}catch(e){msg('“'+esc(p.files[i].name)+'”: '+esc(e.message)+'.');if(btn){btn.disabled=false;btn.textContent='Try again';}return;}
+      if(isDuplicate({type:'image/jpeg',size:out.blob.size,width:out.width,height:out.height},justSaved)){dupes++;continue;}
       const path=st.pid+'/'+uuid()+'.jpg';
       const up=await db().storage.from(BUCKET).upload(path,out.blob,{contentType:'image/jpeg',upsert:false});
       if(up.error){msg(missing(up.error)?SETUP_MSG:'Could not upload: '+esc(up.error.message||up.error));if(btn){btn.disabled=false;btn.textContent='Try again';}return;}
@@ -158,13 +168,14 @@
         file_name:p.files[i].name.replace(/\.[a-z0-9]+$/i,'')+'.jpg',mime:'image/jpeg',size_bytes:out.blob.size,width:out.width,height:out.height,created_by_name:name};
       const ins=await db().from(TABLE).insert([row]);
       if(ins.error){try{await db().storage.from(BUCKET).remove([path]);}catch(e){}msg(missing(ins.error)?SETUP_MSG:'Could not save: '+esc(ins.error.message||ins.error));if(btn){btn.disabled=false;btn.textContent='Try again';}return;}
-      saved++;
+      saved++;justSaved.push(row);
     }
+    if(!saved){msg('Already saved for this patient — nothing new to add'+(dupes>1?' ('+dupes+' pictures)':'')+'.');if(btn){btn.disabled=false;btn.textContent='Save';}return;}
     try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:st.pid,patient_id:st.pid,summary:'Added '+saved+' picture'+(saved===1?'':'s')+' ('+((KIND[kind]||{}).name||kind)+(link.label?': '+link.label:'')+')'});}catch(e){}
     p.urls.forEach(u=>{try{URL.revokeObjectURL(u);}catch(e){}});st.pick=null;
     if(typeof global.closeModal==='function')global.closeModal();
     await load();
-    if(typeof global.showToast==='function')global.showToast('📷 '+saved+' picture'+(saved===1?'':'s')+' saved');
+    if(typeof global.showToast==='function')global.showToast('📷 '+saved+' picture'+(saved===1?'':'s')+' saved'+(dupes?' · '+dupes+' already saved (skipped)':''));
   }
 
   /* ---------- saved from elsewhere (an email's attachments) ---------- */
@@ -180,6 +191,7 @@
       else if(!FILE_TYPES.test(type))return {error:name+': this kind of file is not kept.'};
       else if(blob.size>10*1024*1024)return {error:name+': larger than 10 MB.'};
     }catch(e){return {error:name+': '+e.message};}
+    if(isDuplicate({type,size:body.size,width:w,height:h,name:fileName}))return {ok:true,duplicate:true};
     const ext=(fileName.match(/\.([a-z0-9]{1,5})$/i)||[,'bin'])[1].toLowerCase();
     const path=st.pid+'/'+uuid()+'.'+ext;
     const up=await db().storage.from(BUCKET).upload(path,body,{contentType:type,upsert:false});
@@ -188,6 +200,7 @@
       file_name:fileName,mime:type,size_bytes:body.size,width:w,height:h,created_by_name:o.who||await who()};
     const ins=await db().from(TABLE).insert([row]);
     if(ins.error){try{await db().storage.from(BUCKET).remove([path]);}catch(e){}return {error:String(ins.error.message||ins.error)};}
+    st.rows.push(row);   // so a second copy in the same email is recognised too
     return {ok:true};
   }
 
