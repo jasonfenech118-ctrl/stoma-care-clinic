@@ -21,6 +21,8 @@
       placeholder:'Copy the whole Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it here in one go.\nDate, Test and Report are kept.'},
     poyc:{label:'Entitlement CARE (POYC)',icon:'💊',
       placeholder:'Copy the whole Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it here in one go.\nDescription and Prescription are kept; ATC Code and Dosage Regimen are left out.'},
+    ecg:{label:'ECG',icon:'🫀',
+      placeholder:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it here.\nThe date and time, measurements, axis, statements and verdict printed by the cardiograph are kept. The name and ID are only used to check it is the right patient, and are never saved.'},
     doc_icm:{label:'iCM notes',icon:'📄',
       placeholder:'Copy the whole iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it here in one go.\nType, Note and Created On are kept; Created By is left out.'},
     // Tabs that were removed. Anything saved under them is kept in the database
@@ -30,7 +32,7 @@
     doc_ccp:{label:'CCP – Practice nurse review notes',icon:'📄',legacy:true,placeholder:''},
     treatment:{label:'Treatment',icon:'💊',legacy:true,placeholder:''}
   };
-  const CAT_KEYS=['surgery','consult','imaging','doc_icm','poyc'];
+  const CAT_KEYS=['surgery','consult','imaging','ecg','doc_icm','poyc'];
   // Notes keep a whole note together (author + text).
   const isNoteCat=c=>c==='notes'||String(c||'').startsWith('doc_');
 
@@ -635,6 +637,86 @@
       typeCell:'',title:tidy(r.desc),result:tidy(r.presc),source:'',raw:[r.raw]}));
   }
 
+  /* ECG: the text of the cardiograph's report, as copied from the PDF opened in
+     the hospital system (select all, copy). Only what the machine printed is
+     kept: the date and time, the measurements and axis, its statements and
+     verdict, whether it was confirmed, and the previous study it compared
+     against. The PDF, the patient's name and ID are not kept (the ID only checks
+     the patient), and the app adds no reading of its own. */
+  const ECG_MEAS=['HR','RR','PR','QRSD','QT','QTc'],ECG_AXES=['P','QRS','T'];
+  const ECG_STAMP=/\b\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?/g;
+  // Right-hand column of the report, cut off a statement copied onto its line.
+  const ECG_RIGHT=/\s+(?:Oper|ECG\s+Type|Barrier|AECubic|Order\s*#|Reason|Ministry\s+of\s+Health|Mater\s+Dei)\b.*$/i;
+  function looksEcg(text){
+    const t=String(text||'');
+    return /\bQTc\b/i.test(t)&&/\b(?:HR|PR|QRSD)\b/.test(t)&&/\bECG\b|\b12\s*Lead\b|--\s*AXIS\s*--/i.test(t);
+  }
+  // "HR 72" pairs, or (copied as columns) a run of label lines and a run of
+  // number lines in the same order.
+  function ecgValues(part,names){
+    const out={};
+    names.forEach(k=>{
+      const m=part.match(new RegExp('(?:^|[ \\t])'+(k==='QTc'?'QT[cC]':k)+'[ \\t]*:?[ \\t]+(-?\\d{1,4})(?=[ \\t]|$)','m'));
+      if(m)out[k]=m[1];
+    });
+    if(Object.keys(out).length<2){
+      Object.keys(out).forEach(k=>delete out[k]);
+      const labs=[],nums=[];
+      part.split('\n').map(l=>l.trim()).forEach(l=>{
+        if(!l)return;
+        const toks=l.split(/\s+/);
+        if(toks.every(x=>names.some(k=>k.toLowerCase()===x.toLowerCase())))toks.forEach(x=>labs.push(names.find(k=>k.toLowerCase()===x.toLowerCase())));
+        else if(toks.every(x=>/^-?\d{1,4}$|^\$$/.test(x)))toks.filter(x=>x!=='$').forEach(x=>nums.push(x));
+      });
+      if(labs.length&&nums.length>=labs.length)labs.forEach((k,i)=>{out[k]=nums[i];});
+    }
+    return out;
+  }
+  function ecgOne(seg,pre){
+    const stamp=(seg.match(ECG_STAMP)||[])[0]||'';
+    const d=stamp?findDate(stamp):null;
+    const idm=(pre+'\n'+seg).match(/\b(\d{3,8}[A-Z])\b/);
+    const prevM=seg.match(/Previous\s+Study\s*:?\s*(\d{1,2}-[A-Za-z]{3}-\d{4})(?:\s+(\d{1,2}:\d{2})(?::\d{2})?)?\s*-?\s*((?:Otherwise\s+normal|Abnormal|Borderline|Normal)\b)?\s*((?:Un)?confirmed\b)?/i);
+    const body=seg.replace(/Previous\s+Study\s*:?[^\n]*/ig,'');
+    const axisAt=body.search(/--\s*AXIS\s*--/i);
+    const meas=ecgValues(axisAt>=0?body.slice(0,axisAt):body,ECG_MEAS);
+    const axes=axisAt>=0?ecgValues(body.slice(axisAt).replace(/--\s*AXIS\s*--/i,''),ECG_AXES):{};
+    const statements=[];
+    body.split('\n').forEach(l=>{
+      const m=l.replace(/\t/g,' ').match(/(?:^|\s)(?:\$\s*)?\.\s+([A-Za-z(][^\n]*?)\s*$/);
+      if(!m)return;
+      const x=m[1].replace(ECG_RIGHT,'').replace(/\s+/g,' ').trim();
+      if(x&&!statements.includes(x))statements.push(x);
+    });
+    const v=body.match(/-\s*((?:OTHERWISE\s+NORMAL|ABNORMAL|BORDERLINE|NORMAL)\s+ECG)\s*-/i)||body.match(/\b((?:OTHERWISE\s+NORMAL|ABNORMAL|BORDERLINE|NORMAL)\s+ECG)\b/i);
+    const verdict=v?v[1].toLowerCase().replace(/^\w/,c=>c.toUpperCase()).replace(/\becg\b/,'ECG'):'';
+    const by=body.match(/\bConfirmed\s+By\s*:?\s*([A-Za-z][^\n]{0,60})/i);
+    const status=by?'Confirmed by '+by[1].replace(ECG_RIGHT,'').trim():/\bUnconfirmed\b/i.test(body)?'Unconfirmed':/\bConfirmed\b/i.test(body)?'Confirmed':'';
+    const ml=ECG_MEAS.filter(k=>meas[k]!=null).map(k=>k+' '+meas[k]).join(' · ');
+    const al=ECG_AXES.filter(k=>axes[k]!=null).map(k=>k+' '+axes[k]).join(' · ');
+    let prev='';
+    if(prevM){const pd=findDate(prevM[1]);prev=[(pd?pd.iso.split('-').reverse().join('/'):prevM[1])+(prevM[2]?' '+prevM[2]:''),[prevM[3],prevM[4]].filter(Boolean).join(', ').toLowerCase().replace(/^\w/,c=>c.toUpperCase())].filter(Boolean).join(' — ');}
+    const result=[ml&&'§ Measurements\n'+ml,al&&'§ Axis\n'+al,statements.length&&'§ Interpretation\n'+statements.join('\n'),prev&&'§ Previous study\n'+prev].filter(Boolean).join('\n');
+    const raw=[stamp,ml&&'Measurements: '+ml,al&&'Axis: '+al].concat(statements).concat([verdict,status,prev&&'Previous study: '+prev]).filter(Boolean);
+    return {date:d,rangeText:'',table:true,hospital:true,category:'ecg',typeCell:status,title:verdict,result,source:'',raw,
+      idSeen:idm?idm[1]:'',partial:!verdict||Object.keys(meas).length<3||!statements.length};
+  }
+  function ecgRows(text){
+    const t=String(text||'');
+    // One report per acquisition stamp; the "Previous Study:" stamp is not one.
+    const starts=[];let m;const re=new RegExp(ECG_STAMP.source,'g');
+    while((m=re.exec(t))){
+      if(/Previous\s+Study\s*:?\s*$/i.test(t.slice(Math.max(0,m.index-40),m.index)))continue;
+      const ls=t.lastIndexOf('\n',m.index)+1;if(!starts.includes(ls))starts.push(ls);
+    }
+    if(!starts.length)return looksEcg(t)?[ecgOne(t,'')]:[];
+    return starts.map((b,i)=>{
+      const seg=t.slice(b,i+1<starts.length?starts[i+1]:t.length);
+      const pre=i===0?t.slice(0,b):t.slice(starts[i-1],b).split('\n').slice(-4).join('\n');
+      return ecgOne(seg,pre);
+    }).filter(r=>r.title||r.result);
+  }
+
   /* ------------------------------------------------------------------ *
    * A Patient Consultation note (e.g. a Procedure Report), opened with
    * "Open past visit": label : value lines, set out section by section.
@@ -829,7 +911,7 @@
      copied. */
   function fingerprint(cat,iso,title,result,time){
     if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
-    if(cat==='doc_icm'||cat==='notes')return cat+'|'+(iso||'')+'|'+String(time||'').slice(0,5)+'|'+norm(title).slice(0,40)+'|'+norm(result).slice(0,200);
+    if(cat==='doc_icm'||cat==='notes'||cat==='ecg')return cat+'|'+(iso||'')+'|'+String(time||'').slice(0,5)+'|'+norm(title).slice(0,40)+'|'+norm(result).slice(0,200);
     return cat+'|'+(iso||'')+'|'+norm(title).slice(0,80)+'|'+norm(result).slice(0,120);
   }
   // Every way a saved entry could be recognised: its stored fingerprint (from
@@ -856,6 +938,7 @@
     // notes table, then the date-led tables (procedures, imaging, consultations).
     let raw=null,mode='text';
     if(cat==='poyc'){raw=poycRows(clean);mode='table';}
+    else if(cat==='ecg'||looksEcg(clean)){raw=ecgRows(clean);mode='ecg';}
     else if(looksConsultNote(clean)){raw=consultNotes(clean);mode='note';}
     else if(clean.includes('\t')){
       if(cat==='doc_icm'){const r=icmRows(clean);if(r.length&&r.some(x=>x.date)){raw=r;mode='table';}}
@@ -886,7 +969,8 @@
       let category=CAT_KEYS.includes(e.category)?e.category:cat;
       // A consultation note is recognised for certain, so pasting it in another
       // tab needs no checking; anything else moved is shown in amber.
-      if(category!==cat)flags.push(e.category==='consult'&&e.hospital?'moved_note':'moved');
+      if(category!==cat)flags.push((e.category==='consult'||e.category==='ecg')&&e.hospital?'moved_note':'moved');
+      if(e.partial)flags.push('ecg_partial');
       else if(!e.hospital){const sug=suggestCategory(cat,f.title,f.result);if(sug){category=sug;flags.push('moved');}}
       const list=category==='surgery'||category==='imaging';
       if((category==='surgery'||category==='consult')&&STOMA_RE.test(f.title))flags.push('stoma');
@@ -896,14 +980,15 @@
       // Only the columns each tab keeps: no type for procedures and scans, no
       // author for scans and iCM notes (Created By is left out).
       const type=category==='doc_icm'?((e.typeCell||'').trim()||noteType(f.source,f.result))
-        :category==='consult'?(e.typeCell||'').trim():'';
+        :category==='consult'||category==='ecg'?(e.typeCell||'').trim():'';
       const source=category==='surgery'||category==='consult'?f.source:'';
-      const fp=fingerprint(category,d?d.iso:'',f.title,f.result,category==='doc_icm'&&d?d.time:'');
+      const timed=category==='doc_icm'||category==='ecg';
+      const fp=fingerprint(category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'');
       let include=true;
       if(existing.has(fp)){flags.push('duplicate_saved');include=false;}
       else if(seen.has(fp)){flags.push('duplicate_paste');include=false;}
       seen.add(fp);
-      return {include,category,entry_date:d?d.iso:null,date_precision:d?d.precision:'',entry_time:category==='doc_icm'&&d?d.time:'',date_text:d?d.text:(e.badDate||''),
+      return {include,category,entry_date:d?d.iso:null,date_precision:d?d.precision:'',entry_time:timed&&d?d.time:'',date_text:d?d.text:(e.badDate||''),
         entry_type:type,title:f.title,result:f.result,source,raw_text:(e.raw||[]).join('\n').trim(),flags,fingerprint:fp,id_seen:e.idSeen||'',consultant_from:e.consultantFrom||(source?'list':'')};
     }).filter(r=>r.title||r.result);
     return {rows,mode};
@@ -913,7 +998,7 @@
     no_date:'No date found',bad_date:'Date is not a real date (e.g. 31/02) — check it',month_only:'Only the month was given',year_only:'Only the year was given',
     two_digit_year:'Two-digit year — check the century',swapped:'Read as month/day — check the date',
     future:'Date is in the future',before_birth:'Date is before the date of birth',
-    moved:'Looks like {cat} — will be saved there',moved_note:'Consultation note — will be saved under Patient consultation',stoma:'Involves a stoma — linked to the stoma on the profile',
+    moved:'Looks like {cat} — will be saved there',moved_note:'Recognised as {cat} — will be saved there',ecg_partial:'Part of the report could not be read — check it against the PDF',stoma:'Involves a stoma — linked to the stoma on the profile',
     no_title:'No procedure / test found',not_done:'Says postponed / cancelled — check it was done',long:'Long entry — check it was split correctly',
     duplicate_saved:'Already saved — not ticked',duplicate_paste:'Repeated in this paste — not ticked',
     id_mismatch:'The ID in this note ({id}) is not this patient’s — check it is the right patient (not ticked)',id_match:'✓ The ID in the note matches this patient',
@@ -923,9 +1008,9 @@
   };
   function flagText(code,row){return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
   // Flags that mean "a nurse should look at this row".
-  const CHECK_FLAGS=new Set(['no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
+  const CHECK_FLAGS=new Set(['ecg_partial','no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
 
-  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
+  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
 })(window);
 
 /* ==================================================================== *
@@ -947,6 +1032,7 @@
   const MAIN={
     procedures:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['consult','Patient consultation','📋']]},
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
+    ecg:{label:'ECG',icon:'🫀',cat:'ecg'},
     icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'},
     poyc:{label:'Entitlement CARE (POYC)',icon:'💊',cat:'poyc'}
   };
@@ -954,6 +1040,7 @@
   const COLS={
     surgery:[['Date','date'],['Consultant','source'],['Procedure','title']],
     imaging:[['Date','date'],['Test','title'],['Report','result']],
+    ecg:[['Date','date'],['ECG','title'],['Interpretation','result'],['Measurements','meas']],
     doc_icm:[['Type','entry_type'],['Note','result'],['Created On','date']],
     poyc:[['Description','title'],['Prescription','result']]
   };
@@ -961,13 +1048,14 @@
     surgery:'Copy the Performed Procedures table from the hospital system (Procedures › Performed Procedures) and paste it in one go. Date, Consultant and Procedure are kept; OP Note, Age, Theatre and Source are left out.',
     consult:'Open the visit in the hospital system (Hospital Events › Patient Consultation › Open past visit), copy the whole note and paste it. The date, consultant and each section are set out in order; a blank date or consultant is filled in from the stoma on the profile. A note on the same date as a performed procedure is linked to it, and to the stoma when the operation involved one.',
     imaging:'Copy the Medical Imaging Results table from the hospital system (Investigations › Medical Imaging Results) and paste it in one go. Date, Test and Report are kept.',
+    ecg:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it. The date and time, measurements, axis, statements and verdict printed by the cardiograph are kept as printed, with any change in a measurement since the ECG before. The PDF, the name and the ID are not saved.',
     doc_icm:'Copy the iCM Notes table from the hospital system (Patient Documentation › iCM Notes) and paste it in one go. Type, Note and Created On are kept; Created By is left out.',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
-  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
+  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
   // Each tab is a fold-out section of its own on the profile, below Outcome
   // (index.html wraps each host in a details.pd-section).
-  const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',doc_icm:'icm',poyc:'poyc'};
+  const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc'};
   function catOf(k){return k==='procedures'?st.sub.procedures:MAIN[k].cat;}
   // Unfold a section and the Hospital records fold-out around it
   // (after saving, or when a linked entry is opened).
@@ -995,7 +1083,7 @@
     return fmt(e.entry_date);
   }
   function counts(){
-    const c={surgery:0,consult:0,imaging:0,doc_icm:0,poyc:0};
+    const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0};
     st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});
     c.procedures=c.surgery+c.consult;c.icm=c.doc_icm;return c;
   }
@@ -1182,7 +1270,7 @@
     // The Hospital records fold-out: the total in its title.
     const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
     const osum=outer&&outer.querySelector(':scope > summary');
-    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.procedures+c.imaging+c.icm+c.poyc)+'</span>';}
+    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.procedures+c.imaging+c.ecg+c.icm+c.poyc)+'</span>';}
     Object.keys(MAIN).forEach(k=>{
       const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
       // The fold-out's title carries the count, as the tab button did.
@@ -1199,7 +1287,7 @@
       const on=st.sub[k]===x;
       return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+x+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+c[x]+'</span></button>';
     }).join('')+'</div>':'';
-    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':CH.CATS[cat].label.toLowerCase();
+    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':CH.CATS[cat].label.toLowerCase();
     return '<div class="ch-pane ch-pane-'+k+'">'+subTabs
       +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
@@ -1232,12 +1320,57 @@
     const head='<thead><tr>'+cols.map(c=>'<th scope="col">'+esc(c[0])+'</th>').join('')+'<th scope="col" class="ch-c-act"><span class="ch-sr">Edit or delete</span></th></tr></thead>';
     const body=rows.map(e=>'<tr class="'+(isFocus(cat,e)?'is-focus':'')+'">'+cols.map(([label,key])=>{
       let v;
-      if(key==='date')v='<strong>'+esc(showDate(e))+'</strong>'+(cat==='doc_icm'&&e.entry_time?' <span class="ch-time">'+esc(e.entry_time)+'</span>':'');
+      if(key==='date')v='<strong>'+esc(showDate(e))+'</strong>'+((cat==='doc_icm'||cat==='ecg')&&e.entry_time?' <span class="ch-time">'+esc(e.entry_time)+'</span>':'');
+      else if(cat==='ecg')v=ecgCell(e,key);
       else v='<div class="ch-cell-text">'+esc(e[key]||'')+'</div>';
       if(cat==='surgery'&&key==='title')v+=linksHTML(e,'surgery');
       return '<td data-label="'+esc(label)+'" class="ch-c-'+key+'"><div class="ch-td">'+v+'</div></td>';
     }).join('')+'<td class="ch-c-act">'+actHTML(e)+'</td></tr>').join('');
     return '<div class="ch-table-wrap"><table class="ch-table ch-table-'+cat+'">'+head+'<tbody>'+body+'</tbody></table></div>';
+  }
+  /* ---------- ECG: the cardiograph's own report, as printed ---------- */
+  // Units as the cardiograph prints them: rate in beats per minute, intervals in
+  // milliseconds, axes in degrees.
+  const ECG_UNIT={HR:'bpm',RR:'ms',PR:'ms',QRSD:'ms',QT:'ms',QTc:'ms',P:'°',QRS:'°',T:'°'};
+  function ecgPairs(line){
+    const out={};String(line||'').split('·').forEach(x=>{const m=x.trim().match(/^([A-Za-z]+)\s+(-?\d+)$/);if(m)out[m[1]]=+m[2];});return out;
+  }
+  function ecgValuesOf(e){
+    const secs=sectionsOf(e.result),get=l=>(secs.find(x=>x.label===l)||{}).value||'';
+    return {meas:ecgPairs(get('Measurements')),axis:ecgPairs(get('Axis')),secs};
+  }
+  // The ECG saved before this one (by date and time), for the change in each value.
+  function ecgBefore(e){
+    const key=x=>day(x)+' '+String(x.entry_time||'');
+    return st.entries.filter(x=>x.category==='ecg'&&x.id!==e.id&&day(x)&&key(x)<key(e)).sort((a,b)=>key(b).localeCompare(key(a)))[0]||null;
+  }
+  function ecgCell(e,key){
+    if(key==='title'){
+      const v=String(e.title||''),tone=/^abnormal/i.test(v)?'abn':/^borderline/i.test(v)?'bord':/normal/i.test(v)?'norm':'';
+      return (v?'<span class="ch-ecg-verdict'+(tone?' is-'+tone:'')+'">'+esc(v)+'</span>':'')
+        +(e.entry_type?'<div class="ch-ecg-status">'+esc(e.entry_type)+'</div>':'');
+    }
+    const {meas,axis,secs}=ecgValuesOf(e);
+    if(key==='result'){
+      const lines=((secs.find(x=>x.label==='Interpretation')||{}).value||'').split('\n').filter(Boolean);
+      const prev=(secs.find(x=>x.label==='Previous study')||{}).value||'';
+      const other=secs.filter(x=>!['Measurements','Axis','Interpretation','Previous study'].includes(x.label));
+      return (lines.length?'<ul class="ch-ecg-list">'+lines.map(l=>'<li>'+esc(l)+'</li>').join('')+'</ul>':'')
+        +other.map(x=>'<div class="ch-cell-text"><strong>'+esc(x.label)+':</strong> '+esc(x.value)+'</div>').join('')
+        +(prev?'<div class="ch-ecg-prev">Previous study: '+esc(prev)+'</div>':'');
+    }
+    // Measurements, with the change since the ECG saved before (no reading added).
+    const b=ecgBefore(e),bv=b?ecgValuesOf(b):null;
+    const item=(k,val,was)=>{
+      const d=was!=null?val-was:null;
+      return '<span class="ch-ecg-m"><b>'+esc(k)+'</b> '+esc(String(val))+'<small>'+esc(ECG_UNIT[k]||'')+'</small>'
+        +(d?'<span class="ch-ecg-d" title="Change since the ECG of '+esc(showDate(b))+'">'+(d>0?'▲ +':'▼ ')+esc(String(d))+'</span>':'')+'</span>';
+    };
+    const ms=Object.keys(meas).map(k=>item(k,meas[k],bv?bv.meas[k]:null));
+    const as=Object.keys(axis).map(k=>item(k,axis[k],bv?bv.axis[k]:null));
+    return (ms.length?'<div class="ch-ecg-ms">'+ms.join('')+'</div>':'')
+      +(as.length?'<div class="ch-ecg-ms"><span class="ch-ecg-axl">Axis</span>'+as.join('')+'</div>':'')
+      +(b&&(ms.length||as.length)?'<div class="ch-ecg-since">▲▼ since '+esc(showDate(b))+'</div>':'');
   }
   // Left out of consultation notes (also hides them in notes saved before).
   const LEFT_OUT=/^(?:Assistant surgeon\/s|Anaesthetist\/s|Nurse\/s|External reference)$/i;
@@ -1341,7 +1474,7 @@
     mb.className='mb mb-wide';
     mb.innerHTML='<h2>Check before saving</h2>'
       +(bad?'<div class="ch-idbad" role="alert">⚠️ <strong>This may be another patient’s note.</strong> The ID in the pasted text does not match '+esc(st.patient&&st.patient.id_card||'this patient')+'. It has been unticked — check you copied the right patient.</div>':'')
-      +'<div class="msub">Found <strong>'+p.rows.length+'</strong> entr'+(p.rows.length===1?'y':'ies')+(p.mode==='table'?' (read as a table)':p.mode==='note'?' (read as a consultation note)':'')+'. '
+      +'<div class="msub">Found <strong>'+p.rows.length+'</strong> entr'+(p.rows.length===1?'y':'ies')+(p.mode==='table'?' (read as a table)':p.mode==='note'?' (read as a consultation note)':p.mode==='ecg'?' (read as an ECG report)':'')+'. '
       +(check?'<strong class="ch-warn">'+check+' need'+(check===1?'s':'')+' checking</strong> (highlighted in amber). ':'')
       +'Untick anything that should not be saved and correct any field before saving.</div>'
       +(p.stale&&p.stale.length?'<div class="ch-stale"><strong>'+p.stale.length+' medicine'+(p.stale.length===1?'':'s')+' saved before '+(p.stale.length===1?'is':'are')+' not on this list:</strong> '+esc(p.stale.map(e=>e.title).join(', '))
@@ -1369,6 +1502,8 @@
     else if(cat==='imaging')grid=field('Test',i,'title',r.title)+field('Report',i,'result',r.result,{wide:true,rows:5});
     else if(cat==='doc_icm')grid=field('Type',i,'entry_type',r.entry_type)+field('Note',i,'result',r.result,{wide:true,rows:6});
     else if(cat==='poyc')grid=field('Description',i,'title',r.title)+field('Prescription',i,'result',r.result);
+    else if(cat==='ecg')grid=field('Verdict (as printed)',i,'title',r.title)+field('Confirmed / unconfirmed',i,'entry_type',r.entry_type)
+      +field('The report, section by section',i,'result',r.result,{wide:true,rows:10,help:'Each section starts on a line beginning with § and its name: Measurements, Axis, Interpretation, Previous study.'});
     else grid=field('Consultant',i,'source',r.source)+field('Form type',i,'entry_type',r.entry_type)
       +field('Procedure/s performed',i,'title',r.title,{wide:true,rows:2})
       +field('The note, section by section',i,'result',r.result,{wide:true,rows:12,help:'Each section starts on a line beginning with § and its name.'});
@@ -1378,7 +1513,7 @@
         +(single?'':'<label class="ch-inc"><input type="checkbox" '+(r.include?'checked':'')+' onchange="ClinicalHistory.pv('+i+',\'include\',this.checked)"> Save</label>')
         +'<label>Under '+catSel+'</label>'
         +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
-        +(cat==='doc_icm'?'<label>Time <input type="time" value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
+        +(cat==='doc_icm'||cat==='ecg'?'<label>Time <input type="time" value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
         +(r.date_text?'<span class="ch-orig">written as: '+esc(r.date_text)+'</span>':'')
       +'</div>'
       +(r.flags.length?'<div class="ch-flags">'+r.flags.map(f=>'<span class="ch-flag'+(CH.CHECK_FLAGS.has(f)?' is-check':f==='id_match'?' is-ok':'')+'">'+esc(CH.flagText(f,r))+'</span>').join('')+'</div>':'')
@@ -1401,7 +1536,7 @@
   function dbRow(r,fp,batch,who,now){
     const iso=r.entry_date||null,cat=r.category;
     return {patient_id:st.pid,category:cat,entry_date:iso,date_precision:iso?(r.date_precision||'day'):'',
-      entry_time:cat==='doc_icm'?(r.entry_time||''):'',date_text:r.date_text||'',entry_type:String(r.entry_type||'').trim(),
+      entry_time:cat==='doc_icm'||cat==='ecg'?(r.entry_time||''):'',date_text:r.date_text||'',entry_type:String(r.entry_type||'').trim(),
       title:String(r.title||'').trim(),result:String(r.result||'').trim(),source:String(r.source||'').trim(),
       raw_text:r.raw_text||'',fingerprint:fp,batch_id:batch,created_by_name:who,updated_by_name:who,created_at:now,updated_at:now};
   }
@@ -1418,7 +1553,7 @@
   }
   function writeError(error){
     const m=String(error&&error.message||error);
-    if(/category_check|violates check constraint/i.test(m))return 'The database needs the updated set-up for these tabs (Patient consultation). Run <strong>sql/add-patient-history.sql</strong> once in Supabase, then save again.';
+    if(/category_check|violates check constraint/i.test(m))return 'The database needs the updated set-up for these sections (e.g. ECG). Run <strong>sql/add-patient-history.sql</strong> once in Supabase, then save again.';
     if(/patient_history_entries|does not exist|relation|schema cache/i.test(m))return 'These tabs are not switched on in the database yet. Run <strong>sql/add-patient-history.sql</strong> once in Supabase.';
     return 'Could not save: '+esc(m);
   }
