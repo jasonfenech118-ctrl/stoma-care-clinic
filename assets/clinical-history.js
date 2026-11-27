@@ -938,11 +938,11 @@
   const db=()=>(typeof SB!=='undefined'&&SB)||global.SB;
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const st={pid:null,patient:null,host:null,entries:[],tab:'surgery',q:'',available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',
-    main:null,sub:{procedures:'surgery'},focus:null};
-  // Three tabs, as in the hospital system: Performed procedures (with the Patient
-  // consultation notes, linked to their procedure by date), Medical imaging
-  // results and iCM notes.
+  const st={pid:null,patient:null,hosts:{},entries:[],tab:'surgery',qs:{},available:true,error:'',loading:false,loaded:false,preview:null,pasteText:'',edit:null,note:'',noteAt:'',
+    sub:{procedures:'surgery'},focus:null};
+  // Four sections, as in the hospital system: Performed procedures (with the
+  // Patient consultation notes, linked to their procedure by date), Medical
+  // imaging results, iCM notes and Entitlement CARE (POYC).
   const MAIN={
     procedures:{label:'Performed procedures',icon:'🏥',subs:[['surgery','Performed procedures','🏥'],['consult','Patient consultation','📋']]},
     imaging:{label:'Medical imaging results',icon:'🩻',cat:'imaging'},
@@ -964,13 +964,16 @@
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
   const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
-  function currentCategory(){return !st.main?null:st.main==='procedures'?st.sub.procedures:MAIN[st.main].cat;}
+  // Each tab is a fold-out section of its own on the profile, below Outcome
+  // (index.html wraps each host in a details.pd-section).
+  const SECTION_OF={surgery:'procedures',consult:'procedures',imaging:'imaging',doc_icm:'icm',poyc:'poyc'};
+  function catOf(k){return k==='procedures'?st.sub.procedures:MAIN[k].cat;}
+  // Unfold a section (after saving, or when a linked entry is opened).
+  function sectionOpen(k){const h=st.hosts&&st.hosts[k];const d=h&&h.closest('details');if(d&&!d.open)d.open=true;return h;}
   // Point the tabs at the place a category lives (after saving or editing).
   function goToCategory(cat){
-    if(cat==='surgery'||cat==='consult'){st.main='procedures';st.sub.procedures=cat;}
-    else if(cat==='imaging')st.main='imaging';
-    else if(cat==='doc_icm')st.main='icm';
-    else if(cat==='poyc')st.main='poyc';
+    if(cat==='surgery'||cat==='consult')st.sub.procedures=cat;
+    if(SECTION_OF[cat]){st.noteAt=SECTION_OF[cat];sectionOpen(SECTION_OF[cat]);}
   }
   let loadSeq=0;
   const day=e=>String(e&&e.entry_date||'').slice(0,10);
@@ -1142,11 +1145,12 @@
     return out.length?'<div class="ch-links">'+out.join('')+'</div>':'';
   }
 
-  function mount(host,patient){
-    if(!host||!patient)return;
+  // hosts: {procedures, imaging, icm, poyc}, one element per fold-out section.
+  function mount(hosts,patient){
+    if(!hosts||!patient)return;
     const pid=String(patient.id);
-    if(st.pid!==pid){st.pid=pid;st.entries=[];st.q='';st.tab='surgery';st.loaded=false;st.note='';st.pasteText='';st.main=null;st.sub={procedures:'surgery'};st.focus=null;}
-    st.host=host;st.patient=patient;
+    if(st.pid!==pid){st.pid=pid;st.entries=[];st.qs={};st.tab='surgery';st.loaded=false;st.note='';st.noteAt='';st.pasteText='';st.sub={procedures:'surgery'};st.focus=null;}
+    st.hosts=hosts;st.patient=patient;
     render();load();
   }
   async function load(){
@@ -1168,32 +1172,30 @@
     render();
   }
   function render(){
-    const h=st.host;if(!h||!document.body.contains(h))return;
     const c=counts();
-    const mainTabs='<div class="ch-main-tabs" role="tablist" aria-label="Performed procedures, medical imaging results, iCM notes and Entitlement CARE (POYC)">'+Object.keys(MAIN).map(k=>{
-      const on=st.main===k;
-      return '<button type="button" role="tab" class="ch-main ch-main-'+k+(on?' is-on':'')+'" aria-selected="'+on+'" aria-expanded="'+on+'" onclick="ClinicalHistory.main(\''+k+'\')">'
-        +'<span class="ch-main-ic" aria-hidden="true">'+MAIN[k].icon+'</span>'+esc(MAIN[k].label)+'<span class="ch-count">'+c[k]+'</span><span class="ch-caret" aria-hidden="true">'+(on?'▴':'▾')+'</span></button>';
-    }).join('')+'</div>';
-    if(!st.main){h.innerHTML=mainTabs;return;}
-    if(!st.available){
-      h.innerHTML=mainTabs+'<div class="ch-pane ch-pane-'+st.main+'"><div class="ch-missing">These tabs need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
-      return;
-    }
-    const cat=currentCategory();st.tab=cat;
-    const subs=MAIN[st.main].subs;
-    const subTabs=subs?'<div class="ch-sub-tabs" role="tablist">'+subs.map(([k,l,ic])=>{
-      const on=st.sub[st.main]===k;
-      return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+k+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+c[k]+'</span></button>';
+    Object.keys(MAIN).forEach(k=>{
+      const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
+      // The fold-out's title carries the count, as the tab button did.
+      const d=h.closest('details'),sum=d&&d.querySelector(':scope > summary');
+      if(sum)sum.innerHTML=esc(MAIN[k].label)+' <span class="ch-sum-count">'+c[k]+'</span>';
+      h.innerHTML=paneHTML(k,c);
+    });
+    if(st.focus)setTimeout(()=>{const h=st.hosts[SECTION_OF[st.focus.cat]];const el=h&&h.querySelector('.is-focus');if(el&&el.scrollIntoView)el.scrollIntoView({block:'center',behavior:'smooth'});},40);
+  }
+  function paneHTML(k,c){
+    if(!st.available)return '<div class="ch-pane ch-pane-'+k+'"><div class="ch-missing">These sections need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
+    const cat=catOf(k),subs=MAIN[k].subs;
+    const subTabs=subs?'<div class="ch-sub-tabs" role="tablist">'+subs.map(([x,l,ic])=>{
+      const on=st.sub[k]===x;
+      return '<button type="button" role="tab" class="ch-sub'+(on?' is-on':'')+'" aria-selected="'+on+'" onclick="ClinicalHistory.sub(\''+x+'\')">'+(ic?ic+' ':'')+esc(l)+'<span class="ch-count">'+c[x]+'</span></button>';
     }).join('')+'</div>':'';
     const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':CH.CATS[cat].label.toLowerCase();
-    const body='<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste()">'+PASTE_LABEL[cat]+'</button>'
-      +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit()">＋ Add one</button>'
-      +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.q)+'" oninput="ClinicalHistory.search(this.value)"></div>'
-      +'<p class="ch-hint">'+esc(HINT[cat])+'</p>'+(st.note?'<div class="ch-note">'+st.note+'</div>':'')
-      +'<div id="ch-list" class="ch-list">'+listHTML()+'</div>';
-    h.innerHTML=mainTabs+'<div class="ch-pane ch-pane-'+st.main+'">'+subTabs+body+'</div>';
-    if(st.focus)setTimeout(()=>{const el=h.querySelector('.is-focus');if(el&&el.scrollIntoView)el.scrollIntoView({block:'center',behavior:'smooth'});},40);
+    return '<div class="ch-pane ch-pane-'+k+'">'+subTabs
+      +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
+      +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
+      +'<input type="search" class="ch-search" placeholder="Search '+esc(what)+'…" aria-label="Search '+esc(what)+'" value="'+esc(st.qs[k]||'')+'" oninput="ClinicalHistory.search(this.value,\''+k+'\')"></div>'
+      +'<p class="ch-hint">'+esc(HINT[cat])+'</p>'+(st.note&&st.noteAt===k?'<div class="ch-note">'+st.note+'</div>':'')
+      +'<div id="ch-list-'+k+'" class="ch-list">'+listHTML(k)+'</div></div>';
   }
   function matches(e,q){return !q||[e.title,e.result,e.source,e.entry_type,e.date_text,showDate(e)].join(' ').toLowerCase().includes(q);}
   function actHTML(e){
@@ -1201,10 +1203,10 @@
     return '<span class="ch-act" title="'+esc(by)+'"><button type="button" class="ch-ic" title="Edit this entry" aria-label="Edit this entry" onclick="ClinicalHistory.openEdit(\''+esc(e.id)+'\')">✏️</button>'
       +'<button type="button" class="ch-ic" title="Delete this entry" aria-label="Delete this entry" onclick="ClinicalHistory.remove(\''+esc(e.id)+'\')">🗑</button></span>';
   }
-  function listHTML(){
+  function listHTML(k){
     if(st.loading)return '<p class="ch-empty">Loading…</p>';
     if(st.error)return '<p class="ch-empty" role="alert">Could not load these entries: '+esc(st.error)+' <button type="button" class="psm-btn" onclick="ClinicalHistory.reload()">Retry</button></p>';
-    const q=st.q.trim().toLowerCase(),cat=currentCategory();
+    const q=String(st.qs[k]||'').trim().toLowerCase(),cat=catOf(k);
     const rows=sorted(st.entries.filter(e=>e.category===cat&&matches(e,q)));
     if(!rows.length)return '<p class="ch-empty">'+(q?'Nothing matches that search.':'Nothing recorded yet. Press <strong>'+esc(PASTE_LABEL[cat])+'</strong> to add '+(cat==='consult'?'a note':'the whole list in one go')+'.')+'</p>';
     if(cat==='poyc'){
@@ -1253,11 +1255,12 @@
       +(secs.length?'<dl class="ch-sections">'+secs.map(x=>'<dt>'+esc(x.label)+'</dt><dd>'+longText(x.value)+'</dd>').join('')+'</dl>':'')
       +'</article>';
   }
-  // A main tab opens its pane; pressing the open tab again folds it away.
-  function main(k){if(!MAIN[k])return;st.main=st.main===k?null:k;st.q='';st.note='';st.focus=null;render();}
-  function sub(k){if(!st.main||!MAIN[st.main].subs||!MAIN[st.main].subs.some(x=>x[0]===k))return;st.sub[st.main]=k;st.q='';st.note='';st.focus=null;render();}
-  function search(v){st.q=String(v||'');st.focus=null;const l=document.getElementById('ch-list');if(l)l.innerHTML=listHTML();}
-  function showLinked(cat,date){goToCategory(cat);st.q='';st.note='';st.focus={cat,date};render();}
+  // Open a section and bring it into view.
+  function main(k){if(!MAIN[k])return;const h=sectionOpen(k);render();if(h&&h.scrollIntoView)h.scrollIntoView({block:'start',behavior:'smooth'});}
+  // Performed procedures ↔ Patient consultation, inside the Performed procedures section.
+  function sub(x){if(x!=='surgery'&&x!=='consult')return;st.sub.procedures=x;st.qs.procedures='';st.note='';st.focus=null;render();}
+  function search(v,k){k=MAIN[k]?k:'procedures';st.qs[k]=String(v||'');st.focus=null;const l=document.getElementById('ch-list-'+k);if(l)l.innerHTML=listHTML(k);}
+  function showLinked(cat,date){goToCategory(cat);st.qs[SECTION_OF[cat]]='';st.note='';st.focus={cat,date};render();}
   function openStoma(slot){if(slot&&typeof global.openStomaModal==='function')global.openStomaModal(st.pid,slot);}
   function chooseStoma(id){
     const e=st.entries.find(x=>String(x.id)===String(id));if(!e)return;
@@ -1284,7 +1287,8 @@
   }
 
   /* ---------- paste → organise → check → save ---------- */
-  function openPaste(){
+  function openPaste(cat){
+    if(CH.CATS[cat])st.tab=cat;
     const meta=CH.CATS[st.tab]||CH.CATS.surgery;const mb=document.getElementById('mb');if(!mb)return;
     mb.className='mb mb-wide';
     mb.innerHTML='<h2>'+esc(PASTE_LABEL[st.tab]||'📋 Paste')+'</h2>'
@@ -1459,7 +1463,8 @@
   }
 
   /* ---------- one entry: add / edit / delete ---------- */
-  function openEdit(id){
+  function openEdit(id,cat){
+    if(!id&&CH.CATS[cat])st.tab=cat;
     const e=id?st.entries.find(x=>String(x.id)===String(id)):null;if(id&&!e)return;
     const row=e?{category:e.category,entry_date:e.entry_date?String(e.entry_date).slice(0,10):'',date_precision:e.date_precision||'day',entry_time:e.entry_time||'',date_text:e.date_text||'',
       entry_type:e.entry_type||'',title:e.title||'',result:e.result||'',source:e.source||'',raw_text:e.raw_text||'',flags:[],include:true,linked_stoma:e.linked_stoma||''}
