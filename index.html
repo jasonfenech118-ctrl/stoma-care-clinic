@@ -20,14 +20,14 @@
 <link rel="stylesheet" href="assets/holistic-summary.css?v=2026.11.28-913"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-913"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-914"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.28-913"></script>
+<script src="assets/manual.js?v=2026.11.28-914"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.11.26-895"/>
@@ -4123,7 +4123,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.28-913';
+const APP_BUILD='2026.11.28-914';
 /* A newer build on the server: a bar offers to reload. The live number is in
    build.json (set to APP_BUILD at every deploy), a tiny file fetched past every
    cache, so a page the browser kept from before an update is noticed within
@@ -16079,6 +16079,29 @@ function initialStomaCode(uid){
   const s=String(uid||'').replace(/[^a-z0-9]/gi,'');
   return s?'STO-'+s.slice(-8).toUpperCase():'';
 }
+/* The Stoma ID: STO-<ID card>-<date formed YYYYMMDD>-<type letter>, e.g.
+   STO-123456M-20260117-U. Letters: C colostomy, I ileostomy, U urostomy (ileal
+   conduit included), J jejunostomy, M mucous fistula, O any other. A second
+   stoma of the same type formed on the same day adds a number (…-I2); a stoma
+   whose date is not known reads 00000000.
+   It is worked out from the record each time it is shown, so a corrected ID
+   card, date or type shows at once. Records are linked by the stoma's own uid,
+   never by this code, so a change breaks nothing. (initialStomaCode above is
+   the earlier code, kept only to recognise it where it was saved.) */
+function stomaIdLetter(type,mucus){
+  const t=String(type||'').toLowerCase();
+  if(mucus||/mucu?s\s*fistula|mucous/.test(t))return 'M';
+  if(/conduit|urost|ureterost/.test(t))return 'U';
+  if(/jejun/.test(t))return 'J';
+  if(/ileo/.test(t))return 'I';
+  if(/colo|caec|cecost|hartmann/.test(t))return 'C';
+  return 'O';
+}
+function stomaIdDatePart(d){const s=String(d||'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?s.replace(/-/g,''):'00000000';}
+function stomaIdCode(p,date,type,mucus,n){
+  const id=String(p&&p.id_card||'').replace(/\s+/g,'').toUpperCase();
+  return 'STO-'+(id?id+'-':'')+stomaIdDatePart(date)+'-'+stomaIdLetter(type,mucus)+(n>1?n:'');
+}
 function initialStomaTypeOptions(cur){
   cur=String(cur||'').trim();
   const ck=stomaTypeKey(cur);
@@ -16100,7 +16123,8 @@ function initialStomaRowHTML(d){
   // An automatic id of its own, so appliances filed against this stoma stay
   // with it even when its type or location is edited.
   const uid=d.uid||newStomaUid();
-  const code=initialStomaCode(uid);
+  // The Stoma ID needs the saved ID card, date and type, so it is given on saving.
+  const code=d.code||'Given when saved';
   // A record saved before the dropdown carried the fistula as a separate flag;
   // it now reads as the "Mucus Fistula" type so the flag is never lost on save.
   const effType=d.mucus_fistula?'Mucus Fistula':(d.type||'');
@@ -17325,13 +17349,17 @@ function patientStomaList(p){
     reversal_notes:s.reversal_notes||null,superseded_date:s.superseded_date||null,replaces_uid:s.replaces_uid||null,operation:s.operation||s.row_operation||null,
     comments:s.comments||s.row_comments||s.findings||null,mucus_fistula:!!s.mucus_fistula}));
   out.sort((a,b)=>String(a.formed_date||far).localeCompare(String(b.formed_date||far)));
-  let n=0;
+  let n=0;const sameDay=new Map();
   out.forEach(x=>{
     // A refashioning keeps the number of the stoma it remade; everything else
     // takes the next one.
     if(x.kind==='refashion')x.number=n||1;
     else x.number=++n;
-    x.code=initialStomaCode(x.uid==='base'?String(x.formed_date||'base'):x.uid);
+    // The Stoma ID (stomaIdCode); the code it had before is kept to recognise it.
+    x.legacyCode=initialStomaCode(x.uid==='base'?String(x.formed_date||'base'):x.uid);
+    const k=stomaIdDatePart(x.formed_date)+stomaIdLetter(x.type,x.mucus_fistula);
+    const same=(sameDay.get(k)||0)+1;sameDay.set(k,same);
+    x.code=stomaIdCode(p,x.formed_date,x.type,x.mucus_fistula,same);
     x.present=!x.reversal_date&&!x.superseded_date;
   });
   // A refashioning replaces the stoma it remade, so that earlier stoma is
@@ -17925,7 +17953,7 @@ async function openStomaOperation(patientId,kind='new',slot=''){
   stomaOperationCtx={patientId,pat,kind,uid:newStomaUid(),target:target?.uid||'',lockTarget:kind==='refashion'&&!!slot,busy:false};
   PF_STOMA_TARGETS=collectStomaTargetsFromPatient(pat);
   const patientName=[pat.first_name,pat.surname].filter(Boolean).join(' ')||'Patient';
-  const operationMeta=`<span>${htmlSafe(pat.id_card||'No ID')}${kind==='reversal'?'':` · New stoma ID ${htmlSafe(initialStomaCode(stomaOperationCtx.uid))}`}</span>`;
+  const operationMeta=`<span>${htmlSafe(pat.id_card||'No ID')}${kind==='reversal'?'':' · New stoma ID given when saved'}</span>`;
   const patientIdentity=typeof patientNameAvatarHTML==='function'
     ? patientNameAvatarHTML(pat,patientName,operationMeta,'md')
     : `<strong>${htmlSafe(patientName)}</strong> · ${operationMeta}`;
@@ -20798,7 +20826,12 @@ const CLR_KINDS=[
 const clrMeta=k=>CLR_KINDS.find(c=>c.kind===k)||CLR_KINDS[0];
 // Each stoma carries a unique, automatic ID derived from its database id —
 // e.g. STO-7F3K9A2C. It needs no coordination and never changes for a record.
-function stomaCode(rec){return (rec&&rec.kind==='stoma'&&rec.id)?'STO-'+String(rec.id).replace(/[^a-z0-9]/gi,'').slice(0,8).toUpperCase():'';}
+function stomaCode(rec){
+  if(!(rec&&rec.kind==='stoma'&&rec.id))return '';
+  // An older stoma record in the clinical table: the same Stoma ID rule.
+  const p=typeof clrState!=='undefined'&&clrState.patient&&String(clrState.patient.id)===String(rec.patient_id)?clrState.patient:null;
+  return stomaIdCode(p,rec.record_date,rec.title,false,1);
+}
 /* Every clinical record carries an automatic reference derived from its id, so
    it needs no coordination and never changes: STO- for a stoma, EPI- for an
    episode (each inpatient visit gets its own). */
@@ -30280,6 +30313,8 @@ function plParseStomaApplianceRows(value){
 }
 function plCollectApplianceHistory(patient,appointments,episodes){
   const out=[];
+  // Entries saved with an earlier code (or none) show the stoma's current ID.
+  let live=[];try{live=patientStomaList(patient)||[];}catch(e){live=[];}
   const add=(row,date,source)=>{
     const appliances=parseNameList(row&&row.appliances);
     const accessories=parseNameList(row&&row.accessories).filter(x=>x!=='None');
@@ -30291,6 +30326,8 @@ function plCollectApplianceHistory(patient,appointments,episodes){
       const present=stomasPresentOn(patient,on);
       if(present.length===1){uid=String(present[0].uid||'');code=code||String(present[0].code||'');}
     }
+    const now=live.find(s=>(uid&&String(s.uid)===uid)||(code&&(s.code===code||s.legacyCode===code)));
+    if(now){uid=uid||String(now.uid||'');code=now.code||code;}
     out.push({
       uid,code,label:String(row&&row.label||''),date:on,source,
       appliances,accessories,flange_due:String(row&&row.flange_due||''),

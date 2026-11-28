@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 November 2026 — New Holistic summary at the bottom of the patient profile, rebuilt live from the patient’s records with sources and dates. The build number moved from the top bar to the bottom of this Help.'};
+const MANUAL_META={updated:'28 November 2026 — New Stoma ID format: STO-ID card-date formed-type, e.g. STO-123456M-20260117-U (C, I, U, J, M or O). It updates itself if the ID card, date or type is corrected.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -825,7 +825,7 @@ const MANUAL_SECTIONS=[
         ['🧾','Cancelled siting deletion logged','After a confirmed Delete removes a cancelled siting appointment, the list and patient’s siting history update and the Audit Trail records the removal with the nurse’s signature. Other appointments and the patient’s registry and surgical records remain.','Siting › Cancelled Stoma Appointments / Audit & Reports › Audit Trail'],
         ['🏥','Saved appliances kept on readmission','A current stoma’s newest saved ward or attended-clinic appliance and accessories are kept when pressing Admit, including separate setups for multiple stomas. Cleared selections, closed stomas and new/refashioned identities are respected. The saved history is checked again before admission.','Registry › Patient record › Episodes'],
         ['🗂️','Patient records status','The “Patient records” label (Electronic notes from surgery, Check for earlier paper notes, Electronic history incomplete, Surgery date missing or History not checked) is worked out automatically from the dates on file — it is never a manual flag. A <b>deceased</b> patient is a closed case, so it is <b>not shown</b> for them at all (and a specific “Patient records” filter never lists deceased records). For everyone else it is looked up in batches, so the whole registry stays reliable no matter how many patients there are; a patient briefly showing History not checked is just the lookup still running — refresh to re-check.','Registry'],
-        ['🔖','Auto codes','Stoma codes (STO-…) and admission references (EP-…) are generated for you.','Registry']
+        ['🔖','Auto codes','Stoma IDs (STO-ID card-date formed-type, e.g. STO-123456M-20260117-U) and admission references (EP-…) are generated for you. A corrected ID card, date or type updates the Stoma ID at once, and nothing linked to the stoma is lost.','Registry']
       ].map(a=>`<div class="man-auto"><h4>${a[0]} ${a[1]}</h4><p>${a[2]}</p><span class="man-auto-where">${a[3]}</span></div>`).join('')}
     </div>
   `}
@@ -840,7 +840,7 @@ const MANUAL_SECTIONS=[
       <li><b>DL</b> — Discharge letter. <b>S5</b> — Schedule 5 permit (the two mark columns on the printed handover).</li>
       <li><b>ROD</b> — the rod/bridge that supports a loop stoma; it has a removal-due date.</li>
       <li><b>Flange due</b> — when a two-piece flange is next due to be changed.</li>
-      <li><b>STO-…</b> — a stoma’s unique code. <b>EP-…</b> — an inpatient admission reference.</li>
+      <li><b>STO-…</b> — a stoma’s ID: <b>STO-ID card-date formed-type</b>, e.g. <span class="man-kbd">STO-123456M-20260117-U</span>. Type letters: <b>C</b> colostomy, <b>I</b> ileostomy, <b>U</b> urostomy (ileal conduit too), <b>J</b> jejunostomy, <b>M</b> mucous fistula, <b>O</b> other; a second stoma of the same type on the same day ends in 2 (…-I2), and an unknown date reads 00000000. <b>EP-…</b> — an inpatient admission reference.</li>
       <li><b>Superseded</b> — a stoma that was replaced by a refashioning; kept as history, no longer current.</li>
     </ul>
   `}
