@@ -25,7 +25,8 @@
   const daysBetween=(a,b)=>Math.round((Date.parse(day(b))-Date.parse(day(a)))/864e5);
   const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
   const one=(s,n)=>{s=String(s||'').replace(/\s+/g,' ').trim();n=n||160;return s.length>n?s.slice(0,n-1).replace(/\s+\S*$/,'')+'…':s;};
-  const st={host:null,pid:null,at:null,plain:''};
+  // open: the detail drop-downs left open, kept when the summary is rebuilt.
+  const st={host:null,pid:null,at:null,plain:'',open:new Set()};
 
   // A consultation note's / ECG's sections ("§ Name" lines).
   function sections(text){
@@ -65,7 +66,8 @@
   }
   // Operations in date order: what was done, by whom, why (indication) and what
   // was found, with the stoma formed, refashioned, closed or replaced that day.
-  function surgical(c){
+  const uniq=a=>{const seen=new Set();return a.filter(x=>{const k=norm(x);if(!k||seen.has(k))return false;seen.add(k);return true;});};
+  function surgeryEvents(c){
     const ev=new Map();
     const at=d=>{d=day(d)||'';if(!ev.has(d))ev.set(d,{date:d,procs:[],by:[],ind:[],find:[],stoma:[],src:new Set()});return ev.get(d);};
     c.stomas.forEach(x=>{
@@ -80,8 +82,10 @@
       if(h.title)e.procs.push(h.title);if(h.source)e.by.push(h.source);
       if(ind)e.ind.push(ind.split('\n')[0]);if(find)e.find.push(find.split('\n')[0]);e.src.add('Patient consultation');
     });
-    const uniq=a=>{const seen=new Set();return a.filter(x=>{const k=norm(x);if(!k||seen.has(k))return false;seen.add(k);return true;});};
-    return [...ev.values()].sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')).map(e=>L(
+    return [...ev.values()].sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  }
+  function surgical(c){
+    return surgeryEvents(c).map(e=>L(
       [(e.date?fd(e.date):'Date not recorded')+' —',uniq(e.procs).map(x=>one(x,120)).join(' / ')||'Operation',uniq(e.by).length?'('+uniq(e.by).join(' / ')+')':'',
        uniq(e.ind).length?'· Indication: '+uniq(e.ind).join('; '):'',uniq(e.find).length?'· Findings: '+one(uniq(e.find).join('; '),160):'',
        e.stoma.length?'→ '+e.stoma.join('; '):''].filter(Boolean).join(' '),
@@ -96,9 +100,11 @@
     eps.slice(0,6).forEach(ep=>{
       const open=ep.is_current&&!ep.discharge_date,ward=ep.ward||(open?c.p.inpatient_ward:'')||'';
       const los=ep.discharge_date?daysBetween(ep.record_date,ep.discharge_date):daysBetween(ep.record_date,today());
-      const why=[ep.title&&!/^inpatient visit$/i.test(ep.title)?ep.title:'',ep.detail||''].filter(Boolean).join(' — ');
+      // The detail is often the ward and bed ("Ward ITU, Bed 6"), which is not a reason.
+      const where=/\b(ward|bed|itu|icu|hdu|room)\b/i.test(ep.detail||'')?ep.detail:'';
+      const why=[ep.title&&!/^inpatient visit$/i.test(ep.title)?ep.title:'',where?'':ep.detail||''].filter(Boolean).join(' — ');
       out.push(L('Admitted '+fd(ep.record_date)+(ward?', '+ward:'')+(open?' — inpatient now, day '+los:ep.discharge_date?' → discharged '+fd(ep.discharge_date)+' ('+los+' day'+(los===1?'':'s')+')':'')
-        +(why?' · Reason: '+why:'')+(enc(ep)?' · '+enc(ep)+' encounter'+(enc(ep)===1?'':'s'):''),'Appointments & episodes',ep.record_date));
+        +(where?' · '+where:'')+(why?' · Reason: '+why:'')+(enc(ep)?' · '+enc(ep)+' encounter'+(enc(ep)===1?'':'s'):''),'Appointments & episodes',ep.record_date));
     });
     if(eps.length>6)out.push(L('… and '+(eps.length-6)+' earlier admission'+(eps.length-6===1?'':'s')+'.','Appointments & episodes'));
     return out;
@@ -167,29 +173,141 @@
     return (f.items||[]).map(x=>L(x.label+': '+x.value,'Appointments'));
   }
 
+  /* ---------- the clinical synopsis (top) ----------
+     Written from the data like Power BI's "smart narrative": short sentences
+     with the live figures in bold, and trends worked out as plain arithmetic.
+     The rationale is the indication / findings / background written in the
+     records; nothing is concluded by the app. */
+  const B=v=>'<b>'+esc(v)+'</b>';
+  // "Exam performed: CT … of 21-NOV-2026: Peritonitis …" → its conclusion, or its first sentences.
+  function imagingGist(e,n){
+    const t=String(e.result||'');
+    const m=t.match(/CONCLUSIONS?\s*:?\s*([\s\S]*?)(?:Reported by|Approved by|$)/i);
+    let x=m&&m[1].trim()?m[1]:t.replace(/^\s*Exam performed\s*:[^:]*?\d{1,2}-[A-Za-z]{3}-\d{4}\s*:\s*/i,'').replace(/^\s*FINDINGS\s*:\s*/i,'');
+    x=x.replace(/\s+/g,' ').trim();
+    const sent=x.split(/(?<=\.)\s+/).slice(0,2).join(' ');
+    return one(sent||x,n||170);
+  }
+  const shortTest=t=>({haemoglobin:'Hb','c-reactive protein':'CRP',potassium:'K⁺',sodium:'Na⁺','white cell count':'WCC',platelets:'Plt',creatinine:'Creat'})[String(t||'').toLowerCase()]||t;
+  function labTrends(c){
+    const lab=c.hist.filter(e=>e.category==='lab'&&e.entry_date);
+    const key=e=>day(e.entry_date)+' '+(e.entry_time||''),groups=new Map();
+    lab.forEach(e=>{const k=norm(e.entry_type)+'|'+norm(e.title);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(e);});
+    const out=[];
+    groups.forEach(list=>{
+      list.sort((a,b)=>key(b).localeCompare(key(a)));
+      const last=list[0];if(!String(last.lab_flag||'').trim())return;
+      const prev=list.find(x=>key(x)<key(last)&&isFinite(parseFloat(x.result)));
+      const a=parseFloat(last.result),b0=prev?parseFloat(prev.result):NaN;
+      let trend='';
+      if(prev&&isFinite(a)&&isFinite(b0)&&b0!==0&&a!==b0){const pc=Math.round((a-b0)/Math.abs(b0)*100);trend=' '+(a>b0?'↑':'↓')+' from '+prev.result+' on '+fd(prev.entry_date)+' ('+(pc>0?'+':'−')+Math.abs(pc)+'%)';}
+      out.push({date:key(last),html:B(shortTest(last.title)+' '+last.result+(last.lab_unit?' '+last.lab_unit:''))+' ('+esc(last.lab_flag)+')'+esc(trend)});
+    });
+    return out.sort((x,y)=>y.date.localeCompare(x.date));
+  }
+  function synopsis(c){
+    const p=c.p,out=[],kpis=[];
+    const age=fn('ageYearsBetween')&&p.date_of_birth?global.ageYearsBetween(p.date_of_birth,today()):null;
+    const sex=/^f/i.test(p.sex||'')?'female':/^m/i.test(p.sex||'')?'male':'';
+    const ep=c.rows.filter(r=>r.kind==='episode'&&r.is_current&&!r.discharge_date&&r.record_date).sort((a,b)=>day(b.record_date).localeCompare(day(a.record_date)))[0]||null;
+    const ward=ep?(ep.ward||p.inpatient_ward||''):'';
+    const outcome=fn('patientOutcome')?global.patientOutcome(p)[0]:'';
+    // Who and where.
+    const push=(k,html)=>{if(html)out.push({k,html});};
+    push('Situation',[age!=null?B(age+'-year-old'):'',sex,p.consultant?'under '+B(p.consultant):'',
+      ep?'— inpatient'+(ward?' on '+B(ward):'')+' since '+B(fd(ep.record_date))+' (day '+daysBetween(ep.record_date,today())+')':outcome?'— '+esc(outcome.toLowerCase()):''].filter(Boolean).join(' ')+'.');
+    if(ep)kpis.push({label:'Inpatient day',value:daysBetween(ep.record_date,today()),sub:ward||'admitted '+fd(ep.record_date)});
+    // The latest operation and why it was done.
+    const evs=surgeryEvents(c).filter(e=>e.date&&e.date<=today());
+    const idx=evs[evs.length-1];
+    if(idx){
+      const procs=uniq(idx.procs),proc=procs[0]||'an operation';
+      let ind=uniq(idx.ind)[0]||'';
+      if(!ind){const m=procs.join(' ').match(/\bfor\s+(.+?)(?:\s+with\s+|\s*\(|[.;]|$)/i);if(m)ind=m[1];}
+      const bg=(procs.join(' ')+' '+idx.find.join(' ')+' '+c.hist.filter(e=>e.category==='consult').map(e=>e.result).join(' ')).match(/background of\s+([^).;\n]+)/i);
+      const pod=daysBetween(idx.date,today());
+      const ty=x=>String(fn('prettyStomaType')?global.prettyStomaType(x.type):x.type||'stoma').toLowerCase();
+      const idxStoma=[].concat(
+        c.stomas.filter(x=>day(x.formed_date)===idx.date).map(x=>ty(x)+(x.kind==='refashion'?' refashioned':' formed')+(x.location?' ('+x.location+')':'')),
+        c.stomas.filter(x=>day(x.reversal_date)===idx.date).map(x=>ty(x)+' closed'),
+        c.stomas.filter(x=>day(x.superseded_date)===idx.date).map(x=>ty(x)+' replaced'));
+      // "Hartmann's procedure for <indication> with <extra>": the operation and its reason apart.
+      const full=proc.replace(/\s*\(.*$/,''),fm=full.match(/^(.*?)\s+for\s+(.+?)(?:\s+with\s+(.+))?$/i);
+      if(!ind&&fm)ind=fm[2];
+      const opName=fm?fm[1]+(fm[3]&&!idxStoma.length?' with '+fm[3]:''):full;
+      push('Operation','Day '+B(pod)+' after '+B(one(opName,90))+' on '+B(fd(idx.date))+(uniq(idx.by).length?' ('+esc(uniq(idx.by)[0])+')':'')
+        +(idxStoma.length?' — '+idxStoma.map(esc).join('; '):'')+'.');
+      const pre=c.hist.filter(e=>e.category==='imaging'&&e.entry_date&&day(e.entry_date)<=idx.date&&daysBetween(e.entry_date,idx.date)<=7)
+        .sort((a,b)=>(/\bCT\b/i.test(b.title)-/\bCT\b/i.test(a.title))||day(b.entry_date).localeCompare(day(a.entry_date)))[0];
+      push('Rationale',[ind?'Indication: '+B(one(ind,90))+'.':'',uniq(idx.find).length?'Findings: '+esc(one(uniq(idx.find)[0],110))+'.':'',
+        bg?'Background: '+B(bg[1].trim())+'.':'',pre?'Pre-operative '+B(pre.title||'imaging')+' ('+esc(fd(pre.entry_date))+'): '+esc(imagingGist(pre)):''].filter(Boolean).join(' '));
+      kpis.push({label:'Post-op day',value:pod,sub:one(proc.replace(/\s*\(.*$/,''),34)});
+      const post=c.hist.filter(e=>e.category==='imaging'&&e.entry_date&&day(e.entry_date)>idx.date).sort((a,b)=>day(b.entry_date).localeCompare(day(a.entry_date)))[0];
+      if(post)push('Since',B(post.title||'Imaging')+' ('+esc(fd(post.entry_date))+'): '+esc(imagingGist(post,150)));
+    }
+    // Stomas present.
+    const now=c.stomas.filter(x=>x.present);
+    kpis.push({label:'Stoma'+(now.length===1?'':'s')+' present',value:now.length,sub:now.map(x=>fn('prettyStomaType')?global.prettyStomaType(x.type):x.type).filter(Boolean).join(', ')||'none'});
+    // Stoma care: appliance and complications.
+    let comp=[];try{comp=fn('parseComplications')?global.parseComplications(p):[];}catch(e){comp=[];}
+    const open=comp.filter(x=>x.status!=='resolved');
+    let applianceLine='';
+    try{const hist=fn('stomaApplianceHistory')?global.stomaApplianceHistory(p,c.rows,c.appts):null;
+      now.forEach(x=>{const e=hist&&(hist.get(x.uid)||[])[0];if(!e)return;const items=e.appliances.concat(e.accessories);
+        applianceLine+=(applianceLine?' ':'')+'Using '+B(items.join(' + ')||'no appliance recorded')+(e.date?' since '+esc(fd(e.date)):'')
+          +(!e.first&&e.stopped.length?' ('+esc(e.stopped.join(', '))+' stopped)':'')+'.';});}catch(e){}
+    push('Stoma care',(applianceLine?applianceLine+' ':'')+(open.length?B(open.length+' open complication'+(open.length===1?'':'s'))+': '+esc(open.map(x=>{const l=(x.events||[]).slice(-1)[0];return x.text+(l&&l.trend?' ('+l.trend+')':'');}).join('; '))+'.':'No open complication recorded.'));
+    kpis.push({label:'Open complications',value:open.length,sub:open.length?one(open[0].text,30):'none',tone:open.length?'warn':''});
+    // Bloods flagged by the lab, with their trend.
+    const flags=labTrends(c);
+    if(flags.length)push('Bloods','Flagged by the lab on their latest result: '+flags.slice(0,5).map(f=>f.html).join('; ')+(flags.length>5?' and '+(flags.length-5)+' more':'')+'.');
+    if(c.hist.some(e=>e.category==='lab'))kpis.push({label:'Lab flags',value:flags.length,sub:flags.length?'latest results H/L':'none flagged',tone:flags.length?'warn':''});
+    // ECG.
+    const ecg=c.hist.filter(e=>e.category==='ecg'&&e.entry_date).sort((a,b)=>(day(b.entry_date)+(b.entry_time||'')).localeCompare(day(a.entry_date)+(a.entry_time||'')));
+    if(ecg.length){
+      const e=ecg[0],qtc=x=>{const m=String(sec(x,'Measurements')).match(/QTc\s+(-?\d+)/);return m?+m[1]:null;},q=qtc(e),qp=ecg[1]?qtc(ecg[1]):null;
+      const st=sec(e,'Interpretation').split('\n').filter(x=>x&&!/^sinus rhythm$/i.test(x)).slice(0,2);
+      push('ECG',esc(fd(e.entry_date))+': '+B(e.title||'no verdict')+(st.length?' — '+esc(st.join('; ')):'')+(q!=null?'; QTc '+B(q+' ms')+(qp!=null&&q!==qp?' ('+(q>qp?'+':'')+(q-qp)+' since '+esc(fd(ecg[1].entry_date))+')':''):'')+'.');
+      if(q!=null)kpis.push({label:'QTc',value:q+' ms',sub:qp!=null&&q!==qp?(q>qp?'▲ +':'▼ ')+(q-qp)+' since '+fd(ecg[1].entry_date):fd(e.entry_date),tone:/abnormal/i.test(e.title||'')?'warn':''});
+    }
+    // Medicines and what comes next.
+    const meds=c.hist.filter(e=>e.category==='poyc').map(e=>e.title).filter(Boolean);
+    if(meds.length)push('Medicines','On '+B(meds.length+' POYC medicine'+(meds.length===1?'':'s'))+': '+esc(meds.sort((a,b)=>a.localeCompare(b)).join(', '))+'.');
+    const f=global.patientFollowupSummary;
+    if(f&&String(f.patientId)===String(p.id)&&(f.items||[]).length)push('Next',f.items.map(x=>esc(x.label)+' '+B(x.value)).join(' · ')+'.');
+    return {sentences:out.filter(x=>x.html&&x.html!=='.'),kpis};
+  }
+
   const SECTIONS=[['Patient',overview],['Surgical history',surgical],['Admissions & encounters',admissions],['Stoma care',stomaCare],
     ['Medicines',medicines],['Investigations',investigations],['Follow-up',followup]];
 
   /* ---------- drawing ---------- */
   function build(){
     const c=data();if(!c)return null;
-    return SECTIONS.map(([title,f])=>{let lines=[];try{lines=f(c)||[];}catch(e){lines=[L('Could not be put together: '+(e&&e.message||e),'')];}return {title,lines};}).filter(s=>s.lines.length);
+    let syn={sentences:[],kpis:[]};try{syn=synopsis(c);}catch(e){syn={sentences:[{k:'Note',html:'The synopsis could not be put together: '+esc(e&&e.message||e)}],kpis:[]};}
+    const secs=SECTIONS.map(([title,f])=>{let lines=[];try{lines=f(c)||[];}catch(e){lines=[L('Could not be put together: '+(e&&e.message||e),'')];}return {title,lines};}).filter(s=>s.lines.length);
+    return {syn,secs};
   }
   function render(){
     const h=st.host;if(!h||!document.body.contains(h))return;
     const d=h.closest('details');if(d&&!d.open)return;
-    const secs=build();if(!secs)return;
+    const built=build();if(!built)return;const secs=built.secs,syn=built.syn;
     st.at=new Date();
-    st.plain=secs.map(s=>s.title.toUpperCase()+'\n'+s.lines.map(l=>'- '+l.text+(l.src?' ['+l.src+(l.date?', '+fd(l.date):'')+']':'')).join('\n')).join('\n\n');
+    const txt=h=>{const d=document.createElement('div');d.innerHTML=h;return d.textContent;};
+    st.plain='CLINICAL SYNOPSIS\n'+syn.sentences.map(x=>x.k+': '+txt(x.html)).join('\n')+'\n\n'
+      +secs.map(s=>s.title.toUpperCase()+'\n'+s.lines.map(l=>'- '+l.text+(l.src?' ['+l.src+(l.date?', '+fd(l.date):'')+']':'')).join('\n')).join('\n\n');
     h.innerHTML='<div class="hs">'
       +'<div class="hs-bar"><span class="hs-live" title="Rebuilt automatically from this patient’s records whenever they change. Each line shows where it came from; reasons are the ones written in the records.">● Live · updated '+esc(st.at.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}))+'</span>'
       +'<button type="button" class="psm-btn" onclick="HolisticSummary.copy(this)">📋 Copy summary</button></div>'
-      +secs.map(s=>'<section class="hs-sec"><h4>'+esc(s.title)+'</h4><ul>'+s.lines.map(l=>'<li><span class="hs-text">'+esc(l.text)+'</span>'
-        +(l.src?' <span class="hs-src">'+esc(l.src)+(l.date?' · '+esc(fd(l.date)):'')+'</span>':'')+'</li>').join('')+'</ul></section>').join('')
+      +(syn.kpis.length?'<div class="hs-kpis">'+syn.kpis.map(k=>'<div class="hs-kpi'+(k.tone?' is-'+k.tone:'')+'"><span class="hs-kpi-l">'+esc(k.label)+'</span><span class="hs-kpi-v">'+esc(String(k.value))+'</span><span class="hs-kpi-s">'+esc(k.sub||'')+'</span></div>').join('')+'</div>':'')
+      +(syn.sentences.length?'<section class="hs-syn"><h4>Clinical synopsis</h4><dl>'+syn.sentences.map(x=>'<dt>'+esc(x.k)+'</dt><dd>'+x.html+'</dd>').join('')+'</dl></section>':'')
+      +secs.map(s=>'<details class="hs-sec" data-k="'+esc(s.title)+'"'+(st.open.has(s.title)?' open':'')+' ontoggle="HolisticSummary._toggle(this)"><summary>'+esc(s.title)+' <span class="ch-sum-count">'+s.lines.length+'</span></summary><ul>'+s.lines.map(l=>'<li><span class="hs-text">'+esc(l.text)+'</span>'
+        +(l.src?' <span class="hs-src">'+esc(l.src)+(l.date?' · '+esc(fd(l.date)):'')+'</span>':'')+'</li>').join('')+'</ul></details>').join('')
       +'</div>';
   }
   function mount(host,patient){
     if(!host||!patient)return;
+    if(st.pid!==String(patient.id))st.open=new Set();
     st.host=host;st.pid=String(patient.id);
     const d=host.closest('details');
     if(d&&!d.dataset.hsBound){d.dataset.hsBound='1';d.addEventListener('toggle',()=>{if(d.open)render();});}
@@ -205,5 +323,6 @@
   }
   // Hospital records saved or loaded → rebuild (only while open).
   document.addEventListener('clinical-history:changed',render);
-  global.HolisticSummary={mount,render,copy,_build:build};
+  function toggle(el){const k=el&&el.dataset.k;if(!k)return;if(el.open)st.open.add(k);else st.open.delete(k);}
+  global.HolisticSummary={mount,render,copy,_toggle:toggle,_build:build};
 })(window);

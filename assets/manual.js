@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 November 2026 — New Stoma ID format: STO-ID card-date formed-type, e.g. STO-123456M-20260117-U (C, I, U, J, M or O). It updates itself if the ID card, date or type is corrected.'};
+const MANUAL_META={updated:'28 November 2026 — The Holistic summary now opens with headline cards and a clinical synopsis (situation, operation, rationale, stoma care, bloods with trends, ECG, medicines, next). The detailed sections below it are drop-downs.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -68,15 +68,15 @@ const MANUAL_SECTIONS=[
     ])}
     ${manNote('auto','⚙️','Sorting is done <b>inside the app</b> by fixed rules — no AI and no outside service, so the pasted text never leaves the app. <b>Duplicates are never saved:</b> an entry already saved, or repeated in the same paste, is unticked and skipped — the same procedure, test, note or consultation on the same date (a note also by its time), and a POYC medicine whatever day the list was copied. A consultation note saved before (same date and operation, mostly the same words) is <b>updated</b>, not copied again. The check is made again at the moment of saving, in case another nurse saved it meanwhile, and <b>＋ Add one</b> warns if the entry is already there. Run <code>sql/add-patient-history.sql</code> once in Supabase (again after an update) so Patient consultation notes, ECGs, POYC medicines, lab results, the blood investigations list and stoma links work.')}
     ${manNote('tip','🔄','An open section stays open when the profile refreshes with another nurse’s changes.')}
-  `},{id:'holistic',title:'Holistic summary',keywords:'holistic summary patient summary overview live automatic technical reasons indication findings surgical history admissions encounters appliances complications medicines investigations bloods ecg imaging follow-up copy',html:`
+  `},{id:'holistic',title:'Holistic summary',keywords:'holistic summary patient summary overview live automatic technical reasons indication findings surgical history admissions encounters appliances complications medicines investigations bloods ecg imaging follow-up copy synopsis rationale situation clinical breakdown cards smart narrative trend',html:`
     ${manWhen('You want one technical overview of everything recorded for the patient, always up to date.')}
     <p class="man-lede">The last fold-out on the patient profile, below Hospital records. It is put together automatically from the patient’s records and <b>rebuilt whenever they change</b> (a new encounter, an edited stoma, a saved paste) — the top line says when it was last updated.</p>
     <ul>
-      <li><b>Patient</b> — age, sex, firm, follow-up status, and each stoma present with the day post-op.</li>
-      <li><b>Surgical history</b> — each operation in date order, with the consultant, the <b>indication</b> and <b>findings</b> from the consultation note, and the stoma formed, refashioned, closed or replaced.</li>
-      <li><b>Admissions &amp; encounters</b>, <b>Stoma care</b> (current appliances, the last change, open and resolved complications), <b>Medicines</b> (POYC), <b>Investigations</b> (lab results flagged by the lab, the latest ECG and QTc, imaging conclusions, iCM notes) and <b>Follow-up</b>.</li>
+      <li><b>Headline cards</b> — inpatient day, post-op day, stomas present, open complications, lab flags and QTc.</li>
+      <li><b>Clinical synopsis</b> — <b>Situation</b>, <b>Operation</b>, <b>Rationale</b> (indication, findings, background and the pre-operative imaging), <b>Since</b> (latest imaging), <b>Stoma care</b>, <b>Bloods</b> (each flagged result with its change since the one before), <b>ECG</b>, <b>Medicines</b> and <b>Next</b>.</li>
+      <li>Below it, a drop-down each for <b>Patient</b>, <b>Surgical history</b>, <b>Admissions &amp; encounters</b>, <b>Stoma care</b>, <b>Medicines</b>, <b>Investigations</b> and <b>Follow-up</b>, every line with its source and date.</li>
     </ul>
-    ${manNote('auto','⚙️','Every line names where it came from and its date. Reasons are the ones written in the records; the app adds no clinical conclusions of its own and no AI is used. <b>📋 Copy summary</b> copies it as plain text.')}
+    ${manNote('auto','⚙️','Written from the records like a Power BI smart narrative: the figures and trends are worked out, the reasons are the ones written in the records, and no AI is used. <b>📋 Copy summary</b> copies it as plain text.')}
   `},{id:'images',title:'Pictures (📷 Images)',keywords:'images pictures photos photo camera gallery wound stoma skin upload add picture attach episode encounter inpatient follow-up visit correspondence email stoma id link shortcut delete caption download',html:`
     ${manWhen('You want to keep a picture (e.g. a wound, peristomal skin or a stoma) with the patient, linked to the admission, encounter, visit, correspondence or stoma it belongs to.')}
     ${manSteps([
