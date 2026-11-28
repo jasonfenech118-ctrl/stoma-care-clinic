@@ -3,16 +3,14 @@
 
    The official fillable PDF is kept exactly as issued
    (assets/forms/poyc16-schedule-v-request.pdf). Opened from the 📋 Schedule 5
-   window, the app writes the patient's details, the Schedule V condition, the
+   window, the app writes the patient's details, the
    duration, the applicant (doctor) and any extra items into the form's OWN
    fields — in this browser, nothing is uploaded — and opens the filled form to
    print or save. The form keeps its Reset and Email buttons; the doctor signs
    and stamps it. The Strength and Dosage columns are for POYC records only and
    are left blank.
 
-   The condition is suggested from the reason for the stoma written in the
-   record (the operation, its indication, the case summary's diagnosis); it is
-   only ticked when the record says so, and can be changed before filling.
+   The Schedule V condition is left for the doctor to tick.
    Names and addresses keep their Maltese letters (ħ, ġ, ż, ċ) through an
    embedded font (assets/fonts, SIL Open Font License). */
 (function(root){
@@ -86,7 +84,7 @@
   function open(){
     const p=appPatient();if(!p){alert('Open a patient first.');return;}
     const mb=root.document.getElementById('mb');if(!mb)return;
-    const store=loadStore(),hits=suggest(p),kinds=stomaKinds(p);
+    const store=loadStore(),kinds=stomaKinds(p);
     const applicant=String(p.consultant||'').toUpperCase().replace(/\s+/g,' ').trim();
     cur={pid:String(p.id)};
     // The Schedule 5 pages as edited in the 📋 Schedule 5 window (quantities included).
@@ -98,14 +96,11 @@
       std:STANDARD.map(x=>!(x==='Deodorizing agent'&&kinds.has('uro')&&!kinds.has('bowel'))),
       extra:kinds.has('uro')?'Night drainage bags':''};
     const f=(id,label,val,attrs)=>'<div class="fg"><label for="pq-'+id+'">'+esc(label)+'</label><input id="pq-'+id+'" value="'+esc(val)+'"'+(attrs||'')+'></div>';
-    const why=[...hits.entries()].map(([k,h])=>{const c=CONDITIONS.find(x=>x.f===k);return '<b>'+esc(c.label)+'</b> — “'+esc(h.word)+'” in '+esc(h.from);}).join('<br>');
     mb.className='mb mb-wide pq-modal';
     mb.innerHTML='<h2>📄 POYC 16 — Schedule V request form</h2>'
       +'<p class="report-note" style="margin:4px 0 10px;line-height:1.55;">The official POYC form, filled in from this patient’s record. Check the details, then open it to print or save; the doctor signs and stamps it. Nothing is uploaded.</p>'
       +'<div class="pq-grid">'+f('name','Patient name',v.name)+f('dob','Date of birth',v.dob,' placeholder="dd/mm/yyyy"')+f('address','Address',v.address)+f('id','ID card no.',v.id)+f('tel','Telephone no.',v.tel)+'</div>'
-      +'<div class="pq-sec">Schedule V condition</div>'
-      +'<div class="pq-conds">'+CONDITIONS.map(c=>'<label><input type="checkbox" class="pq-cond" value="'+esc(c.f)+'"'+(hits.has(c.f)?' checked':'')+'> '+esc(c.label)+'</label>').join('')+'</div>'
-      +'<p class="pq-why">'+(why?'Ticked from the record: '+why+'.':'The record does not name the condition — tick it here.')+' Any other condition can be ticked on the form itself.</p>'
+      +'<p class="pq-why">The Schedule V condition is left blank on the form — the doctor ticks it.</p>'
       +'<div class="pq-grid">'+f('duration','Duration of Schedule V entitlement',v.duration,' placeholder="e.g. Permanent"')+f('date','Date','',' type="date"')+'</div>'
       +'<label class="pq-check"><input type="checkbox" id="pq-accept"> Previously approved treatment may be added to the patient’s entitlement document</label>'
       +'<div class="pq-sec">Applicant (the doctor who signs)</div>'
@@ -132,7 +127,6 @@
     const g=id=>{const el=root.document.getElementById('pq-'+id);return el?String(el.value||'').trim():'';};
     return {name:g('name'),dob:g('dob'),address:g('address'),id:g('id'),tel:g('tel'),duration:g('duration'),date:g('date'),
       applicant:g('applicant').toUpperCase(),reg:g('reg'),accept:!!(root.document.getElementById('pq-accept')||{}).checked,
-      conds:[...root.document.querySelectorAll('.pq-cond:checked')].map(x=>x.value),
       std:STANDARD.map((x,i)=>!!(root.document.querySelector('.pq-std[data-i="'+i+'"]')||{}).checked),
       extra:g('extra').split('\n').map(x=>x.trim()).filter(Boolean),
       what:(root.document.querySelector('input[name="pq-what"]:checked')||{}).value||'poyc'};
@@ -175,7 +169,6 @@
     const tick=(n,on)=>{try{const c=form.getCheckBox(n);if(on)c.check();else c.uncheck();}catch(e){}};
     set('PatientName',v.name);set('DOB',v.dob);set('Address',v.address);set('IDNo',v.id);set('TelNo',v.tel);
     set('Duration_SchV_Entitlement',v.duration);set('ConsultantName',v.applicant);set('MedRegNo',v.reg);set('Date',dmy(v.date));
-    CONDITIONS.forEach(c=>tick(c.f,v.conds.includes(c.f)));
     tick('CheckBox1',v.accept);
     STANDARD.forEach((x,i)=>set('Drug'+pad(i+1),v.std[i]?x:''));
     for(let i=0;i<11;i++)set('Drug'+pad(i+7),v.extra[i]||'');
@@ -237,7 +230,6 @@
   const msg=t=>{const el=root.document.getElementById('pq-msg');if(el)el.textContent=t||'';};
   function check(v){
     if(!v.name||!v.id){msg('Fill in the patient’s name and ID card number first.');return false;}
-    if(v.what!=='s5'&&!v.conds.length&&!confirm('No Schedule V condition is ticked. Fill the form anyway (and tick it on the form)?'))return false;
     return true;
   }
   async function fill(btn){
