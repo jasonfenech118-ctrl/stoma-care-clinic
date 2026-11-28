@@ -1235,6 +1235,7 @@
     date_stoma:'Date filled in from the stoma’s operation date',date_proc:'Date filled in from the performed procedure',
     updates_saved:'Same note saved before — saving updates it, no second copy',
     lab_new:'New test — joins the blood investigations list when saved',
+    lab_from_case:'Already in Lab results from a case summary — saving adds its panel, flag and range',
     case_partial:'The admission date or diagnosis could not be read — check them against the report',
     case_duplicate_saved:'A case summary for this admission is already saved — not ticked',
     case_duplicate_paste:'Repeated in this paste — not ticked',
@@ -1536,6 +1537,11 @@
     render();
     // The Holistic summary rebuilds from these.
     try{document.dispatchEvent(new CustomEvent('clinical-history:changed'));}catch(e){}
+    // Blood results in a case summary not yet sent to Lab results go there now.
+    if(!res.error)syncCaseBloods();
+    // The Treatment (💊) follows the latest case summary's treatment on discharge.
+    if(!res.error&&typeof global.syncTreatmentFromCases==='function'&&st.patient&&String(st.patient.id)===String(pid))
+      try{global.syncTreatmentFromCases(st.patient);}catch(e){}
   }
   function render(){
     const c=counts();
@@ -1596,6 +1602,7 @@
       if(key==='date')v='<strong>'+esc(showDate(e))+'</strong>'+((cat==='doc_icm'||cat==='ecg'||cat==='lab')&&e.entry_time?' <span class="ch-time">'+esc(e.entry_time)+'</span>':'');
       else if(cat==='ecg')v=ecgCell(e,key);
       else if(cat==='lab'&&key==='lab_flag')v=e.lab_flag?'<span class="ch-lab-flag">'+esc(e.lab_flag)+'</span>':'';
+      else if(cat==='lab'&&key==='entry_type'&&!e.entry_type&&e.source)v='<span class="ch-lab-src">'+esc(e.source)+'</span>';
       else if(cat==='lab'&&key==='result')v='<strong class="ch-lab-res">'+esc(e.result||'')+'</strong>';
       else if(cat==='lab'&&key==='lab_range')v=e.lab_range?'<span class="ch-lab-rl">Normal range </span>'+esc(e.lab_range):'';
       else v='<div class="ch-cell-text">'+esc(e[key]||'')+'</div>';
@@ -1663,6 +1670,65 @@
     v=String(v||'');if(v.length<=480)return '<div class="ch-sec-text">'+esc(v)+'</div>';
     return '<div class="ch-sec-text ch-clip">'+esc(short(v,260))+'</div><details class="ch-more"><summary>Show all</summary><div class="ch-sec-text">'+esc(v)+'</div></details>';
   }
+  /* ---------- Case summaries → Lab results ----------
+     The blood results listed under a case summary's Investigations are added to
+     Lab results automatically — date, time, test, result and unit, with the case
+     summary as their source (no panel, flag or range: the summary has none).
+     Each case summary is sent once (a mark in its raw text), so a result deleted
+     from Lab results does not come back. A result already in Lab results (same
+     date, time and test, or the same value for the same kind of test) is
+     skipped; a Lab Results table pasted later upgrades it with its panel, flag
+     and normal range instead of adding a copy. */
+  const BLOODS_SENT='[Blood results added to Lab results]';
+  const NOT_BLOOD=/x-?ray|\bct\b|\bmri\b|ultrasound|\bus\b|fluoro|\bscan\b|echo|\becg\b|doppler|endoscop|culture|swab|histolog/i;
+  function caseBloods(e){
+    const out=[];
+    caseSec(e,'Investigations').split('\n').forEach(l=>{
+      const c=l.split(' · ');if(c.length<3)return;
+      const m=c[0].match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}:\d{2})$/);if(!m)return;
+      const test=c[1].trim(),v=c.slice(2).join(' · ').trim();
+      const n=v.match(/^([<>]?\s*-?\d+(?:[.,]\d+)?)\s*(.{0,30})$/);
+      if(!n||NOT_BLOOD.test(test))return;
+      out.push({iso:m[3]+'-'+m[2]+'-'+m[1],time:m[4].padStart(5,'0'),test,value:n[1].replace(/\s+/g,''),unit:n[2].trim(),line:l});
+    });
+    return out;
+  }
+  const testKey=t=>String(t||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/\b(?:serum|plasma|blood|whole|level|poc|venous|arterial)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim();
+  // The same blood result: same date and minute, and the same test (or the same
+  // value for a test starting with the same word).
+  function sameBlood(e,b){
+    if(day(e)!==b.iso||String(e.entry_time||'').slice(0,5)!==String(b.time||'').slice(0,5))return false;
+    const a=testKey(e.title),c=testKey(b.test);if(a&&a===c)return true;
+    const n1=parseFloat(String(e.result).replace(/[<>\s]/g,'')),n2=parseFloat(String(b.value).replace(/[<>\s]/g,''));
+    return isFinite(n1)&&n1===n2&&a.split(' ')[0]===c.split(' ')[0];
+  }
+  let syncing=false;const sentNow=new Set();   // handled this session, even if the mark could not be saved
+  async function syncCaseBloods(){
+    if(syncing||!st.pid||!db())return;
+    const pending=st.entries.filter(e=>e.category==='case'&&!sentNow.has(String(e.id))&&!String(e.raw_text||'').includes(BLOODS_SENT));
+    if(!pending.length)return;
+    syncing=true;const pid=st.pid;
+    try{
+      const labs=st.entries.filter(e=>e.category==='lab'),out=[],who=await whoName(),base=Date.now(),batch=global.crypto&&global.crypto.randomUUID?global.crypto.randomUUID():null;
+      pending.forEach(e=>caseBloods(e).forEach(b=>{
+        if(labs.some(x=>sameBlood(x,b))||out.some(x=>sameBlood({entry_date:x.entry_date,entry_time:x.entry_time,title:x.title,result:x.result},b)))return;
+        const r={category:'lab',entry_date:b.iso,date_precision:'day',entry_time:b.time,date_text:'',entry_type:'',title:b.test,result:b.value,
+          source:'Case summary '+fmt(e.entry_date),raw_text:b.line,lab_flag:'',lab_range:'',lab_unit:b.unit};
+        const now=new Date(base+out.length).toISOString();
+        out.push(dbRow(r,CH.fingerprint('lab',b.iso,b.test,b.value,b.time,''),batch,who,now));
+      }));
+      if(out.length){
+        const res=await writeTolerant(rows=>db().from(TABLE).insert(rows),out);
+        if(res.error)return;   // Lab results not set up yet: try again next time
+        try{global.logAudit&&global.logAudit({action:'create',entity:'patient',entity_id:pid,patient_id:pid,summary:'Added '+out.length+' blood result'+(out.length===1?'':'s')+' to Lab results from case summaries'});}catch(e){}
+      }
+      for(const e of pending){sentNow.add(String(e.id));await db().from(TABLE).update({raw_text:(String(e.raw_text||'')+'\n'+BLOODS_SENT).trim()}).eq('id',e.id);}
+      if(out.length&&pid===st.pid){st.note='✓ '+out.length+' blood result'+(out.length===1?'':'s')+' from case summaries added to Lab results.';st.noteAt='lab';}
+    }catch(e){}
+    finally{syncing=false;}
+    if(pid===st.pid)await load();
+  }
+
   /* ---------- Case summaries ---------- */
   const caseSec=(e,label)=>((sectionsOf(e.result).find(x=>x.label===label)||{}).value||'');
   function caseDates(e){
@@ -1852,7 +1918,7 @@
   }
   // The check screen for lab results: one compact table, as there are often
   // dozens of results in one paste.
-  const LAB_BADGE={duplicate_saved:'Already saved',duplicate_paste:'Repeated in this paste',updates_saved:'Changed since — updates the saved one',lab_new:'🆕 New test',no_date:'No date',bad_date:'Check the date'};
+  const LAB_BADGE={lab_from_case:'From a case summary — saving upgrades it',duplicate_saved:'Already saved',duplicate_paste:'Repeated in this paste',updates_saved:'Changed since — updates the saved one',lab_new:'🆕 New test',no_date:'No date',bad_date:'Check the date'};
   function labPreviewHTML(p){
     const rows=p.rows,cnt=f=>rows.filter(r=>r.flags.includes(f)).length;
     const tests=[...new Map(rows.filter(r=>r.flags.includes('lab_new')).map(r=>[labKey(r.entry_type,r.title),(r.entry_type&&normT(r.entry_type)!==normT(r.title)?r.entry_type+' › ':'')+r.title])).values()];
@@ -1893,7 +1959,14 @@
     const res=CH.parse(text,st.tab,{dob:st.patient&&st.patient.date_of_birth,existing:CH.savedKeys(st.entries)});
     if(!res.rows.length){msg('Nothing could be read from that text. Check that it was pasted completely.');return;}
     autoFill(res.rows);ecgUpdates(res.rows);
-    if(res.rows.some(r=>r.category==='lab'))await markNewTests(res.rows);
+    if(res.rows.some(r=>r.category==='lab')){
+      await markNewTests(res.rows);
+      res.rows.forEach(r=>{
+        if(r.category!=='lab'||r.replaces||r.flags.some(f=>/^duplicate_/.test(f)))return;
+        const e=st.entries.find(x=>x.category==='lab'&&/^Case summary/.test(x.source||'')&&sameBlood(x,{iso:r.entry_date,time:r.entry_time,test:r.title,value:r.result}));
+        if(e){r.replaces=e.id;r.flags.push('lab_from_case');}
+      });
+    }
     // The ID in a pasted note is checked against this patient, then dropped.
     const mine=normId(st.patient&&st.patient.id_card);
     res.rows.forEach(r=>{

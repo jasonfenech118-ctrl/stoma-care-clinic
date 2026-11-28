@@ -16,23 +16,23 @@
 <link rel="stylesheet" href="assets/cancellations.css?v=2026.11.01-691"/>
 <script src="assets/cancellations.js?v=2026.11.18-819"></script>
 <link rel="stylesheet" href="assets/daily-attendance.css?v=2026.11.26-857"/>
-<link rel="stylesheet" href="assets/clinical-history.css?v=2026.11.28-918"/>
+<link rel="stylesheet" href="assets/clinical-history.css?v=2026.11.28-919"/>
 <link rel="stylesheet" href="assets/holistic-summary.css?v=2026.11.28-916"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-918"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-919"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.28-918"></script>
+<script src="assets/manual.js?v=2026.11.28-919"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.11.26-895"/>
 <script src="assets/episode-codes.js?v=2026.11.26-895"></script>
-<script defer src="assets/clinical-history.js?v=2026.11.28-918"></script>
+<script defer src="assets/clinical-history.js?v=2026.11.28-919"></script>
 <script defer src="assets/holistic-summary.js?v=2026.11.28-918"></script>
 <script defer src="assets/patient-communications.js?v=2026.11.26-895"></script>
 <link rel="stylesheet" href="assets/patient-images.css?v=2026.11.26-891"/>
@@ -4126,7 +4126,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.28-918';
+const APP_BUILD='2026.11.28-919';
 /* A newer build on the server: a bar offers to reload. The live number is in
    build.json (set to APP_BUILD at every deploy), a tiny file fetched past every
    cache, so a page the browser kept from before an update is noticed within
@@ -20242,6 +20242,72 @@ const TREATMENT_GROUPS=[
   {key:'chemo',label:'Chemotherapy'},
   {key:'radiotherapy',label:'Radiotherapy'}
 ];
+/* Treatment on discharge (Hospital records › Case summaries) → the Treatment
+   groups. Each discharge medicine is put under its group by name; anything not
+   in a group is listed under Other treatment. The latest case summary updates
+   what an earlier one filled in, and leaves anything entered by hand in other
+   groups alone. A summary older than the last hand edit is only offered, in the
+   Treatment window, never applied by itself. */
+const TREATMENT_DRUGS={
+  antihypertensive:/amlodipine|nifedipine|felodipine|lercanidipine|diltiazem|verapamil|lisinopril|ramipril|perindopril|enalapril|captopril|losartan|valsartan|candesartan|irbesartan|telmisartan|olmesartan|bisoprolol|atenolol|metoprolol|carvedilol|nebivolol|propranolol|labetalol|bendroflumethiazide|bendrofluazide|indapamide|hydrochlorothiazide|chlortalidone|doxazosin|clonidine|methyldopa|hydralazine|moxonidine/i,
+  oha:/metformin|gliclazide|glimepiride|glibenclamide|sitagliptin|linagliptin|saxagliptin|alogliptin|vildagliptin|dapagliflozin|empagliflozin|canagliflozin|pioglitazone|repaglinide|acarbose/i,
+  insulin:/insulin|novorapid|humalog|lantus|levemir|toujeo|tresiba|humulin|actrapid|mixtard|abasaglar|fiasp/i,
+  anticoagulant:/warfarin|apixaban|rivaroxaban|edoxaban|dabigatran|enoxaparin|clexane|tinzaparin|dalteparin|fondaparinux|heparin|acenocoumarol/i,
+  steroid:/prednisolone|prednisone|hydrocortisone|dexamethasone|methylprednisolone|budesonide|fludrocortisone/i,
+  laxative:/lactulose|senna|bisacodyl|macrogol|movicol|laxido|docusate|glycerin|ispaghula|fybogel|picosulfate|picosulphate/i,
+  opioid:/morphine|oxycodone|oxynorm|oxycontin|tramadol|codeine|co-codamol|dihydrocodeine|pethidine|fentanyl|tapentadol|buprenorphine|hydromorphone|methadone/i,
+  antidepressant:/sertraline|citalopram|escitalopram|fluoxetine|paroxetine|mirtazapine|amitriptyline|nortriptyline|duloxetine|venlafaxine|trazodone|vortioxetine|bupropion|agomelatine|clomipramine|imipramine/i,
+  iron:/\biron\b|ferrous|ferric|feroglobin|maltofer|ferinject|monofer|venofer|spatone/i,
+  lipid:/statin\b|atorvastatin|simvastatin|rosuvastatin|pravastatin|fluvastatin|ezetimibe|fenofibrate|bezafibrate/i,
+  chemo:/capecitabine|oxaliplatin|fluorouracil|\b5-?fu\b|irinotecan|cisplatin|carboplatin|docetaxel|paclitaxel|gemcitabine|folfox|folfiri|xelox|cyclophosphamide|doxorubicin|epirubicin|temozolomide/i
+};
+// The latest case summary with a treatment on discharge: {ref, when, lines}.
+function latestCaseTreatment(p){
+  const CH=window.ClinicalHistory;if(!p||!CH||typeof CH.entries!=='function')return null;
+  const sec=(e,l)=>{const m=String(e.result||'').split(/^§ /m).find(x=>x.startsWith(l+'\n'));return m?m.slice(l.length+1).trim():'';};
+  const list=CH.entries(p.id).filter(e=>e.category==='case'&&e.entry_date).map(e=>{
+    const d=sec(e,'Dates').match(/Discharged\s+(\d{2})\/(\d{2})\/(\d{4})/);
+    return {e,when:d?d[3]+'-'+d[2]+'-'+d[1]:String(e.entry_date).slice(0,10),lines:sec(e,'Treatment on discharge').split('\n').filter(Boolean)};
+  }).filter(x=>x.lines.length).sort((a,b)=>b.when.localeCompare(a.when));
+  const x=list[0];return x?{ref:String(x.e.entry_date).slice(0,10)+'|'+x.when,when:x.when,lines:x.lines}:null;
+}
+// The Treatment after applying a discharge list (nothing is saved here).
+function treatmentFromCase(t,c){
+  const groups={},other=[];
+  c.lines.forEach(l=>{const p=l.split(' · '),name=p[0]||'',det=[p[0],p[1],p[2]].filter(Boolean).join(' ');
+    const g=Object.keys(TREATMENT_DRUGS).find(k=>TREATMENT_DRUGS[k].test(name));if(g)(groups[g]=groups[g]||[]).push(det);else other.push(det);});
+  const items=(Array.isArray(t.items)?t.items:[]).map(x=>({...x}));
+  items.forEach(it=>{if(it.from_case&&!groups[it.key]){it.on=false;it.details='';delete it.from_case;}});
+  Object.keys(groups).forEach(k=>{let it=items.find(x=>x.key===k);if(!it){it={key:k};items.push(it);}it.on=true;it.details=groups[k].join('; ');it.from_case=c.when;});
+  const keep=String(t.other||'').split('\n').filter(l=>!/^On discharge \d{2}\/\d{2}\/\d{4}:/.test(l));
+  if(other.length)keep.push('On discharge '+c.when.split('-').reverse().join('/')+': '+other.join('; '));
+  return {...t,items:items.filter(x=>x.on||x.details),other:keep.filter(Boolean).join('\n'),case_ref:c.ref};
+}
+// Applied by itself when the profile's hospital records load, once per case summary.
+async function syncTreatmentFromCases(p){
+  const c=latestCaseTreatment(p);if(!c)return;
+  const t=patientTreatment(p);if(t.case_ref===c.ref)return;
+  // A hand edit made after that discharge wins: the window offers it instead.
+  if(t.manual_at&&String(t.manual_at).slice(0,10)>c.when)return;
+  const next={...treatmentFromCase(t,c),updated_at:new Date().toISOString(),updated_by:'Case summary of '+c.when.split('-').reverse().join('/')};
+  const ohaBefore=patientOnTreatment(p,'oha');
+  const{error,dropped}=await updatePatientTolerant(p.id,{treatment:next});
+  if(error||(dropped||[]).includes('treatment'))return;
+  p.treatment=next;
+  try{logAudit({action:'update',entity:'patient',entity_id:p.id,patient_id:p.id,summary:'Treatment updated from the case summary (discharged '+c.when+')'});}catch(e){}
+  // The OHAs tag in the header follows the Treatment.
+  if(patientOnTreatment(p,'oha')!==ohaBefore&&clrState.patient&&String(clrState.patient.id)===String(p.id))try{await openPatientRecord(p.id,{fromBack:true});}catch(e){}
+}
+function applyCaseToTreatmentForm(){
+  const p=clrState&&clrState.patient,c=latestCaseTreatment(p);if(!p||!c)return;
+  const next=treatmentFromCase(patientTreatment(p),c);
+  TREATMENT_GROUPS.forEach(g=>{const it=(next.items||[]).find(x=>x.key===g.key)||{};
+    const on=document.querySelector(`.tx-on[data-key="${g.key}"]`),det=document.querySelector(`.tx-det[data-key="${g.key}"]`);
+    if(on)on.checked=!!it.on;if(det){det.value=it.details||'';det.disabled=!it.on;}});
+  const o=document.getElementById('tx-other');if(o)o.value=next.other||'';
+  window.__txCaseRef=next.case_ref;
+  const box=document.getElementById('tx-case');if(box)box.innerHTML='<div class="registry-lookup-note found" style="margin:6px 0;">The discharge list is filled in below — check it, then press <strong>Save treatment</strong>.</div>';
+}
 function patientTreatment(p){
   let t=p&&p.treatment;if(typeof t==='string'){try{t=JSON.parse(t);}catch(e){t=null;}}
   return t&&typeof t==='object'?t:{items:[],other:''};
@@ -20265,6 +20331,9 @@ function openPatientTreatment(){
       <input type="text" class="tx-det" data-key="${g.key}" maxlength="300" value="${htmlSafe(it.details||'')}" placeholder="Drug, dose or details (optional)" ${it.on?'':'disabled'}/></div>`;};
   mb.innerHTML=`<h2>💊 Treatment</h2>
     <div class="msub"><strong>${htmlSafe([p.first_name,p.surname].filter(Boolean).join(' '))}</strong> · ${htmlSafe(p.id_card||'')}. Tick what the patient is on; add the drug and dose if useful.</div>
+    ${(()=>{const c=latestCaseTreatment(p);if(!c)return '';const d=c.when.split('-').reverse().join('/');
+      if(t.case_ref===c.ref)return `<div class="report-note" style="margin:6px 0;">Filled in from the case summary (discharged ${htmlSafe(d)}).</div>`;
+      return `<div id="tx-case" class="registry-lookup-note" style="margin:6px 0;">The case summary of <strong>${htmlSafe(d)}</strong> lists ${c.lines.length} medicine${c.lines.length===1?'':'s'} on discharge: ${htmlSafe(c.lines.map(l=>l.split(' · ')[0]).join(', '))}. <button type="button" class="clr-mini" onclick="applyCaseToTreatmentForm()">Apply the discharge list</button></div>`;})()}
     <div>${TREATMENT_GROUPS.map(row).join('')}</div>
     <div class="fg" style="margin-top:10px;"><label for="tx-other">Other treatment</label><textarea id="tx-other" rows="2" maxlength="1000" placeholder="Anything else relevant">${htmlSafe(t.other||'')}</textarea></div>
     ${t.updated_by?`<p class="report-note" style="margin:6px 0;">Last updated by ${htmlSafe(t.updated_by)}${t.updated_at?' · '+htmlSafe(fmtShortDate(String(t.updated_at).slice(0,10))):''}</p>`:''}
@@ -20277,7 +20346,11 @@ async function savePatientTreatment(patientId){
   const items=TREATMENT_GROUPS.map(g=>({key:g.key,on:!!document.querySelector(`.tx-on[data-key="${g.key}"]`)?.checked,
     details:String(document.querySelector(`.tx-det[data-key="${g.key}"]`)?.value||'').trim()})).filter(x=>x.on||x.details);
   let who='';try{who=(await getCurrentUserForAudit())?.name||'';}catch(e){}
-  const treatment={items,other:String(document.getElementById('tx-other')?.value||'').trim(),updated_at:new Date().toISOString(),updated_by:who};
+  const prev=patientTreatment(clrState&&clrState.patient);
+  // Remember which items came from a case summary, and that this is a hand edit.
+  items.forEach(it=>{const was=(prev.items||[]).find(x=>x&&x.key===it.key);if(was&&was.from_case&&was.details===it.details)it.from_case=was.from_case;});
+  const treatment={items,other:String(document.getElementById('tx-other')?.value||'').trim(),updated_at:new Date().toISOString(),updated_by:who,
+    manual_at:new Date().toISOString(),case_ref:window.__txCaseRef||prev.case_ref||''};window.__txCaseRef='';
   const{error,dropped}=await updatePatientTolerant(patientId,{treatment});
   const fail=m=>{if(btn){btn.disabled=false;btn.textContent='Save treatment';}const el=document.getElementById('tx-msg');if(el)el.innerHTML=`<div class="registry-lookup-note error" style="margin:6px 0;">${m}</div>`;};
   if(error){fail('Could not save: '+htmlSafe(error.message||String(error)));return;}
