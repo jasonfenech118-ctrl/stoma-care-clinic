@@ -160,7 +160,7 @@
     }
     c.hist.filter(e=>e.category==='imaging'&&e.entry_date).sort((a,b)=>day(b.entry_date).localeCompare(day(a.entry_date))).slice(0,3).forEach(e=>{
       const m=String(e.result||'').match(/CONCLUSIONS?\s*:?\s*([\s\S]*?)(?:Reported by|Approved by|$)/i);
-      out.push(L(fd(e.entry_date)+' '+(e.title||'Imaging')+': '+one(m&&m[1].trim()?m[1]:e.result,180),'Medical imaging results',e.entry_date));
+      out.push(L(fd(e.entry_date)+' '+(e.title||'Imaging')+': '+imagingText(e),'Medical imaging results',e.entry_date));
     });
     const icm=c.hist.filter(e=>e.category==='doc_icm');
     if(icm.length){const e=icm.reduce((a,x)=>(day(x.entry_date)+(x.entry_time||''))>(day(a.entry_date)+(a.entry_time||''))?x:a,icm[0]);
@@ -180,13 +180,21 @@
      records; nothing is concluded by the app. */
   const B=v=>'<b>'+esc(v)+'</b>';
   // "Exam performed: CT … of 21-NOV-2026: Peritonitis …" → its conclusion, or its first sentences.
-  function imagingGist(e,n){
+  // A report's conclusion, else its text without the exam header and the
+  // sign-off — complete, never cut.
+  function imagingText(e){
     const t=String(e.result||'');
     const m=t.match(/CONCLUSIONS?\s*:?\s*([\s\S]*?)(?:Reported by|Approved by|$)/i);
-    let x=m&&m[1].trim()?m[1]:t.replace(/^\s*Exam performed\s*:[^:]*?\d{1,2}-[A-Za-z]{3}-\d{4}\s*:\s*/i,'').replace(/^\s*FINDINGS\s*:\s*/i,'');
-    x=x.replace(/\s+/g,' ').trim();
-    const sent=x.split(/(?<=\.)\s+/).slice(0,2).join(' ');
-    return one(sent||x,n||170);
+    const x=m&&m[1].trim()?m[1]:t.replace(/^\s*Exam performed\s*:[^:]*?\d{1,2}-[A-Za-z]{3}-\d{4}\s*:\s*/i,'').replace(/^\s*FINDINGS\s*:\s*/i,'').replace(/\s*(?:Reported by|Approved by)[\s\S]*$/i,'');
+    return x.replace(/\s+/g,' ').trim();
+  }
+  // Whole sentences up to about max characters (at least one sentence); the
+  // rest of the report is kept under "more", so nothing is cut mid-sentence.
+  function imagingHTML(e,max){
+    const x=imagingText(e),sents=x.split(/(?<=[.!?])\s+(?=[A-Z(])/);
+    let lead='';for(const t of sents){if(lead&&(lead+' '+t).length>max)break;lead+=(lead?' ':'')+t;}
+    const rest=x.slice(lead.length).trim();
+    return esc(lead)+(rest?'<span class="hs-rest" hidden> '+esc(rest)+'</span> <button type="button" class="hs-more" onclick="this.previousElementSibling.hidden=false;this.remove()">more</button>':'');
   }
   const shortTest=t=>({haemoglobin:'Hb','c-reactive protein':'CRP',potassium:'K⁺',sodium:'Na⁺','white cell count':'WCC',platelets:'Plt',creatinine:'Creat'})[String(t||'').toLowerCase()]||t;
   function labTrends(c){
@@ -240,10 +248,10 @@
       const pre=c.hist.filter(e=>e.category==='imaging'&&e.entry_date&&day(e.entry_date)<=idx.date&&daysBetween(e.entry_date,idx.date)<=7)
         .sort((a,b)=>(/\bCT\b/i.test(b.title)-/\bCT\b/i.test(a.title))||day(b.entry_date).localeCompare(day(a.entry_date)))[0];
       push('Rationale',[ind?'Indication: '+B(one(ind,90))+'.':'',uniq(idx.find).length?'Findings: '+esc(one(uniq(idx.find)[0],110))+'.':'',
-        bg?'Background: '+B(bg[1].trim())+'.':'',pre?'Pre-operative '+B(pre.title||'imaging')+' ('+esc(fd(pre.entry_date))+'): '+esc(imagingGist(pre)):''].filter(Boolean).join(' '));
+        bg?'Background: '+B(bg[1].trim())+'.':'',pre?'Pre-operative '+B(pre.title||'imaging')+' ('+esc(fd(pre.entry_date))+'): '+imagingHTML(pre,260):''].filter(Boolean).join(' '));
       kpis.push({label:'Post-op day',value:pod,sub:one(proc.replace(/\s*\(.*$/,''),34)});
       const post=c.hist.filter(e=>e.category==='imaging'&&e.entry_date&&day(e.entry_date)>idx.date).sort((a,b)=>day(b.entry_date).localeCompare(day(a.entry_date)))[0];
-      if(post)push('Since',B(post.title||'Imaging')+' ('+esc(fd(post.entry_date))+'): '+esc(imagingGist(post,150)));
+      if(post)push('Since',B(post.title||'Imaging')+' ('+esc(fd(post.entry_date))+'): '+imagingHTML(post,220));
     }
     // Stomas present.
     const now=c.stomas.filter(x=>x.present);
@@ -293,7 +301,7 @@
     const d=h.closest('details');if(d&&!d.open)return;
     const built=build();if(!built)return;const secs=built.secs,syn=built.syn;
     st.at=new Date();
-    const txt=h=>{const d=document.createElement('div');d.innerHTML=h;return d.textContent;};
+    const txt=h=>{const d=document.createElement('div');d.innerHTML=h;d.querySelectorAll('button').forEach(x=>x.remove());return d.textContent.replace(/\s+/g,' ').trim();};
     st.plain='CLINICAL SYNOPSIS\n'+syn.sentences.map(x=>x.k+': '+txt(x.html)).join('\n')+'\n\n'
       +secs.map(s=>s.title.toUpperCase()+'\n'+s.lines.map(l=>'- '+l.text+(l.src?' ['+l.src+(l.date?', '+fd(l.date):'')+']':'')).join('\n')).join('\n\n');
     h.innerHTML='<div class="hs">'

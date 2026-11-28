@@ -10,7 +10,7 @@
    │  change, and bump the "Updated" date in MANUAL_META. See CLAUDE.md.  │
    └─────────────────────────────────────────────────────────────────────┘
    =========================================================================== */
-const MANUAL_META={updated:'28 November 2026 — The Holistic summary now opens with headline cards and a clinical synopsis (situation, operation, rationale, stoma care, bloods with trends, ECG, medicines, next). The detailed sections below it are drop-downs.'};
+const MANUAL_META={updated:'28 November 2026 — The Holistic summary no longer cuts an imaging report mid-sentence: it shows whole sentences, and more opens the rest. Copy summary and the Investigations drop-down carry the full report.'};
 
 /* ---- small picture helpers (crisp, printable, in-HTML) ------------------- */
 const MAN_TABS=[
@@ -73,7 +73,7 @@ const MANUAL_SECTIONS=[
     <p class="man-lede">The last fold-out on the patient profile, below Hospital records. It is put together automatically from the patient’s records and <b>rebuilt whenever they change</b> (a new encounter, an edited stoma, a saved paste) — the top line says when it was last updated.</p>
     <ul>
       <li><b>Headline cards</b> — inpatient day, post-op day, stomas present, open complications, lab flags and QTc.</li>
-      <li><b>Clinical synopsis</b> — <b>Situation</b>, <b>Operation</b>, <b>Rationale</b> (indication, findings, background and the pre-operative imaging), <b>Since</b> (latest imaging), <b>Stoma care</b>, <b>Bloods</b> (each flagged result with its change since the one before), <b>ECG</b>, <b>Medicines</b> and <b>Next</b>.</li>
+      <li><b>Clinical synopsis</b> — <b>Situation</b>, <b>Operation</b>, <b>Rationale</b> (indication, findings, background and the pre-operative imaging — reports in whole sentences, with <b>more</b> for the rest), <b>Since</b> (latest imaging), <b>Stoma care</b>, <b>Bloods</b> (each flagged result with its change since the one before), <b>ECG</b>, <b>Medicines</b> and <b>Next</b>.</li>
       <li>Below it, a drop-down each for <b>Patient</b>, <b>Surgical history</b>, <b>Admissions &amp; encounters</b>, <b>Stoma care</b>, <b>Medicines</b>, <b>Investigations</b> and <b>Follow-up</b>, every line with its source and date.</li>
     </ul>
     ${manNote('auto','⚙️','Written from the records like a Power BI smart narrative: the figures and trends are worked out, the reasons are the ones written in the records, and no AI is used. <b>📋 Copy summary</b> copies it as plain text.')}
