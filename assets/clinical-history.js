@@ -647,22 +647,36 @@
      verdict, whether it was confirmed, and the previous study it compared
      against. The PDF, the patient's name and ID are not kept (the ID only checks
      the patient), and the app adds no reading of its own. */
-  const ECG_MEAS=['HR','RR','PR','QRSD','QT','QTc'],ECG_AXES=['P','QRS','T'];
+  // QTc as printed: plain, or with its formula (Bazett, Fridericia, Hodges).
+  const ECG_MEAS=['HR','RR','PR','QRSD','QT','QTc','QTcB','QTcF','QTcH'],ECG_AXES=['P','QRS','T'];
   const ECG_STAMP=/\b\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?/g;
   // Right-hand column of the report, cut off a statement copied onto its line.
   const ECG_RIGHT=/\s+(?:Oper|ECG\s+Type|Barrier|AECubic|Order\s*#|Reason|Ministry\s+of\s+Health|Mater\s+Dei)\b.*$/i;
   function looksEcg(text){
     const t=String(text||'');
-    return /\bQTc\b/i.test(t)&&/\b(?:HR|PR|QRSD)\b/.test(t)&&/\bECG\b|\b12\s*Lead\b|--\s*AXIS\s*--/i.test(t);
+    return (/\bQTc[BFH]?\b|\bQT\/QTc/i.test(t))&&/\b(?:HR|PR|QRSD|Vent(?:\.|ricular)?\s*rate)\b/i.test(t)&&/\bECG\b|\b12\s*Lead\b|--\s*AXIS\s*--/i.test(t);
   }
+  // A minus copied from a PDF is often the typographic one (−42).
+  const ecgDash=t=>String(t||'').replace(/[\u2212\u2012\u2013]/g,'-');
   // "HR 72" pairs, or (copied as columns) a run of label lines and a run of
   // number lines in the same order.
   function ecgValues(part,names){
-    const out={};
+    const out={};part=ecgDash(part);
+    // "HR 72", "HR: 72", "PR 121 ms" — the label exactly (QTc is not QTcB).
     names.forEach(k=>{
-      const m=part.match(new RegExp('(?:^|[ \\t])'+(k==='QTc'?'QT[cC]':k)+'[ \\t]*:?[ \\t]+(-?\\d{1,4})(?=[ \\t]|$)','m'));
+      const m=part.match(new RegExp('(?:^|[ \\t])'+(k==='QTc'?'QT[cC]':k)+'(?:[ \\t]*[:=][ \\t]*|[ \\t]+)(-?\\d{1,4})(?:[ \\t]*(?:ms|msec|bpm|deg|°))?(?=[ \\t,;]|$)','m'));
       if(m)out[k]=m[1];
     });
+    // The wording some cardiographs print: "Vent. rate 72 BPM", "PR interval 121 ms",
+    // "QRS duration 96 ms", "QT/QTc 528/579 ms", "P-R-T axes 91 -28 10".
+    const w=(re,f)=>{const m=part.match(re);if(m)f(m);};
+    if(names.includes('HR')){
+      w(/Vent(?:\.|ricular)?\s*rate\s*:?\s*(\d{2,3})/i,m=>{if(out.HR==null)out.HR=m[1];});
+      w(/\bPR\s+interval\s*:?\s*(\d{2,3})/i,m=>{if(out.PR==null)out.PR=m[1];});
+      w(/\bQRS\s+duration\s*:?\s*(\d{2,3})/i,m=>{if(out.QRSD==null)out.QRSD=m[1];});
+      w(/\bQT\s*\/\s*QTc([BFH]?)\s*:?\s*(\d{3})\s*\/\s*(\d{3})/i,m=>{if(out.QT==null)out.QT=m[2];const k='QTc'+m[1].toUpperCase();if(out[k]==null)out[k]=m[3];});
+    }
+    if(names.includes('QRS'))w(/P-R-T\s+ax[ie]s\s*:?\s*(-?\d{1,3})\s+(-?\d{1,3})\s+(-?\d{1,3})/i,m=>{out.P=out.P||m[1];out.QRS=out.QRS||m[2];out.T=out.T||m[3];});
     if(Object.keys(out).length<2){
       Object.keys(out).forEach(k=>delete out[k]);
       const labs=[],nums=[];
@@ -687,12 +701,15 @@
     const body=seg.replace(/Previous\s+Study\s*:?[^\n]*/ig,'');
     const axisAt=body.search(/--\s*AXIS\s*--/i);
     const meas=ecgValues(axisAt>=0?body.slice(0,axisAt):body,ECG_MEAS);
-    const axes=axisAt>=0?ecgValues(body.slice(axisAt).replace(/--\s*AXIS\s*--/i,''),ECG_AXES):{};
-    const statements=[];
-    body.split('\n').forEach(l=>{
-      const m=l.replace(/\t/g,' ').match(/(?:^|\s)(?:\$\s*)?\.\s+([A-Za-z(][^\n]*?)\s*$/);
+    let axes=axisAt>=0?ecgValues(body.slice(axisAt).replace(/--\s*AXIS\s*--/i,''),ECG_AXES):{};
+    if(Object.keys(axes).length<2){const a2=ecgValues(body,ECG_AXES);if(Object.keys(a2).length>=2)axes=a2;}
+    const statements=[],ls=body.split('\n');
+    ls.forEach((l,i)=>{
+      l=l.replace(/\t/g,' ');
+      let m=l.match(/(?:^|\s)(?:\$\s*)?\.\s+([A-Za-z(][^\n]*?)\s*$/);
+      if(!m&&/^\s*(?:\$\s*)?\.\s*$/.test(l)&&/^\s*[A-Za-z(]/.test(ls[i+1]||''))m=[l,ls[i+1].trim()];
       if(!m)return;
-      const x=m[1].replace(ECG_RIGHT,'').replace(/\s+/g,' ').trim();
+      const x=m[1].replace(/\s*\.{3,}.*$/,'').replace(ECG_RIGHT,'').replace(/\s+/g,' ').trim();
       if(x&&!statements.includes(x))statements.push(x);
     });
     const v=body.match(/-\s*((?:OTHERWISE\s+NORMAL|ABNORMAL|BORDERLINE|NORMAL)\s+ECG)\s*-/i)||body.match(/\b((?:OTHERWISE\s+NORMAL|ABNORMAL|BORDERLINE|NORMAL)\s+ECG)\b/i);
@@ -708,20 +725,30 @@
     return {date:d,rangeText:'',table:true,hospital:true,category:'ecg',typeCell:status,title:verdict,result,source:'',raw,
       idSeen:idm?idm[1]:'',partial:!verdict||Object.keys(meas).length<3||!statements.length};
   }
+  const ECG_NOT_ACQ=/(?:Previous\s+Study|Confirmed|Overread|Edited|Printed|Order(?:ed)?|Requested|Received|Reported|Approved|Modified|Signed)\b[^\n]{0,80}$/i;
   function ecgRows(text){
-    const t=String(text||'');
-    // One report per acquisition stamp; the "Previous Study:" stamp is not one.
+    const t=ecgDash(text);
+    // One report per acquisition stamp. The "Previous Study:", confirmation,
+    // print and order stamps are not one, and every page of a report repeats its
+    // stamp — those pages are joined into the one report.
     const starts=[];let m;const re=new RegExp(ECG_STAMP.source,'g');
     while((m=re.exec(t))){
-      if(/Previous\s+Study\s*:?\s*$/i.test(t.slice(Math.max(0,m.index-40),m.index)))continue;
-      const ls=t.lastIndexOf('\n',m.index)+1;if(!starts.includes(ls))starts.push(ls);
+      const ls=t.lastIndexOf('\n',m.index)+1;
+      if(ECG_NOT_ACQ.test(t.slice(ls,m.index))||/Previous\s+Study\s*:?\s*$/i.test(t.slice(Math.max(0,m.index-40),m.index)))continue;
+      if(starts.some(s=>s.at===ls))continue;
+      const k=m[0].toLowerCase().replace(/\s+/g,' ').match(/^(\d{1,2}-[a-z]{3}-\d{4} \d{1,2}:\d{2})(:\d{2})?/);
+      starts.push({at:ls,min:k?k[1].replace(/^0/,''):m[0],sec:k&&k[2]||''});
     }
     if(!starts.length)return looksEcg(t)?[ecgOne(t,'')]:[];
-    return starts.map((b,i)=>{
-      const seg=t.slice(b,i+1<starts.length?starts[i+1]:t.length);
-      const pre=i===0?t.slice(0,b):t.slice(starts[i-1],b).split('\n').slice(-4).join('\n');
-      return ecgOne(seg,pre);
-    }).filter(r=>r.title||r.result);
+    const groups=[];
+    starts.forEach((s,i)=>{
+      const seg=t.slice(s.at,i+1<starts.length?starts[i+1].at:t.length);
+      const pre=i===0?t.slice(0,s.at):t.slice(starts[i-1].at,s.at).split('\n').slice(-4).join('\n');
+      // Same minute, and the seconds agree (or one page prints none): the same report.
+      const g=groups.find(x=>x.min===s.min&&(!x.sec||!s.sec||x.sec===s.sec));
+      if(g){g.seg+='\n'+seg;if(!g.sec)g.sec=s.sec;}else groups.push({min:s.min,sec:s.sec,seg,pre});
+    });
+    return groups.map(g=>ecgOne(g.seg,g.pre)).filter(r=>r.title||r.result);
   }
 
   /* Lab results (Lab Results › iCM - All Investigations Results): Date · Profile
@@ -1593,7 +1620,8 @@
     if(cat==='case'){rows.sort((a,b)=>day(b).localeCompare(day(a)));return (q?'':medHistoryHTML())+rows.map(caseCardHTML).join('');}
     return cat==='consult'?rows.map(consultCardHTML).join(''):tableHTML(cat,rows);
   }
-  const isFocus=(cat,e)=>!!(st.focus&&st.focus.cat===cat&&st.focus.date===day(e));
+  // The entries to highlight: one entry (opened from the Holistic summary), or all of a date.
+  const isFocus=(cat,e)=>!!(st.focus&&st.focus.cat===cat&&(st.focus.id?String(e.id)===st.focus.id:st.focus.date===day(e)));
   function tableHTML(cat,rows){
     const cols=COLS[cat];
     const head='<thead><tr>'+cols.map(c=>'<th scope="col">'+esc(c[0])+'</th>').join('')+'<th scope="col" class="ch-c-act"><span class="ch-sr">Edit or delete</span></th></tr></thead>';
@@ -1614,7 +1642,7 @@
   /* ---------- ECG: the cardiograph's own report, as printed ---------- */
   // Units as the cardiograph prints them: rate in beats per minute, intervals in
   // milliseconds, axes in degrees.
-  const ECG_UNIT={HR:'bpm',RR:'ms',PR:'ms',QRSD:'ms',QT:'ms',QTc:'ms',P:'°',QRS:'°',T:'°'};
+  const ECG_UNIT={HR:'bpm',RR:'ms',PR:'ms',QRSD:'ms',QT:'ms',QTc:'ms',QTcB:'ms',QTcF:'ms',QTcH:'ms',P:'°',QRS:'°',T:'°'};
   function ecgPairs(line){
     const out={};String(line||'').split('·').forEach(x=>{const m=x.trim().match(/^([A-Za-z]+)\s+(-?\d+)$/);if(m)out[m[1]]=+m[2];});return out;
   }
@@ -2187,5 +2215,19 @@
 
   // This patient's saved entries (for the Holistic summary).
   function entries(pid){return !pid||String(pid)===String(st.pid)?st.entries.slice():[];}
-  Object.assign(CH,{mount,main,sub,search,reload:load,entries,medSplit,medKey,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
+  // Open the Hospital records fold-out at one saved entry and highlight it — a
+  // line of the Holistic summary opens the record it came from.
+  function reveal(id){
+    const e=st.entries.find(x=>String(x.id)===String(id));if(!e||!SECTION_OF[e.category])return false;
+    st.qs[SECTION_OF[e.category]]='';st.note='';st.focus={cat:e.category,date:day(e),id:String(e.id)};
+    goToCategory(e.category);render();return true;
+  }
+  // Open one section (e.g. Lab results) and bring it into view.
+  function revealCategory(cat){
+    const k=SECTION_OF[cat];if(!k)return false;
+    goToCategory(cat);const h=st.hosts&&st.hosts[k];
+    if(h&&h.scrollIntoView)setTimeout(()=>h.scrollIntoView({block:'start',behavior:'smooth'}),30);
+    return true;
+  }
+  Object.assign(CH,{mount,main,sub,search,reload:load,entries,reveal,revealCategory,medSplit,medKey,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
 })(window);
