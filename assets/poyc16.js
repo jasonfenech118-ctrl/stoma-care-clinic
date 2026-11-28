@@ -19,6 +19,8 @@
   'use strict';
   const FORM_URL='assets/forms/poyc16-schedule-v-request.pdf?v=1';
   const FONT_URL='assets/fonts/LiberationSans-Regular.ttf?v=1';
+  const SERIF_URL='assets/fonts/LiberationSerif-Regular.ttf?v=1',SERIF_BOLD_URL='assets/fonts/LiberationSerif-Bold.ttf?v=1';
+  const LOGO_URL='assets/mater-dei-logo.png';
   const PDFLIB_URL='https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
   const FONTKIT_URL='https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
   // This device only: the last duration used and each applicant's registration
@@ -87,6 +89,8 @@
     const store=loadStore(),hits=suggest(p),kinds=stomaKinds(p);
     const applicant=String(p.consultant||'').toUpperCase().replace(/\s+/g,' ').trim();
     cur={pid:String(p.id)};
+    // The Schedule 5 pages as edited in the 📋 Schedule 5 window (quantities included).
+    const s5=fromSchedule5()&&s5State.pages&&s5State.pages.length?s5State:null;
     const v={name:[p.first_name,p.surname].filter(Boolean).join(' '),dob:dmy(p.date_of_birth),
       address:[p.address,p.locality].map(x=>String(x||'').trim()).filter(Boolean).join(', '),id:p.id_card||'',tel:p.phone_number||'',
       duration:store.duration||'',applicant,reg:(store.reg||{})[regKey(applicant)]||'',date:isoToday(),
@@ -110,9 +114,14 @@
       +'<div class="pq-conds">'+STANDARD.map((x,i)=>'<label><input type="checkbox" class="pq-std" data-i="'+i+'"'+(v.std[i]?' checked':'')+'> '+esc(x)+'</label>').join('')+'</div>'
       +'<div class="fg"><label for="pq-extra">Other items, one per line</label><textarea id="pq-extra" rows="2" placeholder="e.g. Night drainage bags">'+esc(v.extra)+'</textarea></div>'
       +'<p class="pq-why">Strength and dosage are for POYC records only, so they stay blank.</p>'
+      +'<div class="pq-sec">Print or download</div>'
+      +'<div class="pq-conds pq-what" role="radiogroup" aria-label="What to print or download">'
+        +'<label><input type="radio" name="pq-what" value="both"'+(s5?' checked':' disabled')+'> POYC 16 form + Schedule 5 page'+(s5&&s5.pages.length>1?'s':'')+' (together)</label>'
+        +'<label><input type="radio" name="pq-what" value="poyc"'+(s5?'':' checked')+'> POYC 16 form only</label>'
+        +'<label><input type="radio" name="pq-what" value="s5"'+(s5?'':' disabled')+'> Schedule 5 page'+(s5&&s5.pages.length>1?'s':'')+' only</label></div>'
       +'<p class="pq-msg" id="pq-msg" role="status"></p>'
       +'<div class="mact"><button class="btn-cancel" onclick="'+(fromSchedule5()?'renderScheduleFiveEditor()':'closeModal()')+'">'+(fromSchedule5()?'← Back':'Close')+'</button>'
-      +'<button class="btn-save" onclick="Poyc16.download(this)">⬇ Download</button><button class="btn-save" onclick="Poyc16.fill(this)">📄 Open the filled form</button></div>';
+      +'<button class="btn-save" onclick="Poyc16.download(this)">⬇ Download</button><button class="btn-save" onclick="Poyc16.fill(this)">🖨 Open to print</button></div>';
     const d=root.document.getElementById('pq-date');if(d)d.value=v.date;
     // The registration number follows the applicant's name typed.
     const ap=root.document.getElementById('pq-applicant'),rg=root.document.getElementById('pq-reg');
@@ -125,7 +134,8 @@
       applicant:g('applicant').toUpperCase(),reg:g('reg'),accept:!!(root.document.getElementById('pq-accept')||{}).checked,
       conds:[...root.document.querySelectorAll('.pq-cond:checked')].map(x=>x.value),
       std:STANDARD.map((x,i)=>!!(root.document.querySelector('.pq-std[data-i="'+i+'"]')||{}).checked),
-      extra:g('extra').split('\n').map(x=>x.trim()).filter(Boolean)};
+      extra:g('extra').split('\n').map(x=>x.trim()).filter(Boolean),
+      what:(root.document.querySelector('input[name="pq-what"]:checked')||{}).value||'poyc'};
   }
   function remember(v){
     const s=loadStore();s.duration=v.duration;s.reg=s.reg||{};if(v.applicant&&v.reg)s.reg[regKey(v.applicant)]=v.reg;saveStore(s);
@@ -145,9 +155,17 @@
   // Maltese ħ ġ ż ċ: they are written without the mark rather than failing.
   const PLAIN={'Ħ':'H','ħ':'h','Ġ':'G','ġ':'g','Ż':'Z','ż':'z','Ċ':'C','ċ':'c'};
   const plain=s=>String(s||'').replace(/[ĦħĠġŻżĊċ]/g,c=>PLAIN[c]).replace(/[^\x20-\x7E -ÿ]/g,'');
+  async function fetchBytes(url){try{const r=await fetch(url);return r.ok?await r.arrayBuffer():null;}catch(e){return null;}}
   async function build(v){
     await loadScript(PDFLIB_URL,()=>!!root.PDFLib);
     try{await loadScript(FONTKIT_URL,()=>!!root.fontkit);}catch(e){}
+    const s5=fromSchedule5()?s5State:null;
+    if(v.what==='s5'){const doc=await root.PDFLib.PDFDocument.create();await addSchedule5(doc,s5);return doc.save();}
+    const doc=await buildPoyc(v);
+    if(v.what==='both'&&s5)await addSchedule5(doc,s5);
+    return doc.save();
+  }
+  async function buildPoyc(v){
     const res=await fetch(FORM_URL,{cache:'no-cache'});if(!res.ok)throw new Error('The blank form could not be opened ('+res.status+').');
     const doc=await root.PDFLib.PDFDocument.load(await res.arrayBuffer());
     let font=null;
@@ -162,26 +180,77 @@
     STANDARD.forEach((x,i)=>set('Drug'+pad(i+1),v.std[i]?x:''));
     for(let i=0;i<11;i++)set('Drug'+pad(i+7),v.extra[i]||'');
     if(font)form.updateFieldAppearances(font);
-    return doc.save();
+    return doc;
   }
-  const fileName=v=>'POYC16 Schedule V request'+(v.id?' '+v.id.replace(/[^A-Za-z0-9]/g,''):'')+'.pdf';
+  /* The Schedule 5 pharmacy-items page(s), drawn as A4 PDF pages with the same
+     content and layout as the 📋 Schedule 5 print: the Mater Dei logo, the
+     patient line, the items and quantities, the notes and the hospital footer. */
+  async function addSchedule5(doc,s5){
+    if(!s5||!s5.pages||!s5.pages.length)throw new Error('There is no Schedule 5 page for this patient.');
+    const L=root.PDFLib;let reg=null,bold=null,sans=null;
+    if(root.fontkit){
+      const [a,b,c]=await Promise.all([fetchBytes(SERIF_URL),fetchBytes(SERIF_BOLD_URL),fetchBytes(FONT_URL)]);
+      try{if(a&&b&&c){doc.registerFontkit(root.fontkit);reg=await doc.embedFont(a,{subset:true});bold=await doc.embedFont(b,{subset:true});sans=await doc.embedFont(c,{subset:true});}}catch(e){reg=bold=sans=null;}
+    }
+    const t=s=>reg?String(s||''):plain(s);
+    if(!reg){reg=await doc.embedFont(L.StandardFonts.TimesRoman);bold=await doc.embedFont(L.StandardFonts.TimesRomanBold);sans=await doc.embedFont(L.StandardFonts.Helvetica);}
+    let logo=null;const lb=await fetchBytes(LOGO_URL);if(lb){try{logo=await doc.embedPng(lb);}catch(e){logo=null;}}
+    const mm=x=>x*72/25.4,W=595.28,H=841.89,X0=mm(18),X1=W-mm(18),black=L.rgb(0,0,0),navy=L.rgb(0,0,.5);
+    const dob=/^\d{4}-\d{2}-\d{2}$/.test(s5.dob||'')?s5.dob.split('-').reverse().join('/'):'';
+    const wrap=(text,font,size,width)=>{const words=t(text).split(/\s+/),out=[];let line='';
+      words.forEach(w=>{const tryL=line?line+' '+w:w;if(font.widthOfTextAtSize(tryL,size)>width&&line){out.push(line);line=w;}else line=tryL;});if(line)out.push(line);return out;};
+    s5.pages.forEach(pg=>{
+      const page=doc.addPage([W,H]);let y=H-mm(16);
+      if(logo){const w=153.75,h=w*logo.height/logo.width;page.drawImage(logo,{x:X0,y:y-h,width:w,height:h});y-=h+4;}
+      page.drawLine({start:{x:X0,y},end:{x:X1,y},thickness:1,color:navy});y-=28;
+      const sz=11.5;
+      // Patient line: name in bold, then ID, DOB, telephone.
+      let x=X0;const seg=(s,f)=>{page.drawText(s,{x,y,size:sz,font:f,color:black});x+=f.widthOfTextAtSize(s,sz);};
+      seg(t(s5.name||'Patient'),bold);seg('   ID No: '+t(s5.id||''),reg);if(dob)seg('   DOB: '+dob,reg);if(s5.phone)seg('   Tel: '+t(s5.phone),reg);
+      y-=30;
+      const head='Items from pharmacy: – ';page.drawText(head,{x:X0,y,size:sz,font:bold});
+      const hx=X0+bold.widthOfTextAtSize(head,sz),title=t(pg.title||'');page.drawText(title,{x:hx,y,size:sz,font:bold});
+      page.drawLine({start:{x:hx,y:y-1.5},end:{x:hx+bold.widthOfTextAtSize(title,sz),y:y-1.5},thickness:.7});
+      y-=26;
+      const colW=(X1-X0)*.52;
+      (pg.rows||[]).filter(r=>String(r[0]||'').trim()||String(r[1]||'').trim()).forEach(r=>{
+        const a=wrap(r[0],reg,sz,colW-22),b=wrap(r[1],reg,sz,(X1-X0)-colW);
+        page.drawText('•',{x:X0,y,size:sz,font:reg});
+        const n=Math.max(a.length,b.length,1);
+        for(let i=0;i<n;i++){if(a[i])page.drawText(a[i],{x:X0+12,y:y-i*14,size:sz,font:reg});if(b[i])page.drawText(b[i],{x:X0+colW+14,y:y-i*14,size:sz,font:reg});}
+        y-=n*14+8;
+      });
+      y-=14;
+      const para=(s,f,gap)=>{wrap(s,f,sz,X1-X0).forEach(l=>{page.drawText(l,{x:X0,y,size:sz,font:f});y-=14;});y-=gap;};
+      para('Other items are to be ordered only on the advice of a Stoma Care Nurse.',bold,6);
+      para('Any increase in quantity of items listed above needs a special request.',bold,14);
+      const u='Items are obtained from:';page.drawText(u,{x:X0,y,size:sz,font:bold});page.drawLine({start:{x:X0,y:y-1.5},end:{x:X0+bold.widthOfTextAtSize(u,sz),y:y-1.5},thickness:.7});y-=18;
+      para('Support Room at Outpatient’s Pharmacy - Tel: 25456533',reg,2);
+      para('Pharmacist in charge: Ms. M’Rose Gatt',reg,0);
+      // Footer pinned to the bottom.
+      const fy=mm(14),fs=9.5,lines=[['Mater Dei Hospital',true],['Triq Id-Donaturi Tad-Demm, Msida. Malta MSD 2090',false],['Tel: +356 25450000  www.materdeihospital.org.mt',false]];
+      page.drawLine({start:{x:X0,y:fy+3*12+4},end:{x:X1,y:fy+3*12+4},thickness:.7,color:L.rgb(.6,.64,.68)});
+      lines.forEach(([s,b],i)=>{const f=b?bold:sans,w=f.widthOfTextAtSize(s,fs);page.drawText(s,{x:(W-w)/2,y:fy+(2-i)*12,size:fs,font:f});});
+    });
+  }
+  const fileName=v=>(v.what==='s5'?'Schedule 5':v.what==='both'?'POYC16 + Schedule 5':'POYC16 Schedule V request')+(v.id?' '+v.id.replace(/[^A-Za-z0-9]/g,''):'')+'.pdf';
   const msg=t=>{const el=root.document.getElementById('pq-msg');if(el)el.textContent=t||'';};
   function check(v){
     if(!v.name||!v.id){msg('Fill in the patient’s name and ID card number first.');return false;}
-    if(!v.conds.length&&!confirm('No Schedule V condition is ticked. Fill the form anyway (and tick it on the form)?'))return false;
+    if(v.what!=='s5'&&!v.conds.length&&!confirm('No Schedule V condition is ticked. Fill the form anyway (and tick it on the form)?'))return false;
     return true;
   }
   async function fill(btn){
     const v=read();if(!check(v))return;remember(v);
     // Opened now, while the tap still counts, so a pop-up blocker lets it through.
     const w=root.open('','_blank');
-    try{if(w)w.document.write('<p style="font:16px Arial,sans-serif;margin:24px">Filling the POYC 16 form…</p>');}catch(e){}
+    try{if(w)w.document.write('<p style="font:16px Arial,sans-serif;margin:24px">Preparing the PDF…</p>');}catch(e){}
     if(btn)btn.disabled=true;msg('Filling the form…');
     try{
       const bytes=await build(v),url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
       if(w)w.location.href=url;else save(bytes,v);
-      msg(w?'The filled form opened in a new tab — print it or save it from there.':'Downloaded the filled form.');
-      try{root.logAudit&&root.logAudit({action:'export',entity:'patient',entity_id:cur&&cur.pid,patient_id:cur&&cur.pid,summary:'Filled the POYC 16 Schedule V request form'});}catch(e){}
+      msg(w?'It opened in a new tab — print it or save it from there.':'Downloaded “'+fileName(v)+'”.');
+      try{root.logAudit&&root.logAudit({action:'export',entity:'patient',entity_id:cur&&cur.pid,patient_id:cur&&cur.pid,summary:v.what==='s5'?'Printed the Schedule 5 page':'Filled the POYC 16 Schedule V request form'+(v.what==='both'?' with the Schedule 5 page':'')});}catch(e){}
     }catch(e){if(w)try{w.close();}catch(_){}msg('Could not fill the form: '+(e&&e.message||e));}
     finally{if(btn)btn.disabled=false;}
   }
