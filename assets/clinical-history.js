@@ -908,6 +908,25 @@
       if(c.length>=3&&(DOSE.test(c[1])||FREQ.test(c[2])))meds.push({name:c[0],dose:c[1]||'',freq:c[2]||'',period:c[3]||'',comment:c.slice(4).filter(Boolean).join(' ')});
       else if(meds.length)meds[meds.length-1].comment=(meds[meds.length-1].comment+' '+t).trim();
     });
+    // Copied from the screen, the table can come one cell per line: a medicine,
+    // then its dosage, frequency, period and comment on the lines below.
+    if(!meds.length){
+      const HEAD=/^(?:drug|medicine|medication|name|dosage|dose|frequency|period|duration|comments?)$/i;
+      const DOSE2=/^\d+(?:[.,]\d+)?\s*(?:mg|g|mcg|µg|ug|ml|mL|units?|iu|IU|tabs?|tablets?|caps?|capsules?|puffs?|drops?|sachets?|%|mmol)\b\.?(?:\s*\/\s*\S+)?$/i;
+      const PER=/^(?:indefinite(?:ly)?|ongoing|continue|lifelong|\d+\s*(?:days?|weeks?|months?)|until\s+.+|stat|as\s+required|prn)$/i;
+      const cells=[].concat(...txt('treatment').map(t=>t.split(/\t+/).map(x=>x.trim()).filter(Boolean))).filter(c=>!HEAD.test(c));
+      const isVal=c=>DOSE2.test(c)||FREQ.test(c);
+      let cur=null;
+      cells.forEach((c,i)=>{
+        if(cur&&!cur.dose&&DOSE2.test(c)){cur.dose=c;return;}
+        if(cur&&!cur.freq&&FREQ.test(c)){cur.freq=c;return;}
+        if(cur&&!cur.period&&PER.test(c)){cur.period=c;return;}
+        // A new medicine is a name followed by its dose or frequency; anything else is a comment.
+        if(!cur||isVal(cells[i+1]||'')){cur={name:c,dose:'',freq:'',period:'',comment:''};meds.push(cur);return;}
+        cur.comment=(cur.comment+' '+c).trim();
+      });
+      if(meds.length&&!meds[0].dose&&!meds[0].freq)meds.length=0;
+    }
     // Surgical interventions: "Laparotomy with adhesiolysis 17/08/2026 00:00:00".
     const interventions=txt('interventions').map(t=>{const m=t.match(/^(.*?)\s*(\d{1,2}\/\d{1,2}\/\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\s*$/);return m?(m[1].trim()||'Intervention')+' · '+m[2]:t;});
     // Investigations: "date time · test · result", a report carrying on below its row.

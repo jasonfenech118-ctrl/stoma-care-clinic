@@ -20,19 +20,19 @@
 <link rel="stylesheet" href="assets/holistic-summary.css?v=2026.11.28-922"/>
 <script src="assets/leave-hours.js?v=2026.10.29-661"></script>
 <script src="assets/daily-attendance.js?v=2026.11.26-857"></script>
-<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-926"/>
+<link rel="stylesheet" href="assets/manual.css?v=2026.11.28-927"/>
 <link rel="stylesheet" href="assets/account.css?v=2026.11.01-691">
 <script src="assets/app-access.js?v=2026.10.18-579"></script>
 <script src="assets/update-register.js?v=2026.11.26-875"></script>
 <script src="assets/account.js?v=2026.11.12-779"></script>
 <link rel="stylesheet" href="assets/surgical-rotation.css?v=2026.11.26-863"><script src="assets/surgical-rotation.js?v=2026.11.17-814"></script>
 <link rel="stylesheet" href="assets/ordering.css?v=2026.11.19-829"><script src="assets/ordering.js?v=2026.11.21-834"></script><script src="assets/esrf.js?v=2026.11.19-829"></script><script src="assets/printing-press.js?v=2026.11.19-829"></script>
-<script src="assets/manual.js?v=2026.11.28-926"></script>
+<script src="assets/manual.js?v=2026.11.28-927"></script>
 <link rel="stylesheet" href="assets/audit-restore.css?v=2026.10.10-504"/>
 <script src="assets/audit-restore.js?v=2026.10.10-504"></script>
 <link rel="stylesheet" href="assets/patient-communications.css?v=2026.11.26-895"/>
 <script src="assets/episode-codes.js?v=2026.11.26-895"></script>
-<script defer src="assets/clinical-history.js?v=2026.11.28-922"></script>
+<script defer src="assets/clinical-history.js?v=2026.11.28-927"></script>
 <script defer src="assets/holistic-summary.js?v=2026.11.28-922"></script>
 <script defer src="assets/poyc16.js?v=2026.11.28-926"></script>
 <script defer src="assets/patient-communications.js?v=2026.11.26-895"></script>
@@ -2462,6 +2462,12 @@ body.jenc-open #nav-back{display:inline-flex!important;}
 .tx-modal .tx-row label{display:flex;gap:8px;align-items:center;font-weight:700}
 .tx-modal .tx-det{width:100%;box-sizing:border-box;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit}
 .tx-modal .tx-det:disabled{background:#f8fafc;color:#94a3b8}
+/* Filled in from the latest case summary's treatment on discharge: in red. */
+.tx-modal .tx-from-case label,.tx-modal .tx-from-case .tx-det{color:#b91c1c}
+.tx-modal .tx-from-case .tx-det{border-color:#fca5a5;background:#fef2f2}
+.tx-modal .tx-changes{margin:6px 0 8px;padding:8px 10px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2;color:#7f1d1d;font-size:13.5px;line-height:1.55}
+.tx-modal .tx-new{color:#b91c1c;font-weight:700}
+.tx-modal .tx-gone{color:#b91c1c}
 .tx-modal #tx-other{width:100%;box-sizing:border-box;min-height:64px}
 @media (max-width:640px){.tx-modal .tx-row{grid-template-columns:1fr;gap:6px}}
 /* On OHAs: the ID badge turns red with a small capsule tag beside it. */
@@ -4130,7 +4136,7 @@ document.getElementById('tb-date').textContent=' — '+new Date().toLocaleDateSt
 /* Build stamp — bumped on each deploy. It lets anyone tell at a glance whether
    the browser is showing the latest version or a cached copy: if the number
    here does not match the latest release, pull down to refresh. */
-const APP_BUILD='2026.11.28-926';
+const APP_BUILD='2026.11.28-927';
 /* A newer build on the server: a bar offers to reload. The live number is in
    build.json (set to APP_BUILD at every deploy), a tiny file fetched past every
    cache, so a page the browser kept from before an update is noticed within
@@ -20328,11 +20334,29 @@ function patientTreatmentSummary(p){
   if(String(t.other||'').trim())parts.push('Other: '+String(t.other).trim());
   return parts.join(' · ');
 }
+/* What the latest discharge list changed against the one before it, in red:
+   medicines new on it, and those no longer listed (crossed out). Matched on
+   the generic name, as the Medication history does. */
+function caseTreatmentChangesHTML(p){
+  const CH=window.ClinicalHistory;if(!p||!CH||typeof CH.entries!=='function')return '';
+  const sec=(e,l)=>{const m=String(e.result||'').split(/^§ /m).find(x=>x.startsWith(l+'\n'));return m?m.slice(l.length+1).trim():'';};
+  const list=CH.entries(p.id).filter(e=>e.category==='case'&&e.entry_date).map(e=>{const d=sec(e,'Dates').match(/Discharged\s+(\d{2})\/(\d{2})\/(\d{4})/);
+    return {when:d?d[3]+'-'+d[2]+'-'+d[1]:String(e.entry_date).slice(0,10),lines:sec(e,'Treatment on discharge').split('\n').filter(Boolean)};}).filter(x=>x.lines.length).sort((a,b)=>b.when.localeCompare(a.when));
+  if(list.length<2)return '';
+  const key=l=>{const n=String(l).split(' · ')[0];return CH.medKey?CH.medKey(n):n.toLowerCase();},name=l=>String(l).split(' · ').slice(0,3).join(' ');
+  const now=list[0],was=list[1],nk=new Set(now.lines.map(key)),wk=new Set(was.lines.map(key));
+  const added=now.lines.filter(l=>!wk.has(key(l))),gone=was.lines.filter(l=>!nk.has(key(l)));
+  if(!added.length&&!gone.length)return '';
+  const d=x=>x.split('-').reverse().join('/');
+  return `<div class="tx-changes"><strong>Changed on the discharge of ${htmlSafe(d(now.when))}</strong> (against ${htmlSafe(d(was.when))}):`
+    +(added.length?`<div>New: ${added.map(l=>`<span class="tx-new">${htmlSafe(name(l))}</span>`).join(', ')}</div>`:'')
+    +(gone.length?`<div>No longer listed: ${gone.map(l=>`<s class="tx-gone">${htmlSafe(name(l))}</s>`).join(', ')}</div>`:'')+'</div>';
+}
 function openPatientTreatment(){
   const p=clrState&&clrState.patient;if(!p){alert('Open the patient record first.');return;}
   const t=patientTreatment(p),items=Array.isArray(t.items)?t.items:[];
   const mb=document.getElementById('mb');if(!mb)return;mb.className='mb mb-wide tx-modal'+(typeof sexModalClass==='function'?sexModalClass(p):'');
-  const row=g=>{const it=items.find(x=>x&&x.key===g.key)||{};return `<div class="tx-row">
+  const row=g=>{const it=items.find(x=>x&&x.key===g.key)||{};return `<div class="tx-row${it.on&&it.from_case?' tx-from-case':''}"${it.on&&it.from_case?` title="From the case summary of ${htmlSafe(String(it.from_case).split('-').reverse().join('/'))}"`:''}>
       <label style="display:flex;gap:8px;align-items:center;font-weight:700;"><input type="checkbox" class="tx-on" data-key="${g.key}" ${it.on?'checked':''} onchange="this.closest('.tx-row').querySelector('.tx-det').disabled=!this.checked"/> ${htmlSafe(g.label)}</label>
       <input type="text" class="tx-det" data-key="${g.key}" maxlength="300" value="${htmlSafe(it.details||'')}" placeholder="Drug, dose or details (optional)" ${it.on?'':'disabled'}/></div>`;};
   mb.innerHTML=`<h2>💊 Treatment</h2>
@@ -20340,6 +20364,7 @@ function openPatientTreatment(){
     ${(()=>{const c=latestCaseTreatment(p);if(!c)return '';const d=c.when.split('-').reverse().join('/');
       if(t.case_ref===c.ref)return `<div class="report-note" style="margin:6px 0;">Filled in from the case summary (discharged ${htmlSafe(d)}).</div>`;
       return `<div id="tx-case" class="registry-lookup-note" style="margin:6px 0;">The case summary of <strong>${htmlSafe(d)}</strong> lists ${c.lines.length} medicine${c.lines.length===1?'':'s'} on discharge: ${htmlSafe(c.lines.map(l=>l.split(' · ')[0]).join(', '))}. <button type="button" class="clr-mini" onclick="applyCaseToTreatmentForm()">Apply the discharge list</button></div>`;})()}
+    ${caseTreatmentChangesHTML(p)}
     <div>${TREATMENT_GROUPS.map(row).join('')}</div>
     <div class="fg" style="margin-top:10px;"><label for="tx-other">Other treatment</label><textarea id="tx-other" rows="2" maxlength="1000" placeholder="Anything else relevant">${htmlSafe(t.other||'')}</textarea></div>
     ${t.updated_by?`<p class="report-note" style="margin:6px 0;">Last updated by ${htmlSafe(t.updated_by)}${t.updated_at?' · '+htmlSafe(fmtShortDate(String(t.updated_at).slice(0,10))):''}</p>`:''}
