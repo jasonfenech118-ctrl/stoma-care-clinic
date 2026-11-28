@@ -35,10 +35,11 @@ alter table public.patient_history_entries add column if not exists lab_unit tex
 
 -- Which section an entry belongs to. Re-created each run so a database set up
 -- with an earlier version of this script also accepts Patient consultation,
--- consult; Entitlement CARE, poyc; ECG, ecg; and Lab results, lab.
+-- consult; Entitlement CARE, poyc; ECG, ecg; Lab results, lab; and Case
+-- summaries, case.
 -- Older tab names stay allowed so nothing saved before is rejected.
 alter table public.patient_history_entries drop constraint if exists patient_history_entries_category_check;
-alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','ecg','doc_icm','poyc','lab','notes','treatment','doc_onco','doc_ccp'));
+alter table public.patient_history_entries add constraint patient_history_entries_category_check check (category in ('surgery','consult','imaging','ecg','doc_icm','poyc','lab','case','notes','treatment','doc_onco','doc_ccp'));
 
 create index if not exists patient_history_entries_patient on public.patient_history_entries (patient_id, category, entry_date desc);
 

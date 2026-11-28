@@ -23,6 +23,8 @@
       placeholder:'Copy the whole Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it here in one go.\nDescription and Prescription are kept; ATC Code and Dosage Regimen are left out.'},
     ecg:{label:'ECG',icon:'🫀',
       placeholder:'Open the ECG in the hospital system, select all the text of the report (Ctrl+A), copy it and paste it here.\nThe date and time, measurements, axis, statements and verdict printed by the cardiograph are kept. The name and ID are only used to check it is the right patient, and are never saved.'},
+    case:{label:'Case summaries',icon:'🗂️',
+      placeholder:'Open the Case Summary in the hospital system, select the whole report (Ctrl+A), copy it and paste it here.\nThe dates, consultant, ward, diagnosis and every section are set out. The name, ID card, date of birth and address are only used to check it is the right patient, and are never saved.'},
     lab:{label:'Lab results',icon:'🧪',
       placeholder:'Open Lab Results in the hospital system (iCM - All Investigations Results), select the whole table, copy it and paste it here — a page at a time is fine.\nDate & time, Panel, Test, Result, Flag, Normal range and Unit are kept.'},
     doc_icm:{label:'iCM notes',icon:'📄',
@@ -34,7 +36,7 @@
     doc_ccp:{label:'CCP – Practice nurse review notes',icon:'📄',legacy:true,placeholder:''},
     treatment:{label:'Treatment',icon:'💊',legacy:true,placeholder:''}
   };
-  const CAT_KEYS=['surgery','consult','imaging','ecg','doc_icm','poyc','lab'];
+  const CAT_KEYS=['surgery','consult','imaging','ecg','doc_icm','poyc','case','lab'];
   // Notes keep a whole note together (author + text).
   const isNoteCat=c=>c==='notes'||String(c||'').startsWith('doc_');
 
@@ -773,6 +775,151 @@
     return out;
   }
 
+  /* Case summaries (the hospital's discharge Case Summary report), copied whole.
+     Kept: admission and discharge dates, consultant, ward, diagnosis, the
+     clinical course, past medical history, medications on admission, past
+     surgical history, social history, allergies, plan, treatment on discharge,
+     surgical interventions, adverse reactions, complications, investigations,
+     follow-up and who signed it. Left out: the name, ID card, date of birth,
+     age and address (the ID only checks the patient), and the print stamps. */
+  const CASE_MAIN=[
+    ['diagnosis',/^Diagnos[ie]s\b\s*:?\s*(.*)$/i,false],
+    ['clinical',/^Clinical\s+Details?\b\s*:?\s*(.*)$/i,false],
+    ['treatment',/^Treatment\s+on\s+Discharge\b(.*)$/i,false],
+    ['interventions',/^Surgical\s+Intervention(?:\/\s*s|s|\(s\))?\b\s*:?\s*(.*)$/i,false],
+    ['adverse',/^Adverse\s+Reactions?\b\s*:?\s*(.*)$/i,false],
+    ['complications',/^Complications?\s*:?\s*(.*)$/i,true],
+    ['investigations',/^Investigations?\s*:?\s*(.*)$/i,true],
+    ['followup',/^Follow[\s\-]*up\s*:?\s*(.*)$/i,true],
+    ['pending',/^Pending\s*Investigations?\s*:?\s*(.*)$/i,true],
+    ['further',/^Further\s+Information(?:\s+to\s+Patient\s*\/?\s*Carer)?\s*:?\s*(.*)$/i,true],
+    ['signature',/^Signature\s*:?\s*(.*)$/i,true]
+  ];
+  // Headings inside Clinical Details: "Past medical history:", "Medications:" …
+  const CASE_SUB=[
+    ['pmh',/^(?:past\s+medical\s+history|pmh(?:x)?|medical\s+history|co-?morbidities|background)\s*(?::\s*(.*)|$)/i,'Past medical history'],
+    ['meds',/^(?:medications?|drug\s+history|dhx|regular\s+medications?|current\s+medications?|medications?\s+on\s+admission)\s*(?::\s*(.*)|$)/i,'Medications on admission'],
+    ['psh',/^(?:past\s+surgical\s+history|psh(?:x)?|surgical\s+history)\s*(?::\s*(.*)|$)/i,'Past surgical history'],
+    ['social',/^(?:social\s+history|shx|social)\s*(?::\s*(.*)|$)/i,'Social history'],
+    ['allergies',/^(?:allerg(?:y|ies)|known\s+allergies|nkda)\s*(?::\s*(.*)|$)/i,'Allergies'],
+    ['family',/^(?:family\s+history|fhx)\s*(?::\s*(.*)|$)/i,'Family history'],
+    ['functional',/^(?:functional\s+(?:history|status)|baseline\s+function)\s*(?::\s*(.*)|$)/i,'Functional status'],
+    ['plan',/^(?:plan|management\s+plan|discharge\s+plan)\s*(?::\s*(.*)|$)/i,'Plan']
+  ];
+  const CASE_DATE='(\\d{1,2}[\\-\\/ ](?:[A-Za-z]{3,9}|\\d{1,2})[\\-\\/ ]\\d{2,4})';
+  function looksCase(text){
+    const t=String(text||'');
+    return /\bCase\s+Summary\b/i.test(t)&&/\b(?:Admission\s+Date|Treatment\s+on\s+Discharge|Clinical\s+Details)\b/i.test(t)
+      ||/\bAdmission\s+Date\b/i.test(t)&&/\bDischarge\s+Date\b/i.test(t)&&/\bClinical\s+Details\b/i.test(t);
+  }
+  const caseISO=v=>{const d=v?findDate(v):null;return d?d.iso:'';};
+  const dmy=iso=>iso?iso.split('-').reverse().join('/'):'';
+  function caseRows(text){
+    const lines=String(text||'').split('\n').map(l=>l.replace(/ /g,' ').replace(/[ \t]+$/,''));
+    // One report per "Case Summary" heading (or the whole paste).
+    const starts=[];lines.forEach((l,i)=>{if(/^\s*Case\s+Summary\s*$/i.test(l))starts.push(i);});
+    if(!starts.length||starts[0]>0&&lines.slice(0,starts[0]).some(l=>/Admission\s+Date/i.test(l)))starts.unshift(0);
+    return starts.map((b,i)=>caseOne(lines.slice(b,i+1<starts.length?starts[i+1]:lines.length))).filter(Boolean);
+  }
+  function caseOne(lines){
+    const parts={header:[]};let cur='header',at=-1;
+    lines.forEach(raw=>{
+      const t=raw.trim();
+      if(/^(?:Case\s+Summary|Printed\s+On\b.*|\d+\s*\/\s*\d+|Medical\s+Reg\.?\s*No\.?.*)$/i.test(t))return;
+      for(let k=0;k<CASE_MAIN.length;k++){
+        const [key,re,strict]=CASE_MAIN[k];
+        if(k<=at)continue;
+        const m=t.match(re);if(!m)continue;
+        // Inside the clinical details, a plain word like "Complications" only
+        // starts its section when it stands alone on its line.
+        if(strict&&(cur==='clinical'||cur==='diagnosis')&&!/^\S+(?:\s+\S+){0,4}\s*:?\s*$/.test(t)&&!/\t/.test(raw))continue;
+        cur=key;at=k;parts[key]=[];
+        let rest=(m[1]||'').trim();
+        if(key==='treatment')rest=rest.replace(/^(?:\s*(?:Dosage|Frequency|Period|Comments?))+\s*$/i,'');
+        if(rest)parts[key].push(rest);
+        return;
+      }
+      (parts[cur]=parts[cur]||[]).push(raw);
+    });
+    const head=parts.header.join('\n');
+    const grab=re=>{const m=head.match(re);return m?m[1].replace(/\s+/g,' ').trim():'';};
+    const idSeen=grab(/Hospital\s+ID\s*:?\s*(\d{3,8}[A-Za-z])\b/i)||grab(/\b(\d{4,8}[A-Z])\b/);
+    const consultant=grab(/Consultant\s*:?\s*([^\t\n]+?)(?=\s+Ward\b|\t|\n|$)/i);
+    const ward=grab(/(?:^|\n|\t)\s*Ward\s*:?\s*([^\t\n]+?)(?=\s+Admission\s+Date\b|\s{2,}|\t|\n|$)/i);
+    const adm=caseISO(grab(new RegExp('Admission\\s+Date\\s*:?\\s*'+CASE_DATE,'i')));
+    const dis=caseISO(grab(new RegExp('Discharge\\s+Date\\s*:?\\s*'+CASE_DATE,'i')));
+    const txt=k=>(parts[k]||[]).map(x=>x.trim()).filter(Boolean);
+    const diagnosis=txt('diagnosis').join(' ').replace(/\s+/g,' ');
+    // Clinical details: the headed lists apart from the running course.
+    const sub={},course=[];let into=null,para=[];
+    const flush=()=>{if(para.length){course.push(para.join(' ').replace(/\s+/g,' '));para=[];}};
+    (parts.clinical||[]).forEach(raw=>{
+      const t=raw.trim();
+      if(!t){flush();into=null;return;}
+      const h=CASE_SUB.map(([k,re,name])=>{const m=t.match(re);return m&&t.length<=120?{k,name,rest:(m[1]||'').trim()}:null;}).find(Boolean);
+      if(h&&(/:/.test(t)||t.split(/\s+/).length<=4)){
+        flush();into=h.k;sub[into]=sub[into]||[];
+        if(h.rest){if(h.k==='meds'&&/allerg|nkda/i.test(h.rest))(sub.allergies=sub.allergies||[]).push(h.rest.replace(/^allergic\s+to\s+/i,'').replace(/^./,c=>c.toUpperCase()));else sub[into].push(h.rest);}
+        return;
+      }
+      const item=t.match(/^(?:[-•*·▪]|\d{1,2}[.)])\s*(.+)$/);
+      if(into&&(item||sub[into].length===0||into==='social'||into==='functional')){sub[into].push((item?item[1]:t).trim());return;}
+      if(into&&!item){into=null;}
+      para.push(t);
+    });
+    flush();
+    // Treatment on discharge: Name · Dosage · Frequency · Period · Comments.
+    const DOSE=/^(\d+(?:[.,]\d+)?\s*(?:mg|g|mcg|µg|ug|ml|mL|units?|iu|IU|tabs?|tablets?|caps?|capsules?|puffs?|drops?|sachets?|%)\b\.?|\d+\s*x\s*\S+)$/i;
+    const FREQ=/^(?:daily|od|om|on|bd|bid|tds|tid|qds|qid|prn|nocte|mane|stat|weekly|monthly|alternate\s+days|[a-z]{2,4}\/prn|once|twice|\d+\s*hourly|every\s+\S+)$/i;
+    const meds=[];
+    txt('treatment').forEach(t=>{
+      let c=/\t/.test(t)?t.split('\t').map(x=>x.trim()):t.split(/\s{2,}/).map(x=>x.trim());
+      if(c.length<3){
+        const m=t.match(/^(.+?)\s+(\d+(?:[.,]\d+)?\s*(?:mg|g|mcg|µg|ug|ml|mL|units?|iu|IU|tabs?|tablets?|caps?|puffs?|drops?|sachets?|%))\s+(\S+)\s+(Indefinite|\d+\s*(?:days?|weeks?|months?)|Until\s+\S+|Stat|\S+)?\s*(.*)$/i);
+        c=m?[m[1],m[2],m[3],m[4]||'',m[5]||'']:[t];
+      }
+      if(c.length>=3&&(DOSE.test(c[1])||FREQ.test(c[2])))meds.push({name:c[0],dose:c[1]||'',freq:c[2]||'',period:c[3]||'',comment:c.slice(4).filter(Boolean).join(' ')});
+      else if(meds.length)meds[meds.length-1].comment=(meds[meds.length-1].comment+' '+t).trim();
+    });
+    // Surgical interventions: "Laparotomy with adhesiolysis 17/08/2026 00:00:00".
+    const interventions=txt('interventions').map(t=>{const m=t.match(/^(.*?)\s*(\d{1,2}\/\d{1,2}\/\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\s*$/);return m?(m[1].trim()||'Intervention')+' · '+m[2]:t;});
+    // Investigations: "date time · test · result", a report carrying on below its row.
+    const inv=[];
+    (parts.investigations||[]).forEach(raw=>{
+      const t=raw.trim();if(!t)return;
+      const m=t.match(/^(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2})(?::\d{2})?\s+(.*)$/);
+      if(m){
+        let rest=m[3],cells=rest.split(/\t+|\s{2,}/).map(x=>x.trim()).filter(Boolean);
+        if(cells.length<2){const r=rest.match(/^(.+?)\s+([<>]?-?\d[\d.,]*\s*[A-Za-z%µ\/\^\d.]*(?:\/[A-Za-z0-9.\^]+)*)$/);cells=r?[r[1],r[2]]:[rest];}
+        const [d,mo,y]=m[1].split('/');
+        inv.push({when:m[1]+' '+m[2],key:y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0')+' '+m[2].padStart(5,'0'),text:cells.join(' · ')});
+      }else if(inv.length)inv[inv.length-1].text+=' '+t;
+    });
+    inv.sort((a,b)=>a.key.localeCompare(b.key));
+    const sig=txt('signature').filter(t=>!/^(?:Medical\s+Reg|Printed\s+On)/i.test(t)).slice(0,2).join(', ');
+    const adverse=txt('adverse');
+    if(!adm&&!diagnosis&&!course.length&&!meds.length)return null;
+    const days=adm&&dis?Math.round((Date.parse(dis)-Date.parse(adm))/864e5):null;
+    const S=[];const add=(name,lines)=>{lines=(lines||[]).map(x=>String(x).trim()).filter(Boolean);if(lines.length)S.push('§ '+name+'\n'+lines.join('\n'));};
+    add('Dates',[(adm?'Admitted '+dmy(adm):'Admission date not found')+(dis?' · Discharged '+dmy(dis):'')+(days!=null?' ('+days+' day'+(days===1?'':'s')+')':'')]);
+    add('Clinical course',course);
+    CASE_SUB.forEach(([k,,name])=>{if(k!=='allergies'&&k!=='plan')add(name,sub[k]);});
+    add('Allergies',[].concat(sub.allergies||[],adverse).filter((x,i,a)=>a.findIndex(y=>y.toLowerCase()===x.toLowerCase())===i));
+    add('Plan',sub.plan);
+    add('Treatment on discharge',meds.map(m=>[m.name,m.dose,m.freq,m.period,m.comment].filter(Boolean).join(' · ')));
+    add('Surgical interventions',interventions);
+    add('Complications',txt('complications'));
+    add('Investigations',inv.map(x=>x.when+' · '+x.text));
+    add('Follow-up',txt('followup'));
+    add('Pending investigations',txt('pending'));
+    add('Further information',txt('further'));
+    add('Signed by',sig?[sig]:[]);
+    return {date:adm?findDate(dmy(adm)):null,rangeText:'',table:true,hospital:true,category:'case',typeCell:ward,title:diagnosis,result:S.join('\n'),source:consultant,
+      raw:[adm&&'Admission '+dmy(adm),dis&&'Discharge '+dmy(dis),consultant&&'Consultant: '+consultant,ward&&'Ward: '+ward,diagnosis&&'Diagnosis: '+diagnosis].filter(Boolean),
+      idSeen,partial:!adm||!diagnosis};
+  }
+
+
   /* ------------------------------------------------------------------ *
    * A Patient Consultation note (e.g. a Procedure Report), opened with
    * "Open past visit": label : value lines, set out section by section.
@@ -968,6 +1115,8 @@
   function fingerprint(cat,iso,title,result,time,type){
     // A lab result is the same result when it is the same test of the same panel
     // taken at the same date and time.
+    // A case summary is the same admission when it has the same admission date.
+    if(cat==='case'&&iso)return 'case|'+iso;
     if(cat==='lab'&&iso)return 'lab|'+iso+'|'+String(time||'').slice(0,5)+'|'+norm(type).slice(0,60)+'|'+norm(title).slice(0,80);
     if(cat==='poyc')return 'poyc||'+(norm(title)+'|'+norm(result)).slice(0,120);
     // An ECG is the same ECG when it has the same date and time (as printed, to
@@ -1015,6 +1164,7 @@
     let raw=null,mode='text';
     if(cat==='poyc'){raw=poycRows(clean);mode='table';}
     else if(cat==='ecg'||looksEcg(clean)){raw=ecgRows(clean);mode='ecg';}
+    else if(cat==='case'||looksCase(clean)){raw=caseRows(clean);mode='case';}
     else if(cat==='lab'||looksLab(clean)){raw=labRows(clean);mode='lab';}
     else if(looksConsultNote(clean)){raw=consultNotes(clean);mode='note';}
     else if(clean.includes('\t')){
@@ -1046,8 +1196,8 @@
       let category=CAT_KEYS.includes(e.category)?e.category:cat;
       // A consultation note is recognised for certain, so pasting it in another
       // tab needs no checking; anything else moved is shown in amber.
-      if(category!==cat)flags.push((e.category==='consult'||e.category==='ecg'||e.category==='lab')&&e.hospital?'moved_note':'moved');
-      if(e.partial)flags.push('ecg_partial');
+      if(category!==cat)flags.push((e.category==='consult'||e.category==='ecg'||e.category==='lab'||e.category==='case')&&e.hospital?'moved_note':'moved');
+      if(e.partial)flags.push(e.category==='case'?'case_partial':'ecg_partial');
       else if(!e.hospital){const sug=suggestCategory(cat,f.title,f.result);if(sug){category=sug;flags.push('moved');}}
       const list=category==='surgery'||category==='imaging';
       if((category==='surgery'||category==='consult')&&STOMA_RE.test(f.title))flags.push('stoma');
@@ -1056,10 +1206,10 @@
       if(list&&!e.table&&(f.title+f.result).length>1500)flags.push('long');
       // Only the columns each tab keeps: no type for procedures and scans, no
       // author for scans and iCM notes (Created By is left out).
-      const source=category==='surgery'||category==='consult'?f.source:'';
+      const source=category==='surgery'||category==='consult'||category==='case'?f.source:'';
       const timed=category==='doc_icm'||category==='ecg'||category==='lab';
       const type=category==='doc_icm'?((e.typeCell||'').trim()||noteType(f.source,f.result))
-        :category==='consult'||category==='ecg'||category==='lab'?(e.typeCell||'').trim():'';
+        :category==='consult'||category==='ecg'||category==='lab'||category==='case'?(e.typeCell||'').trim():'';
       const fp=fingerprint(category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'',type);
       let include=true;
       const key=[category,d?d.iso:'',f.title,f.result,timed&&d?d.time:'',type];
@@ -1085,6 +1235,10 @@
     date_stoma:'Date filled in from the stoma’s operation date',date_proc:'Date filled in from the performed procedure',
     updates_saved:'Same note saved before — saving updates it, no second copy',
     lab_new:'New test — joins the blood investigations list when saved',
+    case_partial:'The admission date or diagnosis could not be read — check them against the report',
+    case_duplicate_saved:'A case summary for this admission is already saved — not ticked',
+    case_duplicate_paste:'Repeated in this paste — not ticked',
+    case_updates_saved:'This admission was saved before and the summary has changed — saving updates it, no second copy',
     lab_duplicate_saved:'This test at the same date and time is already saved — not ticked',
     lab_duplicate_paste:'Repeated in this paste — not ticked',
     lab_updates_saved:'Changed since it was saved — saving updates it, no second copy',
@@ -1092,11 +1246,11 @@
     ecg_duplicate_paste:'Same date and time as another ECG in this paste — not ticked',
     ecg_updates_saved:'Same date and time as an ECG saved before, now with a changed report — saving updates it, no second copy'
   };
-  function flagText(code,row){const c=row&&row.category;if((c==='ecg'||c==='lab')&&FLAG_TEXT[c+'_'+code])code=c+'_'+code;return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
+  function flagText(code,row){const c=row&&row.category;if((c==='ecg'||c==='lab'||c==='case')&&FLAG_TEXT[c+'_'+code])code=c+'_'+code;return (FLAG_TEXT[code]||code).replace('{cat}',CATS[row&&row.category]?CATS[row.category].label:'another tab').replace('{id}',String(row&&row.id_seen||''));}
   // Flags that mean "a nurse should look at this row".
-  const CHECK_FLAGS=new Set(['ecg_partial','no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
+  const CHECK_FLAGS=new Set(['ecg_partial','case_partial','no_date','bad_date','not_done','two_digit_year','swapped','future','before_birth','moved','no_title','long','id_mismatch']);
 
-  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,looksLab,keysOf,isDup,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
+  global.ClinicalHistory=Object.assign(global.ClinicalHistory||{},{CATS,CAT_KEYS,isNoteCat,parse,looksEcg,looksLab,looksCase,keysOf,isDup,findDate,lineStartDate,fingerprint,savedKeys,flagText,CHECK_FLAGS,typeFor,suggestCategory,STOMA_RE,_fieldsFrom:fieldsFrom});
 })(window);
 
 /* ==================================================================== *
@@ -1121,6 +1275,7 @@
     ecg:{label:'ECG',icon:'🫀',cat:'ecg'},
     icm:{label:'iCM notes',icon:'📄',cat:'doc_icm'},
     poyc:{label:'Entitlement CARE (POYC)',icon:'💊',cat:'poyc'},
+    case:{label:'Case summaries',icon:'🗂️',cat:'case'},
     lab:{label:'Lab results',icon:'🧪',cat:'lab'}
   };
   // The columns each table shows: [heading, field].
@@ -1144,12 +1299,13 @@
     ecg:'',
     doc_icm:'',
     lab:'',
+    case:'',
     poyc:'Copy the Entitlement CARE (POYC) table from the hospital system (Medications › Entitlement CARE (POYC)) and paste it in one go. Description and Prescription are kept; ATC Code and Dosage Regimen are left out. A medicine already saved is skipped; ones no longer on a new list can be removed when you save it.'
   };
-  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',lab:'📋 Paste lab results',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
+  const PASTE_LABEL={surgery:'📋 Paste performed procedures',consult:'📋 Paste a consultation note',imaging:'📋 Paste imaging results',ecg:'📋 Paste an ECG report',lab:'📋 Paste lab results',case:'📋 Paste a case summary',doc_icm:'📋 Paste iCM notes',poyc:'📋 Paste the POYC list'};
   // Each tab is a fold-out section of its own on the profile, below Outcome
   // (index.html wraps each host in a details.pd-section).
-  const SECTION_OF={surgery:'procedures',consult:'consult',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc',lab:'lab'};
+  const SECTION_OF={surgery:'procedures',consult:'consult',imaging:'imaging',ecg:'ecg',doc_icm:'icm',poyc:'poyc',case:'case',lab:'lab'};
   function catOf(k){return MAIN[k].cat;}
   // Unfold a section and the Hospital records fold-out around it
   // (after saving, or when a linked entry is opened).
@@ -1176,7 +1332,7 @@
     return fmt(e.entry_date);
   }
   function counts(){
-    const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0,lab:0};
+    const c={surgery:0,consult:0,imaging:0,ecg:0,doc_icm:0,poyc:0,case:0,lab:0};
     st.entries.forEach(e=>{if(c[e.category]!=null)c[e.category]++;});
     c.procedures=c.surgery;c.icm=c.doc_icm;return c;
   }
@@ -1293,8 +1449,8 @@
   }
   function ecgUpdates(rows){
     rows.forEach(r=>{
-      if((r.category!=='ecg'&&r.category!=='lab')||!r.flags.includes('duplicate_saved'))return;
-      const e=st.entries.find(x=>r.category==='lab'?sameLabResult(x,r):sameEcgTime(x,r));if(!e)return;
+      if((r.category!=='ecg'&&r.category!=='lab'&&r.category!=='case')||!r.flags.includes('duplicate_saved'))return;
+      const e=st.entries.find(x=>r.category==='lab'?sameLabResult(x,r):r.category==='case'?(x.category==='case'&&day(x)===r.entry_date):sameEcgTime(x,r));if(!e)return;
       if(normT(e.title)===normT(r.title)&&normT(e.entry_type)===normT(r.entry_type)&&normT(e.result)===normT(r.result)
         &&(r.category!=='lab'||(normT(e.lab_flag)===normT(r.lab_flag)&&normT(e.lab_range)===normT(r.lab_range)&&normT(e.lab_unit)===normT(r.lab_unit))))return;
       r.flags=r.flags.filter(f=>f!=='duplicate_saved');r.flags.push('updates_saved');r.replaces=e.id;r.include=true;
@@ -1386,7 +1542,7 @@
     // The Hospital records fold-out: the total in its title.
     const first=st.hosts&&st.hosts.procedures,outer=first&&first.closest('details')&&first.closest('details').parentElement.closest('details');
     const osum=outer&&outer.querySelector(':scope > summary');
-    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.surgery+c.consult+c.imaging+c.ecg+c.doc_icm+c.poyc+c.lab)+'</span>';}
+    if(osum){if(!osum.dataset.label)osum.dataset.label=osum.textContent.trim();osum.innerHTML=esc(osum.dataset.label)+' <span class="ch-sum-count">'+(c.surgery+c.consult+c.imaging+c.ecg+c.doc_icm+c.poyc+c.case+c.lab)+'</span>';}
     Object.keys(MAIN).forEach(k=>{
       const h=st.hosts&&st.hosts[k];if(!h||!document.body.contains(h))return;
       // The fold-out's title carries the count, as the tab button did.
@@ -1399,7 +1555,7 @@
   function paneHTML(k,c){
     if(!st.available)return '<div class="ch-pane ch-pane-'+k+'"><div class="ch-missing">These sections need their database table first. Run <strong>sql/add-patient-history.sql</strong> once in Supabase (SQL Editor), then press ↻ Refresh.</div></div>';
     const cat=catOf(k);
-    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':cat==='lab'?'lab results':CH.CATS[cat].label.toLowerCase();
+    const what=cat==='doc_icm'?'iCM notes':cat==='poyc'?'POYC medicines':cat==='ecg'?'ECGs':cat==='lab'?'lab results':cat==='case'?'case summaries':CH.CATS[cat].label.toLowerCase();
     return '<div class="ch-pane ch-pane-'+k+'">'
       +'<div class="ch-tools"><button type="button" class="psm-btn psm-btn-primary" onclick="ClinicalHistory.openPaste(\''+cat+'\')">'+PASTE_LABEL[cat]+'</button>'
       +'<button type="button" class="psm-btn" onclick="ClinicalHistory.openEdit(\'\',\''+cat+'\')">＋ Add one</button>'
@@ -1428,6 +1584,7 @@
       const last=rows.reduce((a,e)=>String(e.created_at||'')>String(a&&a.created_at||'')?e:a,null);
       return (last?'<p class="ch-asof">Entitlement list copied on <strong>'+esc(fmt(last.created_at||last.entry_date))+'</strong>'+(last.created_by_name?' by '+esc(last.created_by_name):'')+'.</p>':'')+tableHTML(cat,rows);
     }
+    if(cat==='case'){rows.sort((a,b)=>day(b).localeCompare(day(a)));return (q?'':medHistoryHTML())+rows.map(caseCardHTML).join('');}
     return cat==='consult'?rows.map(consultCardHTML).join(''):tableHTML(cat,rows);
   }
   const isFocus=(cat,e)=>!!(st.focus&&st.focus.cat===cat&&st.focus.date===day(e));
@@ -1505,6 +1662,100 @@
   function longText(v){
     v=String(v||'');if(v.length<=480)return '<div class="ch-sec-text">'+esc(v)+'</div>';
     return '<div class="ch-sec-text ch-clip">'+esc(short(v,260))+'</div><details class="ch-more"><summary>Show all</summary><div class="ch-sec-text">'+esc(v)+'</div></details>';
+  }
+  /* ---------- Case summaries ---------- */
+  const caseSec=(e,label)=>((sectionsOf(e.result).find(x=>x.label===label)||{}).value||'');
+  function caseDates(e){
+    const m=caseSec(e,'Dates').match(/Discharged\s+(\d{2})\/(\d{2})\/(\d{4})/);
+    return {adm:day(e),dis:m?m[3]+'-'+m[2]+'-'+m[1]:''};
+  }
+  // The stoma(s) the patient had during the admission; a summary from before any
+  // stoma reads "Before Stoma 1". A stoma chosen by hand wins.
+  function caseStomaChips(e){
+    const list=stomaList(),out=[];if(!list.length)return out;
+    const {adm,dis}=caseDates(e),end=dis||adm,d10=v=>String(v||'').slice(0,10);
+    let hits=[];
+    if(e.linked_stoma){const x=list.find(s=>s.slot===e.linked_stoma);if(x)hits=[x];}
+    if(!hits.length&&adm)hits=list.filter(x=>x.formed_date&&d10(x.formed_date)<=end&&(!(x.reversal_date||x.superseded_date)||d10(x.reversal_date||x.superseded_date)>=adm));
+    hits.forEach(x=>{
+      const what=d10(x.formed_date)>=adm&&d10(x.formed_date)<=end?' — formed this admission':x.reversal_date&&d10(x.reversal_date)>=adm&&d10(x.reversal_date)<=end?' — closed this admission':'';
+      out.push('<button type="button" class="ch-stoma" data-slot="'+esc(x.slot)+'" onclick="ClinicalHistory.openStoma(this.dataset.slot)" title="Open this stoma">🟣 '+esc(stomaName(x))+(x.code?' · '+esc(x.code):'')+esc(what)+'</button>');
+    });
+    if(!hits.length&&adm){
+      const first=list.filter(x=>x.formed_date).sort((a,b)=>d10(a.formed_date).localeCompare(d10(b.formed_date)))[0];
+      if(first&&adm<d10(first.formed_date))out.push('<span class="ch-stoma ch-stoma-before">⏮ Before '+esc(stomaName(first))+' (formed '+esc(fmt(first.formed_date))+')</span>');
+    }
+    if(e.id)out.push('<button type="button" class="ch-link ch-link-quiet" onclick="ClinicalHistory.chooseStoma(\''+esc(e.id)+'\')">🔗 '+(e.linked_stoma?'Change stoma':'Link to a stoma')+'</button>');
+    return out;
+  }
+  const CASE_LIST=new Set(['Past medical history','Medications on admission','Past surgical history','Allergies','Plan','Surgical interventions','Complications','Follow-up','Pending investigations','Family history']);
+  function caseSectionHTML(x){
+    const lines=x.value.split('\n').filter(Boolean);
+    if(x.label==='Treatment on discharge')
+      return '<div class="ch-table-wrap"><table class="ch-case-tx"><thead><tr><th>Medicine</th><th>Dosage</th><th>Frequency</th><th>Period</th><th>Comments</th></tr></thead><tbody>'
+        +lines.map(l=>{const c=l.split(' · ');return '<tr>'+[0,1,2,3].map(i=>'<td>'+esc(c[i]||'')+'</td>').join('')+'<td>'+esc(c.slice(4).join(' · '))+'</td></tr>';}).join('')+'</tbody></table></div>';
+    if(x.label==='Investigations'){
+      const li=lines.map(l=>'<li>'+esc(l)+'</li>');
+      return li.length<=8?'<ul class="ch-case-ul">'+li.join('')+'</ul>'
+        :'<ul class="ch-case-ul">'+li.slice(0,6).join('')+'</ul><details class="ch-more"><summary>Show all '+li.length+'</summary><ul class="ch-case-ul">'+li.slice(6).join('')+'</ul></details>';
+    }
+    if(CASE_LIST.has(x.label))return '<ul class="ch-case-ul">'+lines.map(l=>'<li>'+esc(l)+'</li>').join('')+'</ul>';
+    return longText(x.value);
+  }
+  function caseCardHTML(e){
+    const {adm,dis}=caseDates(e);
+    const days=adm&&dis?Math.round((Date.parse(dis)-Date.parse(adm))/864e5):null;
+    const secs=sectionsOf(e.result).filter(x=>x.label!=='Dates');
+    return '<article class="ch-consult ch-case'+(isFocus('case',e)?' is-focus':'')+'">'
+      +'<div class="ch-consult-head"><span class="ch-consult-date">'+esc(adm?fmt(adm):'No date')+(dis?' → '+esc(fmt(dis)):'')+'</span>'
+      +(days!=null?'<span class="ch-type">'+days+' day'+(days===1?'':'s')+'</span>':'')
+      +(e.source?'<span class="ch-consult-by">'+esc(e.source)+'</span>':'')
+      +(e.entry_type?'<span class="ch-type">'+esc(e.entry_type)+'</span>':'')+actHTML(e)+'</div>'
+      +(e.title?'<div class="ch-title">'+esc(e.title)+'</div>':'')
+      +'<div class="ch-links">'+caseStomaChips(e).join('')+'</div>'
+      +(secs.length?'<dl class="ch-sections">'+secs.map(x=>'<dt>'+esc(x.label)+'</dt><dd>'+caseSectionHTML(x)+'</dd>').join('')+'</dl>':'')
+      +'</article>';
+  }
+  // Medication history: each medicine on admission and on discharge for every
+  // case summary, and on the POYC list today — so starts and stops stand out.
+  const FREQ_WORD=/\s(?=\d|(?:daily|od|om|on|bd|bid|tds|tid|qds|qid|prn|nocte|mane|stat|weekly|monthly|once|twice|alternate)\b)/i;
+  function medSplit(line){
+    const l=String(line||'').trim();
+    if(l.includes(' · ')){const c=l.split(' · ');return {name:c[0],detail:[c[1],c[2]].filter(Boolean).join(' ')};}
+    const i=l.search(FREQ_WORD);
+    return i>0?{name:l.slice(0,i).trim(),detail:l.slice(i).trim()}:{name:l.replace(/\s+-\s+.*$/,''),detail:(l.match(/\s+-\s+(.*)$/)||[])[1]||''};
+  }
+  // One row per medicine: its generic name (first word), or two words for a
+  // salt such as "Sodium bicarbonate"; brand names in brackets are ignored.
+  const SALT=new Set(['sodium','potassium','calcium','magnesium','ferrous','zinc','vitamin','new']);
+  function medKey(n){
+    const w=String(n||'').toLowerCase().replace(/\([^)]*\)/g,' ').replace(/\b(?:tablets?|tabs?|capsules?|caps?|chewable|oral|iv|po|effervescent)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(Boolean);
+    if(!w.length)return '';
+    return w[0].length>=6&&!SALT.has(w[0])?w[0]:w.slice(0,2).join(' ');
+  }
+  function medHistoryHTML(){
+    const cases=st.entries.filter(e=>e.category==='case'&&e.entry_date).sort((a,b)=>day(a).localeCompare(day(b)));
+    const cols=[];
+    cases.forEach(e=>{
+      const {adm,dis}=caseDates(e);
+      const a=caseSec(e,'Medications on admission'),d=caseSec(e,'Treatment on discharge');
+      if(a)cols.push({head:'Admitted',when:adm,lines:a.split('\n')});
+      if(d)cols.push({head:'Discharged',when:dis||adm,lines:d.split('\n')});
+    });
+    const poyc=st.entries.filter(e=>e.category==='poyc');
+    if(poyc.length)cols.push({head:'POYC now',when:'',lines:poyc.map(e=>e.title+(e.result?' · '+e.result:''))});
+    if(!cases.length||cols.length<1)return '';
+    const rows=new Map();
+    cols.forEach((c,ci)=>c.lines.filter(Boolean).forEach(l=>{
+      const m=medSplit(l),k=medKey(m.name);if(!k)return;
+      if(!rows.has(k))rows.set(k,{name:m.name,cells:{}});
+      const r=rows.get(k);r.name=m.name;r.cells[ci]=ci===cols.length-1&&poyc.length?'✓':(m.detail||'✓');
+    }));
+    const list=[...rows.values()].sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));
+    return '<details class="ch-medhx"><summary>💊 Medication history <span class="ch-sum-count">'+list.length+'</span> <small>across '+cases.length+' case summar'+(cases.length===1?'y':'ies')+(poyc.length?' and the POYC list':'')+'</small></summary>'
+      +'<div class="ch-table-wrap"><table class="ch-medhx-t"><thead><tr><th>Medicine</th>'+cols.map(c=>'<th>'+esc(c.head)+(c.when?'<br><small>'+esc(fmt(c.when))+'</small>':'')+'</th>').join('')+'</tr></thead><tbody>'
+      +list.map(r=>'<tr><th scope="row">'+esc(r.name)+'</th>'+cols.map((c,ci)=>'<td'+(r.cells[ci]?'':' class="is-none"')+'>'+esc(r.cells[ci]||'—')+'</td>').join('')+'</tr>').join('')
+      +'</tbody></table></div><p class="ch-asof">— means not listed on that summary.</p></details>';
   }
   function consultCardHTML(e){
     const secs=sectionsOf(e.result);
@@ -1694,6 +1945,9 @@
     else if(cat==='imaging')grid=field('Test',i,'title',r.title)+field('Report',i,'result',r.result,{wide:true,rows:5});
     else if(cat==='doc_icm')grid=field('Type',i,'entry_type',r.entry_type)+field('Note',i,'result',r.result,{wide:true,rows:6});
     else if(cat==='poyc')grid=field('Description',i,'title',r.title)+field('Prescription',i,'result',r.result);
+    else if(cat==='case')grid=field('Consultant',i,'source',r.source)+field('Ward',i,'entry_type',r.entry_type)
+      +field('Diagnosis',i,'title',r.title,{wide:true,rows:2})
+      +field('The case summary, section by section',i,'result',r.result,{wide:true,rows:14,help:'Each section starts on a line beginning with § and its name. The discharge date is in the Dates line.'});
     else if(cat==='lab')grid=field('Panel',i,'entry_type',r.entry_type)+field('Test',i,'title',r.title)+field('Result',i,'result',r.result)
       +field('Flag',i,'lab_flag',r.lab_flag)+field('Normal range',i,'lab_range',r.lab_range)+field('Unit',i,'lab_unit',r.lab_unit);
     else if(cat==='ecg')grid=field('Verdict (as printed)',i,'title',r.title)+field('Confirmed / unconfirmed',i,'entry_type',r.entry_type)
@@ -1706,7 +1960,7 @@
       +'<div class="ch-card-head">'
         +(single?'':'<label class="ch-inc"><input type="checkbox" '+(r.include?'checked':'')+' onchange="ClinicalHistory.pv('+i+',\'include\',this.checked)"> Save</label>')
         +'<label>Under '+catSel+'</label>'
-        +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
+        +(cat==='poyc'?'':'<label>'+(cat==='doc_icm'?'Created on':cat==='case'?'Admission date':'Date')+' <input type="date" value="'+esc(r.entry_date||'')+'" max="2100-12-31" onchange="ClinicalHistory.pv('+i+',\'entry_date\',this.value)"></label>'+prec)
         +(cat==='doc_icm'||cat==='ecg'||cat==='lab'?'<label>Time <input type="time"'+(cat==='ecg'?' step="1"':'')+' value="'+esc(r.entry_time||'')+'" onchange="ClinicalHistory.pv('+i+',\'entry_time\',this.value)"></label>':'')
         +(r.date_text?'<span class="ch-orig">written as: '+esc(r.date_text)+'</span>':'')
       +'</div>'
@@ -1789,7 +2043,7 @@
       if(u.error){restore();msg(writeError(u.error));return;}
       updated++;updBy[row.category]=(updBy[row.category]||0)+1;
     }
-    const upName=(k,n)=>k==='ecg'?n+' ECG'+(n===1?'':'s'):k==='lab'?n+' lab result'+(n===1?'':'s'):k==='consult'?n+' consultation note'+(n===1?'':'s'):n+' entr'+(n===1?'y':'ies');
+    const upName=(k,n)=>k==='ecg'?n+' ECG'+(n===1?'':'s'):k==='lab'?n+' lab result'+(n===1?'':'s'):k==='case'?n+' case summar'+(n===1?'y':'ies'):k==='consult'?n+' consultation note'+(n===1?'':'s'):n+' entr'+(n===1?'y':'ies');
     for(const e of drop){const d=await db().from(TABLE).delete().eq('id',e.id);if(!d.error)removed++;}
     if(!out.length&&!removed&&!updated){restore();msg('All of these are already saved for this patient.');return;}
     if(out.length){

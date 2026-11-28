@@ -35,6 +35,17 @@
   }
   const sec=(e,label)=>((sections(e.result).find(x=>x.label.toLowerCase()===label.toLowerCase())||{}).value||'');
 
+  /* ---------- case summaries (Hospital records › Case summaries) ---------- */
+  function cases(c){
+    return c.hist.filter(e=>e.category==='case'&&e.entry_date).map(e=>{
+      const m=sec(e,'Dates').match(/Discharged\s+(\d{2})\/(\d{2})\/(\d{4})/);
+      return {e,adm:day(e.entry_date),dis:m?m[3]+'-'+m[2]+'-'+m[1]:'',list:l=>sec(e,l).split('\n').map(x=>x.trim()).filter(Boolean)};
+    }).sort((a,b)=>b.adm.localeCompare(a.adm));
+  }
+  // The latest summary that has a section, with its lines.
+  function latestList(cs,label){for(const x of cs){const l=x.list(label);if(l.length)return {x,lines:l};}return null;}
+  // Every allergy named in any summary (case-insensitive, once each).
+  function allergies(cs){const seen=new Map();cs.forEach(x=>x.list('Allergies').forEach(a=>{const k=a.toLowerCase();if(!seen.has(k))seen.set(k,a);}));return [...seen.values()];}
   function data(){
     const s=typeof clrState!=='undefined'?clrState:null;
     const p=s&&s.patient;if(!p)return null;
@@ -77,6 +88,10 @@
       if(x.superseded_date){const e=at(x.superseded_date);e.stoma.push('Replaced '+stomaName(x));e.src.add('Stomas & surgery');}
     });
     c.hist.filter(e=>e.category==='surgery').forEach(h=>{const e=at(h.entry_date);if(h.title)e.procs.push(h.title);if(h.source)e.by.push(h.source);e.src.add('Performed procedures');});
+    cases(c).forEach(x=>x.list('Surgical interventions').forEach(t=>{
+      const m=t.match(/^(.*?)\s*·\s*(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return;
+      const e=at(m[4]+'-'+m[3]+'-'+m[2]);e.procs.push(m[1]);if(x.e.source)e.by.push(x.e.source);if(x.e.title)e.ind.push(x.e.title);e.src.add('Case summaries');
+    }));
     c.hist.filter(e=>e.category==='consult').forEach(h=>{
       const e=at(h.entry_date),ind=sec(h,'Indications'),find=sec(h,'Operation findings')||sec(h,'Findings');
       if(h.title)e.procs.push(h.title);if(h.source)e.by.push(h.source);
@@ -127,10 +142,35 @@
     return out;
   }
   function medicines(c){
-    const poyc=c.hist.filter(e=>e.category==='poyc');if(!poyc.length)return [];
-    const last=poyc.reduce((a,e)=>String(e.created_at||'')>String(a.created_at||'')?e:a,poyc[0]);
-    const names=poyc.map(e=>e.title).filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
-    return [L(names.length+' medicine'+(names.length===1?'':'s')+' on Entitlement CARE: '+names.join('; '),'Entitlement CARE (POYC)',last.created_at)];
+    const out=[],poyc=c.hist.filter(e=>e.category==='poyc');
+    if(poyc.length){
+      const last=poyc.reduce((a,e)=>String(e.created_at||'')>String(a.created_at||'')?e:a,poyc[0]);
+      const names=poyc.map(e=>e.title).filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
+      out.push(L(names.length+' medicine'+(names.length===1?'':'s')+' on Entitlement CARE: '+names.join('; '),'Entitlement CARE (POYC)',last.created_at));
+    }
+    const cs=cases(c),dis=latestList(cs,'Treatment on discharge'),adm=latestList(cs,'Medications on admission');
+    if(dis)out.push(L('On discharge '+fd(dis.x.dis||dis.x.adm)+': '+dis.lines.map(l=>l.split(' · ').slice(0,3).join(' ')).join('; '),'Case summaries',dis.x.dis||dis.x.adm));
+    if(adm)out.push(L('On admission '+fd(adm.x.adm)+': '+adm.lines.join('; '),'Case summaries',adm.x.adm));
+    return out;
+  }
+  // Comorbidities, past surgery, allergies and social history, from the latest
+  // case summary that records each.
+  function background(c){
+    const cs=cases(c),out=[];
+    [['Past medical history','Past medical history'],['Past surgical history','Past surgical history'],['Social history','Social history'],['Family history','Family history'],['Functional status','Functional status']].forEach(([label,name])=>{
+      const l=latestList(cs,label);if(l)out.push(L(name+': '+l.lines.map(x=>x.replace(/[.;]+$/,'')).join('; '),'Case summary',l.x.adm));
+    });
+    const al=allergies(cs);if(al.length)out.push(L('Allergies / adverse reactions: '+al.join('; '),'Case summaries'));
+    return out;
+  }
+  // Each hospital admission with a case summary.
+  function hospitalStays(c){
+    return cases(c).map(x=>{
+      const days=x.dis?daysBetween(x.adm,x.dis):null;
+      const comp=x.list('Complications'),iv=x.list('Surgical interventions');
+      return L(fd(x.adm)+(x.dis?' → '+fd(x.dis):'')+(days!=null?' ('+days+' d)':'')+(x.e.entry_type?' · '+x.e.entry_type:'')+(x.e.source?' · '+x.e.source:'')
+        +(x.e.title?' — '+x.e.title:'')+(iv.length?' · Intervention: '+iv.join('; '):'')+(comp.length?' · Complications: '+comp.join('; '):''),'Case summaries',x.adm);
+    });
   }
   function investigations(c){
     const out=[];
@@ -224,12 +264,22 @@
     const push=(k,html)=>{if(html)out.push({k,html});};
     push('Situation',[age!=null?B(age+'-year-old'):'',sex,p.consultant?'under '+B(p.consultant):'',
       ep?'— inpatient'+(ward?' on '+B(ward):'')+' since '+B(fd(ep.record_date))+' (day '+daysBetween(ep.record_date,today())+')':outcome?'— '+esc(outcome.toLowerCase()):''].filter(Boolean).join(' ')+'.');
+    // Background from the case summaries: comorbidities and allergies.
+    const cs=cases(c),pmh=latestList(cs,'Past medical history'),al=allergies(cs),soc=latestList(cs,'Social history');
+    push('Background',[pmh?'Comorbidities: '+pmh.lines.map(x=>B(one(x.replace(/\s*\(.*?\)\s*/g,' ').replace(/\s+managed with.*$/i,''),60))).join(', ')+'.':'',
+      al.length?'Allergies: '+B(al.join(', '))+'.':'',soc?'Social: '+esc(one(soc.lines.map(x=>x.replace(/[.;]+$/,'')).join('; '),140))+'.':''].filter(Boolean).join(' '));
+    if(al.length)kpis.push({label:'Allergies',value:al.length,sub:one(al.join(', '),40),tone:'warn'});
+    if(cs.length){
+      const x=cs[0],days=x.dis?daysBetween(x.adm,x.dis):null,comp=x.list('Complications');
+      push('Last admission',B(fd(x.adm))+(x.dis?' → '+B(fd(x.dis)):'')+(days!=null?' ('+days+' days)':'')+(x.e.entry_type?', '+esc(x.e.entry_type):'')+(x.e.source?' under '+esc(x.e.source):'')
+        +(x.e.title?': '+B(x.e.title):'')+(comp.length?'; complications: '+esc(comp.join(', ')):'')+'.'+(cs.length>1?' '+cs.length+' case summaries on record.':''));
+    }
     if(ep)kpis.push({label:'Inpatient day',value:daysBetween(ep.record_date,today()),sub:ward||'admitted '+fd(ep.record_date)});
     // The latest operation and why it was done.
     const evs=surgeryEvents(c).filter(e=>e.date&&e.date<=today());
     const idx=evs[evs.length-1];
     if(idx){
-      const procs=uniq(idx.procs),proc=procs[0]||'an operation';
+      const procs=uniq(idx.procs),proc=procs[0]||'surgery';
       let ind=uniq(idx.ind)[0]||'';
       if(!ind){const m=procs.join(' ').match(/\bfor\s+(.+?)(?:\s+with\s+|\s*\(|[.;]|$)/i);if(m)ind=m[1];}
       const bg=(procs.join(' ')+' '+idx.find.join(' ')+' '+c.hist.filter(e=>e.category==='consult').map(e=>e.result).join(' ')).match(/background of\s+([^).;\n]+)/i);
@@ -249,7 +299,7 @@
         .sort((a,b)=>(/\bCT\b/i.test(b.title)-/\bCT\b/i.test(a.title))||day(b.entry_date).localeCompare(day(a.entry_date)))[0];
       push('Rationale',[ind?'Indication: '+B(one(ind,90))+'.':'',uniq(idx.find).length?'Findings: '+esc(one(uniq(idx.find)[0],110))+'.':'',
         bg?'Background: '+B(bg[1].trim())+'.':'',pre?'Pre-operative '+B(pre.title||'imaging')+' ('+esc(fd(pre.entry_date))+'): '+imagingHTML(pre,260):''].filter(Boolean).join(' '));
-      kpis.push({label:'Post-op day',value:pod,sub:one(proc.replace(/\s*\(.*$/,''),34)});
+      kpis.push({label:'Post-op day',value:pod,sub:one(procs.length?proc.replace(/\s*\(.*$/,''):idxStoma[0]||'surgery',34)});
       const post=c.hist.filter(e=>e.category==='imaging'&&e.entry_date&&day(e.entry_date)>idx.date).sort((a,b)=>day(b.entry_date).localeCompare(day(a.entry_date)))[0];
       if(post)push('Since',B(post.title||'Imaging')+' ('+esc(fd(post.entry_date))+'): '+imagingHTML(post,220));
     }
@@ -280,14 +330,16 @@
     }
     // Medicines and what comes next.
     const meds=c.hist.filter(e=>e.category==='poyc').map(e=>e.title).filter(Boolean);
-    if(meds.length)push('Medicines','On '+B(meds.length+' POYC medicine'+(meds.length===1?'':'s'))+': '+esc(meds.sort((a,b)=>a.localeCompare(b)).join(', '))+'.');
+    const disc=latestList(cs,'Treatment on discharge');
+    push('Medicines',[meds.length?'On '+B(meds.length+' POYC medicine'+(meds.length===1?'':'s'))+': '+esc(meds.sort((a,b)=>a.localeCompare(b)).join(', '))+'.':'',
+      disc?'Discharged '+esc(fd(disc.x.dis||disc.x.adm))+' on '+B(disc.lines.length+' medicine'+(disc.lines.length===1?'':'s'))+': '+esc(disc.lines.map(l=>l.split(' · ')[0]).join(', '))+'.':''].filter(Boolean).join(' '));
     const f=global.patientFollowupSummary;
     if(f&&String(f.patientId)===String(p.id)&&(f.items||[]).length)push('Next',f.items.map(x=>esc(x.label)+' '+B(x.value)).join(' · ')+'.');
     return {sentences:out.filter(x=>x.html&&x.html!=='.'),kpis};
   }
 
-  const SECTIONS=[['Patient',overview],['Surgical history',surgical],['Admissions & encounters',admissions],['Stoma care',stomaCare],
-    ['Medicines',medicines],['Investigations',investigations],['Follow-up',followup]];
+  const SECTIONS=[['Patient',overview],['Background',background],['Surgical history',surgical],['Admissions & encounters',admissions],['Hospital stays (case summaries)',hospitalStays],
+    ['Stoma care',stomaCare],['Medicines',medicines],['Investigations',investigations],['Follow-up',followup]];
 
   /* ---------- drawing ---------- */
   function build(){
