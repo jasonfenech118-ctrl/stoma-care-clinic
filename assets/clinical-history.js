@@ -2187,5 +2187,5 @@
 
   // This patient's saved entries (for the Holistic summary).
   function entries(pid){return !pid||String(pid)===String(st.pid)?st.entries.slice():[];}
-  Object.assign(CH,{mount,main,sub,search,reload:load,entries,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
+  Object.assign(CH,{mount,main,sub,search,reload:load,entries,medSplit,medKey,openPaste,organise,pv,saveAll,openEdit,saveEdit,remove,showLinked,openStoma,chooseStoma,linkStoma,labList,labListFilter,_state:st});
 })(window);
